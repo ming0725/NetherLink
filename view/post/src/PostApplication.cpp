@@ -6,6 +6,7 @@
 #include "CurrentUser.h"
 #include "PostDetailView.h"
 #include "PostCreatePage.h"
+#include "NetworkConfig.h"
 #include <QResizeEvent>
 #include <QRandomGenerator>
 #include <QJsonDocument>
@@ -127,7 +128,8 @@ void PostApplication::onPostClickedWithGeometry(const QString &postID, const QRe
 
     // 构建请求URL
     QString token = CurrentUser::instance().getToken();
-    QUrl url(QString("http://localhost:8080/api/posts/%1").arg(postID));
+    QString baseUrl = NetworkConfig::instance().getHttpAddress();
+    QUrl url(QString(baseUrl + "/api/posts/%1").arg(postID));
 
     // 创建网络请求
     QNetworkRequest request(url);

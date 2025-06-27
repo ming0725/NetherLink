@@ -1,6 +1,7 @@
 #include "AiChatWebSocket.h"
 #include "NotificationManager.h"
 #include "CurrentUser.h"
+#include "NetworkConfig.h"
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QUrlQuery>
@@ -11,6 +12,8 @@ AiChatWebSocket::AiChatWebSocket(QObject *parent)
     , m_isProcessing(false)
     , m_networkManager(new QNetworkAccessManager(this))
 {
+    QString baseWsUrl = NetworkConfig::instance().getHttpAddress();
+    m_wsUrl = baseWsUrl + "/ws/ai";
     connect(&m_webSocket, &QWebSocket::connected, this, &AiChatWebSocket::onConnected);
     connect(&m_webSocket, &QWebSocket::disconnected, this, &AiChatWebSocket::onDisconnected);
     connect(&m_webSocket, &QWebSocket::errorOccurred,

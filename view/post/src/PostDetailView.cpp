@@ -2,10 +2,10 @@
 #include "AvatarLoader.h"
 #include "NotificationManager.h"
 #include "MainWindow.h"
+#include "NetworkConfig.h"
 #include <QNetworkReply>
 #include <QJsonDocument>
 #include <QPainter>
-#include <QVBoxLayout>
 #include <QJsonArray>
 #include <QScrollBar>
 #include <QFontMetrics>
@@ -463,7 +463,8 @@ void PostDetailView::sendComment(const QString &content) {
     QWidget* mainWindow = MainWindow::getInstance();
 
     // 构建请求URL
-    QUrl url(QString("http://localhost:8080/api/posts/%1/comments").arg(m_postId));
+    QString baseUrl = NetworkConfig::instance().getHttpAddress();
+    QUrl url(QString(baseUrl + "/api/posts/%1/comments").arg(m_postId));
 
     // 创建网络请求
     QNetworkRequest request(url);

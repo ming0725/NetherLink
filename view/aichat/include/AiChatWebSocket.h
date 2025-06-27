@@ -30,7 +30,7 @@ private slots:
 
 private:
     QWebSocket m_webSocket;
-    const QString m_wsUrl = "ws://localhost:8080/ws/ai";
+    QString m_wsUrl;
     bool m_isProcessing = false;
     QNetworkAccessManager* m_networkManager = nullptr;
 };

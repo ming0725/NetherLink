@@ -1,6 +1,5 @@
 #include "PostPreviewItem.h"
 #include "ClickableLabel.h"
-#include <mutex>
 #include <QResizeEvent>
 #include <QFontMetrics>
 #include <QPainter>
@@ -14,6 +13,7 @@
 #include "AvatarLoader.h"
 #include "CurrentUser.h"
 #include "NotificationManager.h"
+#include "NetworkConfig.h"
 
 PostPreviewItem::PostPreviewItem(const Post& post,
                                  QWidget* parent)
@@ -217,7 +217,8 @@ void PostPreviewItem::onClickLike() {
     resizeEvent(nullptr);
 
     // 构造并发送网络请求
-    QNetworkRequest request(QUrl(QString("http://localhost:8080/api/posts/%1/like").arg(m_postID)));
+    QString baseUrl = NetworkConfig::instance().getHttpAddress();
+    QNetworkRequest request(QUrl(QString(baseUrl + "/api/posts/%1/like").arg(m_postID)));
 
     // 设置 Authorization 头
     QString token = CurrentUser::instance().getToken();

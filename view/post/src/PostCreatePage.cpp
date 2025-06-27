@@ -2,7 +2,7 @@
 #include "NotificationManager.h"
 #include "MainWindow.h"
 #include "CurrentUser.h"
-#include <QVBoxLayout>
+#include "NetworkConfig.h"
 #include <QFileDialog>
 #include <QPainter>
 #include <QPainterPath>
@@ -193,7 +193,8 @@ void PostCreatePage::sendPost()
     }
 
     // 创建网络请求
-    QNetworkRequest request(QUrl("http://localhost:8080/api/posts"));
+    QString baseUrl = NetworkConfig::instance().getHttpAddress();
+    QNetworkRequest request(QUrl(baseUrl + "/api/posts"));
 
     // 设置 Authorization 头部
     QString token = CurrentUser::instance().getToken();

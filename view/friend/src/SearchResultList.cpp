@@ -1,7 +1,8 @@
-#include "../include/SearchResultList.h"
-#include "../include/SearchFriendWindow.h"
+#include "SearchResultList.h"
+#include "SearchFriendWindow.h"
 #include "NotificationManager.h"
 #include "CurrentUser.h"
+#include "NetworkConfig.h"
 #include <QPainter>
 #include <QVBoxLayout>
 #include <QJsonArray>
@@ -119,7 +120,8 @@ void SearchResultList::setSearchType(SearchType type)
 
 void SearchResultList::searchUsers(const QString& keyword)
 {
-    QUrl url("http://localhost:8080/api/search/users");
+    QString baseUrl = NetworkConfig::instance().getHttpAddress();
+    QUrl url(baseUrl + "/api/search/users");
     QUrlQuery query;
     query.addQueryItem("keyword", keyword);
     url.setQuery(query);
@@ -140,7 +142,8 @@ void SearchResultList::searchUsers(const QString& keyword)
 
 void SearchResultList::searchGroups(const QString& keyword)
 {
-    QUrl url("http://localhost:8080/api/search/groups");
+    QString baseUrl = NetworkConfig::instance().getHttpAddress();
+    QUrl url(baseUrl + "/api/search/groups");
     QUrlQuery query;
     query.addQueryItem("keyword", keyword);
     url.setQuery(query);
