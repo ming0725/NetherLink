@@ -182,7 +182,7 @@ void SearchResultItem::resizeEvent(QResizeEvent* event)
         statusIconLabel->height()
     );
     statusTextLabel->setGeometry(
-        contentX + statusIconLabel->width() + SPACING,
+        contentX + statusIconLabel->width() + SPACING - 6,
         textY_top + 1,
         textW_available - statusIconLabel->width() - SPACING,
         textH
