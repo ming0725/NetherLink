@@ -18,7 +18,7 @@ AiChatItemDelegate::AiChatItemDelegate(QWidget* parent)
     , m_contextMenu(new TransparentMenu(parent))
 {
     // 使用静态头像
-    m_userAvatar= AvatarLoader::instance().getAvatar(CurrentUser::instance().getUserId());
+    m_userAvatar = AvatarLoader::instance().getAvatar(CurrentUser::instance().getUserId());
     m_aiAvatar.load(":/resources/icon/ds.png");
 
     // 缩放头像到指定大小
