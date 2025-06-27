@@ -232,8 +232,10 @@ void NetworkManager::onWssTextMessage(const QString& msg)
         QString fromAvatar = payload["from_avatar"].toString();
         QString message = payload["message"].toString();
         QString createdAt = payload["created_at"].toString();
+        QDateTime dateTime = QDateTime::fromString(createdAt, Qt::ISODate);
+        QString dateOnly = dateTime.date().toString("yyyy-MM-dd");
         
-        emit friendRequestReceived(requestId, fromUid, fromName, fromAvatar, message, createdAt);
+        emit friendRequestReceived(requestId, fromUid, fromName, fromAvatar, message, dateOnly);
     }
     else if (type == "error") {
         // 处理错误消息
