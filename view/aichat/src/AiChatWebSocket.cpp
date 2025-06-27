@@ -12,7 +12,7 @@ AiChatWebSocket::AiChatWebSocket(QObject *parent)
     , m_isProcessing(false)
     , m_networkManager(new QNetworkAccessManager(this))
 {
-    QString baseWsUrl = NetworkConfig::instance().getHttpAddress();
+    QString baseWsUrl = NetworkConfig::instance().getWebSocketAddress();
     m_wsUrl = baseWsUrl + "/ws/ai";
     connect(&m_webSocket, &QWebSocket::connected, this, &AiChatWebSocket::onConnected);
     connect(&m_webSocket, &QWebSocket::disconnected, this, &AiChatWebSocket::onDisconnected);
