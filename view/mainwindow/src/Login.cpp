@@ -175,9 +175,30 @@ Login::Login(QWidget* parent)
     });
 
     connect(userPasswordEdit->getLineEdit(), &QLineEdit::returnPressed, this, [this]() {
-        if (loginButton->isEnabled()) {
-            loginButton->click();
+        QString account = this->userAccountEdit->currentText().trimmed();
+        QString password = this->userPasswordEdit->currentText();
+        if (account.isEmpty()) {
+            NotificationManager::instance().showMessage(
+                    "请输入邮箱",
+                    NotificationManager::Error,
+                    this
+            );
         }
+        if (!isValidEmail(account)) {
+            NotificationManager::instance().showMessage(
+                    "邮箱格式不正确",
+                    NotificationManager::Error,
+                    this
+            );
+        }
+        if (password.isEmpty()) {
+            NotificationManager::instance().showMessage(
+                    "请输入密码",
+                    NotificationManager::Error,
+                    this
+            );
+        }
+        doLogin(account, password);
     });
 
     QTimer::singleShot(50, this, [this]() {
@@ -560,11 +581,6 @@ void Login::loadContacts(const QString& uid, const QString& token)
 
             QJsonObject obj = doc.object();
             qDebug() << "获取到联系人数据，开始处理...";
-            NotificationManager::instance().showMessage(
-                "正在处理联系人数据...",
-                NotificationManager::Success,
-                this
-            );
 
             // 发送WebSocket登录请求
             QJsonObject loginPayload;
@@ -586,11 +602,6 @@ void Login::loadContacts(const QString& uid, const QString& token)
             // 加载当前用户头像
             AvatarLoader::instance().loadAvatar(uid, QUrl(avatarUrl), false);
             CurrentUser::instance().setUserInfo(uid, token, userName, avatarUrl);
-            NotificationManager::instance().showMessage(
-                QString("欢迎回来，%1").arg(userName),
-                NotificationManager::Success,
-                this
-            );
 
             // 加载联系人信息和头像
             UserRepository::instance().loadUserAndContacts(userObj, obj["friends"].toArray());
@@ -643,11 +654,6 @@ void Login::loadContacts(const QString& uid, const QString& token)
 
 void Login::onContactsLoaded()
 {
-    NotificationManager::instance().showMessage(
-        "联系人加载完成，准备创建主窗口...",
-        NotificationManager::Success,
-        this
-    );
 
     // 显示加载状态
     loginButton->setText("创建主窗口中...");
@@ -662,11 +668,6 @@ void Login::onContactsLoaded()
             mainWindow->show();
             this->close();
             isLogining = false;
-            NotificationManager::instance().showMessage(
-                "登录完成",
-                NotificationManager::Success,
-                mainWindow
-            );
         }
     });
 }
