@@ -88,7 +88,7 @@ NetherLink 是一个基于 Qt 的聊天社交客户端，**包含完整的前后
 
 <img src="https://github.com/ming0725/NetherLink/blob/master/doc/images/0.png?raw=true" alt="好友/群聊搜索" width="600"/>
 
-<img src="https://github.com/ming0725/NetherLink/blob/master/doc/images/2.png?raw=true" alt="好友申请" width="600"/>
+<img src="https://github.com/ming0725/NetherLink/blob/master/doc/images/2.png?raw=true" alt="好友申请" width="300"/>
 
 <img src="https://github.com/ming0725/NetherLink/blob/master/doc/images/1.png?raw=true" alt="好友申请通知" width="600"/>
 
