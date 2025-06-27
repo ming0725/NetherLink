@@ -99,13 +99,32 @@ NetherLink 是一个基于 Qt 的聊天社交客户端，**包含完整的前后
 
 1. **WebSocket 支持**
    - 方式一：在 Qt 安装程序中勾选 WebSocket 模块
-   - 方式二：自行编译 Qt WebSocket 模块（如果使用自编译的 Qt）
+   - 方式二：手动安装 WebSocket 模块
+     - 详细安装教程：[QtWebsockets安装教程](https://github.com/ming0725/NetherLink/blob/master/QtWebsockets安装教程.md)
 
 2. **SQLite 支持**
    - 下载并安装 SQLite3
    - 配置 SQLite3 环境变量（将 SQLite3 的 bin 目录添加到 PATH）
    - 确保 Qt 的 QSQLITE 驱动已编译（通常位于 plugins/sqldrivers 目录）
    - 如果 QSQLITE 驱动不存在，需要手动编译
+
+### 服务器配置
+
+1. **服务器部署**
+   - 服务器端代码仓库：[NetherLink-server](https://github.com/ming0725/NetherLink-server)
+   - 按照服务器仓库的说明进行部署
+
+2. **客户端配置**
+   - 部署完成后，修改 `network_config.json` 文件中的服务器配置：
+     ```json
+     {
+         "server": {
+             "ip": "你的服务器IP",
+             "http_port": 8080,
+             "websocket_port": 8081
+         }
+     }
+     ```
 
 ### 快速运行
 
