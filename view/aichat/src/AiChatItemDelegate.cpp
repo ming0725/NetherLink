@@ -4,14 +4,28 @@
 #include "AvatarLoader.h"
 #include "CurrentUser.h"
 #include <QPainter>
-#include <QTextDocument>
 #include <QAbstractTextDocumentLayout>
 #include <QApplication>
 #include <QMouseEvent>
 #include <QClipboard>
 #include <QPainterPath>
-#include <QAction>
 #include <QAbstractItemView>
+
+const QString docStyleSheet =
+        "h1 { font-size: 20px; font-weight: bold; margin: 0; }"
+        "h2 { font-size: 18px; font-weight: bold; margin: 0; }"
+        "h3 { font-size: 16px; font-weight: bold; margin: 0; }"
+        "h4 { font-size: 15px; font-weight: bold; margin: 0; }"
+        "h5 { font-size: 14px; font-weight: bold; margin: 0; }"
+        "h6 { font-size: 13px; font-weight: bold; margin: 0; }"
+        "p { font-size: 14px; margin: 0; }"
+        "code { font-size: 10px; background: #f6f8fa; }"
+        "pre { font-family: monospace; font-size: 13px; }"
+        "blockquote { padding-left: calc(2ch); margin: 0; border-left: 3px solid #ccc; }"
+        "table { border-collapse: collapse; width: 100%; }"
+        "th, td { border: 1px solid #aaa; padding: 4px 8px; }"
+        "th { background: #eee; }";
+
 
 AiChatItemDelegate::AiChatItemDelegate(QWidget* parent)
     : QStyledItemDelegate(parent)
@@ -132,28 +146,16 @@ void AiChatItemDelegate::drawTextMessage(QPainter* painter, const QRect& rect, c
     } else {
         // AI消息：保持Markdown渲染
         QTextDocument doc;
-        
+        int spaceWidth = QFontMetrics(doc.defaultFont()).horizontalAdvance(' ');
+        doc.setIndentWidth(spaceWidth * 2);
         // 设置默认样式表来控制Markdown渲染的字体大小
-        doc.setDefaultStyleSheet(
-            "h1 { font-size: 20px; margin-left: 0; }"
-            "h2 { font-size: 18px; margin-left: 0; }"
-            "h3 { font-size: 16px; margin-left: 0; }"
-            "h4 { font-size: 15px; margin-left: 0; }"
-            "h5 { font-size: 14px; margin-left: 0; }"
-            "h6 { font-size: 14px; margin-left: 0; }"
-            "p { font-size: 14px; margin-left: 0; }"
-            "code { font-size: 14px; }"
-            "pre { font-size: 14px; margin-left: 0; }"
-            "ul, ol { margin-left: 10px; padding-left: 10px; }"
-            "blockquote { margin-left: 10px; padding-left: 10px; border-left: 3px solid #ccc; }"
-            "li { margin-left: 0; }"
-        );
+        doc.setDefaultStyleSheet(docStyleSheet);
 
         // 设置基础字体
         QFont font = QApplication::font();
         font.setPixelSize(14);
         doc.setDefaultFont(font);
-        
+
         doc.setTextWidth(textRect.width());
         // 去除多余的空格和换行符
         QString processedText = text.trimmed();
@@ -233,27 +235,14 @@ QSize AiChatItemDelegate::messageSizeHint(const QStyleOptionViewItem& option, co
     } else {
         // AI消息：保持使用QTextDocument计算
         QTextDocument doc;
-        
+        int spaceWidth = QFontMetrics(doc.defaultFont()).horizontalAdvance(' ');
+        doc.setIndentWidth(spaceWidth * 2);
         // 设置默认样式表来控制Markdown渲染的字体大小
-        doc.setDefaultStyleSheet(
-            "h1 { font-size: 20px; margin-left: 0; }"
-            "h2 { font-size: 18px; margin-left: 0; }"
-            "h3 { font-size: 16px; margin-left: 0; }"
-            "h4 { font-size: 15px; margin-left: 0; }"
-            "h5 { font-size: 14px; margin-left: 0; }"
-            "h6 { font-size: 14px; margin-left: 0; }"
-            "p { font-size: 14px; margin-left: 0; }"
-            "code { font-size: 14px; }"
-            "pre { font-size: 14px; margin-left: 0; }"
-            "ul, ol { margin-left: 10px; padding-left: 10px; }"
-            "blockquote { margin-left: 10px; padding-left: 10px; border-left: 3px solid #ccc; }"
-            "li { margin-left: 0; }"
-        );
+        doc.setDefaultStyleSheet(docStyleSheet);
 
         QFont font = QApplication::font();
         font.setPixelSize(14);
         doc.setDefaultFont(font);
-
         // 去除多余的空格和换行符
         QString processedText = message->content().trimmed();
         doc.setMarkdown(processedText);
@@ -309,22 +298,10 @@ QRect AiChatItemDelegate::calculateBubbleRect(const QRect& contentRect, const Ai
     } else {
         // AI消息：保持使用QTextDocument计算
         QTextDocument doc;
-        
+        int spaceWidth = QFontMetrics(doc.defaultFont()).horizontalAdvance(' ');
+        doc.setIndentWidth(spaceWidth * 2);
         // 设置默认样式表来控制Markdown渲染的字体大小
-        doc.setDefaultStyleSheet(
-            "h1 { font-size: 20px; margin-left: 0; }"
-            "h2 { font-size: 18px; margin-left: 0; }"
-            "h3 { font-size: 16px; margin-left: 0; }"
-            "h4 { font-size: 15px; margin-left: 0; }"
-            "h5 { font-size: 14px; margin-left: 0; }"
-            "h6 { font-size: 14px; margin-left: 0; }"
-            "p { font-size: 14px; margin-left: 0; }"
-            "code { font-size: 14px; }"
-            "pre { font-size: 14px; margin-left: 0; }"
-            "ul, ol { margin-left: 10px; padding-left: 10px; }"
-            "blockquote { margin-left: 10px; padding-left: 10px; border-left: 3px solid #ccc; }"
-            "li { margin-left: 0; }"
-        );
+        doc.setDefaultStyleSheet(docStyleSheet);
 
         QFont font = QApplication::font();
         font.setPixelSize(14);

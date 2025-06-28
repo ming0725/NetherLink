@@ -3,6 +3,7 @@
 
 #include <QStyledItemDelegate>
 #include <QPixmap>
+#include <QTextDocument>
 #include "AiChatMessage.h"
 #include "TransparentMenu.h"
 
