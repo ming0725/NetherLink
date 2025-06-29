@@ -14,18 +14,24 @@ public:
     {
         QSize s = QProxyStyle::sizeFromContents(type, opt, size, widget);
         if (type == QStyle::CT_MenuItem) {
-            int minH = 0;
+
+            if (auto mo = qstyleoption_cast<const QStyleOptionMenuItem *>(opt)) {
+                if (mo->menuItemType == QStyleOptionMenuItem::Separator) {
+                    return s;
+                }
+            }
+
+            int minH = 40;
             if (auto menu = qobject_cast<const TransparentMenu*>(widget)) {
                 minH = menu->itemMinHeight();
-            } else {
-                minH = 40;
             }
-            if (s.height() < minH) s.setHeight(minH);
+            if (s.height() < minH) {
+                s.setHeight(minH);
+            }
         }
         return s;
     }
 };
-
 
 TransparentMenu::TransparentMenu(QWidget *parent) : QMenu(parent)
 {
@@ -72,7 +78,8 @@ void TransparentMenu::paintEvent(QPaintEvent *event)
             }
 
             // 绘制图标
-            if (!action->icon().isNull()) {
+            bool hasIcon = !action->icon().isNull();
+            if (hasIcon) {
                 QSize iconSize(16, 16);
                 QRect iconRect(itemRect.left() + 12,
                                itemRect.top() + (itemRect.height() - iconSize.height()) / 2,
@@ -86,8 +93,10 @@ void TransparentMenu::paintEvent(QPaintEvent *event)
             font.setPixelSize(14);
             painter.setFont(font);
 
-            QRect textRect = itemRect.adjusted(34, 0, -8, 0);
-            painter.drawText(textRect, Qt::AlignVCenter | Qt::AlignLeft | Qt::TextSingleLine,
+            int textLeft = itemRect.left() + (hasIcon ? 34 : 12);
+            QRect textRect = itemRect.adjusted(textLeft - itemRect.left(), 0, -8, 0);
+            painter.drawText(textRect,
+                             Qt::AlignVCenter | Qt::AlignLeft | Qt::TextSingleLine,
                              action->text());
         }
     }
