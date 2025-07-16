@@ -1,38 +1,38 @@
 #pragma once
 
-#include <QWidget>
+#include "NotificationListWidget.h"
+#include <QLabel>
 #include <QStackedWidget>
 #include <QVBoxLayout>
-#include <QLabel>
-#include "NotificationListWidget.h"
+#include <QWidget>
 
 class NotificationPage : public QWidget {
     Q_OBJECT
-public:
-    enum class Type {
-        Friend,
-        Group
-    };
 
-    explicit NotificationPage(QWidget* parent = nullptr);
-    void switchToType(Type type);
+    public:
+        enum class Type {
+            Friend,
+            Group
+        };
 
-protected:
-    void paintEvent(QPaintEvent*) override;
-    void resizeEvent(QResizeEvent* event) override;
+        explicit NotificationPage(QWidget* parent = nullptr);
 
-private slots:
-    void onFriendRequestReceived(int requestId,
-                                const QString& fromUid,
-                                const QString& fromName,
-                                const QString& fromAvatar,
-                                const QString& message,
-                                const QString& createdAt);
+        void switchToType(Type type);
 
-private:
-    QLabel* titleLabel;
-    NotificationListWidget* friendListWidget;
-    NotificationListWidget* groupListWidget;
-    QStackedWidget* contentStack;
-    void setupUI();
-}; 
+    protected:
+        void paintEvent(QPaintEvent*) override;
+
+        void resizeEvent(QResizeEvent* event) override;
+
+    private slots:
+        void onFriendRequestReceived(int requestId, const QString& fromUid, const QString& fromName, const QString& fromAvatar, const QString& message, const QString& createdAt);
+
+    private:
+        QLabel* titleLabel;
+        NotificationListWidget* friendListWidget;
+        NotificationListWidget* groupListWidget;
+        QStackedWidget* contentStack;
+
+        void setupUI();
+
+};

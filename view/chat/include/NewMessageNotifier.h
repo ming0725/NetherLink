@@ -1,29 +1,34 @@
 #ifndef NEWMESSAGENOTIFIER_H
 #define NEWMESSAGENOTIFIER_H
 
-#include <QWidget>
 #include <QLabel>
+#include <QWidget>
 
-class NewMessageNotifier : public QWidget
-{
+class NewMessageNotifier : public QWidget {
     Q_OBJECT
 
-public:
-    explicit NewMessageNotifier(QWidget *parent = nullptr);
-    void setMessageCount(int count);
+    public:
+        explicit NewMessageNotifier(QWidget*parent = nullptr);
 
-signals:
-    void clicked();
+        void setMessageCount(int count);
 
-protected:
-    void paintEvent(QPaintEvent *event) override;
-    void mousePressEvent(QMouseEvent *event) override;
-    void resizeEvent(QResizeEvent *event) override;
+    signals:
+        void clicked();
 
-private:
-    QLabel *label;
-    void updateText(int count);
-    void updateLayout();
+    protected:
+        void paintEvent(QPaintEvent*event) override;
+
+        void mousePressEvent(QMouseEvent*event) override;
+
+        void resizeEvent(QResizeEvent*event) override;
+
+    private:
+        QLabel*label;
+
+        void updateText(int count);
+
+        void updateLayout();
+
 };
 
-#endif // NEWMESSAGENOTIFIER_H 
+#endif // NEWMESSAGENOTIFIER_H

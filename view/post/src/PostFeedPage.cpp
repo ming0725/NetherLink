@@ -1,62 +1,63 @@
-#include "PostFeedPage.h"
-#include "PostPreviewItem.h"
 #include "CurrentUser.h"
+#include "NetworkConfig.h"
 #include "NetworkManager.h"
 #include "Post.h"
-#include "NetworkConfig.h"
+#include "PostFeedPage.h"
+#include "PostPreviewItem.h"
 #include <QEvent>
-#include <QRandomGenerator>
-#include <QPainter>
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
-#include <QJsonArray>
-#include <QNetworkRequest>
 #include <QNetworkReply>
+#include <QNetworkRequest>
+#include <QPainter>
+#include <QRandomGenerator>
 
-PostFeedPage::PostFeedPage(QWidget* parent)
-        : CustomScrollArea(parent)
-{
-//    connect(this, &CustomScrollArea::reachedBottom, this, [this]() {
-//        QTimer::singleShot(100, this, &PostFeedPage::loadMore);
-//    });
+PostFeedPage::PostFeedPage(QWidget* parent) : CustomScrollArea(parent) {
+// connect(this, &CustomScrollArea::reachedBottom, this, [this]() {
+// QTimer::singleShot(100, this, &PostFeedPage::loadMore);
+// });
     setStyleSheet("border-width:0px;border-style:solid;");
 }
 
-void PostFeedPage::setPosts(const QVector<Post>& posts)
-{
+void PostFeedPage::setPosts(const QVector <Post>& posts) {
     qDeleteAll(m_items);
     m_items.clear();
     m_data = posts;
 
     for (int i = 0; i < m_data.size(); ++i) {
         const auto& pd = m_data[i];
+
         // 传入 title 字段
-        auto *item = new PostPreviewItem(pd, contentWidget);
+        auto*item = new PostPreviewItem(pd, contentWidget);
+
         connect(item, &PostPreviewItem::viewPostWithGeometry, this, &PostFeedPage::postClickedWithGeometry);
-        connect(item, &PostPreviewItem::loadFinished, this, [this]() {
+        connect(item, &PostPreviewItem::loadFinished, this, [this] () {
             CustomScrollArea::resizeEvent(nullptr);
         });
         m_items.append(item);
     }
 }
 
-void PostFeedPage::layoutContent()
-{
+void PostFeedPage::layoutContent() {
     int W = viewport()->width();
     int availableW = W - 2 * margin;
     int cols = std::max(1, (availableW + hgap) / (minItemW + hgap));
-    double itemW = (availableW - (cols-1) * hgap) / double(cols);
+    double itemW = (availableW - (cols - 1) * hgap) / double(cols);
+    QVector <int> colH(cols, topMargin);
 
-    QVector<int> colH(cols, topMargin);
-    for (auto *it : m_items) {
+    for (auto*it : m_items) {
         int h = it->scaledHeightFor(itemW);
         int col = std::min_element(colH.begin(), colH.end()) - colH.begin();
         int x = margin + col * (itemW + hgap);
         int y = colH[col];
+
         it->setGeometry(x, y, int(itemW), h);
         colH[col] += h + vgap;
     }
+
     int maxH = *std::max_element(colH.begin(), colH.end());
+
     contentWidget->resize(W, maxH + margin);
 }
 
@@ -68,6 +69,7 @@ void PostFeedPage::loadPosts() {
 
     // 设置请求头
     QString token = CurrentUser::instance().getToken();
+
     request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
     request.setRawHeader("Authorization", QString("Bearer %1").arg(token).toUtf8());
 
@@ -75,7 +77,7 @@ void PostFeedPage::loadPosts() {
     QNetworkReply* reply = manager->get(request);
 
     // 处理响应
-    connect(reply, &QNetworkReply::finished, this, [this, reply, manager]() {
+    connect(reply, &QNetworkReply::finished, this, [this, reply, manager] () {
         // 设置自动删除
         reply->deleteLater();
         manager->deleteLater();
@@ -83,6 +85,7 @@ void PostFeedPage::loadPosts() {
         // 检查是否有错误
         if (reply->error() != QNetworkReply::NoError) {
             qWarning() << "网络请求错误:" << reply->errorString();
+
             return;
         }
 
@@ -90,17 +93,19 @@ void PostFeedPage::loadPosts() {
         QByteArray data = reply->readAll();
         QJsonParseError err;
         QJsonDocument doc = QJsonDocument::fromJson(data, &err);
-        if (err.error != QJsonParseError::NoError || !doc.isObject()) {
+
+        if ((err.error != QJsonParseError::NoError) || !doc.isObject()) {
             qWarning() << "帖子列表解析失败";
+
             return;
         }
-
         QJsonObject obj = doc.object();
         QJsonArray postsArray = obj["posts"].toArray();
         qDebug() << "已获取帖子列表，正在加载...";
 
         // 转换为Post对象
-        QVector<Post> posts;
+        QVector <Post> posts;
+
         for (const QJsonValue& postVal : postsArray) {
             QJsonObject postObj = postVal.toObject();
             Post post;
@@ -124,12 +129,13 @@ void PostFeedPage::loadPosts() {
 
 void PostFeedPage::reloadData() {
     m_needReload = true;
+
     if (isVisible()) {
         loadPosts();
     }
 }
 
-void PostFeedPage::showEvent(QShowEvent *event) {
+void PostFeedPage::showEvent(QShowEvent*event) {
     if (m_isFirstShow || m_needReload) {
         loadPosts();
         m_isFirstShow = false;
@@ -138,4 +144,3 @@ void PostFeedPage::showEvent(QShowEvent *event) {
     }
     QWidget::showEvent(event);
 }
-

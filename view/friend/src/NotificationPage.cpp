@@ -1,25 +1,18 @@
-#include "NotificationPage.h"
 #include "NetworkManager.h"
+#include "NotificationPage.h"
 #include <QPainter>
 
-NotificationPage::NotificationPage(QWidget* parent)
-    : QWidget(parent)
-    , titleLabel(new QLabel(this))
-    , friendListWidget(new NotificationListWidget(this))
-    , groupListWidget(new NotificationListWidget(this))
-    , contentStack(new QStackedWidget(this))
-{
+NotificationPage::NotificationPage(QWidget* parent) : QWidget(parent), titleLabel(new QLabel(this)), friendListWidget(new NotificationListWidget(this)), groupListWidget(new NotificationListWidget(this)), contentStack(new QStackedWidget(this)) {
     setupUI();
 
     // 连接网络管理器的好友请求信号
-    connect(&NetworkManager::instance(), &NetworkManager::friendRequestReceived,
-            this, &NotificationPage::onFriendRequestReceived);
+    connect(&NetworkManager::instance(), &NetworkManager::friendRequestReceived, this, &NotificationPage::onFriendRequestReceived);
 }
 
-void NotificationPage::setupUI()
-{
+void NotificationPage::setupUI() {
     // 设置标题样式
     QFont titleFont = titleLabel->font();
+
     titleFont.setPixelSize(16);
     titleFont.setBold(true);
     titleLabel->setFont(titleFont);
@@ -32,17 +25,15 @@ void NotificationPage::setupUI()
     switchToType(Type::Friend);
 }
 
-void NotificationPage::resizeEvent(QResizeEvent* event)
-{
+void NotificationPage::resizeEvent(QResizeEvent* event) {
     QWidget::resizeEvent(event);
-    
+
     // 布局
     titleLabel->setGeometry(24, 24, width() - 48, 30);
     contentStack->setGeometry(0, 62, width(), height() - 62);
 }
 
-void NotificationPage::switchToType(Type type)
-{
+void NotificationPage::switchToType(Type type) {
     if (type == Type::Friend) {
         titleLabel->setText("好友通知");
         contentStack->setCurrentWidget(friendListWidget);
@@ -52,26 +43,14 @@ void NotificationPage::switchToType(Type type)
     }
 }
 
-void NotificationPage::onFriendRequestReceived(int requestId,
-                                             const QString& fromUid,
-                                             const QString& fromName,
-                                             const QString& fromAvatar,
-                                             const QString& message,
-                                             const QString& createdAt)
-{
+void NotificationPage::onFriendRequestReceived(int requestId, const QString& fromUid, const QString& fromName, const QString& fromAvatar, const QString& message, const QString& createdAt) {
     // 添加新的好友请求通知到列表
-    friendListWidget->addNotification(requestId,
-                                    fromUid,
-                                    fromName,
-                                    fromAvatar,
-                                    message,
-                                    createdAt,
-                                    NotificationListItem::Type::Friend);
+    friendListWidget->addNotification(requestId, fromUid, fromName, fromAvatar, message, createdAt, NotificationListItem::Type::Friend);
 }
 
-void NotificationPage::paintEvent(QPaintEvent*)
-{
+void NotificationPage::paintEvent(QPaintEvent*) {
     QPainter p(this);
+
     p.setRenderHint(QPainter::Antialiasing);
     p.setPen(Qt::NoPen);
     p.setBrush(QColor(0xf2f2f2));

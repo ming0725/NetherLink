@@ -1,18 +1,16 @@
 #include "WindowEffect.h"
-#include <QtWidgets/QApplication>
-#include <QtGui/QWindow>
-#include <winuser.h>
 #include <QPainter>
 #include <QPainterPath>
+#include <QtGui/QWindow>
+#include <QtWidgets/QApplication>
+#include <winuser.h>
 
-WindowEffect::WindowEffect()
-        : m_pSetWindowCompAttr(nullptr)
-{
+WindowEffect::WindowEffect() : m_pSetWindowCompAttr(nullptr) {
     // Dynamically load the (undocumented) API
     HMODULE hUser = GetModuleHandleW(L"user32.dll");
+
     if (hUser) {
-        m_pSetWindowCompAttr = reinterpret_cast<PFN_SetWindowCompositionAttribute>(
-                GetProcAddress(hUser, "SetWindowCompositionAttribute"));
+        m_pSetWindowCompAttr = reinterpret_cast <PFN_SetWindowCompositionAttribute>(GetProcAddress(hUser, "SetWindowCompositionAttribute"));
     }
 
     if (!m_pSetWindowCompAttr) {
@@ -20,53 +18,44 @@ WindowEffect::WindowEffect()
     }
 }
 
-void WindowEffect::setAcrylicEffect(HWND hWnd,
-                                    const QColor& color,
-                                    bool enableShadow,
-                                    DWORD animId)
-{
+void WindowEffect::setAcrylicEffect(HWND hWnd, const QColor& color, bool enableShadow, DWORD animId) {
     if (!m_pSetWindowCompAttr)
         return;
-
     ACCENT_POLICY policy = {};
     policy.AccentState = ACCENT_ENABLE_ACRYLICBLURBEHIND;
+
     // Set shadow flags if requested (0x20|0x40|0x80|0x100) matches Python code
-    policy.AccentFlags = enableShadow ? (0x20|0x40|0x80|0x100) : 0;
+    policy.AccentFlags = enableShadow ? (0x20 | 0x40 | 0x80 | 0x100) : 0;
+
     // Use Qt’s ARGB directly (0xAARRGGBB)
-    policy.GradientColor = static_cast<DWORD>(color.rgba());
-    policy.AnimationId   = animId;
+    policy.GradientColor = static_cast <DWORD>(color.rgba());
+    policy.AnimationId = animId;
 
     WINDOWCOMPOSITIONATTRIBDATA data = {};
-    data.Attribute  = WCA_ACCENT_POLICY;
-    data.Data       = &policy;
-    data.SizeOfData = sizeof(policy);
 
+    data.Attribute = WCA_ACCENT_POLICY;
+    data.Data = &policy;
+    data.SizeOfData = sizeof(policy);
     m_pSetWindowCompAttr(hWnd, &data);
 }
 
-void WindowEffect::setAeroEffect(HWND hWnd)
-{
+void WindowEffect::setAeroEffect(HWND hWnd) {
     if (!m_pSetWindowCompAttr)
         return;
-
     ACCENT_POLICY policy = {};
     policy.AccentState = ACCENT_ENABLE_BLURBEHIND;
+
     // other fields zero
-
     WINDOWCOMPOSITIONATTRIBDATA data = {};
-    data.Attribute  = WCA_ACCENT_POLICY;
-    data.Data       = &policy;
-    data.SizeOfData = sizeof(policy);
 
+    data.Attribute = WCA_ACCENT_POLICY;
+    data.Data = &policy;
+    data.SizeOfData = sizeof(policy);
     m_pSetWindowCompAttr(hWnd, &data);
 }
 
-void WindowEffect::moveWindow(HWND hWnd)
-{
+void WindowEffect::moveWindow(HWND hWnd) {
     // Release mouse capture & send WM_SYSCOMMAND to drag the title bar
     ReleaseCapture();
-    SendMessageW(hWnd, WM_SYSCOMMAND,
-                 SC_MOVE | HTCAPTION,
-                 0);
+    SendMessageW(hWnd, WM_SYSCOMMAND, SC_MOVE | HTCAPTION, 0);
 }
-

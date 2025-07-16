@@ -19,4 +19,5 @@ struct User {
 };
 
 QString statusText(UserStatus userStatus);
+
 QString statusIconPath(UserStatus userStatus);

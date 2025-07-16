@@ -1,7 +1,11 @@
 #pragma once
 
-#include <QString>
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
+// #include <QString>
 #include <QVector>
+
+/* struct ----------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 // 群成员信息结构
 struct GroupMember {
@@ -21,24 +25,27 @@ struct Group {
     bool isDnd = false;
     QString remark;
     QString announcement;
-    QVector<GroupMember> members;  // 使用新的成员结构
+    QVector <GroupMember> members; // 使用新的成员结构
 
     // 便捷方法
-    QVector<QString> getAdminIds() const {
-        QVector<QString> adminIds;
+    QVector <QString> getAdminIds() const {
+        QVector <QString> adminIds;
+
         for (const auto& member : members) {
             if (member.role == "admin") {
                 adminIds.append(member.uid);
             }
         }
-        return adminIds;
+        return (adminIds);
     }
 
-    QVector<QString> getMemberIds() const {
-        QVector<QString> memberIds;
+    QVector <QString> getMemberIds() const {
+        QVector <QString> memberIds;
+
         for (const auto& member : members) {
             memberIds.append(member.uid);
         }
-        return memberIds;
+        return (memberIds);
     }
+
 };

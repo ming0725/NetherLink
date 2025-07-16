@@ -1,24 +1,26 @@
 #ifndef CUSTOMTOOLTIP_H
 #define CUSTOMTOOLTIP_H
 
-#include <QWidget>
 #include <QLabel>
+#include <QWidget>
 
-class CustomTooltip : public QWidget
-{
+class CustomTooltip : public QWidget {
     Q_OBJECT
-public:
-    explicit CustomTooltip(QWidget *parent = nullptr);
-    void setText(const QString &text);
-    void showTooltip(const QPoint &pos);
 
-protected:
-    void paintEvent(QPaintEvent *event) override;
+    public:
+        explicit CustomTooltip(QWidget*parent = nullptr);
 
-private:
-    QLabel *m_label;
-    static const int CORNER_RADIUS = 8;
-    static const int PADDING = 8;
+        void setText(const QString &text);
+
+        void showTooltip(const QPoint &pos);
+
+    protected:
+        void paintEvent(QPaintEvent*event) override;
+
+    private:
+        QLabel*m_label;
+        static const int CORNER_RADIUS = 8;
+        static const int PADDING = 8;
 };
 
-#endif // CUSTOMTOOLTIP_H 
+#endif // CUSTOMTOOLTIP_H

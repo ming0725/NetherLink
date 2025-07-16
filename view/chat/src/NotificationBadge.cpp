@@ -1,16 +1,14 @@
 // NotificationBadge.cpp
 #include "NotificationBadge.h"
-#include <QPainter>
-#include <QFontMetrics>
 #include <QFont>
+#include <QFontMetrics>
+#include <QPainter>
 
-NotificationBadge::NotificationBadge(QWidget *parent)
-        : QWidget(parent)
-{
+NotificationBadge::NotificationBadge(QWidget*parent) : QWidget(parent) {
     m_bgColor = QColor(0xf74c30);
     m_textColor = QColor(0xffffff);
-    m_dndIcon = QPixmap(":/resources/icon/notification.png");
-    m_dndSelectedIcon = QPixmap(":/resources/icon/selected_notification.png");
+    m_dndIcon = QPixmap(":/icon/notification.png");
+    m_dndSelectedIcon = QPixmap(":/icon/selected_notification.png");
     setAttribute(Qt::WA_TransparentForMouseEvents);
     setAttribute(Qt::WA_NoSystemBackground);
 }
@@ -23,11 +21,11 @@ void NotificationBadge::setCount(int count) {
 
 void NotificationBadge::setDoNotDisturb(bool dnd) {
     m_dnd = dnd;
+
     if (m_dnd) {
         m_bgColor = QColor(0xcccccc);
         m_textColor = QColor(0xfffafa);
-    }
-    else {
+    } else {
         m_bgColor = QColor(0xf74c30);
         m_textColor = QColor(0xffffff);
     }
@@ -58,58 +56,56 @@ void NotificationBadge::setPlusWidth(int w) {
 }
 
 QSize NotificationBadge::sizeHint() const {
-    if (m_dnd && m_count == 0) {
-        return QSize(m_singleSize, m_singleSize);
+    if (m_dnd && (m_count == 0)) {
+        return (QSize(m_singleSize, m_singleSize));
     }
+
     if (m_count <= 0) {
-        return QSize(0, 0);
+        return (QSize(0, 0));
     }
+
     if (m_count < 10) {
-        return QSize(m_singleSize, m_singleSize);
+        return (QSize(m_singleSize, m_singleSize));
     }
+
     if (m_count < 100) {
-        return QSize(m_twoDigitWidth, m_singleSize);
+        return (QSize(m_twoDigitWidth, m_singleSize));
     }
-    return QSize(m_plusWidth, m_singleSize);
+    return (QSize(m_plusWidth, m_singleSize));
 }
 
-void NotificationBadge::paintEvent(QPaintEvent *) {
+void NotificationBadge::paintEvent(QPaintEvent*) {
     QPainter p(this);
+
     p.setRenderHint(QPainter::Antialiasing);
     p.setRenderHint(QPainter::SmoothPixmapTransform);
 
-    if (m_dnd && m_count == 0) {
+    if (m_dnd && (m_count == 0)) {
         // 缩放图标并绘制
         if (!m_selected)
-            p.drawPixmap(0, 0,
-                     m_singleSize, m_singleSize,
-                     m_dndIcon.scaled(m_singleSize, m_singleSize,
-                                      Qt::KeepAspectRatio,
-                                      Qt::SmoothTransformation));
+            p.drawPixmap(0, 0, m_singleSize, m_singleSize, m_dndIcon.scaled(m_singleSize, m_singleSize, Qt::KeepAspectRatio, Qt::SmoothTransformation));
         else
-            p.drawPixmap(0, 0,
-                         m_singleSize, m_singleSize,
-                         m_dndSelectedIcon.scaled(m_singleSize, m_singleSize,
-                                          Qt::KeepAspectRatio,
-                                          Qt::SmoothTransformation));
+            p.drawPixmap(0, 0, m_singleSize, m_singleSize, m_dndSelectedIcon.scaled(m_singleSize, m_singleSize, Qt::KeepAspectRatio, Qt::SmoothTransformation));
         return;
     }
-    if (m_count <= 0) return;
 
-    QString text = (m_count < 100 ? QString::number(m_count) : QStringLiteral("99+"));
+    if (m_count <= 0)
+        return;
+    QString text = ((m_count < 100) ? QString::number(m_count) : QStringLiteral("99+"));
 
     // 背景
     p.setBrush(m_bgColor);
     p.setPen(Qt::NoPen);
+
     if (m_count < 10) {
         p.drawEllipse(0, 0, m_singleSize, m_singleSize);
-    }
-    else {
+    } else {
         p.drawRoundedRect(0, 0, sizeHint().width(), kHeight, kHeight / 2.0, kHeight / 2.0);
     }
 
     // 文字
     QFont f = font();
+
     f.setBold(true);
     p.setFont(f);
     p.setPen(m_textColor);
@@ -119,6 +115,7 @@ void NotificationBadge::paintEvent(QPaintEvent *) {
     int th = fm.height();
     int x = (sizeHint().width() - tw) / 2;
     int y = (kHeight + th) / 2 - fm.descent();
+
     p.drawText(x, y, text);
 }
 

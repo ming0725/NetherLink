@@ -1,28 +1,25 @@
+#include "CurrentUser.h"
+#include "GroupRepository.h"
 #include "MessageHandler.h"
 #include "MessageRepository.h"
 #include "UserRepository.h"
-#include "GroupRepository.h"
-#include "CurrentUser.h"
-#include <QJsonDocument>
 #include <QDebug>
+#include <QJsonDocument>
 
-MessageHandler& MessageHandler::instance()
-{
+MessageHandler& MessageHandler::instance() {
     static MessageHandler handler;
-    return handler;
+
+    return (handler);
 }
 
-MessageHandler::MessageHandler(QObject* parent)
-    : QObject(parent)
-{
-}
+MessageHandler::MessageHandler(QObject* parent) : QObject(parent) {}
 
-void MessageHandler::handleReceivedMessage(const QJsonObject& messageObj)
-{
+void MessageHandler::handleReceivedMessage(const QJsonObject& messageObj) {
     QJsonObject payload = messageObj["payload"].toObject();
-    
+
     // 创建消息对象
     auto message = createMessage(payload);
+
     if (!message) {
         return;
     }
@@ -39,7 +36,6 @@ void MessageHandler::handleReceivedMessage(const QJsonObject& messageObj)
         // 私聊消息，直接使用发送者ID
         conversationId = fromId;
     }
-
     qDebug() << "收到消息，会话ID:" << conversationId << "当前聊天ID:" << currentChatId;
 
     // 1. 保存到数据库
@@ -49,6 +45,7 @@ void MessageHandler::handleReceivedMessage(const QJsonObject& messageObj)
     if (conversationId == currentChatId) {
         // 如果是当前聊天窗口，直接发送消息到ChatArea
         emit messageReceived(message);
+
         // 更新最后一条消息时间
         emit updateLastMessageTime(conversationId, message->getTimestamp());
     } else {
@@ -58,8 +55,7 @@ void MessageHandler::handleReceivedMessage(const QJsonObject& messageObj)
     }
 }
 
-QSharedPointer<ChatMessage> MessageHandler::createMessage(const QJsonObject& payload)
-{
+QSharedPointer <ChatMessage> MessageHandler::createMessage(const QJsonObject& payload) {
     QString content = payload["content"].toString();
     QString fromId = payload["from"].toString();
     QString type = payload["type"].toString();
@@ -70,37 +66,35 @@ QSharedPointer<ChatMessage> MessageHandler::createMessage(const QJsonObject& pay
     // 获取发送者信息
     auto user = UserRepository::instance().getUser(fromId);
     QString senderName = user.nick.isEmpty() ? fromId : user.nick;
-    GroupRole role = GroupRepository::instance().getMemberRole(gid,fromId);
-    QSharedPointer<ChatMessage> message;
+    GroupRole role = GroupRepository::instance().getMemberRole(gid, fromId);
+    QSharedPointer <ChatMessage> message;
+
     if (type == "text") {
-        message = QSharedPointer<TextMessage>(new TextMessage(
-            content,
-            false,  // isFromMe
-            fromId,
-            isGroup,
-            senderName,
-            role
-        ));
+        message = QSharedPointer <TextMessage>(new TextMessage(content, false, // isFromMe
+                                                               fromId, isGroup, senderName, role));
         message->setTimestamp(timestamp);
-        return message;
+
+        return (message);
     }
+
     // 其他类型的消息处理...
-    return nullptr;
+    return (nullptr);
 }
 
-QDateTime MessageHandler::parseTimestamp(const QString& timestamp)
-{
+QDateTime MessageHandler::parseTimestamp(const QString& timestamp) {
     // 解析ISO 8601格式的时间戳，包含时区信息
     QDateTime dt = QDateTime::fromString(timestamp, Qt::ISODateWithMs);
+
     if (dt.isValid()) {
-        return dt.toLocalTime();  // 转换为本地时间
+        return (dt.toLocalTime()); // 转换为本地时间
     }
+
     // 如果解析失败，返回当前时间
     qWarning() << "Failed to parse timestamp:" << timestamp;
-    return QDateTime::currentDateTime();
+
+    return (QDateTime::currentDateTime());
 }
 
-void MessageHandler::setCurrentChatId(const QString& id)
-{
+void MessageHandler::setCurrentChatId(const QString& id) {
     currentChatId = id;
-} 
+}

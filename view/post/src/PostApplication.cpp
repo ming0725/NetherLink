@@ -1,40 +1,34 @@
 // PostApplication.cpp
+#include "CurrentUser.h"
+#include "DefaultPage.h"
+#include "NetworkConfig.h"
 #include "PostApplication.h"
 #include "PostApplicationBar.h"
-#include "PostFeedPage.h"
-#include "DefaultPage.h"
-#include "CurrentUser.h"
-#include "PostDetailView.h"
 #include "PostCreatePage.h"
-#include "NetworkConfig.h"
-#include <QResizeEvent>
-#include <QRandomGenerator>
+#include "PostDetailView.h"
+#include "PostFeedPage.h"
 #include <QJsonDocument>
-#include <QUrlQuery>
 #include <QNetworkReply>
+#include <QRandomGenerator>
+#include <QResizeEvent>
+#include <QUrlQuery>
 
-PostApplication::PostApplication(QWidget* parent)
-        : QWidget(parent)
-        , m_bar(new PostApplicationBar(this))
-        , m_stack(new QStackedWidget(this))
-        , m_detailView(nullptr)
-        , m_createPage(new PostCreatePage(this))
-{
+PostApplication::PostApplication(QWidget* parent) : QWidget(parent), m_bar(new PostApplicationBar(this)), m_stack(new QStackedWidget(this)), m_detailView(nullptr), m_createPage(new PostCreatePage(this)) {
     m_bar->enableBlur();
+
     auto* postFeedPage = new PostFeedPage(this);
     auto* followFeedPage = new PostFeedPage(this);
+
     m_stack->addWidget(postFeedPage);
     m_stack->addWidget(followFeedPage);
     m_stack->addWidget(m_createPage);  // 添加创建页面到堆栈
     m_stack->setCurrentIndex(0);
     m_stack->setStyleSheet("background: rgba(0,0,0,0);");
-    connect(postFeedPage, &PostFeedPage::postClickedWithGeometry,
-            this, &PostApplication::onPostClickedWithGeometry);
-    connect(followFeedPage, &PostFeedPage::postClickedWithGeometry,
-            this, &PostApplication::onPostClickedWithGeometry);
+    connect(postFeedPage, &PostFeedPage::postClickedWithGeometry, this, &PostApplication::onPostClickedWithGeometry);
+    connect(followFeedPage, &PostFeedPage::postClickedWithGeometry, this, &PostApplication::onPostClickedWithGeometry);
     connect(m_createPage, &PostCreatePage::postCreated, this, &PostApplication::onPostCreated);
     connect(m_bar, &PostApplicationBar::pageClicked, this, &PostApplication::onPageChanged);
-    
+
     if (!m_overlay) {
         m_overlay = new QWidget(this);
         m_overlay->setStyleSheet("background: rgba(0,0,0,100);");
@@ -43,31 +37,36 @@ PostApplication::PostApplication(QWidget* parent)
     }
     m_overlay->setGeometry(rect());
     m_overlay->lower();
-
     noiseTexture = QImage(100, 100, QImage::Format_ARGB32);
-    auto *rng = QRandomGenerator::global();  // 获取全局随机数生成器
+
+    auto*rng = QRandomGenerator::global();   // 获取全局随机数生成器
+
     for (int x = 0; x < noiseTexture.width(); ++x) {
         for (int y = 0; y < noiseTexture.height(); ++y) {
             int gray = rng->bounded(56) + 200;   // 200~255
-            int alpha = rng->bounded(51) + 30;   // 30~80
+            int alpha = rng->bounded(51) + 30; // 30~80
+
             noiseTexture.setPixelColor(x, y, QColor(gray, gray, gray, alpha));
         }
     }
 }
 
-void PostApplication::resizeEvent(QResizeEvent* ev)
-{
+void PostApplication::resizeEvent(QResizeEvent* ev) {
     QWidget::resizeEvent(ev);
+
     const int w = width();
     const int h = height();
+
     // 1. 让 stack 铺满整个区域
     m_stack->setGeometry(0, 32, w, h);
+
     // 2. 计算 bar 的居中底部位置
     const int barW = m_bar->width();
     const int barH = m_bar->height();
     const int bottomMargin = 15;
     const int x = (w - barW) / 2;
     const int y = h - barH - bottomMargin;
+
     m_bar->setGeometry(x, y, barW, barH);
     m_bar->raise();
     m_overlay->setGeometry(rect());
@@ -77,47 +76,47 @@ void PostApplication::resizeEvent(QResizeEvent* ev)
         const int margin = 40;
         const int detailW = w - margin * 2;
         const int detailH = h - margin * 2;
+
         m_detailView->setGeometry((w - detailW) / 2, (h - detailH) / 2, detailW, detailH);
         m_detailView->raise();
     }
 }
 
-void PostApplication::paintEvent(QPaintEvent *) {
+void PostApplication::paintEvent(QPaintEvent*) {
     QPainter painter(this);
-    painter.setRenderHints(QPainter::Antialiasing |
-                           QPainter::SmoothPixmapTransform);
+
+    painter.setRenderHints(QPainter::Antialiasing | QPainter::SmoothPixmapTransform);
     painter.fillRect(rect(), QColor(255, 255, 255, 64));
     painter.setOpacity(0.5);  // 调整噪声层透明度
     painter.drawTiledPixmap(rect(), QPixmap::fromImage(noiseTexture));
 }
 
-bool PostApplication::eventFilter(QObject *obj, QEvent *ev) {
-    if (obj == m_overlay && ev->type() == QEvent::MouseButtonPress) {
+bool PostApplication::eventFilter(QObject*obj, QEvent*ev) {
+    if ((obj == m_overlay) && (ev->type() == QEvent::MouseButtonPress)) {
         if (m_detailView) {
             // 创建一个动画，从当前位置返回到原始位置
-            auto *anim = new QPropertyAnimation(m_detailView, "geometry", this);
+            auto*anim = new QPropertyAnimation(m_detailView, "geometry", this);
+
             anim->setDuration(250);  // 300毫秒的动画
             anim->setStartValue(m_detailView->geometry());
             anim->setEndValue(m_detailView->initialGeometry());  // 使用保存的原始位置
-            anim->setEasingCurve(QEasingCurve::InOutQuad);  // 使用平滑的缓动曲线
-
+            anim->setEasingCurve(QEasingCurve::InOutQuad); // 使用平滑的缓动曲线
             // 动画结束后才 deleteLater 并隐藏 overlay
-            connect(anim, &QAbstractAnimation::finished, this, [this]() {
+            connect(anim, &QAbstractAnimation::finished, this, [this] () {
                 if (m_detailView) {
                     m_detailView->deleteLater();
                     m_detailView = nullptr;
                 }
                 m_overlay->hide();
             });
-
             anim->start(QAbstractAnimation::DeleteWhenStopped);
         } else {
             // 如果 detailView 已经不存在，直接隐藏 overlay
             m_overlay->hide();
         }
-        return true;
+        return (true);
     }
-    return QWidget::eventFilter(obj, ev);
+    return (QWidget::eventFilter(obj, ev));
 }
 
 void PostApplication::onPostClickedWithGeometry(const QString &postID, const QRect &sourceGeometry, const QPixmap& originalImage) {
@@ -133,6 +132,7 @@ void PostApplication::onPostClickedWithGeometry(const QString &postID, const QRe
 
     // 创建网络请求
     QNetworkRequest request(url);
+
     request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
     request.setRawHeader("Authorization", QString("Bearer %1").arg(token).toUtf8());
 
@@ -142,40 +142,38 @@ void PostApplication::onPostClickedWithGeometry(const QString &postID, const QRe
     // 发送GET请求并处理响应
     QNetworkReply* reply = manager->get(request);
 
-    connect(reply, &QNetworkReply::finished, this, [this, sourceGeometry, originalImage, reply, manager]() {
+    connect(reply, &QNetworkReply::finished, this, [this, sourceGeometry, originalImage, reply, manager] () {
         reply->deleteLater();
         manager->deleteLater();
 
         if (reply->error() != QNetworkReply::NoError) {
             qWarning() << "获取帖子详情失败:" << reply->errorString();
+
             return;
         }
-
         QByteArray data = reply->readAll();
         qDebug() << "收到帖子详情响应:" << QString::fromUtf8(data);
 
         // 解析响应数据
         QJsonDocument doc = QJsonDocument::fromJson(data);
-        if (!doc.isObject()) return;
+
+        if (!doc.isObject())
+            return;
 
         // 创建并显示详情视图
         if (!m_detailView) {
             m_detailView = new PostDetailView(this);
             m_detailView->setPostData(doc.object());
             m_detailView->setImage(originalImage);  // 设置原始图片
-            m_detailView->hide();  // 先隐藏，等动画准备好再 show()
-
+            m_detailView->hide(); // 先隐藏，等动画准备好再 show()
             // 1. 计算最终要显示的矩形（正常大小）
             const int margin = 40;
             const int finalW = width() - margin * 2;
             const int finalH = height() - margin * 2;
-            QRect finalRect((width() - finalW) / 2,
-                            (height() - finalH) / 2,
-                            finalW, finalH);
+            QRect finalRect((width() - finalW) / 2, (height() - finalH) / 2, finalW, finalH);
 
             // 2. 将全局坐标转换为PostApplication的局部坐标
-            QRect localSourceGeometry = QRect(mapFromGlobal(sourceGeometry.topLeft()),
-                                              sourceGeometry.size());
+            QRect localSourceGeometry = QRect(mapFromGlobal(sourceGeometry.topLeft()), sourceGeometry.size());
 
             // 3. 设置初始位置和大小
             m_detailView->setInitialGeometry(localSourceGeometry);
@@ -184,7 +182,7 @@ void PostApplication::onPostClickedWithGeometry(const QString &postID, const QRe
             m_detailView->raise();
 
             // 4. 创建动画
-            auto *anim = new QPropertyAnimation(m_detailView, "geometry", this);
+            auto*anim = new QPropertyAnimation(m_detailView, "geometry", this);
             anim->setDuration(250);
             anim->setStartValue(localSourceGeometry);
             anim->setEndValue(finalRect);
@@ -200,13 +198,12 @@ void PostApplication::onPostClickedWithGeometry(const QString &postID, const QRe
     });
 
     // 处理错误
-    connect(reply, &QNetworkReply::errorOccurred, this, [](QNetworkReply::NetworkError error) {
+    connect(reply, &QNetworkReply::errorOccurred, this, [] (QNetworkReply::NetworkError error) {
         qWarning() << "获取帖子详情失败:" << error;
     });
 }
 
-void PostApplication::onPageChanged(int index)
-{
+void PostApplication::onPageChanged(int index) {
     if (index == 2) { // 发表页面
         m_stack->setCurrentWidget(m_createPage);
     } else if (index == 1) { // 关注页面
@@ -216,14 +213,13 @@ void PostApplication::onPageChanged(int index)
     }
 }
 
-void PostApplication::onPostCreated()
-{
+void PostApplication::onPostCreated() {
     // 发布成功后切换到首页
     m_stack->setCurrentIndex(0);
     m_bar->setCurrentIndex(0);
-    
+
     // 重新加载首页数据
-    if (auto* postFeedPage = qobject_cast<PostFeedPage*>(m_stack->widget(0))) {
+    if (auto* postFeedPage = qobject_cast <PostFeedPage*>(m_stack->widget(0))) {
         postFeedPage->reloadData();
     }
 }
