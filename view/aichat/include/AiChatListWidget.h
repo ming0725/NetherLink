@@ -1,47 +1,52 @@
 #pragma once
 
-#include "CustomScrollArea.h"
 #include "AiChatListItem.h"
+#include "CustomScrollArea.h"
 #include <QLabel>
 
 class AiChatListWidget : public CustomScrollArea {
     Q_OBJECT
-public:
-    explicit AiChatListWidget(QWidget* parent = nullptr);
 
-    void addChatItem(AiChatListItem*);
+    public:
+        explicit AiChatListWidget(QWidget* parent = nullptr);
 
-signals:
-    void chatItemClicked(AiChatListItem* item);
-    void chatItemRenamed(AiChatListItem* item);
-    void chatItemDeleted(AiChatListItem* item);
-    void chatOrderChanged();
+        void addChatItem(AiChatListItem*);
 
-protected:
-    void layoutContent() override;
+    signals:
+        void chatItemClicked(AiChatListItem* item);
 
-private slots:
-    void onItemClicked(AiChatListItem*);
+        void chatItemRenamed(AiChatListItem* item);
 
-private:
-    // 布局间距
-    const int topMargin = 10;
-    const int leftMargin = 10;
-    const int iconHeight = 24;
-    const int iconTextSpacing = 5;
-    const int itemSpacing = 2;
-    const int sectionSpacing = 0;
-    const int groupSpacing = 8;
+        void chatItemDeleted(AiChatListItem* item);
 
-    QWidget* content;
-    QPushButton* newChatButton;
+        void chatOrderChanged();
 
-    // 仅保存对话项，不包含 QLabel
-    QVector<AiChatListItem*> m_items;
+    protected:
+        void layoutContent() override;
 
-    QString timeSectionText(const QDateTime& dt) const;
-    AiChatListItem* selectedItem = nullptr;
-    
-    // 获取当前可见区域最上方的消息时间
-    QString getCurrentVisibleTimeText() const;
+    private slots:
+        void onItemClicked(AiChatListItem*);
+
+    private:
+        // 布局间距
+        const int topMargin = 10;
+        const int leftMargin = 10;
+        const int iconHeight = 24;
+        const int iconTextSpacing = 5;
+        const int itemSpacing = 2;
+        const int sectionSpacing = 0;
+        const int groupSpacing = 8;
+        QWidget* content;
+        QPushButton* newChatButton;
+
+        // 仅保存对话项，不包含 QLabel
+        QVector <AiChatListItem*> m_items;
+
+        QString timeSectionText(const QDateTime& dt) const;
+
+        AiChatListItem* selectedItem = nullptr;
+
+        // 获取当前可见区域最上方的消息时间
+        QString getCurrentVisibleTimeText() const;
+
 };

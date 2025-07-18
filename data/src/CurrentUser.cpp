@@ -1,20 +1,23 @@
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
 #include "CurrentUser.h"
+
 #include <QDebug>
 
-CurrentUser::CurrentUser(QObject* parent)
-    : QObject(parent)
-{
+/* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
+CurrentUser::CurrentUser(QObject* parent) : QObject(parent) {
     qDebug() << "CurrentUser initialized";
 }
 
-CurrentUser& CurrentUser::instance()
-{
+CurrentUser& CurrentUser::instance() {
     static CurrentUser instance;
-    return instance;
+
+    return (instance);
 }
 
-void CurrentUser::setUserInfo(const QString& userId, const QString& token, const QString& userName, const QString& avatarPath)
-{
+void CurrentUser::setUserInfo(const QString& userId, const QString& token, const QString& userName, const QString& avatarPath) {
     bool changed = (m_userId != userId);
 
     m_userId = userId;
@@ -30,13 +33,14 @@ void CurrentUser::setUserInfo(const QString& userId, const QString& token, const
 
     if (changed) {
         qDebug() << "CurrentUser changed to:" << m_userId;
+
         emit userChanged(m_userId);
     }
 }
 
-void CurrentUser::clear()
-{
+void CurrentUser::clear() {
     QString oldId = m_userId;
+
     m_userId = "";
     m_userName = "";
     m_avatarPath = "";
@@ -44,6 +48,7 @@ void CurrentUser::clear()
 
     if (!oldId.isEmpty()) {
         qDebug() << "CurrentUser cleared";
+
         emit userChanged("");
     }
 }

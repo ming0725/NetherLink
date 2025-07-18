@@ -1,60 +1,63 @@
 #pragma once
 
-#include "FramelessWindow.h"
 #include "AvatarLoader.h"
-#include <QPushButton>
+#include "FramelessWindow.h"
 #include <QLabel>
+#include <QPushButton>
 #include <QTextEdit>
 
 class ApplyWindow : public FramelessWindow {
     Q_OBJECT
-public:
-    enum Type {
-        User,
-        Group
-    };
 
-    explicit ApplyWindow(Type type, const QString& id, const QString& name, 
-                        const QString& avatarUrl, QWidget* parent = nullptr);
-    ~ApplyWindow() override;
+    public:
+        enum Type {
+            User,
+            Group
+        };
 
-protected:
-    void resizeEvent(QResizeEvent* event) override;
-    void paintEvent(QPaintEvent* event) override;
-    bool eventFilter(QObject* watched, QEvent* ev) override;
+        explicit ApplyWindow(Type type, const QString& id, const QString& name, const QString& avatarUrl, QWidget* parent = nullptr);
 
-private slots:
-    void onCancelClicked();
-    void onSendClicked();
+        ~ApplyWindow() override;
 
-private:
-    void initUI();
-    void setupConnections();
+    protected:
+        void resizeEvent(QResizeEvent* event) override;
 
-    Type type;
-    QString targetId;
-    QString targetName;
-    QString targetAvatar;
+        void paintEvent(QPaintEvent* event) override;
 
-    QLabel* titleLabel;
-    AvatarLabel* avatarLabel;
-    QLabel* nameLabel;
-    QTextEdit* messageEdit;
-    QPushButton* btnClose;
-    QPushButton* btnCancel;
-    QPushButton* btnSend;
+        bool eventFilter(QObject* watched, QEvent* ev) override;
 
-    QIcon iconClose;
-    QIcon iconCloseHover;
+    private slots:
+        void onCancelClicked();
 
-    // 窗口尺寸相关常量
-    const int WINDOW_MIN_WIDTH = 360;
-    const int WINDOW_MIN_HEIGHT = 280;
-    const int TITLE_HEIGHT = 40;
-    const int BTN_SIZE = 32;
-    const int AVATAR_SIZE = 60;
-    const int MARGIN = 20;
-    const int BTN_HEIGHT = 32;
-    const int BTN_WIDTH = 80;
-    const int MESSAGE_HEIGHT = 80;
-}; 
+        void onSendClicked();
+
+    private:
+        void initUI();
+
+        void setupConnections();
+
+        Type type;
+        QString targetId;
+        QString targetName;
+        QString targetAvatar;
+        QLabel* titleLabel;
+        AvatarLabel* avatarLabel;
+        QLabel* nameLabel;
+        QTextEdit* messageEdit;
+        QPushButton* btnClose;
+        QPushButton* btnCancel;
+        QPushButton* btnSend;
+        QIcon iconClose;
+        QIcon iconCloseHover;
+
+        // 窗口尺寸相关常量
+        const int WINDOW_MIN_WIDTH = 360;
+        const int WINDOW_MIN_HEIGHT = 280;
+        const int TITLE_HEIGHT = 40;
+        const int BTN_SIZE = 32;
+        const int AVATAR_SIZE = 60;
+        const int MARGIN = 20;
+        const int BTN_HEIGHT = 32;
+        const int BTN_WIDTH = 80;
+        const int MESSAGE_HEIGHT = 80;
+};

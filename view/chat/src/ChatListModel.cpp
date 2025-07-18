@@ -2,57 +2,52 @@
 #include <QDateTime>
 #include <QDebug>
 
-Q_DECLARE_METATYPE(TimeHeader*)
-
-ChatListModel::ChatListModel(QObject* parent)
-    : QAbstractListModel(parent)
-{
-    qRegisterMetaType<TimeHeader*>();
+Q_DECLARE_METATYPE(TimeHeader*) ChatListModel::ChatListModel(QObject* parent) : QAbstractListModel(parent) {
+    qRegisterMetaType <TimeHeader*>();
 }
 
-int ChatListModel::rowCount(const QModelIndex& parent) const
-{
+int ChatListModel::rowCount(const QModelIndex& parent) const {
     if (parent.isValid())
-        return 0;
-    return static_cast<int>(items.size());
+        return (0);
+    return (static_cast <int>(items.size()));
 }
 
-QVariant ChatListModel::data(const QModelIndex& index, int role) const
-{
-    if (!index.isValid() || index.row() >= static_cast<int>(items.size()))
-        return QVariant();
-
+QVariant ChatListModel::data(const QModelIndex& index, int role) const {
+    if (!index.isValid() || (index.row() >= static_cast <int>(items.size())))
+        return (QVariant());
     const ListItem& item = items[index.row()];
-    
+
     if (role == Qt::UserRole) {
         if (item.isHeader) {
-            return QVariant::fromValue<TimeHeader*>(item.timeHeader.get());
+            return (QVariant::fromValue <TimeHeader*>(item.timeHeader.get()));
         } else if (item.isBottomSpace) {
-            return QVariant::fromValue<int>(item.bottomSpaceHeight);
+            return (QVariant::fromValue <int>(item.bottomSpaceHeight));
         } else {
-            return QVariant::fromValue<ChatMessage*>(item.message.get());
+            return (QVariant::fromValue <ChatMessage*>(item.message.get()));
         }
-    } else if (role == Qt::SizeHintRole && item.isBottomSpace) {
-        return QSize(0, item.bottomSpaceHeight);
+    } else if ((role == Qt::SizeHintRole) && item.isBottomSpace) {
+        return (QSize(0, item.bottomSpaceHeight));
     }
-    
-    return QVariant();
+    return (QVariant());
 }
 
-bool ChatListModel::setData(const QModelIndex &index, const QVariant &value, int role)
-{
-    if (!index.isValid() || index.row() >= static_cast<int>(items.size()))
-        return false;
+bool ChatListModel::setData(const QModelIndex &index, const QVariant &value, int role) {
+    if (!index.isValid() || (index.row() >= static_cast <int>(items.size())))
+        return (false);
 
-    if (role == Qt::UserRole + 1 && !items[index.row()].isHeader) { // 用于选中状态
+
+    if ((role == Qt::UserRole + 1) && !items[index.row()].isHeader) { // 用于选中状态
         bool selected = value.toBool();
-        if (selected && selectedMessageIndex != index.row()) {
+
+        if (selected && (selectedMessageIndex != index.row())) {
             // 清除之前选中的消息
             if (selectedMessageIndex >= 0) {
                 items[selectedMessageIndex].message->setIsSelected(false);
+
                 QModelIndex prevIndex = this->index(selectedMessageIndex);
                 emit dataChanged(prevIndex, prevIndex);
             }
+
             // 设置新选中的消息
             items[index.row()].message->setIsSelected(true);
             selectedMessageIndex = index.row();
@@ -63,24 +58,25 @@ bool ChatListModel::setData(const QModelIndex &index, const QVariant &value, int
                 selectedMessageIndex = -1;
             }
         }
+
         emit dataChanged(index, index);
-        return true;
+
+        return (true);
     }
-    return false;
+    return (false);
 }
 
-Qt::ItemFlags ChatListModel::flags(const QModelIndex& index) const
-{
+Qt::ItemFlags ChatListModel::flags(const QModelIndex& index) const {
     if (!index.isValid())
-        return Qt::NoItemFlags;
-    return Qt::ItemIsEnabled | Qt::ItemIsSelectable;
+        return (Qt::NoItemFlags);
+    return (Qt::ItemIsEnabled | Qt::ItemIsSelectable);
 }
 
-void ChatListModel::addMessage(QSharedPointer<ChatMessage> message)
-{
+void ChatListModel::addMessage(QSharedPointer <ChatMessage> message) {
     // 确保消息有有效的时间戳
     if (!message || !message->getTimestamp().isValid()) {
         qDebug() << "Warning: Attempting to add message with invalid timestamp";
+
         return;
     }
 
@@ -92,13 +88,16 @@ void ChatListModel::addMessage(QSharedPointer<ChatMessage> message)
     }
 
     // 检查是否需要添加时间标识
-    bool needTimeHeader = true;  // 默认需要添加时间标识
+    bool needTimeHeader = true; // 默认需要添加时间标识
+
     if (!items.empty()) {
         // 获取最后一个消息的时间戳
         QDateTime lastTime;
+
         for (auto it = items.rbegin(); it != items.rend(); ++it) {
             if (!it->isHeader && !it->isBottomSpace && it->message) {
                 lastTime = it->message->getTimestamp();
+
                 if (lastTime.isValid()) {
                     needTimeHeader = shouldAddTimeHeader(lastTime, message->getTimestamp());
                     break;
@@ -110,9 +109,11 @@ void ChatListModel::addMessage(QSharedPointer<ChatMessage> message)
     // 如果是第一条消息或需要添加时间标识，添加时间标识
     if (items.empty() || needTimeHeader) {
         beginInsertRows(QModelIndex(), items.size(), items.size());
+
         ListItem timeItem;
+
         timeItem.isHeader = true;
-        timeItem.timeHeader = QSharedPointer<TimeHeader>::create();
+        timeItem.timeHeader = QSharedPointer <TimeHeader>::create();
         timeItem.timeHeader->timestamp = message->getTimestamp();
         timeItem.timeHeader->type = getTimeHeaderType(message->getTimestamp());
         timeItem.timeHeader->text = formatTimeHeader(message->getTimestamp());
@@ -122,7 +123,9 @@ void ChatListModel::addMessage(QSharedPointer<ChatMessage> message)
 
     // 添加消息
     beginInsertRows(QModelIndex(), items.size(), items.size());
+
     ListItem messageItem;
+
     messageItem.isHeader = false;
     messageItem.message = std::move(message);
     items.push_back(std::move(messageItem));
@@ -132,37 +135,36 @@ void ChatListModel::addMessage(QSharedPointer<ChatMessage> message)
     ensureBottomSpace();
 }
 
-const ChatMessage* ChatListModel::messageAt(int index) const
-{
-    if (index >= 0 && index < static_cast<int>(items.size()) && !items[index].isHeader)
-        return items[index].message.get();
-    return nullptr;
+const ChatMessage* ChatListModel::messageAt(int index) const {
+    if ((index >= 0) && (index < static_cast <int>(items.size())) && !items[index].isHeader)
+        return (items[index].message.get());
+    return (nullptr);
 }
 
-void ChatListModel::clearSelection()
-{
-    if (selectedMessageIndex >= 0 && selectedMessageIndex < items.size()) {
+void ChatListModel::clearSelection() {
+    if ((selectedMessageIndex >= 0) && (selectedMessageIndex < items.size())) {
         items[selectedMessageIndex].message->setIsSelected(false);
-        emit dataChanged(createIndex(selectedMessageIndex, 0),
-                        createIndex(selectedMessageIndex, 0));
+
+        emit dataChanged(createIndex(selectedMessageIndex, 0), createIndex(selectedMessageIndex, 0));
+
         selectedMessageIndex = -1;
     }
 }
 
-bool ChatListModel::removeMessage(int index)
-{
-    if (index < 0 || index >= static_cast<int>(items.size())) {
-        return false;
+bool ChatListModel::removeMessage(int index) {
+    if ((index < 0) || (index >= static_cast <int>(items.size()))) {
+        return (false);
     }
 
     // 如果要删除的是底部空白或时间标识，直接返回
     if (items[index].isBottomSpace || items[index].isHeader) {
-        return false;
+        return (false);
     }
 
     // 删除消息
     beginRemoveRows(QModelIndex(), index, index);
     items.erase(items.begin() + index);
+
     if (selectedMessageIndex == index) {
         selectedMessageIndex = -1;
     } else if (selectedMessageIndex > index) {
@@ -172,102 +174,100 @@ bool ChatListModel::removeMessage(int index)
 
     // 确保底部空白存在
     ensureBottomSpace();
-    return true;
+
+    return (true);
 }
 
-bool ChatListModel::isTimeHeader(int index) const
-{
-    if (index >= 0 && index < static_cast<int>(items.size()))
-        return items[index].isHeader;
-    return false;
+bool ChatListModel::isTimeHeader(int index) const {
+    if ((index >= 0) && (index < static_cast <int>(items.size())))
+        return (items[index].isHeader);
+    return (false);
 }
 
-const TimeHeader* ChatListModel::getTimeHeader(int index) const
-{
-    if (index >= 0 && index < static_cast<int>(items.size()) && items[index].isHeader)
-        return items[index].timeHeader.get();
-    return nullptr;
+const TimeHeader* ChatListModel::getTimeHeader(int index) const {
+    if ((index >= 0) && (index < static_cast <int>(items.size())) && items[index].isHeader)
+        return (items[index].timeHeader.get());
+    return (nullptr);
 }
 
-bool ChatListModel::shouldAddTimeHeader(const QDateTime& prevTime, const QDateTime& currTime) const
-{
+bool ChatListModel::shouldAddTimeHeader(const QDateTime& prevTime, const QDateTime& currTime) const {
     // 计算时间间隔（秒）
     qint64 interval = prevTime.secsTo(currTime);
-    
+
     // 如果时间间隔为负数（可能是由于系统时间调整），则添加时间标识
     if (interval < 0) {
         interval = -interval;  // 使用绝对值
     }
-    
+
     // 如果时间间隔超过设定值，则添加时间标识
-    return interval >= TimeSettings::MESSAGE_TIME_INTERVAL;
+    return (interval >= TimeSettings::MESSAGE_TIME_INTERVAL);
 }
 
-TimeHeaderType ChatListModel::getTimeHeaderType(const QDateTime& timestamp) const
-{
+TimeHeaderType ChatListModel::getTimeHeaderType(const QDateTime& timestamp) const {
     QDateTime now = QDateTime::currentDateTime();
     qint64 daysTo = timestamp.daysTo(now);
 
     if (daysTo == 0) {
-        return TimeHeaderType::Time;
+        return (TimeHeaderType::Time);
     } else if (daysTo == 1) {
-        return TimeHeaderType::Yesterday;
+        return (TimeHeaderType::Yesterday);
     } else if (daysTo <= 7) {
-        return TimeHeaderType::DayOfWeek;
+        return (TimeHeaderType::DayOfWeek);
     } else if (timestamp.date().year() == now.date().year()) {
-        return TimeHeaderType::ThisYear;
+        return (TimeHeaderType::ThisYear);
     } else {
-        return TimeHeaderType::FullDate;
+        return (TimeHeaderType::FullDate);
     }
 }
 
-QString ChatListModel::formatTimeHeader(const QDateTime& timestamp) const
-{
+QString ChatListModel::formatTimeHeader(const QDateTime& timestamp) const {
     QDateTime now = QDateTime::currentDateTime();
     QString timeStr = timestamp.toString("HH:mm");
-    
+
     switch (getTimeHeaderType(timestamp)) {
         case TimeHeaderType::Time:
-            return timeStr;
+            return (timeStr);
         case TimeHeaderType::Yesterday:
-            return QString("昨天 %1").arg(timeStr);
-        case TimeHeaderType::DayOfWeek: {
+            return (QString("昨天 %1").arg(timeStr));
+        case TimeHeaderType::DayOfWeek:
+        {
             static const QStringList weekDays = {"周日", "周一", "周二", "周三", "周四", "周五", "周六"};
-            return QString("%1 %2").arg(weekDays[timestamp.date().dayOfWeek() % 7], timeStr);
+
+            return (QString("%1 %2").arg(weekDays[timestamp.date().dayOfWeek() % 7], timeStr));
         }
         case TimeHeaderType::ThisYear:
-            return timestamp.toString("MM-dd HH:mm");
+            return (timestamp.toString("MM-dd HH:mm"));
         case TimeHeaderType::FullDate:
-            return timestamp.toString("yyyy-MM-dd HH:mm");
+            return (timestamp.toString("yyyy-MM-dd HH:mm"));
     }
-    return QString();
+    return (QString());
 }
 
-bool ChatListModel::isBottomSpace(int index) const
-{
-    if (index >= 0 && index < static_cast<int>(items.size())) {
-        return items[index].isBottomSpace;
+bool ChatListModel::isBottomSpace(int index) const {
+    if ((index >= 0) && (index < static_cast <int>(items.size()))) {
+        return (items[index].isBottomSpace);
     }
-    return false;
+    return (false);
 }
 
-void ChatListModel::ensureBottomSpace()
-{
+void ChatListModel::ensureBottomSpace() {
     // 如果没有底部空白，添加一个
     if (items.empty() || !items.back().isBottomSpace) {
         beginInsertRows(QModelIndex(), items.size(), items.size());
+
         ListItem bottomSpace;
+
         bottomSpace.isBottomSpace = true;
         items.push_back(std::move(bottomSpace));
         endInsertRows();
     }
 }
 
-void ChatListModel::setBottomSpaceHeight(int height)
-{
+void ChatListModel::setBottomSpaceHeight(int height) {
     // 更新底部空白的高度
     if (!items.empty() && items.back().isBottomSpace) {
         items.back().bottomSpaceHeight = height;
+
         QModelIndex lastIndex = index(items.size() - 1, 0);
         emit dataChanged(lastIndex, lastIndex);
     }

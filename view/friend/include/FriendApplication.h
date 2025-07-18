@@ -1,12 +1,12 @@
 #pragma once
-#include <QWidget>
-#include <QSplitter>
-#include <QStackedWidget>
-#include "TopSearchWidget.h"
-#include "FriendListWidget.h"
 #include "DefaultPage.h"
+#include "FriendListWidget.h"
 #include "NotificationItem.h"
 #include "NotificationPage.h"
+#include "TopSearchWidget.h"
+#include <QSplitter>
+#include <QStackedWidget>
+#include <QWidget>
 
 // 前置声明
 class FriendApplication;
@@ -14,42 +14,47 @@ class FriendApplication;
 // 左侧面板类
 class FriendLeftPane : public QWidget {
     Q_OBJECT
-public:
-    explicit FriendLeftPane(QWidget* parent = nullptr);
 
-protected:
-    void resizeEvent(QResizeEvent* ev) override;
+    public:
+        explicit FriendLeftPane(QWidget* parent = nullptr);
 
-signals:
-    void friendNotificationClicked();
-    void groupNotificationClicked();
+    protected:
+        void resizeEvent(QResizeEvent* ev) override;
 
-private:
-    TopSearchWidget*  m_topSearch;
-    NotificationItem* m_friendNotification;
-    NotificationItem* m_groupNotification;
-    FriendListWidget* m_content;
+    signals:
+        void friendNotificationClicked();
 
-    friend class FriendApplication;
+        void groupNotificationClicked();
+
+    private:
+        TopSearchWidget*  m_topSearch;
+        NotificationItem* m_friendNotification;
+        NotificationItem* m_groupNotification;
+        FriendListWidget* m_content;
+
+        friend class FriendApplication;
 };
 
 class FriendApplication : public QWidget {
     Q_OBJECT
-public:
-    explicit FriendApplication(QWidget* parent = nullptr);
 
-protected:
-    void resizeEvent(QResizeEvent* event) override;
-    void paintEvent(QPaintEvent* event) override;
+    public:
+        explicit FriendApplication(QWidget* parent = nullptr);
 
-private slots:
-    void onFriendNotificationClicked();
-    void onGroupNotificationClicked();
+    protected:
+        void resizeEvent(QResizeEvent* event) override;
 
-private:
-    FriendLeftPane* m_leftPane;     // 左侧面板
-    QStackedWidget* m_stackedWidget;  // 右侧堆叠窗口
-    DefaultPage* m_defaultPage;  // 默认页面
-    NotificationPage* m_notificationPage;  // 通知页面
-    QSplitter*   m_splitter;     // 中间分隔器
+        void paintEvent(QPaintEvent* event) override;
+
+    private slots:
+        void onFriendNotificationClicked();
+
+        void onGroupNotificationClicked();
+
+    private:
+        FriendLeftPane* m_leftPane; // 左侧面板
+        QStackedWidget* m_stackedWidget; // 右侧堆叠窗口
+        DefaultPage* m_defaultPage; // 默认页面
+        NotificationPage* m_notificationPage; // 通知页面
+        QSplitter*   m_splitter; // 中间分隔器
 };

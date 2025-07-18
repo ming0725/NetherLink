@@ -1,26 +1,24 @@
+#include "GroupRepository.h"
 #include "MessageApplication.h"
 #include "MessageRepository.h"
-#include "GroupRepository.h"
 #include <QLayout>
-#include <QResizeEvent>
 #include <QPainter>
+#include <QResizeEvent>
 
-MessageApplication::MessageApplication(QWidget* parent)
-        : QWidget(parent)
-{
+MessageApplication::MessageApplication(QWidget* parent) : QWidget(parent) {
     // 左侧：搜索 + 列表
     QWidget* leftPane = new QWidget(this);
+
     leftPane->setMinimumWidth(144);
     leftPane->setMaximumWidth(305);
-
     m_topSearch = new TopSearchWidget(leftPane);
-    m_msgList   = new MessageListWidget(leftPane);
+    m_msgList = new MessageListWidget(leftPane);
     m_msgList->setStyleSheet("border-width:0px;border-style:solid;");
-    connect(m_msgList, &MessageListWidget::itemClicked,
-            this, &MessageApplication::onMessageClicked);
+    connect(m_msgList, &MessageListWidget::itemClicked, this, &MessageApplication::onMessageClicked);
 
     QVBoxLayout* leftLayout = new QVBoxLayout(leftPane);
-    leftLayout->setContentsMargins(0,0,0,0);
+
+    leftLayout->setContentsMargins(0, 0, 0, 0);
     leftLayout->setSpacing(0);
     leftLayout->addWidget(m_topSearch);
     leftLayout->addWidget(m_msgList);
@@ -28,9 +26,8 @@ MessageApplication::MessageApplication(QWidget* parent)
     leftLayout->setStretch(1, 1);
 
     // 右侧堆栈：初始页 + 聊天页
-    m_rightStack  = new QStackedWidget(this);
+    m_rightStack = new QStackedWidget(this);
     m_defaultPage = new DefaultPage(this);
-
     m_rightStack->addWidget(m_defaultPage);
     m_rightStack->setCurrentWidget(m_defaultPage);
     m_chatArea = new ChatArea(this);
@@ -49,38 +46,35 @@ MessageApplication::MessageApplication(QWidget* parent)
 
     // 主布局
     QHBoxLayout* mainLayout = new QHBoxLayout(this);
-    mainLayout->setContentsMargins(0,0,0,0);
-    mainLayout->addWidget(m_splitter);
 
+    mainLayout->setContentsMargins(0, 0, 0, 0);
+    mainLayout->addWidget(m_splitter);
     setWindowFlag(Qt::FramelessWindowHint);
 }
 
-void MessageApplication::resizeEvent(QResizeEvent*)
-{
+void MessageApplication::resizeEvent(QResizeEvent*) {
     m_splitter->setGeometry(rect());
 }
 
-void MessageApplication::paintEvent(QPaintEvent*)
-{
+void MessageApplication::paintEvent(QPaintEvent*) {
     QPainter p(this);
+
     p.setRenderHint(QPainter::Antialiasing);
     p.setPen(Qt::NoPen);
     p.setBrush(Qt::white);
     p.drawRect(rect());
 }
 
-void MessageApplication::onMessageClicked(MessageListItem *item)
-{
+void MessageApplication::onMessageClicked(MessageListItem*item) {
     if (!item)
         return;
-        
     m_chatArea->clearAll();
     m_rightStack->setCurrentWidget(m_chatArea);
-    
+
     auto messageData = item->getData();
     auto& mr = MessageRepository::instance();
     auto msgs = mr.getMessages(messageData->id, messageData->isGroup);
-    
+
     m_chatArea->setGroupMode(messageData->isGroup);
     m_chatArea->setMessageId(messageData->id);
     m_chatArea->initMessage(msgs);

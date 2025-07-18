@@ -1,12 +1,12 @@
-cmake_minimum_required(VERSION 3.5)
+cmake_minimum_required(VERSION 3.30)
 
-project(NetherLink VERSION 0.1 LANGUAGES CXX)
+project(NetherLink-Client VERSION 0.1 LANGUAGES CXX)
 
 set(CMAKE_AUTOUIC ON)
 set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets Network WebSockets Sql Concurrent)
@@ -47,7 +47,6 @@ file(GLOB VIEW_MAINWINDOW_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/view/mainwindow/s
 
 set(PROJECT_SOURCES
         main.cpp
-        resources.qrc
         ${COMPONENTS_HEADERS}
         ${COMPONENTS_SOURCES}
         ${UTILS_SOURCES}
@@ -70,9 +69,10 @@ set(PROJECT_SOURCES
 )
 
 if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
-    qt_add_executable(NetherLink
+    qt_add_executable(NetherLink-Client
         MANUAL_FINALIZATION
         ${PROJECT_SOURCES}
+        res/res.qrc
     )
 # Define target properties for Android with Qt 6 as:
 #    set_property(TARGET NetherLink APPEND PROPERTY QT_ANDROID_PACKAGE_SOURCE_DIR
@@ -80,19 +80,19 @@ if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
 # For more information, see https://doc.qt.io/qt-6/qt-add-executable.html#target-creation
 else()
     if(ANDROID)
-        add_library(NetherLink SHARED
+        add_library(NetherLink-Client SHARED
             ${PROJECT_SOURCES}
         )
 # Define properties for Android with Qt 5 after find_package() calls as:
 #    set(ANDROID_PACKAGE_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/android")
     else()
-        add_executable(NetherLink
+        add_executable(NetherLink-Client
             ${PROJECT_SOURCES}
         )
     endif()
 endif()
 
-target_link_libraries(NetherLink PRIVATE
+target_link_libraries(NetherLink-Client PRIVATE
         Qt${QT_VERSION_MAJOR}::Widgets
         dwmapi
         user32
@@ -102,7 +102,13 @@ target_link_libraries(NetherLink PRIVATE
         Qt6::Concurrent
 )
 
-set_target_properties(NetherLink PROPERTIES
+target_compile_options(NetherLink-Client PRIVATE
+    -Wall
+    -Wextra
+    # -Werror
+)
+
+set_target_properties(NetherLink-Client PROPERTIES
     MACOSX_BUNDLE_GUI_IDENTIFIER my.example.com
     MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}
     MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
@@ -110,12 +116,20 @@ set_target_properties(NetherLink PROPERTIES
     WIN32_EXECUTABLE TRUE
 )
 
-install(TARGETS NetherLink
+install(TARGETS NetherLink-Client
     BUNDLE DESTINATION .
     LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
 )
 
 if(QT_VERSION_MAJOR EQUAL 6)
-    qt_finalize_executable(NetherLink)
+    qt_finalize_executable(NetherLink-Client)
+endif()
+
+if(CMAKE_BUILD_TYPE STREQUAL "Debug")
+    set(CMAKE_BINARY_DIR "${CMAKE_CURRENT_SOURCE_DIR}/build/Debug")
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/bin/Debug")
+else(CMAKE_BUILD_TYPE STREQUAL "Release")
+    set(CMAKE_BINARY_DIR "${CMAKE_CURRENT_SOURCE_DIR}/build/Release")
+    set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/bin/Release")
 endif()

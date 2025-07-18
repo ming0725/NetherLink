@@ -1,41 +1,48 @@
 // NotificationBadge.h
 #pragma once
-#include <QWidget>
-#include <QPixmap>
 #include <QColor>
+#include <QPixmap>
+#include <QWidget>
 
 class NotificationBadge : public QWidget {
     Q_OBJECT
-public:
-    explicit NotificationBadge(QWidget* parent = nullptr);
 
-    void setCount(int count);
-    void setDoNotDisturb(bool dnd);
-    void setDndIcon(const QPixmap& pix);
+    public:
+        explicit NotificationBadge(QWidget* parent = nullptr);
 
-    void setSingleSize(int d);
-    void setTwoDigitWidth(int w);
-    void setPlusWidth(int w);
-    void setSelected(bool select);
+        void setCount(int count);
 
-    QSize sizeHint() const override;
+        void setDoNotDisturb(bool dnd);
 
-    int getCount() { return m_count; }
+        void setDndIcon(const QPixmap& pix);
 
-protected:
-    void paintEvent(QPaintEvent* ev) override;
+        void setSingleSize(int d);
 
-private:
-    int     m_count           = 0;
-    bool    m_dnd             = false;
-    bool    m_selected = false;
-    QPixmap m_dndIcon;
-    QPixmap m_dndSelectedIcon;
-    QColor  m_bgColor;
-    QColor  m_textColor;
+        void setTwoDigitWidth(int w);
 
-    int     m_singleSize      = 16;
-    int     m_twoDigitWidth   = 24;
-    int     m_plusWidth       = 32;
-    static constexpr int kHeight = 16;
+        void setPlusWidth(int w);
+
+        void setSelected(bool select);
+
+        QSize sizeHint() const override;
+
+        int getCount() {
+            return (m_count);
+        }
+
+    protected:
+        void paintEvent(QPaintEvent* ev) override;
+
+    private:
+        int m_count = 0;
+        bool m_dnd = false;
+        bool m_selected = false;
+        QPixmap m_dndIcon;
+        QPixmap m_dndSelectedIcon;
+        QColor m_bgColor;
+        QColor m_textColor;
+        int m_singleSize = 16;
+        int m_twoDigitWidth = 24;
+        int m_plusWidth = 32;
+        static constexpr int kHeight = 16;
 };
