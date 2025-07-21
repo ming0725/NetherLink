@@ -1,7 +1,16 @@
 // RoundedLabel.cpp
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
 #include "ClickableLabel.h"
+
+#include <QMouseEvent>
+
 #include <QPainter>
+
 #include <QPainterPath>
+
+/* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 ClickableLabel::ClickableLabel(QWidget* parent) : QLabel(parent), radius(-1) {
     setCursor(Qt::PointingHandCursor);

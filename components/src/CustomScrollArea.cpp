@@ -1,8 +1,15 @@
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
 #include "CustomScrollArea.h"
 
+#include <QGraphicsOpacityEffect>
+
 #include <QMouseEvent>
-#include <QPainter>
-#include <QScrollBar>
+
+#include <QPropertyAnimation>
+
+/* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 CustomScrollArea::CustomScrollArea(QWidget* parent) : QAbstractScrollArea(parent), contentWidget(new QWidget(viewport())), thumb(new ScrollBarThumb(this)), scrollAnimation(new QTimeLine(380, this)) {
     // 1) 关闭系统滚动条

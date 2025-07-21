@@ -1,18 +1,20 @@
+
+/* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
+
 #pragma once
 
-#include <dwmapi.h>
-#include <QDialog>
-#include <QDialog>
-#include <QEvent>
-#include <QtGui/QColor>
-#include <QtWidgets/QWidget>
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
 #include <QWidget>
-#include <windowsx.h>
+
 #include <Windows.h>
-#include <WinUser.h>
+
+/* typedef ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 // Un-documented API – load at runtime
 typedef BOOL (WINAPI*PFN_SetWindowCompositionAttribute)(HWND hWnd, struct WINDOWCOMPOSITIONATTRIBDATA* data);
+
+/* enum ------------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 // Which attribute we’re setting (only need the one)
 enum WINDOW_COMPOSITION_ATTRIB : DWORD {
@@ -29,6 +31,8 @@ enum ACCENT_STATE : DWORD {
     ACCENT_INVALID_STATE = 5
 };
 
+/* struct ----------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
 // Data struct we hand to the API
 struct ACCENT_POLICY {
     ACCENT_STATE AccentState;
@@ -43,6 +47,7 @@ struct WINDOWCOMPOSITIONATTRIBDATA {
     ULONG SizeOfData;
 };
 
+/* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 class WindowEffect {
     public:
         WindowEffect();

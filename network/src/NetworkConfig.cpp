@@ -1,8 +1,15 @@
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
 #include "NetworkConfig.h"
+
 #include <QCoreApplication>
+
 #include <QFile>
-#include <QJsonDocument>
+
 #include <QJsonObject>
+
+/* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 NetworkConfig::NetworkConfig(QObject* parent) : QObject(parent), m_serverIP("127.0.0.1") // 默认值
     , m_httpPort(8080) // 默认值

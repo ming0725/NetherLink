@@ -1,10 +1,17 @@
+
+/* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
+
 #pragma once
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
 #include <QNetworkAccessManager>
-#include <QObject>
+
 #include <QSslConfiguration>
-#include <QTimer>
+
 #include <QWebSocket>
 
+/* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 class NetworkManager : public QObject {
     Q_OBJECT
 

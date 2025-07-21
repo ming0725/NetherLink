@@ -1,10 +1,16 @@
+
+/* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
+
 #ifndef SMOOTHSCROLLBAR_H
 #define SMOOTHSCROLLBAR_H
 
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
 #include <QPropertyAnimation>
-#include <QTimer>
+
 #include <QWidget>
 
+/* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 class SmoothScrollBar : public QWidget {
     Q_OBJECT Q_PROPERTY(int value READ value WRITE setValue) Q_PROPERTY(qreal opacity READ opacity WRITE setOpacity)
 

@@ -1,13 +1,23 @@
 // MessageListItem.cpp
-#include "AvatarLoader.h"
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
 #include "MessageListItem.h"
-#include "UserRepository.h"
-#include <QFont>
-#include <QFontMetrics>
+
+// #include <QFont>
+// #include <QFontMetrics>
 #include <QMouseEvent>
 #include <QPainter>
-#include <QPainterPath>
-#include <QStyle>
+
+// #include <QPainterPath>
+
+// #include <QStyle>
+
+// #include "AvatarLoader.h"
+
+// #include "UserRepository.h"
+
+/* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 MessageListItem::MessageListItem(const MessageDataPtr& messageData, QWidget* parent) : QWidget(parent), avatarLabel(new AvatarLabel(this)), badge(new NotificationBadge(this)), data(messageData) {
     setMouseTracking(true);

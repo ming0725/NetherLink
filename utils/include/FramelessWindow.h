@@ -1,12 +1,22 @@
-#pragma once
-#pragma comment(lib,"dwmapi.lib")
 
-#include <dwmapi.h>
+/* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
+
+#pragma once
+
+// #pragma comment(lib,"dwmapi.lib")
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
 #include <QDialog>
 #include <QWidget>
-#include <windowsx.h>
-#include <WinUser.h>
 
+#include <dwmapi.h>
+
+#include <windowsx.h>
+
+// #include <WinUser.h>
+
+/* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 class FramelessWindow : public QWidget {
     Q_OBJECT
 

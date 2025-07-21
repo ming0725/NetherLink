@@ -1,8 +1,7 @@
-// AiChatListWidget.cpp
 
-#include "AiChatListItem.h"
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
 #include "AiChatListWidget.h"
-#include "CustomScrollArea.h"
 
 #include <algorithm>
 #include <QDateTime>
@@ -12,6 +11,11 @@
 #include <QRandomGenerator>
 #include <QScrollBar>
 #include <QTimer>
+
+#include "AiChatListItem.h"
+#include "CustomScrollArea.h"
+
+/* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 AiChatListWidget::AiChatListWidget(QWidget* parent) : CustomScrollArea(parent) {
     // 将滚动区的 viewport 作为内容容器

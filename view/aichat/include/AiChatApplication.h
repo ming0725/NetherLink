@@ -1,12 +1,21 @@
+
+/* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
+
 #pragma once
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
+#include <QSplitter>
+#include <QStackedWidget>
+#include <QWidget>
+
 #include "AiChatListWidget.h"
 #include "CurrentUser.h"
 #include "DefaultPage.h"
 #include "MainWindow.h"
 #include "NotificationManager.h"
-#include <QSplitter>
-#include <QStackedWidget>
-#include <QWidget>
+
+/* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 
 class AiChatWindow;
 

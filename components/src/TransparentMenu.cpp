@@ -1,8 +1,13 @@
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
 #include "TransparentMenu.h"
+
 #include <QPainter>
 #include <QProxyStyle>
 #include <QStyleOption>
 
+/* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 class MenuItemStyle : public QProxyStyle {
     public:
         using QProxyStyle::QProxyStyle;
@@ -31,6 +36,8 @@ class MenuItemStyle : public QProxyStyle {
         }
 
 };
+
+/* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 TransparentMenu::TransparentMenu(QWidget*parent) : QMenu(parent) {
     setAttribute(Qt::WA_TranslucentBackground);

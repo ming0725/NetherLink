@@ -1,15 +1,17 @@
-#include "CurrentUser.h"
-#include "DatabaseManager.h"
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
 #include "UserRepository.h"
-#include <QCryptographicHash>
-#include <QDir>
-#include <QFile>
-#include <QNetworkReply>
-#include <QPainter>
-#include <QPainterPath>
+
+#include <QJsonArray>
+#include <QJsonObject>
 #include <QSqlError>
 #include <QSqlQuery>
-#include <QStandardPaths>
+
+#include "CurrentUser.h"
+#include "DatabaseManager.h"
+
+/* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 UserRepository::UserRepository(QObject* parent) : QObject(parent) {}
 

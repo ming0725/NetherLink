@@ -1,3 +1,6 @@
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
 #include "AiChatListItem.h"
 
 #include <QCursor>
@@ -5,6 +8,8 @@
 #include <QInputDialog>
 #include <QMouseEvent>
 #include <QPainter>
+
+/* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 AiChatListItem::AiChatListItem(QWidget* parent) : QWidget(parent) {
     setCursor(Qt::PointingHandCursor);

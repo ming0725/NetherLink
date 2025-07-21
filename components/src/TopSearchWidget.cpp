@@ -1,7 +1,13 @@
-#include "../view/friend/include/SearchFriendWindow.h"
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
 #include "TopSearchWidget.h"
-#include <QAction>
-#include <QPainter>
+
+#include "TransparentMenu.h"
+
+#include "../view/friend/include/SearchFriendWindow.h"
+
+/* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 TopSearchWidget::TopSearchWidget(QWidget*parent) : QWidget(parent) {
     searchBox = new LineEditComponent(this);

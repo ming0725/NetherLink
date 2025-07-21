@@ -1,11 +1,19 @@
+
+/* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
+
 #ifndef AICHATITEMDELEGATE_H
 #define AICHATITEMDELEGATE_H
 
-#include "AiChatMessage.h"
-#include "TransparentMenu.h"
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
 #include <QPixmap>
 #include <QStyledItemDelegate>
 #include <QTextDocument>
+
+#include "AiChatMessage.h"
+#include "TransparentMenu.h"
+
+/* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 
 class AiChatItemDelegate : public QStyledItemDelegate {
     Q_OBJECT

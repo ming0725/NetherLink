@@ -1,10 +1,15 @@
+/* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
+
 #pragma once
-#include "ScrollBarThumb.h"
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
 #include <QAbstractScrollArea>
-#include <QGraphicsOpacityEffect>
-#include <QPropertyAnimation>
 #include <QTimeLine>
 
+#include "ScrollBarThumb.h"
+
+/* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 class CustomScrollArea : public QAbstractScrollArea {
     Q_OBJECT
 
@@ -36,8 +41,8 @@ class CustomScrollArea : public QAbstractScrollArea {
 
         void updateScrollBar();
 
-        ScrollBarThumb*        thumb;
-        QTimeLine*             scrollAnimation;
+        ScrollBarThumb* thumb;
+        QTimeLine* scrollAnimation;
         int currentOffset = 0;
         int thumbOffset = 0;
         bool dragging = false;
@@ -45,5 +50,5 @@ class CustomScrollArea : public QAbstractScrollArea {
         int thumbOffsetAtStart = 0;
 
     protected:
-        QWidget*               contentWidget;
+        QWidget* contentWidget;
 };

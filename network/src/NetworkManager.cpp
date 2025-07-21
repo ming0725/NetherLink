@@ -1,15 +1,22 @@
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
+#include "NetworkManager.h"
+
+#include <QJsonArray>
+
+#include <QNetworkReply>
+
+#include <QSslSocket>
+
 #include "AvatarLoader.h"
 #include "CurrentUser.h"
 #include "GroupRepository.h"
 #include "MessageHandler.h"
 #include "NetworkConfig.h"
-#include "NetworkManager.h"
 #include "UserRepository.h"
-#include <QJsonDocument>
-#include <QJsonObject>
-#include <QNetworkReply>
-#include <QNetworkRequest>
-#include <QSslSocket>
+
+/* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 NetworkManager& NetworkManager::instance() {
     static NetworkManager mgr;

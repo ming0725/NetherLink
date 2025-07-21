@@ -1,10 +1,18 @@
-#include "CurrentUser.h"
-#include "DatabaseManager.h"
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
 #include "GroupRepository.h"
+
 #include <QJsonArray>
+
 #include <QJsonObject>
 #include <QSqlError>
 #include <QSqlQuery>
+
+#include "CurrentUser.h"
+#include "DatabaseManager.h"
+
+/* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 GroupRepository::GroupRepository(QObject* parent) : QObject(parent) {}
 

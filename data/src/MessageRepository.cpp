@@ -1,15 +1,20 @@
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
+#include "MessageRepository.h"
+
+#include <algorithm>
+
+#include <QMutexLocker>
+
+#include <QSqlError>
+
 #include "CurrentUser.h"
 #include "DatabaseManager.h"
 #include "GroupRepository.h"
-#include "MessageRepository.h"
 #include "UserRepository.h"
-#include <algorithm>
-#include <QDebug>
-#include <QJsonDocument>
-#include <QJsonObject>
-#include <QMutexLocker>
-#include <QSqlError>
-#include <QSqlQuery>
+
+/* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 MessageRepository::MessageRepository(QObject* parent) : QObject(parent) {}
 

@@ -1,20 +1,13 @@
+
+/* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
+
 #pragma once
 
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
-// #include <QObject>
-#include <QPixmap>
-
-// #include <QMap>
 #include <QNetworkAccessManager>
 
 #include <QLabel>
-
-// #include <QUrl>
-// #include <QSet>
-// #include <QFuture>
-// #include <QFutureWatcher>
-#include <QDateTime>
 
 /* struct ----------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 

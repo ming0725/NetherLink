@@ -1,21 +1,12 @@
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 #include "DatabaseManager.h"
-
 #include <QDir>
 
-#include <QFile>
-
-// #include <QMutexLocker>
-#include <QSqlError>
-
-// #include <QSqlQuery>
-
-#include <QStandardPaths>
-
-// #include <QTemporaryFile>
-
 #include "CurrentUser.h"
+#include <QSqlError>
+#include <QStandardPaths>
+#include <QThread>
 
 /* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 

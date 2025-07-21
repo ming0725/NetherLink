@@ -1,6 +1,13 @@
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
 #include "AiChatApplication.h"
-#include "AiChatWindow.h"
+
 #include <QPainter>
+
+#include "AiChatWindow.h"
+
+/* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 AiChatApplication::AiChatApplication(QWidget* parent) : QWidget(parent), m_leftPane(new LeftPane(this)), m_defaultPage(new DefaultPage(this)), m_splitter(new QSplitter(Qt::Horizontal, this)), m_rightPane(new QStackedWidget(this)) {
     m_splitter->addWidget(m_leftPane);

@@ -1,11 +1,15 @@
+
+/* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
+
 #pragma once
 
-#include "CustomTooltip.h"
-#include <QLabel>
-#include <QPropertyAnimation>
-#include <QTextEdit>
-#include <QWidget>
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
+#include <QTextEdit>
+
+#include "CustomTooltip.h"
+
+/* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 class FloatingInputBar : public QWidget {
     Q_OBJECT
 

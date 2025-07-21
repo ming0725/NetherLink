@@ -1,9 +1,16 @@
-#include "AiChatItemDelegate.h"
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
 #include "AiChatWindow.h"
-#include "MainWindow.h"
-#include "NotificationManager.h"
+
 #include <QResizeEvent>
 #include <QScrollBar>
+
+#include "AiChatItemDelegate.h"
+#include "MainWindow.h"
+#include "NotificationManager.h"
+
+/* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 AiChatWindow::AiChatWindow(QWidget*parent) : QWidget(parent), m_model(new AiChatListModel(this)), m_currentConversationId("") {
     setupUI();

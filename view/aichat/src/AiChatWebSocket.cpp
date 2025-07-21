@@ -1,11 +1,18 @@
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
 #include "AiChatWebSocket.h"
-#include "CurrentUser.h"
-#include "NetworkConfig.h"
-#include "NotificationManager.h"
+
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QNetworkAccessManager>
 #include <QUrlQuery>
+
+#include "CurrentUser.h"
+#include "NetworkConfig.h"
+#include "NotificationManager.h"
+
+/* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 AiChatWebSocket::AiChatWebSocket(QObject*parent) : QObject(parent), m_isProcessing(false), m_networkManager(new QNetworkAccessManager(this)) {
     QString serverIP = NetworkConfig::instance().getServerIP();
