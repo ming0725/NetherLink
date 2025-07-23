@@ -1,17 +1,22 @@
+
+/* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
+
 #pragma once
 
-#include "MessageData.h"
-#include <QDateTime>
-#include <QObject>
-#include <QPixmap>
-#include <QString>
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
+#include <QPixmap>
+
+#include "MessageData.h"
+
+/* enum ------------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 enum class GroupRole {
     Owner,      // 群主
     Admin, // 管理员
     Member // 普通成员
 };
 
+/* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 class ChatMessage {
     public:
         ChatMessage(bool isFromMe, const QString& senderId, bool isGroupChat = false, const QString& senderName = QString(), GroupRole role = GroupRole::Member) : timestamp(QDateTime::currentDateTime()), senderId(senderId), senderName(senderName), isFromMe_(isFromMe), isSelected_(false), inGroupChat_(isGroupChat), role(role) {}
@@ -108,6 +113,7 @@ class TextMessage : public ChatMessage {
         QString text;
 
 };
+
 class ImageMessage : public ChatMessage {
     public:
         ImageMessage(const QPixmap& image, bool isFromMe, const QString& senderId, bool isGroupChat = false, const QString& senderName = QString(), GroupRole role = GroupRole::Member) : ChatMessage(isFromMe, senderId, isGroupChat, senderName, role), image(image) {}

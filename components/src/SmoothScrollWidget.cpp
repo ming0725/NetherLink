@@ -1,12 +1,17 @@
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
+#include "SmoothScrollWidget.h"
+
 #include <QGraphicsOpacityEffect>
 #include <QMouseEvent>
-#include <QPainter>
-#include <QPropertyAnimation>
-#include <QVBoxLayout>
 
-#include "../include/ScrollAreaNoWheel.h"
-#include "../include/ScrollBarThumb.h"
-#include "../include/SmoothScrollWidget.h"
+#include <QPropertyAnimation>
+
+#include "ScrollAreaNoWheel.h"
+#include "ScrollBarThumb.h"
+
+/* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 SmoothScrollWidget::SmoothScrollWidget(QWidget*parent) : QWidget(parent), scrollArea(new ScrollAreaNoWheel(this)), scrollBarThumb(new ScrollBarThumb(this)), contentWidget(new QWidget), scrollAnimation(new QTimeLine(300, this)), contentOffset(0), thumbOffset(0), dragging(false) {
     scrollBarThumb->installEventFilter(this);

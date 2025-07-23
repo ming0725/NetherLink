@@ -1,9 +1,14 @@
 // NotificationBadge.h
 #pragma once
-#include <QColor>
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
+// #include <QColor>
 #include <QPixmap>
+
 #include <QWidget>
 
+/* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 class NotificationBadge : public QWidget {
     Q_OBJECT
 

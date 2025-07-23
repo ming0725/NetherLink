@@ -2,15 +2,14 @@
 
 #include "AvatarLoader.h"
 
-// #include <QDateTime>
-// #include <QDebug>
 #include <QDir>
-#include <QFile>
 
-#include <QFileInfo>
 #include <QNetworkReply>
+
 #include <QPainter>
+
 #include <QPainterPath>
+
 #include <QStandardPaths>
 
 /* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */

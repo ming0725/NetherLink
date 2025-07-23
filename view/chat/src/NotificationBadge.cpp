@@ -1,8 +1,15 @@
 // NotificationBadge.cpp
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
 #include "NotificationBadge.h"
-#include <QFont>
-#include <QFontMetrics>
+
+// #include <QFont>
+// #include <QFontMetrics>
+
 #include <QPainter>
+
+/* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 NotificationBadge::NotificationBadge(QWidget*parent) : QWidget(parent) {
     m_bgColor = QColor(0xf74c30);

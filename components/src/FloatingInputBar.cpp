@@ -1,13 +1,19 @@
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
 #include "FloatingInputBar.h"
+
+#include <QBoxLayout>
 #include <QFileDialog>
 #include <QGraphicsDropShadowEffect>
 #include <QKeyEvent>
 #include <QPainter>
 #include <QPainterPath>
-#include <QScrollBar>
-#include <QVBoxLayout>
 
+/* variable --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 const QString FloatingInputBar::RESOURCE_PATH = ":/icon/";
+
+/* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 FloatingInputBar::FloatingInputBar(QWidget*parent) : QWidget(parent) {
     setAutoFillBackground(false);

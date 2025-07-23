@@ -9,6 +9,7 @@
 #include "PostFeedPage.h"
 #include <QJsonDocument>
 #include <QNetworkReply>
+#include <QPropertyAnimation>
 #include <QRandomGenerator>
 #include <QResizeEvent>
 #include <QUrlQuery>

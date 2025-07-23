@@ -1,11 +1,17 @@
-#include "FramelessWindow.h"
-#include <QMouseEvent>
-#include <QPoint>
 
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
+#include "FramelessWindow.h"
+
+#include <QMouseEvent>
+
+/* variable --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 constexpr int RESIZE_WINDOW_WIDTH = 8;
 
 // 如果 DWMWA_WINDOW_CORNER_PREFERENCE 未定义，则手动声明
 #ifndef DWMWA_WINDOW_CORNER_PREFERENCE
+
+/* enum ------------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 // 枚举值定义参考 Windows 11 SDK dwmapi.h
 enum DWM_WINDOW_CORNER_PREFERENCE {
@@ -17,6 +23,8 @@ enum DWM_WINDOW_CORNER_PREFERENCE {
 
 static const DWORD DWMWA_WINDOW_CORNER_PREFERENCE = 33;  // 窗口圆角策略标识符
 #endif
+
+/* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 FramelessWindow::FramelessWindow(QWidget* parent) : QWidget(parent) {
     setWindowFlags(windowFlags() | Qt::FramelessWindowHint | Qt::WindowSystemMenuHint);

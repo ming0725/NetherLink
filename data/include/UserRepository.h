@@ -1,10 +1,15 @@
-#pragma once
-#include "User.h"
-#include <QJsonArray>
-#include <QJsonObject>
-#include <QObject>
-#include <QSqlDatabase>
 
+/* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
+
+#pragma once
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
+#include <QJsonObject>
+
+#include "User.h"
+
+/* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 class UserRepository : public QObject {
     Q_OBJECT
 

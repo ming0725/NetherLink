@@ -1,12 +1,20 @@
+
+/* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
+
 #ifndef AICHATWINDOW_H
 #define AICHATWINDOW_H
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
+#include <QVBoxLayout>
+#include <QWidget>
 
 #include "AiChatListModel.h"
 #include "AiChatListView.h"
 #include "AiChatWebSocket.h"
 #include "FloatingInputBar.h"
-#include <QVBoxLayout>
-#include <QWidget>
+
+/* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 
 class AiChatWindow : public QWidget {
     Q_OBJECT

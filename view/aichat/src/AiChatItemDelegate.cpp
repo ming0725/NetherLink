@@ -1,8 +1,8 @@
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
 #include "AiChatItemDelegate.h"
-#include "AiChatListModel.h"
-#include "AvatarLoader.h"
-#include "CurrentUser.h"
-#include "NotificationManager.h"
+
 #include <QAbstractItemView>
 #include <QAbstractTextDocumentLayout>
 #include <QApplication>
@@ -11,7 +11,16 @@
 #include <QPainter>
 #include <QPainterPath>
 
+#include "AiChatListModel.h"
+#include "AvatarLoader.h"
+#include "CurrentUser.h"
+#include "NotificationManager.h"
+
+/* variable --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
 const QString docStyleSheet = "h1 { font-size: 20px; font-weight: bold; margin: 0; }""h2 { font-size: 18px; font-weight: bold; margin: 0; }""h3 { font-size: 16px; font-weight: bold; margin: 0; }""h4 { font-size: 15px; font-weight: bold; margin: 0; }""h5 { font-size: 14px; font-weight: bold; margin: 0; }""h6 { font-size: 13px; font-weight: bold; margin: 0; }""p { font-size: 14px; margin: 0; }""code { font-size: 10px; background: #f6f8fa; }""pre { font-family: monospace; font-size: 13px; }""blockquote { padding-left: calc(2ch); margin: 0; border-left: 3px solid #ccc; }""table { border-collapse: collapse; width: 100%; }""th, td { border: 1px solid #aaa; padding: 4px 8px; }""th { background: #eee; }";
+
+/* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 AiChatItemDelegate::AiChatItemDelegate(QWidget* parent) : QStyledItemDelegate(parent), m_contextMenu(new TransparentMenu(parent)) {
     // 使用静态头像

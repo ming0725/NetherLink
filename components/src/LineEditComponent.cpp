@@ -1,6 +1,13 @@
-#include "../include/LineEditComponent.h"
-#include <QKeyEvent>
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
+#include <QEvent>
+#include <QPainter>
 #include <QToolButton>
+
+#include "LineEditComponent.h"
+
+/* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 LineEditComponent::LineEditComponent(QWidget*parent) : QWidget(parent) {
     iconLabel = new QLabel(this);

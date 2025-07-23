@@ -1,14 +1,24 @@
-#ifndef AICHATLISTMODEL_H
-#define AICHATLISTMODEL_H
 
-#include "AiChatMessage.h"
+/* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
+
+#ifndef VIEW_AICHAT_INCLUDE_AI_CHAT_LIST_MODEL
+#define VIEW_AICHAT_INCLUDE_AI_CHAT_LIST_MODEL
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
 #include <QAbstractListModel>
 #include <QVector>
+
+#include "AiChatMessage.h"
+
+/* struct ----------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 // 底部空白项
 struct AiBottomSpace {
     static constexpr int DEFAULT_HEIGHT = 200;  // 默认底部空白高度（像素）
 };
+
+/* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 
 class AiChatListModel : public QAbstractListModel {
     Q_OBJECT
@@ -51,4 +61,4 @@ class AiChatListModel : public QAbstractListModel {
         QModelIndex m_currentSelectedIndex; // 当前选中的项
 };
 
-#endif // AICHATLISTMODEL_H
+#endif /* VIEW_AICHAT_INCLUDE_AI_CHAT_LIST_MODEL */

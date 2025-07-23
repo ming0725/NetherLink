@@ -1,11 +1,19 @@
+
+/* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
+
 #ifndef AICHATLISTVIEW_H
 #define AICHATLISTVIEW_H
 
-#include "SmoothScrollBar.h"
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
 #include <QListView>
 #include <QMouseEvent>
 #include <QPropertyAnimation>
 #include <QScrollBar>
+
+#include "SmoothScrollBar.h"
+
+/* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 
 class AiChatListView : public QListView {
     Q_OBJECT Q_PROPERTY(int smoothScrollValue READ smoothScrollValue WRITE setSmoothScrollValue)

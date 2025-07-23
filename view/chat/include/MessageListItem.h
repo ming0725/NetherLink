@@ -1,13 +1,18 @@
 // MessageListItem.h
 #pragma once
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
+// #include <QDateTime>
+// #include <QLabel>
+// #include <QPixmap>
+// #include <QWidget>
 #include "AvatarLoader.h"
 #include "MessageData.h"
-#include "NotificationBadge.h"
-#include <QDateTime>
-#include <QLabel>
-#include <QPixmap>
-#include <QWidget>
 
+#include "NotificationBadge.h"
+
+/* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 class MessageListItem : public QWidget {
     Q_OBJECT
 

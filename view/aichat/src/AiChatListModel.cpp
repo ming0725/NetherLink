@@ -1,5 +1,11 @@
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
 #include "AiChatListModel.h"
+
 #include <QSize>
+
+/* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 AiChatListModel::AiChatListModel(QObject* parent) : QAbstractListModel(parent) {
     // 初始化时添加底部空白

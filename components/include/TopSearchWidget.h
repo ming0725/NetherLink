@@ -1,11 +1,15 @@
-#ifndef TOPSEARCHWIDGET_H
-#define TOPSEARCHWIDGET_H
+
+/* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
+
+#ifndef COMPONENTS_INCLUDE_TOP_SEARCH_WIDGET
+#define COMPONENTS_INCLUDE_TOP_SEARCH_WIDGET
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 #include "LineEditComponent.h"
-#include "TransparentMenu.h"
 #include <QPushButton>
-#include <QWidget>
 
+/* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 class TopSearchWidget : public QWidget {
     Q_OBJECT
 
@@ -32,4 +36,4 @@ class TopSearchWidget : public QWidget {
         int spacing = 5; // 输入框和按钮之间的间距
 };
 
-#endif // TOPSEARCHWIDGET_H
+#endif /* COMPONENTS_INCLUDE_TOP_SEARCH_WIDGET */

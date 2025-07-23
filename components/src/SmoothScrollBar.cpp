@@ -1,6 +1,13 @@
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
 #include "SmoothScrollBar.h"
+
 #include <QMouseEvent>
 #include <QPainter>
+#include <QTimer>
+
+/* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 SmoothScrollBar::SmoothScrollBar(QWidget*parent) : QWidget(parent), m_minimum(0), m_maximum(0), m_pageStep(0), m_value(0), m_opacity(0.0), m_isDragging(false) {
     setFixedWidth(8);  // 设置滚动条宽度

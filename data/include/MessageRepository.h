@@ -1,13 +1,15 @@
+
+/* guard ------------------------------------------------------------------ 80 // ! ---------------------------- 120 */
+
 #pragma once
 
-#include "ChatMessage.h"
-#include <QMap>
-#include <QMutex>
-#include <QObject>
-#include <QSharedPointer>
-#include <QSqlDatabase>
-#include <QVector>
+/* include ---------------------------------------------------------------- 80 // ! ---------------------------- 120 */
 
+#include <QSqlQuery>
+
+#include "ChatMessage.h"
+
+/* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 class MessageRepository : public QObject {
     Q_OBJECT
 

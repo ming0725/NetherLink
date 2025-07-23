@@ -1,7 +1,14 @@
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
 #include "CustomTooltip.h"
+
 #include <QPainter>
 #include <QPainterPath>
-#include <QVBoxLayout>
+
+#include <QBoxLayout>
+
+/* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 CustomTooltip::CustomTooltip(QWidget*parent) : QWidget(parent) {
     setWindowFlags(Qt::ToolTip | Qt::FramelessWindowHint);

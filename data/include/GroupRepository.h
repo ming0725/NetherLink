@@ -1,15 +1,15 @@
 // GroupRepository.h
+
+/* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
+
 #pragma once
 
-#include "ChatMessage.h" // 为了使用 GroupRole 枚举
-#include "Group.h"
-#include <QJsonArray>
-#include <QMap>
-#include <QMutex>
-#include <QObject>
-#include <QSqlDatabase>
-#include <QVector>
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
+#include "ChatMessage.h"
+#include "Group.h"
+
+/* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 class GroupRepository : public QObject {
     Q_OBJECT
 

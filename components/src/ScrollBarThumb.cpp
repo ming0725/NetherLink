@@ -1,5 +1,11 @@
-#include "../include/ScrollBarThumb.h"
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
+#include "ScrollBarThumb.h"
+
 #include <QPainter>
+
+/* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 ScrollBarThumb::ScrollBarThumb(QWidget*parent) : QWidget(parent), color(QColor(0x3f, 0x3f, 0x3f)) {}
 

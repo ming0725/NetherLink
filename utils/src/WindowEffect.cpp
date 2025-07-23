@@ -1,9 +1,9 @@
+
+/* include ---------------------------------------------------------------- 80 */ /* ! ----------------------------- 120 */
+
 #include "WindowEffect.h"
-#include <QPainter>
-#include <QPainterPath>
-#include <QtGui/QWindow>
-#include <QtWidgets/QApplication>
-#include <winuser.h>
+
+/* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 WindowEffect::WindowEffect() : m_pSetWindowCompAttr(nullptr) {
     // Dynamically load the (undocumented) API
