@@ -1,8 +1,15 @@
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
 #include "NewMessageNotifier.h"
-#include <QHBoxLayout>
+
+#include <QBoxLayout>
+
 #include <QPainter>
+
 #include <QPainterPath>
-#include <QResizeEvent>
+
+/* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 NewMessageNotifier::NewMessageNotifier(QWidget*parent) : QWidget(parent) {
     setFixedHeight(32);

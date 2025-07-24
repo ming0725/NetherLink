@@ -1,15 +1,22 @@
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
 #include <QCollator>
+
 #include <QGraphicsOpacityEffect>
-#include <QMouseEvent>
-#include <QPainter>
+
 #include <QPropertyAnimation>
-#include <QTimer>
+#include <QWheelEvent>
 
 #include "../include/FriendListWidget.h"
 #include "../include/ScrollAreaNoWheel.h"
+
 #include "../include/ScrollBarThumb.h"
+
 #include "NetworkManager.h"
 #include "UserRepository.h"
+
+/* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 static bool friendItemLessThan(FriendListItem* a, FriendListItem* b) {
     // 非离线的排前面

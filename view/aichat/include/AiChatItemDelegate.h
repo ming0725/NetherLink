@@ -1,20 +1,17 @@
 
 /* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 
-#ifndef AICHATITEMDELEGATE_H
-#define AICHATITEMDELEGATE_H
+#ifndef VIEW_AICHAT_INCLUDE_AI_CHAT_ITEM_DELEGATE
+#define VIEW_AICHAT_INCLUDE_AI_CHAT_ITEM_DELEGATE
 
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
-#include <QPixmap>
 #include <QStyledItemDelegate>
-#include <QTextDocument>
 
 #include "AiChatMessage.h"
 #include "TransparentMenu.h"
 
 /* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
-
 class AiChatItemDelegate : public QStyledItemDelegate {
     Q_OBJECT
 
@@ -58,4 +55,4 @@ class AiChatItemDelegate : public QStyledItemDelegate {
         static constexpr int MAX_BUBBLE_WIDTH = 600; // 气泡最大宽度
 };
 
-#endif // AICHATITEMDELEGATE_H
+#endif /* VIEW_AICHAT_INCLUDE_AI_CHAT_ITEM_DELEGATE */

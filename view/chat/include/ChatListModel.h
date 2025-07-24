@@ -1,11 +1,16 @@
+
+/* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
+
 #ifndef CHATLISTMODEL_H
 #define CHATLISTMODEL_H
 
-#include "ChatMessage.h"
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
 #include <QAbstractListModel>
-#include <QDateTime>
-#include <QSharedPointer>
-#include <QVector>
+
+#include "ChatMessage.h"
+
+/* enum ------------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 // 时间标识类型
 enum class TimeHeaderType {
@@ -15,6 +20,8 @@ enum class TimeHeaderType {
     ThisYear, // 同一年内的日期（MM-dd HH:mm）
     FullDate // 完整日期（yyyy-MM-dd HH:mm）
 };
+
+/* struct ----------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 // 时间标识项
 struct TimeHeader {
@@ -29,6 +36,8 @@ struct BottomSpace {
 
 };
 
+/* namespace -------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
 // 时间间隔设置（秒）
 namespace TimeSettings {
 
@@ -42,6 +51,7 @@ namespace TimeSettings {
 
 }
 
+/* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 class ChatListModel : public QAbstractListModel {
     Q_OBJECT
 

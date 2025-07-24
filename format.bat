@@ -13,6 +13,4 @@ for /r %%f in (*.cpp *.h) do (
     )
 )
 
-echo Done
-pause
 popd

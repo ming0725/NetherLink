@@ -6,13 +6,12 @@
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 #include <QDateTime>
+
 #include <QLabel>
-#include <QMenu>
+
 #include <QPushButton>
-#include <QWidget>
 
 /* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
-
 class AiChatListItem : public QWidget {
     Q_OBJECT
 

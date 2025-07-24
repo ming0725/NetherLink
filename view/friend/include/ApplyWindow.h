@@ -1,11 +1,17 @@
+
+/* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
+
 #pragma once
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 #include "AvatarLoader.h"
 #include "FramelessWindow.h"
-#include <QLabel>
+
 #include <QPushButton>
 #include <QTextEdit>
 
+/* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 class ApplyWindow : public FramelessWindow {
     Q_OBJECT
 

@@ -1,6 +1,13 @@
-#include "NetworkManager.h"
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
 #include "NotificationPage.h"
+
 #include <QPainter>
+
+#include "NetworkManager.h"
+
+/* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 NotificationPage::NotificationPage(QWidget* parent) : QWidget(parent), titleLabel(new QLabel(this)), friendListWidget(new NotificationListWidget(this)), groupListWidget(new NotificationListWidget(this)), contentStack(new QStackedWidget(this)) {
     setupUI();

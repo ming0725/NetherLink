@@ -1,8 +1,13 @@
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
 #include <QApplication>
 #include <QFontDatabase>
 #include <QPixmapCache>
 
 #include "Login.h"
+
+/* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 int main(int argc, char*argv[]) {
     QApplication a(argc, argv);

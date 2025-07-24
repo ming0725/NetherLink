@@ -7,14 +7,10 @@
 
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
-#include <QDialog>
+#include <dwmapi.h>
 #include <QWidget>
 
-#include <dwmapi.h>
-
 #include <windowsx.h>
-
-// #include <WinUser.h>
 
 /* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 class FramelessWindow : public QWidget {

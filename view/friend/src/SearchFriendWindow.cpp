@@ -1,12 +1,15 @@
-#include "../include/SearchFriendWindow.h"
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
 #include <QApplication>
-#include <QGuiApplication>
-#include <QLineEdit>
-#include <QPainter>
-#include <QPainterPath>
 #include <QScreen>
 
+#include "../include/SearchFriendWindow.h"
+
+/* variable --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 SearchFriendWindow* SearchFriendWindow::instance = nullptr;
+
+/* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 SearchFriendWindow::SearchFriendWindow(QWidget* parent) : FramelessWindow(parent) {
     // 窗口基础设置

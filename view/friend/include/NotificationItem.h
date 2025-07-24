@@ -1,9 +1,15 @@
+
+/* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
+
 #pragma once
 
-#include "NotificationBadge.h"
-#include <QLabel>
-#include <QWidget>
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
+#include <QLabel>
+
+#include "NotificationBadge.h"
+
+/* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 class NotificationItem : public QWidget {
     Q_OBJECT
 

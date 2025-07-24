@@ -1,10 +1,16 @@
 // MessageListWidget.h
-#pragma once
-#include "CustomScrollArea.h"
-#include "MessageListItem.h"
-#include <QDateTime>
-#include <QVector>
 
+/* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
+
+#pragma once
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
+#include "CustomScrollArea.h"
+
+#include "MessageListItem.h"
+
+/* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 class MessageListWidget : public CustomScrollArea {
     Q_OBJECT
 

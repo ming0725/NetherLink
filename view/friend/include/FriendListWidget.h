@@ -1,15 +1,17 @@
 // smoothscrollwidget.h
 
+/* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
+
 #ifndef FRIENDLISTWIDGET_H
 #define FRIENDLISTWIDGET_H
 
-#include "FriendListItem.h"
-#include "User.h"
-#include <QScrollArea>
-#include <QTimeLine>
-#include <QVBoxLayout>
-#include <QWidget>
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
+#include <QTimeLine>
+
+#include "FriendListItem.h"
+
+/* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 class ScrollAreaNoWheel;
 class ScrollBarThumb;
 

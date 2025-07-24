@@ -1,16 +1,17 @@
+
+/* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
+
 #pragma once
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
+#include <QFutureWatcher>
+#include <QPushButton>
+
 #include "FramelessWindow.h"
 #include "LineEditComponent.h"
-#include <QEvent>
-#include <QFuture>
-#include <QFutureWatcher>
-#include <QLabel>
-#include <QPainter>
-#include <QPushButton>
-#include <QRegularExpression>
-#include <QVBoxLayout>
-#include <QWidget>
 
+/* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 class MainWindow;
 
 class Login : public FramelessWindow {

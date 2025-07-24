@@ -3,10 +3,14 @@
 
 #include "AiChatListItem.h"
 
-#include <QCursor>
-#include <QHBoxLayout>
+#include <QBoxLayout>
+
 #include <QInputDialog>
+
+#include <QMenu>
+
 #include <QMouseEvent>
+
 #include <QPainter>
 
 /* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */

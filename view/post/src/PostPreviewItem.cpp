@@ -1,19 +1,16 @@
-#include "AvatarLoader.h"
-#include "ClickableLabel.h"
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
+#include "PostPreviewItem.h"
+
+#include <QNetworkReply>
+#include <QPixmapCache>
+
 #include "CurrentUser.h"
 #include "NetworkConfig.h"
 #include "NotificationManager.h"
-#include "Post.h"
-#include "PostPreviewItem.h"
-#include <QFontMetrics>
-#include <QJsonDocument>
-#include <QJsonObject>
-#include <QNetworkReply>
-#include <QNetworkRequest>
-#include <QPainter>
-#include <QPainterPath>
-#include <QPixmapCache>
-#include <QResizeEvent>
+
+/* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 PostPreviewItem::PostPreviewItem(const Post& post, QWidget* parent) : QWidget(parent), m_titleText(post.title), m_likeCount(post.likes), m_liked(post.isLiked), m_authorID(post.authorID), m_postImageUrl(post.firstImage), m_postID(post.postID) {
     // 子控件

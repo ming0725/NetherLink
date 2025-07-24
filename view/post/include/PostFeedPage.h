@@ -1,12 +1,18 @@
 // PostFeedPage.h
+
+/* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
+
 #pragma once
 
-#include "CustomScrollArea.h"
-#include "PostPreviewItem.h"
-#include <QPixmap>
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
 #include <QVector>
 #include <QWidget>
 
+#include "CustomScrollArea.h"
+#include "PostPreviewItem.h"
+
+/* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 class Post;
 
 class PostFeedPage : public CustomScrollArea {

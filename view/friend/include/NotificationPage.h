@@ -1,11 +1,15 @@
+
+/* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
+
 #pragma once
 
-#include "NotificationListWidget.h"
-#include <QLabel>
-#include <QStackedWidget>
-#include <QVBoxLayout>
-#include <QWidget>
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
+#include <QStackedWidget>
+
+#include "NotificationListWidget.h"
+
+/* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 class NotificationPage : public QWidget {
     Q_OBJECT
 

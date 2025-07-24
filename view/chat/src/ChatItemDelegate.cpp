@@ -1,10 +1,9 @@
-#include "AvatarLoader.h"
-#include "ChatArea.h"
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
 #include "ChatItemDelegate.h"
-#include "ChatListModel.h"
-#include "CurrentUser.h"
-#include "MainWindow.h"
-#include "NotificationManager.h"
+
+#include "TransparentMenu.h"
 #include <QApplication>
 #include <QClipboard>
 #include <QFontMetrics>
@@ -14,6 +13,17 @@
 #include <QPainterPath>
 #include <QTextLayout>
 #include <QTextOption>
+
+#include "AvatarLoader.h"
+
+#include "ChatArea.h"
+#include "ChatListModel.h"
+
+#include "CurrentUser.h"
+#include "MainWindow.h"
+#include "NotificationManager.h"
+
+/* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 ChatItemDelegate::ChatItemDelegate(QObject* parent) : QStyledItemDelegate(parent) {
     // 连接头像加载完成信号

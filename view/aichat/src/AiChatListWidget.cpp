@@ -3,17 +3,9 @@
 
 #include "AiChatListWidget.h"
 
-#include <algorithm>
-#include <QDateTime>
-#include <QEvent>
-#include <QLabel>
-#include <QPushButton>
 #include <QRandomGenerator>
-#include <QScrollBar>
-#include <QTimer>
 
-#include "AiChatListItem.h"
-#include "CustomScrollArea.h"
+#include <QScrollBar>
 
 /* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 

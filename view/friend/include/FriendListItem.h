@@ -1,13 +1,14 @@
+
+/* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
+
 #pragma once
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 #include "AvatarLoader.h"
 #include "User.h"
-#include <QHBoxLayout>
-#include <QImage>
-#include <QLabel>
-#include <QVBoxLayout>
-#include <QWidget>
 
+/* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 class FriendListItem : public QWidget {
     Q_OBJECT
 

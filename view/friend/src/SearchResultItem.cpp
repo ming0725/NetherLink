@@ -1,8 +1,12 @@
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
+#include <QPainter>
+
 #include "../include/ApplyWindow.h"
 #include "../include/SearchResultItem.h"
-#include <QFontMetrics>
-#include <QPainter>
-#include <QPainterPath>
+
+/* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 SearchResultItem::SearchResultItem(const User& user, QString& uid, QWidget* parent) : QWidget(parent), avatarLabel(new AvatarLabel(this)), type(UserType), status(user.status), id(uid), name(user.nick), avatarUrl(user.avatarPath) {
     fullNameText = QString("%1 (%2)").arg(user.nick, user.id);

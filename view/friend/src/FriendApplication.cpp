@@ -1,8 +1,11 @@
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
 #include "FriendApplication.h"
+
 #include "NetworkManager.h"
-#include <QDebug>
-#include <QPainter>
-#include <QResizeEvent>
+
+/* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 // FriendLeftPane implementation
 FriendLeftPane::FriendLeftPane(QWidget* parent) : QWidget(parent), m_topSearch(new TopSearchWidget(this)), m_friendNotification(new NotificationItem("好友通知", this)), m_groupNotification(new NotificationItem("群通知", this)), m_content(new FriendListWidget(this)) {

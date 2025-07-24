@@ -1,19 +1,25 @@
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
 #include "PostDetailView.h"
 
-#include <QDateTime>
-#include <QFontMetrics>
+#include "CurrentUser.h"
+
 #include <QJsonArray>
-#include <QJsonDocument>
+#include <QJsonObject>
+
 #include <QNetworkReply>
-#include <QPainter>
+
 #include <QPainterPath>
-#include <QPropertyAnimation>
-#include <QScrollBar>
 
 #include "AvatarLoader.h"
+
 #include "MainWindow.h"
 #include "NetworkConfig.h"
+
 #include "NotificationManager.h"
+
+/* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 void PostDetailScrollArea::layoutContent() {
     if (!contentWidget || !m_titleLabel || !m_contentLabel)

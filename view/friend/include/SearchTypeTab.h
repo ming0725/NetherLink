@@ -1,9 +1,14 @@
+
+/* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
+
 #pragma once
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 #include <QLabel>
 #include <QPropertyAnimation>
-#include <QWidget>
 
+/* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 class SearchTypeTab : public QWidget {
     Q_OBJECT Q_PROPERTY(int indicatorX READ indicatorX WRITE setIndicatorX)
 

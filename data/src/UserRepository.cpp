@@ -4,7 +4,6 @@
 #include "UserRepository.h"
 
 #include <QJsonArray>
-#include <QJsonObject>
 #include <QSqlError>
 #include <QSqlQuery>
 

@@ -7,7 +7,6 @@
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 #include <QAbstractListModel>
-#include <QVector>
 
 #include "AiChatMessage.h"
 
@@ -19,7 +18,6 @@ struct AiBottomSpace {
 };
 
 /* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
-
 class AiChatListModel : public QAbstractListModel {
     Q_OBJECT
 

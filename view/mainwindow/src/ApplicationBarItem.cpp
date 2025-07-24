@@ -1,7 +1,13 @@
-#include "../include/ApplicationBarItem.h"
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
+
+#include "../include/ApplicationBarItem.h"
+
+/* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 ApplicationBarItem::ApplicationBarItem(QPixmap normal, QPixmap selected, QWidget* parent) : QWidget(parent), normalPixmap(normal), selectedPixmap(selected) {
     rippleAnim = new QVariantAnimation(this);

@@ -5,13 +5,10 @@
 
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
-#include <QLabel>
-
 #include "AiChatListItem.h"
 #include "CustomScrollArea.h"
 
 /* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
-
 class AiChatListWidget : public CustomScrollArea {
     Q_OBJECT
 

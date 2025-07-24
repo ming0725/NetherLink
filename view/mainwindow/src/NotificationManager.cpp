@@ -1,10 +1,20 @@
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
 #include "NotificationManager.h"
+
 #include <QApplication>
-#include <QHBoxLayout>
+
+#include <QBoxLayout>
+
 #include <QPainter>
 #include <QPainterPath>
+
 #include <QScreen>
+
 #include <QTimer>
+
+/* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 NotificationManager& NotificationManager::instance() {
     static NotificationManager mgr;

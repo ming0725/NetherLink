@@ -1,18 +1,25 @@
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
 #include "ChatArea.h"
+
+#include <QBoxLayout>
+
+#include <QScrollBar>
+
+#include "NetworkManager.h"
+#include <QTimer>
+
 #include "CurrentUser.h"
 #include "GroupRepository.h"
+
 #include "MessageHandler.h"
+
 #include "MessageRepository.h"
-#include "TopSearchWidget.h"
+
 #include "UserRepository.h"
-#include <NetworkManager.h>
-#include <QDateTime>
-#include <QJsonDocument>
-#include <QJsonObject>
-#include <QResizeEvent>
-#include <QScrollBar>
-#include <QTimer>
-#include <QVBoxLayout>
+
+/* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 ChatArea::ChatArea(QWidget*parent) : QWidget(parent), unreadMessageCount(0), isAtBottom(true), isGroupMode(false) {
     // 创建布局

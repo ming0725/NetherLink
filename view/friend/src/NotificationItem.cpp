@@ -1,8 +1,13 @@
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
 #include "NotificationItem.h"
-#include <QDebug>
-#include <QGraphicsOpacityEffect>
+
 #include <QMouseEvent>
+
 #include <QPainter>
+
+/* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 NotificationItem::NotificationItem(const QString& text, QWidget* parent) : QWidget(parent), textLabel(new QLabel(text, this)), arrowLabel(new QLabel(this)), badge(new NotificationBadge(this)) {
     setFixedHeight(40);

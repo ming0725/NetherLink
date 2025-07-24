@@ -1,13 +1,17 @@
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
 #include "PostApplicationBar.h"
+
 #include <QGraphicsDropShadowEffect>
+
 #include <QGraphicsPixmapItem>
+
 #include <QGraphicsScene>
-#include <QMouseEvent>
-#include <QPainter>
-#include <QPainterPath>
-#include <QStackedWidget>
+
 #include <QTimer>
-#include <QVariantAnimation>
+
+/* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 
 PostApplicationBar::PostApplicationBar(QWidget* parent) : QWidget(parent), m_parent(parent) {
     setAttribute(Qt::WA_TranslucentBackground);

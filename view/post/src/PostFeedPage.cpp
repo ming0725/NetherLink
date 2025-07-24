@@ -1,17 +1,17 @@
-#include "CurrentUser.h"
-#include "NetworkConfig.h"
-#include "NetworkManager.h"
-#include "Post.h"
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
 #include "PostFeedPage.h"
-#include "PostPreviewItem.h"
-#include <QEvent>
+
 #include <QJsonArray>
-#include <QJsonDocument>
+
 #include <QJsonObject>
 #include <QNetworkReply>
-#include <QNetworkRequest>
-#include <QPainter>
-#include <QRandomGenerator>
+
+#include "CurrentUser.h"
+#include "NetworkConfig.h"
+
+/* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 PostFeedPage::PostFeedPage(QWidget* parent) : CustomScrollArea(parent) {
 // connect(this, &CustomScrollArea::reachedBottom, this, [this]() {

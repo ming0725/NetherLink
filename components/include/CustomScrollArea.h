@@ -4,10 +4,9 @@
 
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
+#include "ScrollBarThumb.h"
 #include <QAbstractScrollArea>
 #include <QTimeLine>
-
-#include "ScrollBarThumb.h"
 
 /* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 class CustomScrollArea : public QAbstractScrollArea {

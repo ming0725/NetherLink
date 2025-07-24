@@ -1,10 +1,17 @@
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
 #include "ChatListView.h"
+
+#include "ChatListModel.h"
 #include <QPainter>
 #include <QPropertyAnimation>
 #include <QScrollBar>
 #include <QStyleOption>
 #include <QTimer>
 #include <QWheelEvent>
+
+/* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 ChatListView::ChatListView(QWidget*parent) : QListView(parent), m_smoothScrollValue(0) {
     setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);

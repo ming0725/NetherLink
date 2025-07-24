@@ -1,11 +1,14 @@
 // PostApplication.h
+
+/* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
+
 #pragma once
 
-#include <QImage>
-#include <QPixmap>
-#include <QStackedWidget>
-#include <QWidget>
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
+#include <QStackedWidget>
+
+/* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 class PostFeedPage;
 class PostApplicationBar;
 class Post;

@@ -1,12 +1,17 @@
+
+/* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
+
 #pragma once
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 #include "FramelessWindow.h"
 #include "LineEditComponent.h"
+
 #include "SearchResultList.h"
 #include "SearchTypeTab.h"
-#include <QLabel>
-#include <QPushButton>
 
+/* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 class SearchFriendWindow : public FramelessWindow {
     Q_OBJECT
 

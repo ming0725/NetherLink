@@ -1,14 +1,16 @@
 // PostPreviewItem.h
+
+/* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
+
 #pragma once
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 #include "AvatarLoader.h"
 #include "ClickableLabel.h"
 #include "Post.h"
-#include <QLabel>
-#include <QNetworkAccessManager>
-#include <QPixmap>
-#include <QWidget>
 
+/* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 class PostPreviewItem : public QWidget {
     Q_OBJECT
 

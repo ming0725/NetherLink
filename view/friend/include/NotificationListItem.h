@@ -1,11 +1,15 @@
+
+/* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
+
 #pragma once
 
-#include "AvatarLoader.h"
-#include <QLabel>
-#include <QMenu>
-#include <QPushButton>
-#include <QWidget>
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
+#include <QPushButton>
+
+#include "AvatarLoader.h"
+
+/* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 class NotificationListItem : public QWidget {
     Q_OBJECT
 

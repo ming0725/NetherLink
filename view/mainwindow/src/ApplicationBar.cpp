@@ -1,13 +1,20 @@
-#include "../include/ApplicationBar.h"
-#include "../include/ApplicationBarItem.h"
-#include "AvatarLoader.h"
-#include "CurrentUser.h"
-#include "UserRepository.h"
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
 #include <QGraphicsBlurEffect>
-#include <QImage>
+
+// #include <QImage>
 #include <QPainter>
 #include <QPainterPath>
 #include <QRandomGenerator>
+
+#include "ApplicationBar.h"
+#include "ApplicationBarItem.h"
+
+#include "CurrentUser.h"
+#include "UserRepository.h"
+
+/* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 ApplicationBar::ApplicationBar(QWidget* parent) : QWidget(parent) {
     noiseTexture = QImage(100, 100, QImage::Format_ARGB32);

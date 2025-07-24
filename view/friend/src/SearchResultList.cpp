@@ -1,16 +1,25 @@
-#include "CurrentUser.h"
-#include "NetworkConfig.h"
-#include "NotificationManager.h"
-#include "SearchFriendWindow.h"
-#include "SearchResultList.h"
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
+#include "../include/SearchResultList.h"
+
+#include <QBoxLayout>
 #include <QJsonArray>
-#include <QJsonDocument>
 #include <QJsonObject>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QPainter>
+#include <QTimer>
 #include <QUrl>
 #include <QUrlQuery>
-#include <QVBoxLayout>
+
+#include "../../../data/include/CurrentUser.h"
+#include "../../../network/include/NetworkConfig.h"
+#include "../../mainwindow/include/NotificationManager.h"
+#include "SearchFriendWindow.h" // 这个头文件有问题
+
+/* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 SearchResultList::SearchResultList(QWidget* parent) : CustomScrollArea(parent), searchTimer(new QTimer(this)), networkManager(new QNetworkAccessManager(this)) {
     // 创建用户分组标题

@@ -1,13 +1,15 @@
-#pragma once
-#include "TextBarItem.h"
-#include <QEnterEvent>
-#include <QGraphicsBlurEffect>
-#include <QPainter>
-#include <QPainterPath>
-#include <QVariantAnimation>
-#include <QVector>
-#include <QWidget>
 
+/* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
+
+#pragma once
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
+#include <QVariantAnimation>
+
+#include "TextBarItem.h"
+
+/* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 class PostApplicationBar : public QWidget {
     Q_OBJECT
 

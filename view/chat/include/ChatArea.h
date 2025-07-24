@@ -1,16 +1,20 @@
-#ifndef CHATAREA_H
-#define CHATAREA_H
 
-#include "chatitemdelegate.h"
+/* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
+
+#ifndef VIEW_CHAT_INCLUDE_CHAT_AREA
+#define VIEW_CHAT_INCLUDE_CHAT_AREA
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
+#include "ChatItemDelegate.h"
 #include "ChatListModel.h"
-#include "ChatListView.h"
-#include "ChatMessage.h"
-#include "FloatingInputBar.h"
-#include "newmessagenotifier.h"
-#include <QDateTime>
-#include <QSharedPointer>
-#include <QWidget>
 
+#include "ChatListView.h"
+
+#include "FloatingInputBar.h"
+#include "NewMessageNotifier.h"
+
+/* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 class ChatArea : public QWidget {
     Q_OBJECT using ChatMessagePtr = QSharedPointer <ChatMessage>;
 
@@ -74,4 +78,4 @@ class ChatArea : public QWidget {
 
 };
 
-#endif // CHATAREA_H
+#endif /* VIEW_CHAT_INCLUDE_CHAT_AREA */

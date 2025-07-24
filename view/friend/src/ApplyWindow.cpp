@@ -1,15 +1,20 @@
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
 #include "ApplyWindow.h"
+
+#include <QApplication>
+#include <QGuiApplication>
+#include <QJsonObject>
+#include <QPainter>
+#include <QScreen>
+
 #include "AvatarLoader.h"
 #include "NetworkManager.h"
 #include "NotificationManager.h"
 #include "SearchFriendWindow.h"
-#include <QApplication>
-#include <QDebug>
-#include <QGuiApplication>
-#include <QJsonDocument>
-#include <QJsonObject>
-#include <QPainter>
-#include <QScreen>
+
+/* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 ApplyWindow::ApplyWindow(Type type, const QString& id, const QString& name, const QString& avatarUrl, QWidget* parent) : FramelessWindow(parent), type(type), targetId(id), targetName(name), targetAvatar(avatarUrl) {
     setAttribute(Qt::WA_DeleteOnClose);

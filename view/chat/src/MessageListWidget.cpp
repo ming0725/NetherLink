@@ -1,14 +1,22 @@
 // MessageListWidget.cpp
-#include "CurrentUser.h"
-#include "GroupRepository.h"
-#include "MessageHandler.h"
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
 #include "MessageListWidget.h"
+
+#include "CurrentUser.h"
+
+#include "GroupRepository.h"
+
+#include "MessageHandler.h"
+
 #include "MessageRepository.h"
+
 #include "NetworkManager.h"
+
 #include "UserRepository.h"
-#include <algorithm>
-#include <QEvent>
-#include <QVBoxLayout>
+
+/* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 MessageListWidget::MessageListWidget(QWidget* parent) : CustomScrollArea(parent) {
     installEventFilter(this);

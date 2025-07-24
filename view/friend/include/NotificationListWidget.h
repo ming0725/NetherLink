@@ -1,10 +1,15 @@
+
+/* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
+
 #pragma once
 
-#include "CustomScrollArea.h"
-#include "NotificationListItem.h"
-#include <QVector>
-#include <QWidget>
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
+#include "CustomScrollArea.h"
+
+#include "NotificationListItem.h"
+
+/* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 class NotificationListWidget : public CustomScrollArea {
     Q_OBJECT
 

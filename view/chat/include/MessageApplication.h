@@ -1,12 +1,23 @@
-#pragma once
-#include "DefaultPage.h"
-#include "MessageListWidget.h"
-#include "TopSearchWidget.h"
-#include <ChatArea.h>
-#include <QSplitter>
-#include <QStackedWidget>
-#include <QWidget>
 
+/* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
+
+#pragma once
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
+#include <QSplitter>
+
+#include "ChatArea.h"
+
+#include <QStackedWidget>
+
+#include "DefaultPage.h"
+
+#include "MessageListWidget.h"
+
+#include "TopSearchWidget.h"
+
+/* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 class MessageApplication : public QWidget {
     Q_OBJECT
 

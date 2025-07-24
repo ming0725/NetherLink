@@ -1,19 +1,28 @@
-#include "CurrentUser.h"
-#include "MainWindow.h"
-#include "NetworkConfig.h"
-#include "NotificationManager.h"
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
 #include "PostCreatePage.h"
+
 #include <QFileDialog>
+
 #include <QHttpMultiPart>
-#include <QJsonDocument>
+
 #include <QJsonObject>
 #include <QMessageBox>
+
 #include <QMimeDatabase>
-#include <QNetworkAccessManager>
+
 #include <QNetworkReply>
-#include <QNetworkRequest>
-#include <QPainter>
-#include <QPainterPath>
+
+#include "CurrentUser.h"
+
+#include "MainWindow.h"
+
+#include "NetworkConfig.h"
+
+#include "NotificationManager.h"
+
+/* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 PostCreatePage::PostCreatePage(QWidget* parent) : QWidget(parent) {
     setupUI();

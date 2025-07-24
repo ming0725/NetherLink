@@ -7,8 +7,8 @@
 
 #include <QLabel>
 #include <QLineEdit>
+
 #include <QPainter>
-#include <QWidget>
 
 /* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 class LineEditComponent : public QWidget {
