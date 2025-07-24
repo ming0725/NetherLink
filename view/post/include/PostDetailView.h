@@ -1,15 +1,17 @@
-#pragma once
-#include "AvatarLoader.h"
-#include "CurrentUser.h"
-#include "CustomScrollArea.h"
-#include "LineEditComponent.h"
-#include <QJsonObject>
-#include <QLabel>
-#include <QNetworkAccessManager>
-#include <QPixmap>
-#include <QPushButton>
-#include <QWidget>
 
+/* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
+
+#pragma once
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
+#include <QPushButton>
+
+#include "CustomScrollArea.h"
+
+#include "LineEditComponent.h"
+
+/* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 class AvatarLabel;
 
 class PostDetailScrollArea : public CustomScrollArea {
@@ -31,6 +33,7 @@ class PostDetailScrollArea : public CustomScrollArea {
     private:
         QList <QWidget*> m_commentWidgets;
 };
+
 class PostDetailView : public QWidget {
     Q_OBJECT
 

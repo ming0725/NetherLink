@@ -3,11 +3,8 @@
 
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
-// #include <QDateTime>
-// #include <QLabel>
-// #include <QPixmap>
-// #include <QWidget>
 #include "AvatarLoader.h"
+
 #include "MessageData.h"
 
 #include "NotificationBadge.h"

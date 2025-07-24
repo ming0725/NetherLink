@@ -3,14 +3,11 @@
 
 #include "AiChatWebSocket.h"
 
-#include <QJsonDocument>
 #include <QJsonObject>
-#include <QNetworkAccessManager>
-#include <QUrlQuery>
 
 #include "CurrentUser.h"
+
 #include "NetworkConfig.h"
-#include "NotificationManager.h"
 
 /* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 

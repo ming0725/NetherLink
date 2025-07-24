@@ -4,18 +4,9 @@
 
 #include "MessageListItem.h"
 
-// #include <QFont>
-// #include <QFontMetrics>
 #include <QMouseEvent>
+
 #include <QPainter>
-
-// #include <QPainterPath>
-
-// #include <QStyle>
-
-// #include "AvatarLoader.h"
-
-// #include "UserRepository.h"
 
 /* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 

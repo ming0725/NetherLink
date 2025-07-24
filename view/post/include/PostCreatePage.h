@@ -1,12 +1,16 @@
+
+/* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
+
 #pragma once
 
-#include "LineEditComponent.h"
-#include "NetworkManager.h"
-#include <QLabel>
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
 #include <QPushButton>
 #include <QTextEdit>
-#include <QWidget>
 
+#include "LineEditComponent.h"
+
+/* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 class PostCreatePage : public QWidget {
     Q_OBJECT
 

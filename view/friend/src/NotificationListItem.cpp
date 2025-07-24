@@ -1,11 +1,20 @@
-#include "NetworkManager.h"
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
 #include "NotificationListItem.h"
-#include "TransparentMenu.h"
-#include <QJsonDocument>
+
 #include <QJsonObject>
+
 #include <QPainter>
+
 #include <QPainterPath>
 #include <QTimer>
+
+#include "NetworkManager.h"
+
+#include "TransparentMenu.h"
+
+/* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 NotificationListItem::NotificationListItem(int requestId, const QString& userId, const QString& name, const QString& avatarUrl, const QString& message, const QString& date, Type type, QWidget* parent) : QWidget(parent), requestId(requestId), avatarLabel(new AvatarLabel(this)), nameLabel(new QLabel(name, this)), requestLabel(new QLabel(this)), dateLabel(new QLabel(date, this)), messageLabel(new QLabel(this)), actionButton(new QPushButton(this)), currentStatus(Status::Pending), itemType(type) {
     setFixedHeight(72);

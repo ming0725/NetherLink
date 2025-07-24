@@ -1,16 +1,21 @@
-#include "AiChatApplication.h"
-#include "CurrentUser.h"
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
+#include "FriendApplication.h"
 #include "MainWindow.h"
+
+#include "AiChatApplication.h"
 #include "MessageApplication.h"
-#include "PostApplication.h"
-#include "WindowEffect.h"
-#include <QGuiApplication>
-#include <QJsonDocument>
-#include <QJsonObject>
-#include <QPainterPath>
+
 #include <QScreen>
 
+#include "PostApplication.h"
+#include "WindowEffect.h"
+
+/* variable --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 QWidget* MainWindow::instance = nullptr;
+
+/* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 MainWindow::MainWindow(QWidget* parent) : FramelessWindow(parent), stack(new QStackedWidget(this)) {
     // 窗口基础设置

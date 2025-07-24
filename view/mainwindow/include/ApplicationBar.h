@@ -1,9 +1,15 @@
+
+/* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
+
 #pragma once
-#include "AvatarLoader.h"
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 #include <QPropertyAnimation>
 
-// #include <QWidget>
+#include "AvatarLoader.h"
+
+/* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 class ApplicationBarItem;
 
 class ApplicationBar : public QWidget {

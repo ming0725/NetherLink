@@ -1,29 +1,30 @@
-#include "NetworkConfig.h"
-#include "NetworkManager.h"
-#include "NotificationManager.h"
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
 #include "Register.h"
+
 #include <QApplication>
-#include <QDateTime>
-#include <QDir>
+
+#include <QBoxLayout>
 #include <QFileDialog>
-#include <QHBoxLayout>
 #include <QHttpMultiPart>
-#include <QIcon>
-#include <QJsonDocument>
 #include <QJsonObject>
-#include <QMimeDatabase>
-#include <QMouseEvent>
 #include <QNetworkReply>
-#include <QNetworkRequest>
-#include <QPainter>
 #include <QPainterPath>
 #include <QPushButton>
-#include <QRegularExpression>
+
+#include "NetworkConfig.h"
+#include "NotificationManager.h"
+
 #include <QScreen>
 #include <QTimer>
 
+/* variable --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
 // 定义静态成员变量
 const QRegularExpression Register::emailRegex("^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$");
+
+/* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 Register::Register(QWidget* parent) : FramelessWindow(parent) {
     // 固定窗口大小

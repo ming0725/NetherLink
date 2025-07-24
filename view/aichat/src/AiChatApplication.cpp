@@ -3,9 +3,8 @@
 
 #include "AiChatApplication.h"
 
-#include <QPainter>
-
 #include "AiChatWindow.h"
+#include <QPainter>
 
 /* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 

@@ -6,8 +6,9 @@
 
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
-#include "LineEditComponent.h"
 #include <QPushButton>
+
+#include "LineEditComponent.h"
 
 /* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 class TopSearchWidget : public QWidget {

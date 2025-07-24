@@ -4,9 +4,6 @@
 
 #include "NotificationBadge.h"
 
-// #include <QFont>
-// #include <QFontMetrics>
-
 #include <QPainter>
 
 /* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */

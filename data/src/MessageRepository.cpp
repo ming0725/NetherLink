@@ -3,10 +3,6 @@
 
 #include "MessageRepository.h"
 
-#include <algorithm>
-
-#include <QMutexLocker>
-
 #include <QSqlError>
 
 #include "CurrentUser.h"

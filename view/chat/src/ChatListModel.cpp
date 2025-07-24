@@ -1,7 +1,12 @@
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
 #include "ChatListModel.h"
+
 #include <QDateTime>
 #include <QDebug>
 
+/* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 Q_DECLARE_METATYPE(TimeHeader*) ChatListModel::ChatListModel(QObject* parent) : QAbstractListModel(parent) {
     qRegisterMetaType <TimeHeader*>();
 }

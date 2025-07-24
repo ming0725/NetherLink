@@ -1,10 +1,15 @@
+
+/* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
+
 #ifndef NETHERLINK_NOTIFICATIONMANAGER_H
 #define NETHERLINK_NOTIFICATIONMANAGER_H
 
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
 #include <QLabel>
 #include <QPropertyAnimation>
-#include <QWidget>
 
+/* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 class NotificationManager : public QWidget {
     Q_OBJECT
 

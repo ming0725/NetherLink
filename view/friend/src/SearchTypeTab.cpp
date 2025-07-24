@@ -1,8 +1,14 @@
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
 #include "SearchTypeTab.h"
-#include <QHBoxLayout>
+
+#include <QBoxLayout>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QTimer>
+
+/* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 SearchTypeTab::SearchTypeTab(QWidget* parent) : QWidget(parent), animation(new QPropertyAnimation(this, "indicatorX", this)) {
     setFixedHeight(TAB_HEIGHT);

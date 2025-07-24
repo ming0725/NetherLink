@@ -1,9 +1,13 @@
-#include "GroupRepository.h"
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
 #include "MessageApplication.h"
+
+#include <QBoxLayout>
+
 #include "MessageRepository.h"
-#include <QLayout>
-#include <QPainter>
-#include <QResizeEvent>
+
+/* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 MessageApplication::MessageApplication(QWidget* parent) : QWidget(parent) {
     // 左侧：搜索 + 列表

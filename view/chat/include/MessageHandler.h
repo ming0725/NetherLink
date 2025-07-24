@@ -1,11 +1,13 @@
+
+/* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
+
 #pragma once
 
-#include "ChatMessage.h"
-#include "MessageListItem.h"
-#include <QDateTime>
-#include <QJsonObject>
-#include <QObject>
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
+#include "ChatMessage.h"
+
+/* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 class MessageHandler : public QObject {
     Q_OBJECT
 

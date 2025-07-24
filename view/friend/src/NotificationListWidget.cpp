@@ -1,5 +1,9 @@
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
 #include "NotificationListWidget.h"
-#include <QPainter>
+
+/* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 NotificationListWidget::NotificationListWidget(QWidget* parent) : CustomScrollArea(parent) {
     // 设置背景色

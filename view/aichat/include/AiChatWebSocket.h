@@ -7,12 +7,9 @@
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 #include <QNetworkAccessManager>
-#include <QObject>
-#include <QString>
 #include <QWebSocket>
 
 /* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
-
 class AiChatWebSocket : public QObject {
     Q_OBJECT
 

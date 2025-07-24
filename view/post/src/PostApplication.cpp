@@ -1,18 +1,31 @@
 // PostApplication.cpp
-#include "CurrentUser.h"
-#include "DefaultPage.h"
-#include "NetworkConfig.h"
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
 #include "PostApplication.h"
-#include "PostApplicationBar.h"
-#include "PostCreatePage.h"
-#include "PostDetailView.h"
-#include "PostFeedPage.h"
-#include <QJsonDocument>
+
+#include <QJsonObject>
+
 #include <QNetworkReply>
+
+#include <QEvent>
 #include <QPropertyAnimation>
+
 #include <QRandomGenerator>
-#include <QResizeEvent>
-#include <QUrlQuery>
+
+#include "CurrentUser.h"
+
+#include "NetworkConfig.h"
+
+#include "PostApplicationBar.h"
+
+#include "PostCreatePage.h"
+
+#include "PostDetailView.h"
+
+#include "PostFeedPage.h"
+
+/* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 
 PostApplication::PostApplication(QWidget* parent) : QWidget(parent), m_bar(new PostApplicationBar(this)), m_stack(new QStackedWidget(this)), m_detailView(nullptr), m_createPage(new PostCreatePage(this)) {
     m_bar->enableBlur();

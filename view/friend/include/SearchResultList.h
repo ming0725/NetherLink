@@ -1,14 +1,17 @@
+
+/* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
+
 #pragma once
 
-#include "../../components/include/CustomScrollArea.h"
-#include "SearchResultItem.h"
-#include <QJsonObject>
-#include <QLabel>
-#include <QNetworkAccessManager>
-#include <QNetworkReply>
-#include <QTimer>
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
+#include "../../components/include/CustomScrollArea.h"
+
+#include "SearchResultItem.h"
+
+/* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 class SearchFriendWindow;
+
 class SearchResultList : public CustomScrollArea {
     Q_OBJECT
 

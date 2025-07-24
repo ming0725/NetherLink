@@ -1,12 +1,12 @@
-#include "../include/FriendListItem.h"
-#include "UserRepository.h"
-#include <QEvent>
-#include <QFontMetrics>
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
 #include <QMouseEvent>
 #include <QPainter>
-#include <QPainterPath>
-#include <QPushButton>
-#include <QRandomGenerator>
+
+#include "../include/FriendListItem.h"
+
+/* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 FriendListItem::FriendListItem(const User& user, QWidget* parent) : QWidget(parent), avatarLabel(new AvatarLabel(this)), fullNameText(user.nick), status(user.status), userID(user.id) {
     fullStatusAndSignText = QString("[%1] %2").arg(statusText(user.status), user.signature);

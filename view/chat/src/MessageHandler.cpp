@@ -1,10 +1,15 @@
-#include "CurrentUser.h"
-#include "GroupRepository.h"
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
 #include "MessageHandler.h"
+
+#include "GroupRepository.h"
+
 #include "MessageRepository.h"
+
 #include "UserRepository.h"
-#include <QDebug>
-#include <QJsonDocument>
+
+/* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 MessageHandler& MessageHandler::instance() {
     static MessageHandler handler;

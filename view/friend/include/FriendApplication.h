@@ -1,12 +1,20 @@
+
+/* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
+
 #pragma once
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
+#include <QSplitter>
+
 #include "DefaultPage.h"
 #include "FriendListWidget.h"
+
 #include "NotificationItem.h"
 #include "NotificationPage.h"
 #include "TopSearchWidget.h"
-#include <QSplitter>
-#include <QStackedWidget>
-#include <QWidget>
+
+/* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 
 // 前置声明
 class FriendApplication;

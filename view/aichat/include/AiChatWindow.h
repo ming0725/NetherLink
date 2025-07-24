@@ -6,16 +6,15 @@
 
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
-#include <QVBoxLayout>
-#include <QWidget>
+#include <QBoxLayout>
 
 #include "AiChatListModel.h"
+
 #include "AiChatListView.h"
 #include "AiChatWebSocket.h"
 #include "FloatingInputBar.h"
 
 /* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
-
 class AiChatWindow : public QWidget {
     Q_OBJECT
 

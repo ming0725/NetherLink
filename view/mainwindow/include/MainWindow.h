@@ -1,18 +1,20 @@
+
+/* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
+
 #pragma once
 
-#include "ApplicationBar.h"
-#include "DefaultPage.h"
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
 #include "FramelessWindow.h"
-#include "FriendApplication.h"
-#include "WindowEffect.h"
+
 #include <QApplication>
-#include <QMouseEvent>
-#include <QPainterPath>
-#include <QPropertyAnimation>
-#include <QScreen>
 #include <QSplitter>
 #include <QStackedWidget>
 
+#include "ApplicationBar.h"
+#include <QPushButton>
+
+/* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 class MainWindow : public FramelessWindow {
     public:
         MainWindow(QWidget*parent = nullptr);

@@ -1,12 +1,14 @@
+
+/* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
+
 #pragma once
 
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 #include "FramelessWindow.h"
 #include "LineEditComponent.h"
-#include <QLabel>
 #include <QPushButton>
-#include <QRegularExpression>
-#include <QWidget>
 
+/* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 class Register : public FramelessWindow {
     Q_OBJECT
 

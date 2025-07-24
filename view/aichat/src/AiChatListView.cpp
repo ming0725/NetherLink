@@ -3,13 +3,11 @@
 
 #include "AiChatListView.h"
 
-#include <QPainter>
-#include <QPropertyAnimation>
 #include <QScrollBar>
-#include <QStyleOption>
+
 #include <QTimer>
-#include <QWheelEvent>
-#include <QWidget>
+
+#include <QMouseEvent>
 
 #include "AiChatListModel.h"
 

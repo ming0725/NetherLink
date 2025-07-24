@@ -1,5 +1,11 @@
-#include "../include/DefaultPage.h"
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
 #include <QPainter>
+
+#include "../include/DefaultPage.h"
+
+/* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 DefaultPage::DefaultPage(QWidget*parent) : QWidget(parent), m_pixmap(":/icon/icon.png"), m_displaySize(128, 128) // 默认显示区域大小
 {

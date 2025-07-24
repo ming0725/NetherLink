@@ -1,13 +1,11 @@
 
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
+#include "AiChatItemDelegate.h"
 #include "AiChatWindow.h"
 
-#include <QResizeEvent>
-#include <QScrollBar>
-
-#include "AiChatItemDelegate.h"
 #include "MainWindow.h"
+
 #include "NotificationManager.h"
 
 /* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */

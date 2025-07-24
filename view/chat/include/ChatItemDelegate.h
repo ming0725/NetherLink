@@ -1,13 +1,16 @@
+
+/* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
+
 #ifndef CHATITEMDELEGATE_H
 #define CHATITEMDELEGATE_H
 
-#include "AvatarLoader.h"
-#include "ChatMessage.h"
-#include "TransparentMenu.h"
-#include <QCache>
-#include <QPixmap>
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
 #include <QStyledItemDelegate>
 
+#include "ChatMessage.h"
+
+/* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 class ChatItemDelegate : public QStyledItemDelegate {
     Q_OBJECT
 

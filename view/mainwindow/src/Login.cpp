@@ -1,30 +1,36 @@
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
+#include "Login.h"
+
+#include <QApplication>
+#include <QBoxLayout>
+
+#include <QNetworkReply>
+#include <QPushButton>
+#include <QScreen>
+
+#include <QtConcurrent>
+
 #include "AvatarLoader.h"
 #include "CurrentUser.h"
 #include "DatabaseManager.h"
 #include "GroupRepository.h"
-#include "Login.h"
+
 #include "MainWindow.h"
 #include "NetworkConfig.h"
 #include "NetworkManager.h"
 #include "NotificationManager.h"
+
 #include "Register.h"
 #include "UserRepository.h"
-#include <QApplication>
-#include <QHBoxLayout>
-#include <QIcon>
-#include <QJsonArray>
-#include <QJsonDocument>
-#include <QJsonObject>
-#include <QMouseEvent>
-#include <QNetworkReply>
-#include <QPushButton>
-#include <QRegularExpression>
-#include <QSpacerItem>
-#include <QtConcurrent>
-#include <QTimer>
+
+/* variable --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 // 定义静态成员变量
 const QRegularExpression Login::emailRegex("^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}$");
+
+/* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 Login::Login(QWidget* parent) : FramelessWindow(parent) {
     // 固定窗口大小
