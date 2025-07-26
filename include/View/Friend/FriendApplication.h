@@ -3,7 +3,6 @@
 #ifndef INCLUDE_VIEW_FRIEND_FRIEND_APPLICATION
 #define INCLUDE_VIEW_FRIEND_FRIEND_APPLICATION
 
-
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 #include <QSplitter>
@@ -66,6 +65,5 @@ class FriendApplication : public QWidget {
         NotificationPage* m_notificationPage; // 通知页面
         QSplitter*   m_splitter; // 中间分隔器
 };
-
 
 #endif /* INCLUDE_VIEW_FRIEND_FRIEND_APPLICATION */

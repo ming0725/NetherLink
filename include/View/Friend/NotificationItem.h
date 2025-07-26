@@ -3,7 +3,6 @@
 #ifndef INCLUDE_VIEW_FRIEND_NOTIFICATION_ITEM
 #define INCLUDE_VIEW_FRIEND_NOTIFICATION_ITEM
 
-
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 #include <QLabel>
@@ -56,6 +55,5 @@ class NotificationItem : public QWidget {
         void clicked();
 
 };
-
 
 #endif /* INCLUDE_VIEW_FRIEND_NOTIFICATION_ITEM */

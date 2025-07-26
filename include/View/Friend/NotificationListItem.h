@@ -3,7 +3,6 @@
 #ifndef INCLUDE_VIEW_FRIEND_NOTIFICATION_LIST_ITEM
 #define INCLUDE_VIEW_FRIEND_NOTIFICATION_LIST_ITEM
 
-
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 #include <QPushButton>
@@ -68,6 +67,5 @@ class NotificationListItem : public QWidget {
         void rejected();
 
 };
-
 
 #endif /* INCLUDE_VIEW_FRIEND_NOTIFICATION_LIST_ITEM */

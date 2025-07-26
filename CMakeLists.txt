@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.30)
+cmake_minimum_required(VERSION 3.10)
 
 project(NetherLink-Client VERSION 1.0.0 LANGUAGES CXX)
 
@@ -28,22 +28,6 @@ if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
         ${SOURCES}
         res/res.qrc
     )
-# Define target properties for Android with Qt 6 as:
-#    set_property(TARGET NetherLink APPEND PROPERTY QT_ANDROID_PACKAGE_SOURCE_DIR
-#                 ${CMAKE_CURRENT_SOURCE_DIR}/android)
-# For more information, see https://doc.qt.io/qt-6/qt-add-executable.html#target-creation
-# else()
-#     if(ANDROID)
-#         add_library(NetherLink-Client SHARED
-#             ${SOURCES}
-#         )
-# # Define properties for Android with Qt 5 after find_package() calls as:
-# #    set(ANDROID_PACKAGE_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/android")
-#     else()
-#         add_executable(NetherLink-Client
-#             ${SOURCES}
-#         )
-#     endif()
 endif()
 
 target_link_libraries(NetherLink-Client PRIVATE

@@ -3,7 +3,6 @@
 #ifndef INCLUDE_VIEW_FRIEND_NOTIFICATION_PAGE
 #define INCLUDE_VIEW_FRIEND_NOTIFICATION_PAGE
 
-
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 #include <QStackedWidget>
@@ -41,6 +40,5 @@ class NotificationPage : public QWidget {
         void setupUI();
 
 };
-
 
 #endif /* INCLUDE_VIEW_FRIEND_NOTIFICATION_PAGE */

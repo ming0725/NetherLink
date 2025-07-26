@@ -3,7 +3,6 @@
 #ifndef INCLUDE_VIEW_FRIEND_NOTIFICATION_LIST_WIDGET
 #define INCLUDE_VIEW_FRIEND_NOTIFICATION_LIST_WIDGET
 
-
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 #include "Components/CustomScrollArea.h"
@@ -26,6 +25,5 @@ class NotificationListWidget : public CustomScrollArea {
     private:
         QVector <NotificationListItem*> m_items;
 };
-
 
 #endif /* INCLUDE_VIEW_FRIEND_NOTIFICATION_LIST_WIDGET */

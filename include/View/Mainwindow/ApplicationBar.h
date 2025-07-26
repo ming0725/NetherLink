@@ -3,7 +3,6 @@
 #ifndef INCLUDE_VIEW_MAINWINDOW_APPLICATION_BAR
 #define INCLUDE_VIEW_MAINWINDOW_APPLICATION_BAR
 
-
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 #include <QPropertyAnimation>
@@ -59,6 +58,5 @@ class ApplicationBar : public QWidget {
         int highlightPosY = 0;
         QVariantAnimation* highlightAnim = nullptr;
 };
-
 
 #endif /* INCLUDE_VIEW_MAINWINDOW_APPLICATION_BAR */

@@ -3,7 +3,6 @@
 #ifndef INCLUDE_VIEW_MAINWINDOW_APPLICATION_BAR_ITEM
 #define INCLUDE_VIEW_MAINWINDOW_APPLICATION_BAR_ITEM
 
-
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 #include <QPropertyAnimation>
@@ -46,6 +45,5 @@ class ApplicationBarItem : public QWidget {
         void itemClicked(ApplicationBarItem* item);
 
 };
-
 
 #endif /* INCLUDE_VIEW_MAINWINDOW_APPLICATION_BAR_ITEM */

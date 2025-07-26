@@ -2,9 +2,8 @@
 
 #ifndef INCLUDE_VIEW_CHAT_MESSAGE_LIST_WIDGET
 #define INCLUDE_VIEW_CHAT_MESSAGE_LIST_WIDGET
+
 /* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
-
-
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 #include "Components/CustomScrollArea.h"
@@ -48,6 +47,5 @@ class MessageListWidget : public CustomScrollArea {
         QVector <MessageListItem*> m_items;
         MessageListItem* selectItem = nullptr;
 };
-
 
 #endif /* INCLUDE_VIEW_CHAT_MESSAGE_LIST_WIDGET */

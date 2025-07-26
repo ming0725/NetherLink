@@ -3,7 +3,6 @@
 #ifndef INCLUDE_VIEW_MAINWINDOW_DEFAULT_PAGE
 #define INCLUDE_VIEW_MAINWINDOW_DEFAULT_PAGE
 
-
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 #include <QWidget>
@@ -24,6 +23,5 @@ class DefaultPage : public QWidget {
         QPixmap m_pixmap;
         QSize m_displaySize; // 固定显示区域大小
 };
-
 
 #endif /* INCLUDE_VIEW_MAINWINDOW_DEFAULT_PAGE */

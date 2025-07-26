@@ -3,7 +3,6 @@
 #ifndef INCLUDE_VIEW_POST_POST_APPLICATION
 #define INCLUDE_VIEW_POST_POST_APPLICATION
 
-
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 #include <QStackedWidget>
@@ -43,6 +42,5 @@ class PostApplication : public QWidget {
         PostDetailView* m_detailView;
         PostCreatePage* m_createPage;
 };
-
 
 #endif /* INCLUDE_VIEW_POST_POST_APPLICATION */

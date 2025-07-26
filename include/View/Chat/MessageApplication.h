@@ -3,7 +3,6 @@
 #ifndef INCLUDE_VIEW_CHAT_MESSAGE_APPLICATION
 #define INCLUDE_VIEW_CHAT_MESSAGE_APPLICATION
 
-
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 #include <QSplitter>
@@ -37,6 +36,5 @@ class MessageApplication : public QWidget {
         DefaultPage*        m_defaultPage;
         ChatArea*           m_chatArea;
 };
-
 
 #endif /* INCLUDE_VIEW_CHAT_MESSAGE_APPLICATION */

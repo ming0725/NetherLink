@@ -3,7 +3,6 @@
 #ifndef INCLUDE_VIEW_POST_POST_APPLICATION_BAR
 #define INCLUDE_VIEW_POST_POST_APPLICATION_BAR
 
-
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 #include <QVariantAnimation>
@@ -63,6 +62,5 @@ class PostApplicationBar : public QWidget {
         bool isEnableBlur = false;
         QSize preSize;
 };
-
 
 #endif /* INCLUDE_VIEW_POST_POST_APPLICATION_BAR */
