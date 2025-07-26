@@ -3,7 +3,6 @@
 #ifndef INCLUDE_VIEW_MAINWINDOW_MAIN_WINDOW
 #define INCLUDE_VIEW_MAINWINDOW_MAIN_WINDOW
 
-
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 #include <QApplication>
@@ -16,6 +15,8 @@
 
 /* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 class MainWindow : public FramelessWindow {
+    Q_OBJECT
+
     public:
         MainWindow(QWidget*parent = nullptr);
 
@@ -43,6 +44,5 @@ class MainWindow : public FramelessWindow {
         QStackedWidget* stack;
         QIcon iconClose, iconCloseHover;
 };
-
 
 #endif /* INCLUDE_VIEW_MAINWINDOW_MAIN_WINDOW */

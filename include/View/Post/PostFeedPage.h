@@ -3,7 +3,6 @@
 #ifndef INCLUDE_VIEW_POST_POST_FEED_PAGE
 #define INCLUDE_VIEW_POST_POST_FEED_PAGE
 
-
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 #include <QVector>
@@ -54,6 +53,5 @@ class PostFeedPage : public CustomScrollArea {
         bool m_isFirstShow = true; // 是否是第一次显示
         bool m_needReload = false; // 是否需要重新加载
 };
-
 
 #endif /* INCLUDE_VIEW_POST_POST_FEED_PAGE */

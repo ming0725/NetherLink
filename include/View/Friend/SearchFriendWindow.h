@@ -3,11 +3,11 @@
 #ifndef INCLUDE_VIEW_FRIEND_SEARCH_FRIEND_WINDOW
 #define INCLUDE_VIEW_FRIEND_SEARCH_FRIEND_WINDOW
 
-
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 #include "Components/LineEditComponent.h"
 #include "Utils/FramelessWindow.h"
+
 #include "View/Friend/SearchResultList.h"
 #include "View/Friend/SearchTypeTab.h"
 
@@ -50,6 +50,5 @@ class SearchFriendWindow : public FramelessWindow {
         const int SEARCH_BOX_HEIGHT = 32;
         const int MARGIN = 20;
 };
-
 
 #endif /* INCLUDE_VIEW_FRIEND_SEARCH_FRIEND_WINDOW */

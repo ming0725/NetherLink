@@ -3,7 +3,6 @@
 #ifndef INCLUDE_VIEW_FRIEND_SEARCH_RESULT_LIST
 #define INCLUDE_VIEW_FRIEND_SEARCH_RESULT_LIST
 
-
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 #include "Components/CustomScrollArea.h"
@@ -81,6 +80,5 @@ class SearchResultList : public CustomScrollArea {
         const int TITLE_HEIGHT = 30;
         const int MAX_ITEMS_SHOW = 5;
 };
-
 
 #endif /* INCLUDE_VIEW_FRIEND_SEARCH_RESULT_LIST */

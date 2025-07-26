@@ -3,7 +3,6 @@
 #ifndef INCLUDE_VIEW_AI_CHAT_AI_CHAT_LIST_WIDGET
 #define INCLUDE_VIEW_AI_CHAT_AI_CHAT_LIST_WIDGET
 
-
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 #include "Components/CustomScrollArea.h"
@@ -56,6 +55,5 @@ class AiChatListWidget : public CustomScrollArea {
         QString getCurrentVisibleTimeText() const;
 
 };
-
 
 #endif /* INCLUDE_VIEW_AI_CHAT_AI_CHAT_LIST_WIDGET */

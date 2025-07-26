@@ -3,7 +3,6 @@
 #ifndef INCLUDE_VIEW_CHAT_MESSAGE_HANDLER
 #define INCLUDE_VIEW_CHAT_MESSAGE_HANDLER
 
-
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 #include "Entity/ChatMessage.h"
@@ -36,6 +35,5 @@ class MessageHandler : public QObject {
         QDateTime parseTimestamp(const QString& timestamp);
 
 };
-
 
 #endif /* INCLUDE_VIEW_CHAT_MESSAGE_HANDLER */

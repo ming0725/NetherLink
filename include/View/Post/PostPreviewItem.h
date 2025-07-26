@@ -3,7 +3,6 @@
 #ifndef INCLUDE_VIEW_POST_POST_PREVIEW_ITEM
 #define INCLUDE_VIEW_POST_POST_PREVIEW_ITEM
 
-
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 #include "Components/ClickableLabel.h"
@@ -135,6 +134,5 @@ class PostPreviewItem : public QWidget {
         static constexpr int Margin = 6;
         static constexpr int AvatarR = 30; // 头像直径
 };
-
 
 #endif /* INCLUDE_VIEW_POST_POST_PREVIEW_ITEM */

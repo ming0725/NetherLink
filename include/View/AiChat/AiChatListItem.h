@@ -3,7 +3,6 @@
 #ifndef INCLUDE_VIEW_AI_CHAT_AI_CHAT_LIST_ITEM
 #define INCLUDE_VIEW_AI_CHAT_AI_CHAT_LIST_ITEM
 
-
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 #include <QDateTime>
@@ -63,6 +62,5 @@ class AiChatListItem : public QWidget {
         void initMenu();
 
 };
-
 
 #endif /* INCLUDE_VIEW_AI_CHAT_AI_CHAT_LIST_ITEM */

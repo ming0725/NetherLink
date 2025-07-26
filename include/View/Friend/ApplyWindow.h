@@ -3,7 +3,6 @@
 #ifndef INCLUDE_VIEW_FRIEND_APPLY_WINDOW
 #define INCLUDE_VIEW_FRIEND_APPLY_WINDOW
 
-
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 #include <QPushButton>
@@ -68,6 +67,5 @@ class ApplyWindow : public FramelessWindow {
         const int BTN_WIDTH = 80;
         const int MESSAGE_HEIGHT = 80;
 };
-
 
 #endif /* INCLUDE_VIEW_FRIEND_APPLY_WINDOW */

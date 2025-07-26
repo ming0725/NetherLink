@@ -2,9 +2,8 @@
 
 #ifndef INCLUDE_VIEW_CHAT_NOTIFICATION_BADGE
 #define INCLUDE_VIEW_CHAT_NOTIFICATION_BADGE
+
 /* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
-
-
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 #include <QWidget>
@@ -52,6 +51,5 @@ class NotificationBadge : public QWidget {
         int m_plusWidth = 32;
         static constexpr int kHeight = 16;
 };
-
 
 #endif /* INCLUDE_VIEW_CHAT_NOTIFICATION_BADGE */

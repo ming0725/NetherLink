@@ -3,7 +3,6 @@
 #ifndef INCLUDE_VIEW_MAINWINDOW_REGISTER
 #define INCLUDE_VIEW_MAINWINDOW_REGISTER
 
-
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 #include <QPushButton>
 
@@ -54,6 +53,5 @@ class Register : public FramelessWindow {
         QPushButton* registerButton;
         bool isRegistering = false;
 };
-
 
 #endif /* INCLUDE_VIEW_MAINWINDOW_REGISTER */

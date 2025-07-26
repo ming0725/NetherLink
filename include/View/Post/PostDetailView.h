@@ -3,7 +3,6 @@
 #ifndef INCLUDE_VIEW_POST_POST_DETAIL_VIEW
 #define INCLUDE_VIEW_POST_POST_DETAIL_VIEW
 
-
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 #include <QPushButton>
@@ -108,6 +107,5 @@ class PostDetailView : public QWidget {
         int m_likes = 0;
         int m_comments = 0;
 };
-
 
 #endif /* INCLUDE_VIEW_POST_POST_DETAIL_VIEW */

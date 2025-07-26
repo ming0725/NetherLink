@@ -3,7 +3,6 @@
 #ifndef INCLUDE_VIEW_MAINWINDOW_LOGIN
 #define INCLUDE_VIEW_MAINWINDOW_LOGIN
 
-
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 #include <QFutureWatcher>
@@ -70,6 +69,5 @@ class Login : public FramelessWindow {
         void VerifySucceed(const QPixmap& userhead_pixmap, const QByteArray& imagebytes, const QString& userName, const int& userAccount);
 
 };
-
 
 #endif /* INCLUDE_VIEW_MAINWINDOW_LOGIN */

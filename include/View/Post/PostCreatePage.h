@@ -3,7 +3,6 @@
 #ifndef INCLUDE_VIEW_POST_POST_CREATE_PAGE
 #define INCLUDE_VIEW_POST_POST_CREATE_PAGE
 
-
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 #include <QPushButton>
@@ -48,6 +47,5 @@ class PostCreatePage : public QWidget {
         static const int MARGIN = 20;
         static const int SPACING = 15;
 };
-
 
 #endif /* INCLUDE_VIEW_POST_POST_CREATE_PAGE */
