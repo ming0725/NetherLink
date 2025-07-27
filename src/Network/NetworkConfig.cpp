@@ -32,7 +32,7 @@ bool NetworkConfig::loadConfig() {
         configFile.setFileName(exeConfigPath);
     } else {
         // 如果可执行文件目录没有配置文件，则从资源加载
-        configFile.setFileName(":/network_config.json");
+        configFile.setFileName(":/data/network_config.json");
     }
 
     if (!configFile.open(QIODevice::ReadOnly)) {

@@ -1,6 +1,6 @@
 {
     "server": {
-        "ip": "localhost",
+        "ip": "175.178.243.14",
         "http_port": 8080,
         "websocket_port": 8081
     }
