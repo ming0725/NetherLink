@@ -2,4 +2,4 @@
 
 doxygen Doxyfile
 
-move /y ".\doc\html\NetherLink-Client.chm" ".\doc\NetherLink-Client.chm"
+copy /y ".\doc\html\NetherLink-Client.chm" ".\doc\NetherLink-Client.chm"
