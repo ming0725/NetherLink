@@ -1,5 +1,0 @@
-D:\Qt\Tools\CMake_64\bin\cmake.exe -DCMAKE_BUILD_TYPE=Debug -DCMAKE_MAKE_PROGRAM=D:/JetBrains/CLion/bin/ninja/win/x64/ninja.exe -G Ninja -S D:\AAAProgramerMing\NetherLink-master -B D:\AAAProgramerMing\NetherLink-master\cmake-build-debug
--- Could NOT find WrapVulkanHeaders (missing: Vulkan_INCLUDE_DIR) 
--- Configuring done
--- Generating done
--- Build files have been written to: D:/AAAProgramerMing/NetherLink-master/cmake-build-debug
