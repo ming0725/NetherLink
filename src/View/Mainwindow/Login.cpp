@@ -79,24 +79,22 @@ Login::Login(QWidget* parent)
     // --------------------------
     // 3. 账户、密码、登录、注册等控件
     // --------------------------
-    this->userAccountEdit = new LineEditComponent(this);
-    this->userPasswordEdit = new LineEditComponent(this);
-    this->userAccountEdit->setIcon(QPixmap(":/icon/skull.png"));
-    this->userPasswordEdit->setIcon(QPixmap(":/icon/lock.png"));
-    this->userAccountEdit->setIconSize(QSize(20, 20));
-    this->userPasswordEdit->setIconSize(QSize(20, 20));
-
-    // 设置焦点策略
-    userAccountEdit->setFocusPolicy(Qt::StrongFocus);
-    userPasswordEdit->setFocusPolicy(Qt::StrongFocus);
+    userAccountEdit = new LineEditComponent(this);
+    userPasswordEdit = new LineEditComponent(this);
+    userAccountEdit->setIcon(QPixmap(":/icon/skull.png"));
+    userPasswordEdit->setIcon(QPixmap(":/icon/lock.png"));
+    userAccountEdit->setIconSize(QSize(20, 20));
+    userPasswordEdit->setIconSize(QSize(20, 20));
 
     userAccountEdit->getLineEdit()->setAlignment(Qt::AlignCenter);
     userPasswordEdit->getLineEdit()->setAlignment(Qt::AlignCenter);
     userPasswordEdit->getLineEdit()->setEchoMode(QLineEdit::Password);
     userAccountEdit->getLineEdit()->setPlaceholderText("输入账号");
     userPasswordEdit->getLineEdit()->setPlaceholderText("输入密码");
-    this->userAccountEdit->setFixedHeight(40);
-    this->userPasswordEdit->setFixedHeight(40);
+    userAccountEdit->setFixedHeight(40);
+    userPasswordEdit->setFixedHeight(40);
+    userAccountEdit->clearFocus();
+    userPasswordEdit->clearFocus();
     QFont font;
     font.setPixelSize(14);
     this->userAccountEdit->getLineEdit()->setFont(font);

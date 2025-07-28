@@ -22,12 +22,8 @@ LineEditComponent::LineEditComponent(QWidget*parent) : QWidget(parent) {
     lineEdit->setFont(font);
     lineEdit->setStyleSheet("QLineEdit{background-color:transparent;} ""QLineEdit:hover{background:transparent;}");
     lineEdit->setFrame(QFrame::NoFrame);
-    lineEdit->setFocusPolicy(Qt::StrongFocus);
     lineEdit->setPlaceholderText("搜索");
 
-    // 设置组件本身的焦点策略
-    setFocusPolicy(Qt::NoFocus);
-    setFocusProxy(lineEdit);  // 将焦点代理到lineEdit
     clearBtn = new QToolButton(this);
     clearBtn->setAttribute(Qt::WA_TranslucentBackground);
     clearBtn->setCursor(Qt::PointingHandCursor);
@@ -35,17 +31,15 @@ LineEditComponent::LineEditComponent(QWidget*parent) : QWidget(parent) {
     clearBtn->setIconSize(QSize(20, 20));
     clearBtn->setAutoRaise(true);
     clearBtn->setVisible(false);
-    clearBtn->setFocusPolicy(Qt::NoFocus);  // 清除按钮不需要焦点
+    clearBtn->setFocusPolicy(Qt::NoFocus);
     clearBtn->setStyleSheet("QToolButton{background:transparent;} ""QToolButton:hover{background:transparent;}");
 
-    // 信号–槽连接
     connect(clearBtn, &QToolButton::clicked, lineEdit, &QLineEdit::clear);
     connect(lineEdit, &QLineEdit::textChanged, this, [=] (const QString &t) {
         clearBtn->setVisible(!t.isEmpty());
         emit userAccountChanged(t);
     });
 
-    // 加载并缓存原始图标
     iconPixmap.load(":/icon/search.png");
 }
 

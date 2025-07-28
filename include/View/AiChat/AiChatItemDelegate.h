@@ -7,7 +7,6 @@
 
 #include <QStyledItemDelegate>
 
-#include "Components/TransparentMenu.h"
 #include "View/AiChat/AiChatMessage.h"
 
 /* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
@@ -43,7 +42,6 @@ class AiChatItemDelegate : public QStyledItemDelegate {
 
         QPixmap m_userAvatar;
         QPixmap m_aiAvatar;
-        TransparentMenu* m_contextMenu;
         QString m_selectedText;
         static constexpr int AVATAR_SIZE = 32;            // 头像大小
         static constexpr int WINDOW_MARGIN = 10; // 窗口边距

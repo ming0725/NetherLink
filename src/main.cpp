@@ -10,21 +10,8 @@
 
 int main(int argc, char*argv[]) {
     QApplication a(argc, argv);
-
-    QPixmapCache::setCacheLimit(20480);
-
-    // 思源黑体
-    QFont font("Source Han Sans Medium");
-
-    font.setHintingPreference(QFont::PreferFullHinting);
-    font.setStyleStrategy(static_cast<QFont::StyleStrategy>(
-                                  QFont::PreferAntialias |
-                                  QFont::PreferQuality |
-                                  QFont::PreferMatch
-                          ));
-
-    QApplication::setFont(font);
     QApplication::setAttribute(Qt::AA_Use96Dpi, true);
+    QPixmapCache::setCacheLimit(20480);
 
     QPalette palette;
     palette.setColor(QPalette::WindowText, Qt::black);

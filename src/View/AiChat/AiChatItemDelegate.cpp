@@ -8,6 +8,7 @@
 
 #include "Data/AvatarLoader.h"
 #include "Data/CurrentUser.h"
+#include "Components/TransparentMenu.h"
 #include "View/AiChat/AiChatItemDelegate.h"
 #include "View/AiChat/AiChatListModel.h"
 #include "View/Mainwindow/NotificationManager.h"
@@ -17,7 +18,7 @@ const QString docStyleSheet = "h1 { font-size: 20px; font-weight: bold; margin: 
 
 /* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
-AiChatItemDelegate::AiChatItemDelegate(QWidget* parent) : QStyledItemDelegate(parent), m_contextMenu(new TransparentMenu(parent)) {
+AiChatItemDelegate::AiChatItemDelegate(QWidget* parent) : QStyledItemDelegate(parent) {
     // 使用静态头像
     m_userAvatar = AvatarLoader::instance().getAvatar(CurrentUser::instance().getUserId());
     m_aiAvatar.load(":/icon/ds.png");
@@ -31,15 +32,11 @@ AiChatItemDelegate::AiChatItemDelegate(QWidget* parent) : QStyledItemDelegate(pa
         m_aiAvatar = m_aiAvatar.scaled(AVATAR_SIZE, AVATAR_SIZE, Qt::KeepAspectRatio, Qt::SmoothTransformation);
     }
 
-    // 创建右键菜单
-    QAction* copyAction = new QAction(QIcon(":/icon/copy.png"), "复制", this);
 
-    connect(copyAction, &QAction::triggered, this, &AiChatItemDelegate::onCopyMessage);
-    m_contextMenu->addAction(copyAction);
 }
 
 AiChatItemDelegate::~AiChatItemDelegate() {
-    delete m_contextMenu;
+
 }
 
 void AiChatItemDelegate::paint(QPainter* painter, const QStyleOptionViewItem& option, const QModelIndex& index) const {
@@ -407,6 +404,10 @@ bool AiChatItemDelegate::editorEvent(QEvent* event, QAbstractItemModel* model, c
 
                     if (mouseEvent->button() == Qt::RightButton) {
                         m_selectedText = message->content();
+                        TransparentMenu* m_contextMenu = new TransparentMenu;
+                        QAction* copyAction = new QAction(QIcon(":/icon/copy.png"), "复制", this);
+                        connect(copyAction, &QAction::triggered, this, &AiChatItemDelegate::onCopyMessage);
+                        m_contextMenu->addAction(copyAction);
                         m_contextMenu->popup(mouseEvent->globalPosition().toPoint());
                     }
                 }
