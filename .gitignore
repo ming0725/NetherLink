@@ -35,5 +35,5 @@ doc/html/
 .vscode/
 .idea/
 .cache/
-.cmake-build-debug/
+cmake-build-debug/
 CMakeLists.txt.user
