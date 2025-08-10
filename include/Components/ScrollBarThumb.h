@@ -24,7 +24,7 @@ class ScrollBarThumb : public QWidget {
 
         /**
          * @brief 【描述】 Set the Color object
-         * 
+         *
          * @param newColor 【参数注释】 {text}
          */
         void setColor(const QColor &newColor);

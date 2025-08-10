@@ -6,38 +6,36 @@
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 #include <QFutureWatcher>
+#include <QMainWindow>
 #include <QPushButton>
 
-#include "Components/LineEditComponent.h"
-#include "Components/CustomPushButton.h"
-#include "Utils/FramelessWindow.h"
+// #include "Components/CustomPushButton.h"
+// #include "Components/LineEditComponent.h"
+
+/* namespace -------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+namespace Ui {
+
+    class Login;
+
+} // namespace Ui
 
 /* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
-class MainWindow;
-
-class Login : public FramelessWindow {
+class Login : public QMainWindow {
     Q_OBJECT
 
     public:
-        explicit Login(QWidget* parent = nullptr);
+        explicit Login(QWidget*parent = nullptr);
 
-        ~Login() override;
+        ~Login();
 
-        void setLoginInfo(const QString& email, const QString& password);
-
-    protected:
-        void paintEvent(QPaintEvent* event) override;
-
-        bool eventFilter(QObject* target, QEvent* event) override;
-
-        void closeEvent(QCloseEvent* event) override;
-
-        void mousePressEvent(QMouseEvent* event) override;
+        void 函数_设置登录信息(const QString& 邮箱, const QString& 密码);
 
     private:
-        void getUserHeadBytes(const QPixmap& userhead);
+        // void 函数_获取用户头像(const QPixmap& userhead);
 
-        void doLogin(QString account, QString password);
+        void 函数_检查输入框信息合法性(QString 邮箱, QString 密码);
+
+        void doLogin(QString 邮箱, QString 密码);
 
         void onLoginSuccess(const QString& uid, const QString& token);
 
@@ -45,21 +43,17 @@ class Login : public FramelessWindow {
 
         void onContactsLoaded();
 
-        bool isValidEmail(const QString& email) const;
+        bool 函数_是否为有效邮箱(const QString& 邮箱) const;
 
     private:
-        static const QRegularExpression emailRegex;  // 静态邮箱验证正则表达式
-        QLabel* closeButton;
-        QLabel* userHead;
-        LineEditComponent* userAccountEdit;
-        LineEditComponent* userPasswordEdit;
-        CustomPushButton* loginButton;
-        QLabel* registerButton;
+        Ui::Login* ui;
+        static const QRegularExpression 邮箱正则表达式;  // 静态邮箱验证正则表达式
+        QString 邮箱;
+        QString 密码;
         QWidget* mainWindow = nullptr;
-        QFutureWatcher<void>* contactsWatcher = nullptr;
+        QFutureWatcher <void>* contactsWatcher = nullptr;
         QString currentUid;
         QString currentToken;
-        bool isLogining = false;
 };
 
 #endif /* INCLUDE_VIEW_MAINWINDOW_LOGIN */

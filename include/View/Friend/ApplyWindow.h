@@ -9,6 +9,7 @@
 #include <QTextEdit>
 
 #include "Data/AvatarLoader.h"
+
 #include "Utils/FramelessWindow.h"
 
 /* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */

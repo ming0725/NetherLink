@@ -50,7 +50,7 @@ void SearchResultItem::setupUI() {
 
     palette.setColor(QPalette::WindowText, Qt::gray);
     statusTextLabel->setPalette(palette);
-    actionButton = new CustomPushButton(type == UserType ? "添加" : "加入", this);
+    actionButton = new CustomPushButton((type == UserType) ? "添加" : "加入", this);
     actionButton->setFixedSize(BUTTON_WIDTH, BUTTON_HEIGHT);
     actionButton->setRadius(4);
     actionButton->setBackgroundColor(QColor(0x0099FF));

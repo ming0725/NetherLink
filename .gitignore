@@ -1,6 +1,10 @@
 # Prerequisites
 *.d
 
+*.rar
+*.zip
+*.7z
+
 # Compiled Object files
 *.slo
 *.lo
@@ -32,6 +36,7 @@
 
 build/
 doc/html/
+bin/*/
 .vscode/
 .idea/
 .cache/

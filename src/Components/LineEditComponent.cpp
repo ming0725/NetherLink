@@ -23,7 +23,6 @@ LineEditComponent::LineEditComponent(QWidget*parent) : QWidget(parent) {
     lineEdit->setStyleSheet("QLineEdit{background-color:transparent;} ""QLineEdit:hover{background:transparent;}");
     lineEdit->setFrame(QFrame::NoFrame);
     lineEdit->setPlaceholderText("搜索");
-
     clearBtn = new QToolButton(this);
     clearBtn->setAttribute(Qt::WA_TranslucentBackground);
     clearBtn->setCursor(Qt::PointingHandCursor);
@@ -33,13 +32,11 @@ LineEditComponent::LineEditComponent(QWidget*parent) : QWidget(parent) {
     clearBtn->setVisible(false);
     clearBtn->setFocusPolicy(Qt::NoFocus);
     clearBtn->setStyleSheet("QToolButton{background:transparent;} ""QToolButton:hover{background:transparent;}");
-
     connect(clearBtn, &QToolButton::clicked, lineEdit, &QLineEdit::clear);
     connect(lineEdit, &QLineEdit::textChanged, this, [=] (const QString &t) {
         clearBtn->setVisible(!t.isEmpty());
         emit userAccountChanged(t);
     });
-
     iconPixmap.load(":/icon/search.png");
 }
 

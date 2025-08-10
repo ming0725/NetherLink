@@ -15,7 +15,6 @@ TopSearchWidget::TopSearchWidget(QWidget*parent) : QWidget(parent) {
     addButton->setHoverColor(QColor(0xEBEBEB));
     addButton->setPressColor(QColor(0xD7D7D7));
     addButton->setFont(QFont("", 18));
-
     searchBox->setFixedHeight(26);
     addButton->setFixedHeight(26);
     setFixedHeight(topMargin + searchBox->height() + bottomMargin);

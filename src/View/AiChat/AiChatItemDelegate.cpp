@@ -6,9 +6,9 @@
 #include <QClipboard>
 #include <QPainter>
 
+#include "Components/TransparentMenu.h"
 #include "Data/AvatarLoader.h"
 #include "Data/CurrentUser.h"
-#include "Components/TransparentMenu.h"
 #include "View/AiChat/AiChatItemDelegate.h"
 #include "View/AiChat/AiChatListModel.h"
 #include "View/Mainwindow/NotificationManager.h"
@@ -31,13 +31,9 @@ AiChatItemDelegate::AiChatItemDelegate(QWidget* parent) : QStyledItemDelegate(pa
     if (!m_aiAvatar.isNull()) {
         m_aiAvatar = m_aiAvatar.scaled(AVATAR_SIZE, AVATAR_SIZE, Qt::KeepAspectRatio, Qt::SmoothTransformation);
     }
-
-
 }
 
-AiChatItemDelegate::~AiChatItemDelegate() {
-
-}
+AiChatItemDelegate::~AiChatItemDelegate() {}
 
 void AiChatItemDelegate::paint(QPainter* painter, const QStyleOptionViewItem& option, const QModelIndex& index) const {
     painter->save();
@@ -404,8 +400,10 @@ bool AiChatItemDelegate::editorEvent(QEvent* event, QAbstractItemModel* model, c
 
                     if (mouseEvent->button() == Qt::RightButton) {
                         m_selectedText = message->content();
+
                         TransparentMenu* m_contextMenu = new TransparentMenu;
                         QAction* copyAction = new QAction(QIcon(":/icon/copy.png"), "复制", this);
+
                         connect(copyAction, &QAction::triggered, this, &AiChatItemDelegate::onCopyMessage);
                         m_contextMenu->addAction(copyAction);
                         m_contextMenu->popup(mouseEvent->globalPosition().toPoint());

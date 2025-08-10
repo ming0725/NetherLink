@@ -11,22 +11,26 @@ set(CMAKE_AUTORCC ON)
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
+set(CMAKE_AUTOUIC_SEARCH_PATHS ${CMAKE_CURRENT_SOURCE_DIR}/ui ${CMAKE_CURRENT_SOURCE_DIR}/ui/Menu)
+
 find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets Network WebSockets Sql Concurrent)
 find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets Network WebSockets Sql Concurrent)
 
 include_directories(
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
-file(GLOB_RECURSE INCLUDES "include/*.h" "include/**/*.h")
-file(GLOB_RECURSE SOURCES "src/*.cpp" "src/**/*.cpp")
+file(GLOB_RECURSE INCLUDE "include/*.h" "include/**/*.h")
+file(GLOB_RECURSE SOURCE "src/*.cpp" "src/**/*.cpp")
+file(GLOB_RECURSE UI "ui/*.ui" "ui/**/*.ui")
+file(GLOB_RECURSE RESOURCE "res/res.qrc")
 
 if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
     qt_add_executable(NetherLink-Client
         MANUAL_FINALIZATION
-        ${INCLUDES}
-        ${SOURCES}
-        res/res.qrc
+        ${INCLUDE}
+        ${SOURCE}
+        ${UI}
+        ${RESOURCE}
     )
 endif()
 
