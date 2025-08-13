@@ -1,6 +1,7 @@
 /* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 
 #ifndef INCLUDE_VIEW_CHAT_MESSAGE_HANDLER
+
 #define INCLUDE_VIEW_CHAT_MESSAGE_HANDLER
 
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
@@ -33,7 +34,6 @@ class MessageHandler : public QObject {
         QSharedPointer <ChatMessage> createMessage(const QJsonObject& payload);
 
         QDateTime parseTimestamp(const QString& timestamp);
-
 };
 
 #endif /* INCLUDE_VIEW_CHAT_MESSAGE_HANDLER */

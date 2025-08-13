@@ -1,5 +1,4 @@
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
-
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -12,13 +11,13 @@
 /* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 PostFeedPage::PostFeedPage(QWidget* parent) : CustomScrollArea(parent) {
-// connect(this, &CustomScrollArea::reachedBottom, this, [this]() {
+// connect(this, &CustomScrollArea::reachedBottom, this, [=,this]() {
 // QTimer::singleShot(100, this, &PostFeedPage::loadMore);
 // });
     setStyleSheet("border-width:0px;border-style:solid;");
 }
 
-void PostFeedPage::setPosts(const QVector <Post>& posts) {
+void PostFeedPage::setPosts(const QVector <Post> &posts) {
     qDeleteAll(m_items);
     m_items.clear();
     m_data = posts;
@@ -27,10 +26,10 @@ void PostFeedPage::setPosts(const QVector <Post>& posts) {
         const auto& pd = m_data[i];
 
         // 传入 title 字段
-        auto*item = new PostPreviewItem(pd, contentWidget);
+        auto* item = new PostPreviewItem(pd, contentWidget);
 
         connect(item, &PostPreviewItem::viewPostWithGeometry, this, &PostFeedPage::postClickedWithGeometry);
-        connect(item, &PostPreviewItem::loadFinished, this, [this] () {
+        connect(item, &PostPreviewItem::loadFinished, this, [=, this]() {
             CustomScrollArea::resizeEvent(nullptr);
         });
         m_items.append(item);
@@ -44,7 +43,7 @@ void PostFeedPage::layoutContent() {
     double itemW = (availableW - (cols - 1) * hgap) / double(cols);
     QVector <int> colH(cols, topMargin);
 
-    for (auto*it : m_items) {
+    for (auto* it : m_items) {
         int h = it->scaledHeightFor(itemW);
         int col = std::min_element(colH.begin(), colH.end()) - colH.begin();
         int x = margin + col * (itemW + hgap);
@@ -75,7 +74,7 @@ void PostFeedPage::loadPosts() {
     QNetworkReply* reply = manager->get(request);
 
     // 处理响应
-    connect(reply, &QNetworkReply::finished, this, [this, reply, manager] () {
+    connect(reply, &QNetworkReply::finished, this, [this, reply, manager]() {
         // 设置自动删除
         reply->deleteLater();
         manager->deleteLater();
@@ -133,7 +132,7 @@ void PostFeedPage::reloadData() {
     }
 }
 
-void PostFeedPage::showEvent(QShowEvent*event) {
+void PostFeedPage::showEvent(QShowEvent* event) {
     if (m_isFirstShow || m_needReload) {
         loadPosts();
         m_isFirstShow = false;

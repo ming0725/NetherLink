@@ -15,7 +15,7 @@
 ApplicationBar::ApplicationBar(QWidget* parent) : QWidget(parent) {
     noiseTexture = QImage(100, 100, QImage::Format_ARGB32);
 
-    auto*rng = QRandomGenerator::global();   // 获取全局随机数生成器
+    auto* rng = QRandomGenerator::global();  // 获取全局随机数生成器
 
     for (int x = 0; x < noiseTexture.width(); ++x) {
         for (int y = 0; y < noiseTexture.height(); ++y) {
@@ -84,7 +84,7 @@ ApplicationBar::ApplicationBar(QWidget* parent) : QWidget(parent) {
     highlightAnim = new QVariantAnimation(this);
     highlightAnim->setDuration(250);
     highlightAnim->setEasingCurve(QEasingCurve::OutCubic);
-    connect(highlightAnim, &QVariantAnimation::valueChanged, this, [this] (const QVariant &value) {
+    connect(highlightAnim, &QVariantAnimation::valueChanged, this, [=, this](const QVariant &value) {
         highlightPosY = value.toInt();
         update();
     });

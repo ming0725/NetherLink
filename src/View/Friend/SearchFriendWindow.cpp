@@ -79,7 +79,7 @@ SearchFriendWindow::SearchFriendWindow(QWidget* parent) : FramelessWindow(parent
     // 连接信号
     connect(btnMinimize, &QPushButton::clicked, this, &QWidget::showMinimized);
     connect(typeTab, &SearchTypeTab::currentIndexChanged, this, &SearchFriendWindow::onSearchTypeChanged);
-    connect(btnClose, &QPushButton::clicked, this, [this] () {
+    connect(btnClose, &QPushButton::clicked, this, [=, this]() {
         close();
         instance = nullptr;
     });

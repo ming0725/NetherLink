@@ -1,6 +1,7 @@
 // NotificationBadge.h
 
 #ifndef INCLUDE_VIEW_CHAT_NOTIFICATION_BADGE
+
 #define INCLUDE_VIEW_CHAT_NOTIFICATION_BADGE
 
 /* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */

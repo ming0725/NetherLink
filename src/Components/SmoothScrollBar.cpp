@@ -8,7 +8,7 @@
 
 /* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
-SmoothScrollBar::SmoothScrollBar(QWidget*parent) : QWidget(parent), m_minimum(0), m_maximum(0), m_pageStep(0), m_value(0), m_opacity(0.0), m_isDragging(false) {
+SmoothScrollBar::SmoothScrollBar(QWidget* parent) : QWidget(parent), m_minimum(0), m_maximum(0), m_pageStep(0), m_value(0), m_opacity(0.0), m_isDragging(false) {
     setFixedWidth(8);  // 设置滚动条宽度
     setAttribute(Qt::WA_TranslucentBackground);
     setAttribute(Qt::WA_TransparentForMouseEvents, false);  // 确保可以接收鼠标事件
@@ -51,7 +51,7 @@ void SmoothScrollBar::setOpacity(qreal opacity) {
     }
 }
 
-void SmoothScrollBar::paintEvent(QPaintEvent*event) {
+void SmoothScrollBar::paintEvent(QPaintEvent* event) {
     Q_UNUSED(event);
 
     if (m_maximum <= m_minimum)
@@ -78,7 +78,7 @@ QRect SmoothScrollBar::getHandleRect() const {
     return (QRect(0, handleY, width(), handleHeight));
 }
 
-void SmoothScrollBar::mousePressEvent(QMouseEvent*event) {
+void SmoothScrollBar::mousePressEvent(QMouseEvent* event) {
     if (event->button() == Qt::LeftButton) {
         m_isDragging = true;
         m_dragStartPosition = event->pos();
@@ -87,13 +87,13 @@ void SmoothScrollBar::mousePressEvent(QMouseEvent*event) {
     }
 }
 
-void SmoothScrollBar::mouseMoveEvent(QMouseEvent*event) {
+void SmoothScrollBar::mouseMoveEvent(QMouseEvent* event) {
     if (m_isDragging) {
         updateValue(event->pos());
     }
 }
 
-void SmoothScrollBar::mouseReleaseEvent(QMouseEvent*event) {
+void SmoothScrollBar::mouseReleaseEvent(QMouseEvent* event) {
     Q_UNUSED(event);
     m_isDragging = false;
 
@@ -102,13 +102,13 @@ void SmoothScrollBar::mouseReleaseEvent(QMouseEvent*event) {
     }
 }
 
-void SmoothScrollBar::enterEvent(QEnterEvent*event) {
+void SmoothScrollBar::enterEvent(QEnterEvent* event) {
     Q_UNUSED(event);
     showScrollBar();
     m_fadeOutTimer->stop();  // 停止任何正在进行的淡出计时
 }
 
-void SmoothScrollBar::leaveEvent(QEvent*event) {
+void SmoothScrollBar::leaveEvent(QEvent* event) {
     Q_UNUSED(event);
 
     if (!m_isDragging) {

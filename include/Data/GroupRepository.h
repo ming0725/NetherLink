@@ -1,6 +1,7 @@
 /* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 
 #ifndef INCLUDE_DATA_GROUP_REPOSITORY
+
 #define INCLUDE_DATA_GROUP_REPOSITORY
 
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
@@ -43,7 +44,6 @@ class GroupRepository : public QObject {
 
         // 确保已打开当前用户对应的数据库连接
         bool ensureDatabaseOpen();
-
 };
 
 #endif /* INCLUDE_DATA_GROUP_REPOSITORY */

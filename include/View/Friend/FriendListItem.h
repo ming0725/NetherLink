@@ -1,6 +1,7 @@
 /* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 
 #ifndef INCLUDE_VIEW_FRIEND_FRIEND_LIST_ITEM
+
 #define INCLUDE_VIEW_FRIEND_FRIEND_LIST_ITEM
 
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
@@ -58,7 +59,6 @@ class FriendListItem : public QWidget {
         bool selected = false;
 
         void setupUI(const User& user);
-
 };
 
 #endif /* INCLUDE_VIEW_FRIEND_FRIEND_LIST_ITEM */

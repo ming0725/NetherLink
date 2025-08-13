@@ -11,7 +11,7 @@ class MenuItemStyle : public QProxyStyle {
     public:
         using QProxyStyle::QProxyStyle;
 
-        QSize sizeFromContents(ContentsType type, const QStyleOption*opt, const QSize &size, const QWidget*widget) const override {
+        QSize sizeFromContents(ContentsType type, const QStyleOption* opt, const QSize &size, const QWidget* widget) const override {
             QSize s = QProxyStyle::sizeFromContents(type, opt, size, widget);
 
             if (type == QStyle::CT_MenuItem) {
@@ -33,12 +33,11 @@ class MenuItemStyle : public QProxyStyle {
             }
             return (s);
         }
-
 };
 
 /* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
-TransparentMenu::TransparentMenu(QWidget*parent) : QMenu(parent) {
+TransparentMenu::TransparentMenu(QWidget* parent) : QMenu(parent) {
     setAttribute(Qt::WA_TranslucentBackground);
     setAttribute(Qt::WA_NoSystemBackground);
     setAttribute(Qt::WA_DeleteOnClose);
@@ -111,7 +110,7 @@ void TransparentMenu::paintEvent(QPaintEvent*/*event*/) {
     }
 }
 
-void TransparentMenu::showEvent(QShowEvent*event) {
+void TransparentMenu::showEvent(QShowEvent* event) {
     QWidget::showEvent(event);
     move(pos() - QPoint(0, contentsMargins().top()));
 }

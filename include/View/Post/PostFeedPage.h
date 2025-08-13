@@ -1,6 +1,7 @@
 /* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 
 #ifndef INCLUDE_VIEW_POST_POST_FEED_PAGE
+
 #define INCLUDE_VIEW_POST_POST_FEED_PAGE
 
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
@@ -36,7 +37,7 @@ class PostFeedPage : public CustomScrollArea {
     protected:
         void layoutContent() Q_DECL_OVERRIDE;
 
-        void showEvent(QShowEvent*event) Q_DECL_OVERRIDE;
+        void showEvent(QShowEvent* event) Q_DECL_OVERRIDE;
 
     private:
         void loadPosts();

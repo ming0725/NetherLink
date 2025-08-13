@@ -1,11 +1,15 @@
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
+#include <QGraphicsOpacityEffect>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QMouseEvent>
 #include <QNetworkReply>
 #include <QPainterPath>
+#include <QPropertyAnimation>
 
+#include "Components/CustomScrollArea.h"
 #include "Data/AvatarLoader.h"
 #include "Data/CurrentUser.h"
 #include "Network/NetworkConfig.h"
@@ -139,12 +143,12 @@ void PostDetailView::setupUI() {
     m_commentCount = new QLabel("91", this);
 
     // 3. 连接信号槽
-    connect(m_followBtn, &QPushButton::clicked, this, [this] () {
+    connect(m_followBtn, &QPushButton::clicked, this, [=, this]() {
         m_isFollowed = !m_isFollowed;
         m_followBtn->setText(m_isFollowed ? "已关注" : "关注");
         emit followClicked(m_isFollowed);
     });
-    connect(m_likeBtn, &QPushButton::clicked, this, [this] () {
+    connect(m_likeBtn, &QPushButton::clicked, this, [=, this]() {
         m_isLiked = !m_isLiked;
         m_likeBtn->setIcon(QIcon(m_isLiked ? ":/icon/full_heart.png" : ":/icon/heart.png"));
         m_likes += m_isLiked ? 1 : -1;
@@ -154,7 +158,7 @@ void PostDetailView::setupUI() {
     connect(m_commentBtn, &QPushButton::clicked, this, &PostDetailView::commentClicked);
 
     // 连接评论输入框的回车信号
-    connect(commentLineEdit->getLineEdit(), &QLineEdit::returnPressed, this, [this] () {
+    connect(commentLineEdit->getLineEdit(), &QLineEdit::returnPressed, this, [=, this]() {
         QString content = commentLineEdit->getLineEdit()->text().trimmed();
 
         if (!content.isEmpty()) {
@@ -491,7 +495,7 @@ void PostDetailView::sendComment(const QString &content) {
     QNetworkReply* reply = manager->post(request, jsonData);
 
     // 处理响应
-    connect(reply, &QNetworkReply::finished, this, [=] () {
+    connect(reply, &QNetworkReply::finished, this, [=, this]() {
         reply->deleteLater();
         manager->deleteLater();
 
@@ -527,7 +531,7 @@ void PostDetailView::sendComment(const QString &content) {
     });
 
     // 处理网络错误
-    connect(reply, &QNetworkReply::errorOccurred, this, [=] (QNetworkReply::NetworkError code) {
+    connect(reply, &QNetworkReply::errorOccurred, this, [=, this](QNetworkReply::NetworkError code) {
         QString errorMessage = QString("网络错误：%1").arg(code);
         NotificationManager::instance().showMessage(errorMessage, NotificationManager::Error, mainWindow);
     });

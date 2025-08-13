@@ -1,6 +1,7 @@
 /* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 
 #ifndef INCLUDE_VIEW_FRIEND_NOTIFICATION_ITEM
+
 #define INCLUDE_VIEW_FRIEND_NOTIFICATION_ITEM
 
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
@@ -53,7 +54,6 @@ class NotificationItem : public QWidget {
 
     signals:
         void clicked();
-
 };
 
 #endif /* INCLUDE_VIEW_FRIEND_NOTIFICATION_ITEM */

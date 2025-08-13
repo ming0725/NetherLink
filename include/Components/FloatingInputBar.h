@@ -1,6 +1,7 @@
 /* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 
 #ifndef INCLUDE_COMPONENTS_FLOATING_INPUT_BAR
+
 #define INCLUDE_COMPONENTS_FLOATING_INPUT_BAR
 
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
@@ -14,7 +15,7 @@ class FloatingInputBar : public QWidget {
     Q_OBJECT
 
     public:
-        explicit FloatingInputBar(QWidget*parent = nullptr);
+        explicit FloatingInputBar(QWidget* parent = nullptr);
 
         ~FloatingInputBar();
 
@@ -24,35 +25,35 @@ class FloatingInputBar : public QWidget {
         void sendText(const QString &text);
 
     protected:
-        void paintEvent(QPaintEvent*event) override;
+        void paintEvent(QPaintEvent* event) override;
 
-        void resizeEvent(QResizeEvent*event) override;
+        void resizeEvent(QResizeEvent* event) override;
 
-        bool eventFilter(QObject*watched, QEvent*event) override;
+        bool eventFilter(QObject* watched, QEvent* event) override;
 
-        void mousePressEvent(QMouseEvent*event) override;
+        void mousePressEvent(QMouseEvent* event) override;
 
     private:
         void initUI();
 
-        void updateLabelIcon(QLabel*label, const QString &normalIcon, const QString &hoveredIcon, const QSize &size);
+        void updateLabelIcon(QLabel* label, const QString &normalIcon, const QString &hoveredIcon, const QSize &size);
 
         void sendCurrentMessage();
 
-        void handleLabelHover(QLabel*label, const QString &normalIcon, const QString &hoveredIcon, const QSize &size);
+        void handleLabelHover(QLabel* label, const QString &normalIcon, const QString &hoveredIcon, const QSize &size);
 
-        void showTooltip(QLabel*label, const QString &text);
+        void showTooltip(QLabel* label, const QString &text);
 
         void hideTooltip();
 
     private:
-        QTextEdit*m_inputEdit;
-        QLabel*m_emojiLabel;
-        QLabel*m_imageLabel;
-        QLabel*m_screenshotLabel;
-        QLabel*m_historyLabel;
-        QLabel*m_sendLabel;
-        CustomTooltip*m_tooltip;
+        QTextEdit* m_inputEdit;
+        QLabel* m_emojiLabel;
+        QLabel* m_imageLabel;
+        QLabel* m_screenshotLabel;
+        QLabel* m_historyLabel;
+        QLabel* m_sendLabel;
+        CustomTooltip* m_tooltip;
         static const int CORNER_RADIUS = 20;
         static const int BUTTON_SIZE = 24;
         static const int SEND_BUTTON_SIZE = 32;

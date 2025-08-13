@@ -53,7 +53,7 @@ void PostPreviewItem::downloadAndSetupImages() {
 
     QNetworkReply* reply = m_networkManager.get(request);
 
-    connect(reply, &QNetworkReply::finished, this, [this, reply] () {
+    connect(reply, &QNetworkReply::finished, this, [this, reply]() {
         if (reply->error() == QNetworkReply::NoError) {
             QByteArray data = reply->readAll();
             QPixmap origPostImage;
@@ -204,7 +204,7 @@ void PostPreviewItem::onClickLike() {
 
     QNetworkReply* reply = m_networkManager.post(request, QByteArray());
 
-    connect(reply, &QNetworkReply::finished, this, [this, reply, oldLiked, oldCount] () {
+    connect(reply, &QNetworkReply::finished, this, [this, reply, oldLiked, oldCount]() {
         if (reply->error() != QNetworkReply::NoError) {
             // 网络或服务器错误，回滚状态并通知
             m_liked = oldLiked;
@@ -217,6 +217,6 @@ void PostPreviewItem::onClickLike() {
     });
 }
 
-void PostPreviewItem::showEvent(QShowEvent*ev) {
+void PostPreviewItem::showEvent(QShowEvent* ev) {
     QWidget::showEvent(ev);
 }

@@ -152,7 +152,7 @@ Register::Register(QWidget* parent) : FramelessWindow(parent) {
     main_vbox->addStretch();
 
     // 连接信号槽
-    connect(this->getCodeButton, &CustomPushButton::clicked, this, [this] () {
+    connect(this->getCodeButton, &CustomPushButton::clicked, this, [=, this]() {
         QString email = this->usernameEdit->currentText().trimmed();
 
         if (email.isEmpty()) {
@@ -168,7 +168,7 @@ Register::Register(QWidget* parent) : FramelessWindow(parent) {
         }
         requestVerificationCode(email);
     });
-    connect(this->registerButton, &CustomPushButton::clicked, this, [this] () {
+    connect(this->registerButton, &CustomPushButton::clicked, this, [=, this]() {
         if (isRegistering)
             return;
         QString email = this->usernameEdit->currentText().trimmed();
@@ -246,24 +246,24 @@ Register::Register(QWidget* parent) : FramelessWindow(parent) {
     registerButton->setFocusPolicy(Qt::NoFocus);
 
     // 回车键处理
-    connect(usernameEdit->getLineEdit(), &QLineEdit::returnPressed, this, [this] () {
+    connect(usernameEdit->getLineEdit(), &QLineEdit::returnPressed, this, [=, this]() {
         verificationCodeEdit->getLineEdit()->setFocus();
     });
-    connect(verificationCodeEdit->getLineEdit(), &QLineEdit::returnPressed, this, [this] () {
+    connect(verificationCodeEdit->getLineEdit(), &QLineEdit::returnPressed, this, [=, this]() {
         nicknameEdit->getLineEdit()->setFocus();
     });
-    connect(nicknameEdit->getLineEdit(), &QLineEdit::returnPressed, this, [this] () {
+    connect(nicknameEdit->getLineEdit(), &QLineEdit::returnPressed, this, [=, this]() {
         passwordEdit->getLineEdit()->setFocus();
     });
-    connect(passwordEdit->getLineEdit(), &QLineEdit::returnPressed, this, [this] () {
+    connect(passwordEdit->getLineEdit(), &QLineEdit::returnPressed, this, [=, this]() {
         confirmPasswordEdit->getLineEdit()->setFocus();
     });
-    connect(confirmPasswordEdit->getLineEdit(), &QLineEdit::returnPressed, this, [this] () {
+    connect(confirmPasswordEdit->getLineEdit(), &QLineEdit::returnPressed, this, [=, this]() {
         if (registerButton->isEnabled()) {
             registerButton->click();
         }
     });
-    QTimer::singleShot(50, this, [this] () {
+    QTimer::singleShot(50, this, [=, this]() {
         usernameEdit->getLineEdit()->clearFocus();
         verificationCodeEdit->getLineEdit()->clearFocus();
     });
@@ -305,7 +305,7 @@ void Register::requestVerificationCode(const QString& 邮箱) {
     QNetworkReply* reply = manager->post(request, payload);
 
     // 处理请求完成
-    connect(reply, &QNetworkReply::finished, this, [this, reply, manager] () {
+    connect(reply, &QNetworkReply::finished, this, [this, reply, manager]() {
         QByteArray responseData = reply->readAll();
         int statusCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
 
@@ -348,7 +348,7 @@ void Register::requestVerificationCode(const QString& 邮箱) {
         // 倒计时60秒
         int countdown = 60;
         QTimer* timer = new QTimer(this);
-        connect(timer, &QTimer::timeout, this, [this, timer, countdown] () mutable {
+        connect(timer, &QTimer::timeout, this, [this, timer, countdown]() mutable {
             if (--countdown <= 0) {
                 timer->stop();
                 timer->deleteLater();
@@ -391,9 +391,9 @@ void Register::doRegister(const QString& 邮箱, const QString& code, const QStr
     QNetworkReply* reply = manager->post(request, payload);
 
     // 处理请求完成
-    connect(reply, &QNetworkReply::finished, this, [this, reply, manager] () {
+    connect(reply, &QNetworkReply::finished, this, [this, reply, manager]() {
         // 确保在函数结束时恢复按钮状态
-        auto cleanup = [this] () {
+        auto cleanup = [=, this]() {
                            isRegistering = false;
                            registerButton->setEnabled(true);
                            registerButton->setText("注册");
@@ -444,7 +444,7 @@ void Register::doRegister(const QString& 邮箱, const QString& code, const QStr
         QString currentPassword = passwordEdit->currentText();
 
         // 2秒后关闭窗口并发送信号
-        QTimer::singleShot(2000, this, [this, currentEmail, currentPassword] () {
+        QTimer::singleShot(2000, this, [this, currentEmail, currentPassword]() {
             emit registerSuccess(currentEmail, currentPassword);
             this->close();
         });
@@ -536,7 +536,7 @@ void Register::uploadAvatar(const QString& filePath) {
 
     multiPart->setParent(reply); // 让reply管理multiPart的生命周期
     // 处理响应
-    connect(reply, &QNetworkReply::finished, this, [this, reply, tempPath, manager] () {
+    connect(reply, &QNetworkReply::finished, this, [this, reply, tempPath, manager]() {
         reply->deleteLater();
         manager->deleteLater();
 

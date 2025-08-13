@@ -104,7 +104,7 @@ void NotificationItem::mouseReleaseEvent(QMouseEvent* event) {
     }
 }
 
-void NotificationItem::resizeEvent(QResizeEvent*event) {
+void NotificationItem::resizeEvent(QResizeEvent* event) {
     QWidget::resizeEvent(event);
 
     const int padding = 12;

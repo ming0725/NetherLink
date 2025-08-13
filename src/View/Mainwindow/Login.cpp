@@ -1,6 +1,13 @@
+/**
+ * @file Login.cpp
+ * @version 1.0.0
+ * @author 落羽行歌 (2481036245@qq.com)
+ * @date 2025-08-11 周一 09:11:22
+ * @brief 【描述】 登录界面
+ */
+
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
-#include <QApplication>
-#include <QBoxLayout>
+
 #include <QNetworkReply>
 #include <QPushButton>
 #include <QtConcurrent>
@@ -28,10 +35,8 @@ const QRegularExpression Login::邮箱正则表达式("^[A-Za-z0-9._%+-]+@[A-Za-
 /**
  * @brief 【描述】 构造函数
  */
-Login::Login(QWidget*parent) : QMainWindow(parent), ui(new Ui::Login) {
+Login::Login(QWidget* parent) : QMainWindow(parent), ui(new Ui::Login) {
     ui->setupUi(this);
-    Login::邮箱 = ui->userAccountEdit->text().trimmed();
-    Login::密码 = ui->userPasswordEdit->text();
 
     // 设置Tab键顺序
     QWidget::setTabOrder(ui->userAccountEdit, ui->userPasswordEdit);
@@ -44,21 +49,25 @@ Login::Login(QWidget*parent) : QMainWindow(parent), ui(new Ui::Login) {
     ui->userAccountEdit->setFocus();
 
     // 回车键处理
-    connect(ui->userAccountEdit, &QLineEdit::returnPressed, this, [this] () {
+    connect(ui->userAccountEdit, &QLineEdit::returnPressed, this, [=, this]() {
         ui->userPasswordEdit->setFocus();
     });
-    connect(ui->userPasswordEdit, &QLineEdit::returnPressed, this, [this] () {
-        函数_检查输入框信息合法性(Login::邮箱, Login::密码);
+    connect(ui->userPasswordEdit, &QLineEdit::returnPressed, this, [=, this]() {
+        邮箱 = ui->userAccountEdit->text().trimmed();
+        密码 = ui->userPasswordEdit->text();
+        函数_检查输入框信息合法性(邮箱, 密码);
 
         // 所有校验通过
-        doLogin(Login::邮箱, Login::密码);
+        函数_登录(邮箱, 密码);
     });
 
     // 关闭按钮
-    connect(ui->closeButton, &QPushButton::clicked, this, [this] () {
+    connect(ui->closeButton, &QPushButton::clicked, this, [=, this]() {
         QTimer::singleShot(1000, this, &QMainWindow::close);
     });
-    connect(ui->registerButton, &QPushButton::clicked, this, [this] () {
+
+    // 注册按钮
+    connect(ui->registerButton, &QPushButton::clicked, this, [=, this]() {
         Register* registerWindow = new Register();
         registerWindow->setAttribute(Qt::WA_DeleteOnClose);
         registerWindow->show();
@@ -66,11 +75,13 @@ Login::Login(QWidget*parent) : QMainWindow(parent), ui(new Ui::Login) {
         // 连接注册成功信号
         connect(registerWindow, &Register::registerSuccess, this, &Login::函数_设置登录信息);
     });
-    connect(ui->loginButton, &QPushButton::clicked, this, [this] () {
+
+    // 登录按钮
+    connect(ui->loginButton, &QPushButton::clicked, this, [=, this]() {
         邮箱 = ui->userAccountEdit->text().trimmed();
         密码 = ui->userPasswordEdit->text();
-        函数_检查输入框信息合法性(Login::邮箱, Login::密码);
-        doLogin(Login::邮箱, Login::密码);
+        函数_检查输入框信息合法性(邮箱, 密码);
+        函数_登录(邮箱, 密码);
     });
     setStyleSheet("Login{""background: qlineargradient(x1:0 y1:0, x1:0 y1:1,""   stop:0.2 #ffffff,""   stop:0.8 #0099ff);""}");
 }
@@ -134,7 +145,7 @@ bool Login::函数_是否为有效邮箱(const QString& 邮箱) const {
     return (邮箱正则表达式.match(邮箱).hasMatch());
 }
 
-void Login::doLogin(QString 邮箱, QString 密码) {
+void Login::函数_登录(QString 邮箱, QString 密码) {
     // if (isLogining) {
     // return;
     // }
@@ -165,7 +176,7 @@ void Login::doLogin(QString 邮箱, QString 密码) {
     timeoutTimer->setSingleShot(true);
     timeoutTimer->setInterval(5000);  // 5秒超时
     // 连接超时定时器
-    connect(timeoutTimer, &QTimer::timeout, this, [this, reply, manager, timeoutTimer] () {
+    connect(timeoutTimer, &QTimer::timeout, this, [this, reply, manager, timeoutTimer]() {
         NotificationManager::instance().showMessage("登录超时，请检查网络连接或服务器状态", NotificationManager::Error, this);
 
         if (reply) {
@@ -184,7 +195,7 @@ void Login::doLogin(QString 邮箱, QString 密码) {
     timeoutTimer->start();
 
     // 3) 处理响应
-    connect(reply, &QNetworkReply::finished, this, [this, reply, manager, timeoutTimer] () {
+    connect(reply, &QNetworkReply::finished, this, [this, reply, manager, timeoutTimer]() {
         // 停止超时定时器
         timeoutTimer->stop();
         timeoutTimer->deleteLater();
@@ -280,12 +291,12 @@ void Login::doLogin(QString 邮箱, QString 密码) {
         NetworkManager::instance().connectWss(websocketUrl);
 
         // 5) 处理WebSocket连接成功
-        connect(&NetworkManager::instance(), &NetworkManager::wssConnected, this, [this, uid, token] () {
+        connect(&NetworkManager::instance(), &NetworkManager::wssConnected, this, [this, uid, token]() {
             onLoginSuccess(uid, token);
         }, Qt::SingleShotConnection);
 
         // 6) 处理WebSocket错误
-        connect(&NetworkManager::instance(), &NetworkManager::wssError, this, [this, reply, manager, timeoutTimer] (const QString& err) {
+        connect(&NetworkManager::instance(), &NetworkManager::wssError, this, [this, reply, manager, timeoutTimer](const QString& err) {
             NotificationManager::instance().showMessage(QString("WebSocket连接失败：%1").arg(err), NotificationManager::Error, this);
 
             if (reply) {
@@ -311,7 +322,7 @@ void Login::doLogin(QString 邮箱, QString 密码) {
     });
 
     // 7) 处理网络请求错误
-    connect(reply, &QNetworkReply::errorOccurred, this, [this] (QNetworkReply::NetworkError code) {
+    connect(reply, &QNetworkReply::errorOccurred, this, [=, this](QNetworkReply::NetworkError code) {
         if (code != QNetworkReply::NoError) {
             NotificationManager::instance().showMessage("登录网络错误", NotificationManager::Error, this);
         }
@@ -339,7 +350,7 @@ void Login::onLoginSuccess(const QString& uid, const QString& token) {
     ui->loginButton->setText("加载联系人中...");
 
     // 开始异步加载联系人信息
-    QFuture <void> future = QtConcurrent::run([this, uid, token] () {
+    QFuture <void> future = QtConcurrent::run([this, uid, token]() {
         loadContacts(uid, token);
     });
 
@@ -350,7 +361,7 @@ void Login::loadContacts(const QString& uid, const QString& token) {
     qDebug() << "开始获取联系人信息...";
 
     // 在主线程中创建请求
-    QMetaObject::invokeMethod(this, [this, uid, token] () {
+    QMetaObject::invokeMethod(this, [this, uid, token]() {
         // 创建网络访问管理器
         QNetworkAccessManager* manager = new QNetworkAccessManager(this);
 
@@ -364,7 +375,7 @@ void Login::loadContacts(const QString& uid, const QString& token) {
         QNetworkReply* reply = manager->get(request);
 
         // 处理响应
-        connect(reply, &QNetworkReply::finished, this, [this, reply, uid, token] () {
+        connect(reply, &QNetworkReply::finished, this, [this, reply, uid, token]() {
             // 检查是否有错误
             if (reply->error() != QNetworkReply::NoError) {
                 qWarning() << "获取联系人信息失败:" << reply->errorString();
@@ -451,7 +462,7 @@ void Login::loadContacts(const QString& uid, const QString& token) {
         });
 
         // 处理网络错误
-        connect(reply, &QNetworkReply::errorOccurred, this, [this] (QNetworkReply::NetworkError code) {
+        connect(reply, &QNetworkReply::errorOccurred, this, [=, this](QNetworkReply::NetworkError code) {
             if (code != QNetworkReply::NoError) {
                 NotificationManager::instance().showMessage(QString("网络错误: %1").arg(code), NotificationManager::Error, this);
             }
@@ -468,7 +479,7 @@ void Login::onContactsLoaded() {
     mainWindow->setAttribute(Qt::WA_DeleteOnClose);
 
     // 延迟显示主窗口
-    QTimer::singleShot(500, [this] () {
+    QTimer::singleShot(500, [=, this]() {
         if (mainWindow) {
             mainWindow->show();
             this->close();

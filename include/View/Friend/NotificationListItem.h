@@ -1,6 +1,7 @@
 /* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 
 #ifndef INCLUDE_VIEW_FRIEND_NOTIFICATION_LIST_ITEM
+
 #define INCLUDE_VIEW_FRIEND_NOTIFICATION_LIST_ITEM
 
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
@@ -65,7 +66,6 @@ class NotificationListItem : public QWidget {
         void accepted();
 
         void rejected();
-
 };
 
 #endif /* INCLUDE_VIEW_FRIEND_NOTIFICATION_LIST_ITEM */

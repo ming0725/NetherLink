@@ -12,7 +12,7 @@
 PostApplicationBar::PostApplicationBar(QWidget* parent) : QWidget(parent), m_parent(parent) {
     setAttribute(Qt::WA_TranslucentBackground);
 
-    auto*shadow = new QGraphicsDropShadowEffect(this);
+    auto* shadow = new QGraphicsDropShadowEffect(this);
 
     shadow->setBlurRadius(30);
     shadow->setOffset(0, 0);
@@ -44,7 +44,7 @@ PostApplicationBar::PostApplicationBar(QWidget* parent) : QWidget(parent), m_par
     connect(m_updateTimer, &QTimer::timeout, this, &PostApplicationBar::updateBlurBackground);
     m_updateTimer->start(20);
     resizeEvent(nullptr);
-    QTimer::singleShot(50, this, [this] () {
+    QTimer::singleShot(50, this, [=, this]() {
         int w = items[selectedItem->index]->width();
         highlightX = items[selectedItem->index]->x();
         selectedRect.setRect(highlightX, height() - itemHeight - margin, w, itemHeight);
@@ -59,7 +59,7 @@ void PostApplicationBar::initItems() {
         auto* item = new TextBarItem(labels[i], i, this);
 
         item->setFixedHeight(itemHeight);
-        connect(item, &TextBarItem::clicked, this, [this, i] () {
+        connect(item, &TextBarItem::clicked, this, [this, i]() {
             onItemClicked(i);
         });
         items.append(item);

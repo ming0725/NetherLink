@@ -166,7 +166,7 @@ void PostCreatePage::sendPost() {
     QNetworkReply* reply = manager->post(request, multiPart);
 
     multiPart->setParent(reply);
-    connect(reply, &QNetworkReply::finished, this, [=] () {
+    connect(reply, &QNetworkReply::finished, this, [=, this]() {
         if (reply->error() == QNetworkReply::NoError) {
             QByteArray data = reply->readAll();
             QJsonDocument doc = QJsonDocument::fromJson(data);

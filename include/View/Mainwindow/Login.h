@@ -1,6 +1,15 @@
+/**
+ * @file Login.h
+ * @version 1.0.0
+ * @author 落羽行歌 (2481036245@qq.com)
+ * @date 2025-08-11 周一 09:08:25
+ * @brief 【描述】 登录界面
+ */
+
 /* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 
 #ifndef INCLUDE_VIEW_MAINWINDOW_LOGIN
+
 #define INCLUDE_VIEW_MAINWINDOW_LOGIN
 
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
@@ -14,9 +23,7 @@
 
 /* namespace -------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 namespace Ui {
-
     class Login;
-
 } // namespace Ui
 
 /* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
@@ -24,7 +31,7 @@ class Login : public QMainWindow {
     Q_OBJECT
 
     public:
-        explicit Login(QWidget*parent = nullptr);
+        explicit Login(QWidget* parent = nullptr);
 
         ~Login();
 
@@ -35,7 +42,7 @@ class Login : public QMainWindow {
 
         void 函数_检查输入框信息合法性(QString 邮箱, QString 密码);
 
-        void doLogin(QString 邮箱, QString 密码);
+        void 函数_登录(QString 邮箱, QString 密码);
 
         void onLoginSuccess(const QString& uid, const QString& token);
 

@@ -43,7 +43,7 @@ PostApplication::PostApplication(QWidget* parent) : QWidget(parent), m_bar(new P
     m_overlay->lower();
     noiseTexture = QImage(100, 100, QImage::Format_ARGB32);
 
-    auto*rng = QRandomGenerator::global();   // 获取全局随机数生成器
+    auto* rng = QRandomGenerator::global();  // 获取全局随机数生成器
 
     for (int x = 0; x < noiseTexture.width(); ++x) {
         for (int y = 0; y < noiseTexture.height(); ++y) {
@@ -95,18 +95,18 @@ void PostApplication::paintEvent(QPaintEvent*) {
     painter.drawTiledPixmap(rect(), QPixmap::fromImage(noiseTexture));
 }
 
-bool PostApplication::eventFilter(QObject*obj, QEvent*ev) {
+bool PostApplication::eventFilter(QObject* obj, QEvent* ev) {
     if ((obj == m_overlay) && (ev->type() == QEvent::MouseButtonPress)) {
         if (m_detailView) {
             // 创建一个动画，从当前位置返回到原始位置
-            auto*anim = new QPropertyAnimation(m_detailView, "geometry", this);
+            auto* anim = new QPropertyAnimation(m_detailView, "geometry", this);
 
             anim->setDuration(250);  // 300毫秒的动画
             anim->setStartValue(m_detailView->geometry());
             anim->setEndValue(m_detailView->initialGeometry());  // 使用保存的原始位置
             anim->setEasingCurve(QEasingCurve::InOutQuad); // 使用平滑的缓动曲线
             // 动画结束后才 deleteLater 并隐藏 overlay
-            connect(anim, &QAbstractAnimation::finished, this, [this] () {
+            connect(anim, &QAbstractAnimation::finished, this, [=, this]() {
                 if (m_detailView) {
                     m_detailView->deleteLater();
                     m_detailView = nullptr;
@@ -146,7 +146,7 @@ void PostApplication::onPostClickedWithGeometry(const QString &postID, const QRe
     // 发送GET请求并处理响应
     QNetworkReply* reply = manager->get(request);
 
-    connect(reply, &QNetworkReply::finished, this, [this, sourceGeometry, originalImage, reply, manager] () {
+    connect(reply, &QNetworkReply::finished, this, [this, sourceGeometry, originalImage, reply, manager]() {
         reply->deleteLater();
         manager->deleteLater();
 
@@ -186,7 +186,7 @@ void PostApplication::onPostClickedWithGeometry(const QString &postID, const QRe
             m_detailView->raise();
 
             // 4. 创建动画
-            auto*anim = new QPropertyAnimation(m_detailView, "geometry", this);
+            auto* anim = new QPropertyAnimation(m_detailView, "geometry", this);
             anim->setDuration(250);
             anim->setStartValue(localSourceGeometry);
             anim->setEndValue(finalRect);
@@ -202,7 +202,7 @@ void PostApplication::onPostClickedWithGeometry(const QString &postID, const QRe
     });
 
     // 处理错误
-    connect(reply, &QNetworkReply::errorOccurred, this, [] (QNetworkReply::NetworkError error) {
+    connect(reply, &QNetworkReply::errorOccurred, this, [](QNetworkReply::NetworkError error) {
         qWarning() << "获取帖子详情失败:" << error;
     });
 }

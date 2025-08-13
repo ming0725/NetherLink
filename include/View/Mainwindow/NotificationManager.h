@@ -1,6 +1,7 @@
 /* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 
 #ifndef INCLUDE_VIEW_MAINWINDOW_NOTIFICATION_MANAGER
+
 #define INCLUDE_VIEW_MAINWINDOW_NOTIFICATION_MANAGER
 
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */

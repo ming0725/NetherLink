@@ -9,7 +9,7 @@
 
 /* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
-AiChatWebSocket::AiChatWebSocket(QObject*parent) : QObject(parent), m_isProcessing(false), m_networkManager(new QNetworkAccessManager(this)) {
+AiChatWebSocket::AiChatWebSocket(QObject* parent) : QObject(parent), m_isProcessing(false), m_networkManager(new QNetworkAccessManager(this)) {
     QString serverIP = NetworkConfig::instance().getServerIP();
     QString httpPort = QString::number(NetworkConfig::instance().getHttpPort());
 

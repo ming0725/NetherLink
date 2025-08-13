@@ -8,11 +8,11 @@
 
 /* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
-CustomTooltip::CustomTooltip(QWidget*parent) : QWidget(parent) {
+CustomTooltip::CustomTooltip(QWidget* parent) : QWidget(parent) {
     setWindowFlags(Qt::ToolTip | Qt::FramelessWindowHint);
     setAttribute(Qt::WA_TranslucentBackground);
 
-    QVBoxLayout*layout = new QVBoxLayout(this);
+    QVBoxLayout* layout = new QVBoxLayout(this);
 
     layout->setContentsMargins(PADDING, PADDING, PADDING, PADDING);
     m_label = new QLabel(this);
@@ -31,7 +31,7 @@ void CustomTooltip::showTooltip(const QPoint &pos) {
     show();
 }
 
-void CustomTooltip::paintEvent(QPaintEvent*event) {
+void CustomTooltip::paintEvent(QPaintEvent* event) {
     Q_UNUSED(event);
 
     QPainter painter(this);

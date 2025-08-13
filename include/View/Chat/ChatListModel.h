@@ -1,6 +1,7 @@
 /* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 
 #ifndef INCLUDE_VIEW_CHAT_CHAT_LIST_MODEL
+
 #define INCLUDE_VIEW_CHAT_CHAT_LIST_MODEL
 
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
@@ -32,14 +33,12 @@ struct TimeHeader {
 // 底部空白项
 struct BottomSpace {
     static constexpr int DEFAULT_HEIGHT = 200;  // 默认底部空白高度（像素）
-
 };
 
 /* namespace -------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 // 时间间隔设置（秒）
 namespace TimeSettings {
-
     // 调试模式下使用1分钟
     #ifdef QT_DEBUG
     static constexpr int MESSAGE_TIME_INTERVAL = 60; // 1分钟
@@ -47,7 +46,6 @@ namespace TimeSettings {
     #else
     static constexpr int MESSAGE_TIME_INTERVAL = 300; // 5分钟
     #endif
-
 }
 
 /* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
@@ -103,7 +101,6 @@ class ChatListModel : public QAbstractListModel {
         TimeHeaderType getTimeHeaderType(const QDateTime& timestamp) const;
 
         bool shouldAddTimeHeader(const QDateTime& prevTime, const QDateTime& currTime) const;
-
 };
 
 #endif /* INCLUDE_VIEW_CHAT_CHAT_LIST_MODEL */

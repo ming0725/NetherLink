@@ -95,7 +95,7 @@ void MessageListWidget::updateMessages() {
     }
 
     // 按时间排序
-    std::sort(m_items.begin(), m_items.end(), [] (MessageListItem* a, MessageListItem* b) {
+    std::sort(m_items.begin(), m_items.end(), [](MessageListItem* a, MessageListItem* b) {
         return (a->getData()->timestamp > b->getData()->timestamp);
     });
     layoutContent();
@@ -108,7 +108,7 @@ void MessageListWidget::addMessage(const MessageDataPtr& data) {
     m_items.append(item);
 
     // 按时间排序
-    std::sort(m_items.begin(), m_items.end(), [] (MessageListItem* a, MessageListItem* b) {
+    std::sort(m_items.begin(), m_items.end(), [](MessageListItem* a, MessageListItem* b) {
         return (a->getData()->timestamp > b->getData()->timestamp);
     });
     layoutContent();
@@ -183,7 +183,7 @@ void MessageListWidget::onLastMessageTimeUpdated(const QString& chatId, const QD
     }
 
     // 按时间排序
-    std::sort(m_items.begin(), m_items.end(), [] (MessageListItem* a, MessageListItem* b) {
+    std::sort(m_items.begin(), m_items.end(), [](MessageListItem* a, MessageListItem* b) {
         return (a->getData()->timestamp > b->getData()->timestamp);
     });
     layoutContent();

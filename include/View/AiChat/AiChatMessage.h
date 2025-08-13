@@ -1,6 +1,7 @@
 /* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 
 #ifndef INCLUDE_VIEW_AI_CHAT_AI_CHAT_MESSAGE
+
 #define INCLUDE_VIEW_AI_CHAT_AI_CHAT_MESSAGE
 
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
@@ -58,7 +59,6 @@ class AiChatMessage {
         QDateTime m_time;
         bool m_isSelected;
 };
-
 Q_DECLARE_METATYPE(AiChatMessage*)
 
 #endif /* INCLUDE_VIEW_AI_CHAT_AI_CHAT_MESSAGE */

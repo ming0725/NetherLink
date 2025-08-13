@@ -1,6 +1,7 @@
 /* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 
 #ifndef INCLUDE_VIEW_FRIEND_SEARCH_TYPE_TAB
+
 #define INCLUDE_VIEW_FRIEND_SEARCH_TYPE_TAB
 
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
@@ -49,7 +50,6 @@ class SearchTypeTab : public QWidget {
         void initTabs();
 
         void updateTabStyles();
-
 };
 
 #endif /* INCLUDE_VIEW_FRIEND_SEARCH_TYPE_TAB */

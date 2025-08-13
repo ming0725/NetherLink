@@ -21,7 +21,7 @@ SearchTypeTab::SearchTypeTab(QWidget* parent) : QWidget(parent), animation(new Q
     animation->setEasingCurve(QEasingCurve::OutCubic);
 
     // 初始化指示器位置
-    QTimer::singleShot(0, this, [this] () {
+    QTimer::singleShot(0, this, [=, this]() {
         QLabel* firstTab = tabs[0];
         m_indicatorX = firstTab->x() + (firstTab->width() - INDICATOR_WIDTH) / 2;
         update();

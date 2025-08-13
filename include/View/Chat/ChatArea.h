@@ -1,6 +1,7 @@
 /* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 
 #ifndef INCLUDE_VIEW_CHAT_CHAT_AREA
+
 #define INCLUDE_VIEW_CHAT_CHAT_AREA
 
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
@@ -16,7 +17,7 @@ class ChatArea : public QWidget {
     Q_OBJECT using ChatMessagePtr = QSharedPointer <ChatMessage>;
 
     public:
-        explicit ChatArea(QWidget*parent = nullptr);
+        explicit ChatArea(QWidget* parent = nullptr);
 
         void initMessage(QVector <ChatMessagePtr>&);
 
@@ -33,7 +34,7 @@ class ChatArea : public QWidget {
         void clearAll();
 
     protected:
-        void resizeEvent(QResizeEvent*event) override;
+        void resizeEvent(QResizeEvent* event) override;
 
     private slots:
         void onScrollValueChanged(int value);
@@ -72,7 +73,6 @@ class ChatArea : public QWidget {
         void adjustBottomSpace();
 
         void updateInputBarPosition();
-
 };
 
 #endif /* INCLUDE_VIEW_CHAT_CHAT_AREA */

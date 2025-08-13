@@ -6,7 +6,7 @@
 
 /* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
-TopSearchWidget::TopSearchWidget(QWidget*parent) : QWidget(parent) {
+TopSearchWidget::TopSearchWidget(QWidget* parent) : QWidget(parent) {
     searchBox = new LineEditComponent(this);
     addButton = new CustomPushButton("+", this);
     addButton->setCursor(Qt::PointingHandCursor);
@@ -34,7 +34,7 @@ void TopSearchWidget::showAddMenu() {
     menu->addAction(addFriendAction);
 
     // 连接添加好友/群的点击事件
-    connect(addFriendAction, &QAction::triggered, this, [] () {
+    connect(addFriendAction, &QAction::triggered, this, []() {
         SearchFriendWindow::getInstance()->show();
     });
 
@@ -46,7 +46,7 @@ void TopSearchWidget::showAddMenu() {
     connect(menu, &QMenu::aboutToHide, menu, &QObject::deleteLater);
 }
 
-void TopSearchWidget::resizeEvent(QResizeEvent*event) {
+void TopSearchWidget::resizeEvent(QResizeEvent* event) {
     QWidget::resizeEvent(event);
 
     int W = width();

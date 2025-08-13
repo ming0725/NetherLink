@@ -54,7 +54,7 @@ void NotificationManager::showMessage(const QString& message, Type type) {
     if (isShowing) {
         // 如果当前正处于显示中，则先执行隐藏动画，再在动画结束时重回本函数
         startAnimation(false);
-        QTimer::singleShot(300, this, [this, message, type] () {
+        QTimer::singleShot(300, this, [this, message, type]() {
             this->showMessage(message, type);
         });
 
@@ -71,7 +71,7 @@ void NotificationManager::showMessage(const QString& message, Type type) {
     startAnimation(true);
 
     // 3s 后自动隐藏
-    QTimer::singleShot(3000, this, [this] () {
+    QTimer::singleShot(3000, this, [=, this]() {
         startAnimation(false);
     });
 }
@@ -123,7 +123,7 @@ void NotificationManager::showMessage(const QString& message, Type type, QWidget
         animation->start();
 
         // 300ms 后再执行本函数，以播放新一次的显示
-        QTimer::singleShot(300, this, [this, message, type, targetWidget] () {
+        QTimer::singleShot(300, this, [this, message, type, targetWidget]() {
             this->showMessage(message, type, targetWidget);
         });
 
@@ -156,7 +156,7 @@ void NotificationManager::showMessage(const QString& message, Type type, QWidget
     animation->start();
 
     // 1.5s（1500ms）后自动隐藏
-    QTimer::singleShot(1500, this, [this, x, yHidden, yVisible] () {
+    QTimer::singleShot(1500, this, [this, x, yHidden, yVisible]() {
         // 播放“上滑”动画：从 yVisible → yHidden
         animation->stop();
         animation->setStartValue(QPoint(x, yVisible));
@@ -165,7 +165,7 @@ void NotificationManager::showMessage(const QString& message, Type type, QWidget
 
         // 隐藏动画结束后真正 hide()，并重置 isShowing
         // 动画时长 150ms，因此延迟 150ms 后 hide()
-        QTimer::singleShot(250, this, [this] () {
+        QTimer::singleShot(250, this, [=, this]() {
             this->hide();
             isShowing = false;
         });

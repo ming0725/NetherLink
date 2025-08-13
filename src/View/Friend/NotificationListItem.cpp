@@ -136,21 +136,21 @@ void NotificationListItem::sendRequestResponse(bool accept) {
 }
 
 void NotificationListItem::createActionMenu() {
-    connect(actionButton, &QPushButton::clicked, [this] () {
+    connect(actionButton, &QPushButton::clicked, [=, this]() {
         // 创建临时菜单
         auto* menu = new TransparentMenu(this);
         QIcon icon(":/icon/friend_selected.png");
-        menu->addAction(icon, "同意", [this] () {
+        menu->addAction(icon, "同意", [=, this]() {
             setStatus(Status::Accepted);
             sendRequestResponse(true);
 
             // 延迟1秒后再获取联系人列表，确保服务器有时间处理请求
-            QTimer::singleShot(2000, this, [] () {
+            QTimer::singleShot(2000, this, []() {
                 NetworkManager::instance().reloadContacts();
             });
             emit accepted();
         });
-        menu->addAction(icon, "拒绝", [this] () {
+        menu->addAction(icon, "拒绝", [=, this]() {
             setStatus(Status::Rejected);
             sendRequestResponse(false);
             emit rejected();

@@ -1,6 +1,7 @@
 /* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 
 #ifndef INCLUDE_VIEW_AI_CHAT_AI_CHAT_LIST_ITEM
+
 #define INCLUDE_VIEW_AI_CHAT_AI_CHAT_LIST_ITEM
 
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
@@ -60,7 +61,6 @@ class AiChatListItem : public QWidget {
         QMenu* m_menu;
 
         void initMenu();
-
 };
 
 #endif /* INCLUDE_VIEW_AI_CHAT_AI_CHAT_LIST_ITEM */

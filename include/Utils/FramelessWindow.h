@@ -1,6 +1,7 @@
 /* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 
 #ifndef INCLUDE_UTILS_FRAMELESS_WINDOW
+
 #define INCLUDE_UTILS_FRAMELESS_WINDOW
 
 // #pragma comment(lib,"dwmapi.lib")

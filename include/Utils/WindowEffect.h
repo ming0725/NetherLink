@@ -1,6 +1,7 @@
 /* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 
 #ifndef INCLUDE_UTILS_WINDOW_EFFECT
+
 #define INCLUDE_UTILS_WINDOW_EFFECT
 
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
@@ -12,7 +13,7 @@
 /* typedef ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 // Un-documented API – load at runtime
-typedef BOOL (WINAPI*PFN_SetWindowCompositionAttribute)(HWND hWnd, struct WINDOWCOMPOSITIONATTRIBDATA* data);
+typedef BOOL (WINAPI* PFN_SetWindowCompositionAttribute)(HWND hWnd, struct WINDOWCOMPOSITIONATTRIBDATA* data);
 
 /* enum ------------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 

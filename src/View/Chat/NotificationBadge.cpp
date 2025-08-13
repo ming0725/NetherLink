@@ -6,7 +6,7 @@
 
 /* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
-NotificationBadge::NotificationBadge(QWidget*parent) : QWidget(parent) {
+NotificationBadge::NotificationBadge(QWidget* parent) : QWidget(parent) {
     m_bgColor = QColor(0xf74c30);
     m_textColor = QColor(0xffffff);
     m_dndIcon = QPixmap(":/icon/notification.png");

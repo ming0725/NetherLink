@@ -147,7 +147,7 @@ void FriendListItem::resizeEvent(QResizeEvent* event) {
 }
 
 void FriendListItem::mousePressEvent(QMouseEvent* event) {
-    QMouseEvent*mouseEvent = static_cast <QMouseEvent*>(event);
+    QMouseEvent* mouseEvent = static_cast <QMouseEvent*>(event);
 
     if (mouseEvent->button() == Qt::LeftButton) {
         emit itemClicked(this);
@@ -163,7 +163,7 @@ bool FriendListItem::isSelected() {
     return (selected);
 }
 
-void FriendListItem::showEvent(QShowEvent*ev) {
+void FriendListItem::showEvent(QShowEvent* ev) {
     // UserRepository::instance().getAvatarAsync(userID, avatarLabel);
     QWidget::showEvent(ev);
 }

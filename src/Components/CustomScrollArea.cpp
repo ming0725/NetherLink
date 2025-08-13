@@ -16,7 +16,7 @@ CustomScrollArea::CustomScrollArea(QWidget* parent) : QAbstractScrollArea(parent
     // 2) contentWidget
     contentWidget->move(0, 0);
 
-    auto*opacity = new QGraphicsOpacityEffect(thumb);
+    auto* opacity = new QGraphicsOpacityEffect(thumb);
 
     opacity->setOpacity(0.0);
     thumb->setGraphicsEffect(opacity);
@@ -30,7 +30,7 @@ CustomScrollArea::CustomScrollArea(QWidget* parent) : QAbstractScrollArea(parent
     thumb->installEventFilter(this);
     scrollAnimation->setEasingCurve(QEasingCurve::OutCubic);
     scrollAnimation->setUpdateInterval(0);
-    connect(scrollAnimation, &QTimeLine::frameChanged, this, [=] (int value) {
+    connect(scrollAnimation, &QTimeLine::frameChanged, this, [=, this](int value) {
         int maxContentOffset = contentWidget->height() - height();
         currentOffset = qBound(0, value, maxContentOffset);
         contentWidget->move(0, -currentOffset);
@@ -63,7 +63,7 @@ bool CustomScrollArea::eventFilter(QObject* obj, QEvent* ev) {
             thumb->show();
             thumb->setVisible(contentHeight > viewportHeight);
 
-            auto*anim = new QPropertyAnimation(thumb->graphicsEffect(), "opacity", this);
+            auto* anim = new QPropertyAnimation(thumb->graphicsEffect(), "opacity", this);
 
             anim->setDuration(200);
             anim->setStartValue(thumb->graphicsEffect()->property("opacity").toDouble());
@@ -71,7 +71,7 @@ bool CustomScrollArea::eventFilter(QObject* obj, QEvent* ev) {
             anim->start(QAbstractAnimation::DeleteWhenStopped);
         }
     } else if (ev->type() == QEvent::Leave) {
-        auto*anim = new QPropertyAnimation(thumb->graphicsEffect(), "opacity", this);
+        auto* anim = new QPropertyAnimation(thumb->graphicsEffect(), "opacity", this);
 
         anim->setDuration(200);
         anim->setStartValue(thumb->graphicsEffect()->property("opacity").toDouble());
@@ -83,7 +83,7 @@ bool CustomScrollArea::eventFilter(QObject* obj, QEvent* ev) {
     // 滚动条拖动逻辑
     else if (obj == thumb) {
         if (ev->type() == QEvent::MouseButtonPress) {
-            auto*me = static_cast <QMouseEvent*>(ev);
+            auto* me = static_cast <QMouseEvent*>(ev);
 
             if (me->button() == Qt::LeftButton) {
                 dragging = true;
@@ -93,7 +93,7 @@ bool CustomScrollArea::eventFilter(QObject* obj, QEvent* ev) {
                 return (true);
             }
         } else if ((ev->type() == QEvent::MouseMove) && dragging && thumb->isVisible()) {
-            auto*me = static_cast <QMouseEvent*>(ev);
+            auto* me = static_cast <QMouseEvent*>(ev);
             int deltaY = me->globalPosition().y() - dragStartY;
             int maxThumbOffset = height() - thumb->height();
 

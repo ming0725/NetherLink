@@ -31,7 +31,7 @@ static bool friendItemLessThan(FriendListItem* a, FriendListItem* b) {
     return (collator.compare(a->getUserName(), b->getUserName()) < 0);
 }
 
-FriendListWidget::FriendListWidget(QWidget*parent) : QWidget(parent), scrollArea(new ScrollAreaNoWheel(this)), scrollBarThumb(new ScrollBarThumb(this)), contentWidget(new QWidget), contentOffset(0), thumbOffset(0), dragging(false), dragStartY(0), thumbOffsetAtDragStart(0), scrollAnimation(new QTimeLine(500, this)) {
+FriendListWidget::FriendListWidget(QWidget* parent) : QWidget(parent), scrollArea(new ScrollAreaNoWheel(this)), scrollBarThumb(new ScrollBarThumb(this)), contentWidget(new QWidget), contentOffset(0), thumbOffset(0), dragging(false), dragStartY(0), thumbOffsetAtDragStart(0), scrollAnimation(new QTimeLine(500, this)) {
     // 设置背景为白色
     setAutoFillBackground(true);
 
@@ -48,7 +48,7 @@ FriendListWidget::FriendListWidget(QWidget*parent) : QWidget(parent), scrollArea
     scrollArea->viewport()->installEventFilter(this);
     contentWidget->installEventFilter(this);
 
-    auto*opacity = new QGraphicsOpacityEffect(scrollBarThumb);
+    auto* opacity = new QGraphicsOpacityEffect(scrollBarThumb);
 
     opacity->setOpacity(0.0);
     scrollBarThumb->setGraphicsEffect(opacity);
@@ -68,7 +68,7 @@ FriendListWidget::FriendListWidget(QWidget*parent) : QWidget(parent), scrollArea
     scrollBarThumb->installEventFilter(this);
     scrollAnimation->setEasingCurve(QEasingCurve::OutBack);
     scrollAnimation->setUpdateInterval(0);
-    connect(scrollAnimation, &QTimeLine::frameChanged, this, [=] (int value) {
+    connect(scrollAnimation, &QTimeLine::frameChanged, this, [=, this](int value) {
         int maxContentOffset = contentWidget->height() - height();
         contentOffset = qBound(0, value, maxContentOffset);
         contentWidget->move(0, -contentOffset);
@@ -82,13 +82,13 @@ FriendListWidget::FriendListWidget(QWidget*parent) : QWidget(parent), scrollArea
 
 FriendListWidget::~FriendListWidget() {}
 
-void FriendListWidget::resizeEvent(QResizeEvent*event) {
+void FriendListWidget::resizeEvent(QResizeEvent* event) {
     QWidget::resizeEvent(event);
     scrollArea->setGeometry(rect());
     relayoutItems(); // 每次尺寸变化都重新排布子项
 }
 
-void FriendListWidget::wheelEvent(QWheelEvent*event) {
+void FriendListWidget::wheelEvent(QWheelEvent* event) {
     // 内容不足一页时，不滚动，否则可能导致崩溃
     if (contentWidget->height() <= height()) {
         event->ignore();
@@ -104,7 +104,7 @@ void FriendListWidget::wheelEvent(QWheelEvent*event) {
 }
 
 void FriendListWidget::addItem(const User& user) {
-    auto*item = new FriendListItem(user, contentWidget);
+    auto* item = new FriendListItem(user, contentWidget);
 
     itemList.append(item);
     item->show();
@@ -118,7 +118,7 @@ void FriendListWidget::relayoutItems() {
     // 1) 重新排列所有子项
     int y = 0;
 
-    for (auto*item : itemList) {
+    for (auto* item : itemList) {
         item->move(0, y);
         item->resize(width(), item->sizeHint().height());
         y += item->height();
@@ -144,7 +144,7 @@ void FriendListWidget::relayoutItems() {
     scrollBarThumb->setGeometry(width() - 13, thumbOffset, 8, thumbHeight);
 }
 
-bool FriendListWidget::eventFilter(QObject*obj, QEvent*event) {
+bool FriendListWidget::eventFilter(QObject* obj, QEvent* event) {
     if (event->type() == QEvent::Enter) {
         int contentHeight = contentWidget->height();
         int viewportHeight = height();
@@ -156,7 +156,7 @@ bool FriendListWidget::eventFilter(QObject*obj, QEvent*event) {
             scrollBarThumb->show();
             scrollBarThumb->setVisible(contentHeight > viewportHeight);
 
-            auto*anim = new QPropertyAnimation(scrollBarThumb->graphicsEffect(), "opacity", this);
+            auto* anim = new QPropertyAnimation(scrollBarThumb->graphicsEffect(), "opacity", this);
 
             anim->setDuration(200);
             anim->setStartValue(scrollBarThumb->graphicsEffect()->property("opacity").toDouble());
@@ -164,7 +164,7 @@ bool FriendListWidget::eventFilter(QObject*obj, QEvent*event) {
             anim->start(QAbstractAnimation::DeleteWhenStopped);
         }
     } else if (event->type() == QEvent::Leave) {
-        auto*anim = new QPropertyAnimation(scrollBarThumb->graphicsEffect(), "opacity", this);
+        auto* anim = new QPropertyAnimation(scrollBarThumb->graphicsEffect(), "opacity", this);
 
         anim->setDuration(200);
         anim->setStartValue(scrollBarThumb->graphicsEffect()->property("opacity").toDouble());
@@ -173,7 +173,7 @@ bool FriendListWidget::eventFilter(QObject*obj, QEvent*event) {
         anim->start(QAbstractAnimation::DeleteWhenStopped);
     } else if (obj == scrollBarThumb) {
         if (event->type() == QEvent::MouseButtonPress) {
-            auto*me = static_cast <QMouseEvent*>(event);
+            auto* me = static_cast <QMouseEvent*>(event);
 
             if (me->button() == Qt::LeftButton) {
                 dragging = true;
@@ -183,7 +183,7 @@ bool FriendListWidget::eventFilter(QObject*obj, QEvent*event) {
                 return (true);
             }
         } else if ((event->type() == QEvent::MouseMove) && dragging && scrollBarThumb->isVisible()) {
-            auto*me = static_cast <QMouseEvent*>(event);
+            auto* me = static_cast <QMouseEvent*>(event);
             int deltaY = me->globalPosition().y() - dragStartY;
             int maxThumbOffset = height() - scrollBarThumb->height();
 

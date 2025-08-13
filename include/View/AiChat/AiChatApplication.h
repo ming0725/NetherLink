@@ -1,6 +1,7 @@
 /* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 
 #ifndef INCLUDE_VIEW_AI_CHAT_AI_CHAT_APPLICATION
+
 #define INCLUDE_VIEW_AI_CHAT_AI_CHAT_APPLICATION
 
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
@@ -68,7 +69,7 @@ class AiChatApplication : public QWidget {
 
                     // 设置列表样式
                     m_aiChatList->setStyleSheet("border-width:0px; border-style:solid;");
-                    connect(m_button, &QPushButton::clicked, [this] () {
+                    connect(m_button, &QPushButton::clicked, [=, this]() {
                 auto* item = new AiChatListItem(m_aiChatList);
                 item->setTitle("新对话");
                 item->setTime(QDateTime::currentDateTime());
@@ -101,7 +102,6 @@ class AiChatApplication : public QWidget {
                     y += buttonSize + btnListDist;
                     m_aiChatList->setGeometry(0, y, width(), height() - y);
                 }
-
         };
 
         LeftPane* m_leftPane;

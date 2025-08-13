@@ -134,7 +134,7 @@ void ApplyWindow::setupConnections() {
     connect(btnSend, &QPushButton::clicked, this, &ApplyWindow::onSendClicked);
 
     // 添加好友请求响应的处理
-    connect(&NetworkManager::instance(), &NetworkManager::friendRequestResponse, this, [this] (bool success, const QString& message) {
+    connect(&NetworkManager::instance(), &NetworkManager::friendRequestResponse, this, [=, this](bool success, const QString& message) {
         // 重新启用发送按钮
         btnSend->setEnabled(true);
 

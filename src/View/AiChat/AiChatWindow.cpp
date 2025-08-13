@@ -7,7 +7,7 @@
 
 /* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
-AiChatWindow::AiChatWindow(QWidget*parent) : QWidget(parent), m_model(new AiChatListModel(this)), m_currentConversationId("") {
+AiChatWindow::AiChatWindow(QWidget* parent) : QWidget(parent), m_model(new AiChatListModel(this)), m_currentConversationId("") {
     setupUI();
 
     auto* message = new AiChatMessage(AiChatMessage::AI, "您好！我是DeepSeek，很高兴见到您！", "");

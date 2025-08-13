@@ -1,6 +1,7 @@
 /* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 
 #ifndef INCLUDE_VIEW_MAINWINDOW_TEXT_BAR_ITEM
+
 #define INCLUDE_VIEW_MAINWINDOW_TEXT_BAR_ITEM
 
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
@@ -54,7 +55,6 @@ class TextBarItem : public QWidget {
 
     signals:
         void clicked(int index);
-
 };
 
 #endif /* INCLUDE_VIEW_MAINWINDOW_TEXT_BAR_ITEM */

@@ -9,7 +9,7 @@
 
 /* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
-AiChatListView::AiChatListView(QWidget*parent) : QListView(parent), m_smoothScrollValue(0) {
+AiChatListView::AiChatListView(QWidget* parent) : QListView(parent), m_smoothScrollValue(0) {
     setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
     setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
@@ -36,7 +36,7 @@ AiChatListView::AiChatListView(QWidget*parent) : QListView(parent), m_smoothScro
     connect(scrollAnimation, &QPropertyAnimation::finished, this, &AiChatListView::onAnimationFinished);
 }
 
-void AiChatListView::setModel(QAbstractItemModel*model) {
+void AiChatListView::setModel(QAbstractItemModel* model) {
     if (this->model()) {
         disconnect(this->model(), &QAbstractItemModel::rowsInserted, this, &AiChatListView::onModelRowsChanged);
         disconnect(this->model(), &QAbstractItemModel::rowsRemoved, this, &AiChatListView::onModelRowsChanged);
@@ -99,7 +99,7 @@ void AiChatListView::mousePressEvent(QMouseEvent* event) {
     QListView::mousePressEvent(event);
 }
 
-void AiChatListView::resizeEvent(QResizeEvent*event) {
+void AiChatListView::resizeEvent(QResizeEvent* event) {
     QListView::resizeEvent(event);
 
     // 更新自定义滚动条位置和大小
@@ -117,7 +117,7 @@ void AiChatListView::resizeEvent(QResizeEvent*event) {
     }
 }
 
-void AiChatListView::wheelEvent(QWheelEvent*event) {
+void AiChatListView::wheelEvent(QWheelEvent* event) {
     if (model() && (model()->rowCount() > 0)) {
         QScrollBar* vScrollBar = verticalScrollBar();
         int totalHeight = vScrollBar->maximum() + vScrollBar->pageStep();
@@ -146,13 +146,13 @@ void AiChatListView::wheelEvent(QWheelEvent*event) {
     }
 }
 
-void AiChatListView::enterEvent(QEnterEvent*event) {
+void AiChatListView::enterEvent(QEnterEvent* event) {
     hovered = true;
     updateCustomScrollBar();
     QListView::enterEvent(event);
 }
 
-void AiChatListView::leaveEvent(QEvent*event) {
+void AiChatListView::leaveEvent(QEvent* event) {
     hovered = false;
 
     if (customScrollBar->isVisible()) {

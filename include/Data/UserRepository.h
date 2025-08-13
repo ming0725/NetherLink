@@ -1,6 +1,7 @@
 /* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 
 #ifndef INCLUDE_DATA_USER_REPOSITORY
+
 #define INCLUDE_DATA_USER_REPOSITORY
 
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
@@ -41,7 +42,6 @@ class UserRepository : public QObject {
 
         // 更新当前用户信息
         bool updateCurrentUser(const QJsonObject& userInfo);
-
 };
 
 #endif /* INCLUDE_DATA_USER_REPOSITORY */

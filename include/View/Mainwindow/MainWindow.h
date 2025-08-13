@@ -1,6 +1,7 @@
 /* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 
 #ifndef INCLUDE_VIEW_MAINWINDOW_MAIN_WINDOW
+
 #define INCLUDE_VIEW_MAINWINDOW_MAIN_WINDOW
 
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
@@ -18,14 +19,14 @@ class MainWindow : public FramelessWindow {
     Q_OBJECT
 
     public:
-        MainWindow(QWidget*parent = nullptr);
+        MainWindow(QWidget* parent = nullptr);
 
         static QWidget* getInstance();
 
     protected:
-        void resizeEvent(QResizeEvent*event) override;
+        void resizeEvent(QResizeEvent* event) override;
 
-        void mousePressEvent(QMouseEvent*event) override;
+        void mousePressEvent(QMouseEvent* event) override;
 
         bool eventFilter(QObject* watched, QEvent* ev);
 
@@ -34,13 +35,13 @@ class MainWindow : public FramelessWindow {
 
     private:
         static QWidget* instance;
-        ApplicationBar*appBar;
-        QWidget*rightContent;
+        ApplicationBar* appBar;
+        QWidget* rightContent;
         int contentFixedWidth;
-        QSplitter*splitter;
-        QPushButton*btnMinimize;
-        QPushButton*btnMaximize;
-        QPushButton*btnClose;
+        QSplitter* splitter;
+        QPushButton* btnMinimize;
+        QPushButton* btnMaximize;
+        QPushButton* btnClose;
         QStackedWidget* stack;
         QIcon iconClose, iconCloseHover;
 };

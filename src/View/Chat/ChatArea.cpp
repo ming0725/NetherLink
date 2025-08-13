@@ -15,7 +15,7 @@
 
 /* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
-ChatArea::ChatArea(QWidget*parent) : QWidget(parent), unreadMessageCount(0), isAtBottom(true), isGroupMode(false) {
+ChatArea::ChatArea(QWidget* parent) : QWidget(parent), unreadMessageCount(0), isAtBottom(true), isGroupMode(false) {
     // 创建布局
     QVBoxLayout* mainLayout = new QVBoxLayout(this);
 
@@ -163,7 +163,7 @@ void ChatArea::onNewMessageNotifierClicked() {
     scrollToBottom();
 }
 
-void ChatArea::resizeEvent(QResizeEvent*event) {
+void ChatArea::resizeEvent(QResizeEvent* event) {
     QWidget::resizeEvent(event);
     updateNewMessageNotifierPosition();
     updateInputBarPosition();

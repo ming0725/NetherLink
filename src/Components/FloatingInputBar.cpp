@@ -14,7 +14,7 @@ const QString FloatingInputBar::RESOURCE_PATH = ":/icon/";
 
 /* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
-FloatingInputBar::FloatingInputBar(QWidget*parent) : QWidget(parent) {
+FloatingInputBar::FloatingInputBar(QWidget* parent) : QWidget(parent) {
     setAutoFillBackground(false);
     setAttribute(Qt::WA_TranslucentBackground);
     setWindowFlags(Qt::FramelessWindowHint);  // 去除边框
@@ -24,7 +24,7 @@ FloatingInputBar::FloatingInputBar(QWidget*parent) : QWidget(parent) {
     m_tooltip = new CustomTooltip(this);
     m_tooltip->hide();
 
-    auto*shadow = new QGraphicsDropShadowEffect(this);
+    auto* shadow = new QGraphicsDropShadowEffect(this);
 
     shadow->setBlurRadius(40);
     shadow->setOffset(0, 0);
@@ -35,13 +35,13 @@ FloatingInputBar::FloatingInputBar(QWidget*parent) : QWidget(parent) {
 FloatingInputBar::~FloatingInputBar() {}
 
 void FloatingInputBar::initUI() {
-    QVBoxLayout*mainLayout = new QVBoxLayout(this);
+    QVBoxLayout* mainLayout = new QVBoxLayout(this);
 
     mainLayout->setContentsMargins(0, VERTICAL_MARGIN, 0, VERTICAL_MARGIN);
     mainLayout->setSpacing(TOOLBAR_INPUT_SPACING);
 
     // 顶部工具栏
-    QHBoxLayout*toolbarLayout = new QHBoxLayout();
+    QHBoxLayout* toolbarLayout = new QHBoxLayout();
 
     toolbarLayout->setContentsMargins(TOOLBAR_LEFT_MARGIN, 0, RIGHT_MARGIN + 4, 0);
     toolbarLayout->setSpacing(BUTTON_SPACING);
@@ -86,7 +86,7 @@ void FloatingInputBar::initUI() {
     toolbarLayout->addWidget(m_historyLabel);
 
     // 创建输入框容器（用于设置不同的左边距）
-    QHBoxLayout*inputLayout = new QHBoxLayout();
+    QHBoxLayout* inputLayout = new QHBoxLayout();
 
     inputLayout->setContentsMargins(INPUT_LEFT_MARGIN, 0, 5, 0);
     inputLayout->setSpacing(0);
@@ -122,7 +122,7 @@ void FloatingInputBar::initUI() {
     m_sendLabel->raise();  // 确保发送按钮显示在最上层
 }
 
-void FloatingInputBar::updateLabelIcon(QLabel*label, const QString &normalIcon, const QString &hoveredIcon, const QSize &size) {
+void FloatingInputBar::updateLabelIcon(QLabel* label, const QString &normalIcon, const QString &hoveredIcon, const QSize &size) {
     // 加载并缩放正常状态图标
     QPixmap normalPixmap(RESOURCE_PATH + normalIcon);
     qreal ratio = qMin(size.width() / (qreal)normalPixmap.width(), size.height() / (qreal)normalPixmap.height());
@@ -147,7 +147,7 @@ void FloatingInputBar::updateLabelIcon(QLabel*label, const QString &normalIcon, 
     label->setPixmap(finalIcon);
 }
 
-void FloatingInputBar::handleLabelHover(QLabel*label, const QString & /*normalIcon*/, const QString &hoveredIcon, const QSize &size) {
+void FloatingInputBar::handleLabelHover(QLabel* label, const QString & /*normalIcon*/, const QString &hoveredIcon, const QSize &size) {
     QPixmap pixmap(hoveredIcon);
     qreal ratio = qMin(size.width() / (qreal)pixmap.width(), size.height() / (qreal)pixmap.height());
     QSize targetSize(pixmap.width() * ratio, pixmap.height() * ratio);
@@ -173,7 +173,7 @@ void FloatingInputBar::paintEvent(QPaintEvent*/*event*/) {
     painter.fillPath(path, QColor(255, 255, 255, 120));
 }
 
-void FloatingInputBar::resizeEvent(QResizeEvent*event) {
+void FloatingInputBar::resizeEvent(QResizeEvent* event) {
     QWidget::resizeEvent(event);
 
     // 更新发送按钮位置
@@ -183,11 +183,11 @@ void FloatingInputBar::resizeEvent(QResizeEvent*event) {
     }
 }
 
-bool FloatingInputBar::eventFilter(QObject*watched, QEvent*event) {
+bool FloatingInputBar::eventFilter(QObject* watched, QEvent* event) {
     // 处理输入框事件
     if (watched == m_inputEdit) {
         if (event->type() == QEvent::KeyPress) {
-            QKeyEvent*keyEvent = static_cast <QKeyEvent*>(event);
+            QKeyEvent* keyEvent = static_cast <QKeyEvent*>(event);
 
             if ((keyEvent->key() == Qt::Key_Return) || (keyEvent->key() == Qt::Key_Enter)) {
                 if (!(keyEvent->modifiers() & Qt::ShiftModifier)) {
@@ -234,7 +234,7 @@ bool FloatingInputBar::eventFilter(QObject*watched, QEvent*event) {
     return (QWidget::eventFilter(watched, event));
 }
 
-void FloatingInputBar::mousePressEvent(QMouseEvent*event) {
+void FloatingInputBar::mousePressEvent(QMouseEvent* event) {
     QPoint pos = event->pos();
 
     if (m_sendLabel && m_sendLabel->geometry().contains(pos)) {
@@ -259,7 +259,7 @@ void FloatingInputBar::sendCurrentMessage() {
     }
 }
 
-void FloatingInputBar::showTooltip(QLabel*label, const QString &text) {
+void FloatingInputBar::showTooltip(QLabel* label, const QString &text) {
     if (!label)
         return;
     m_tooltip->setText(text);

@@ -83,7 +83,7 @@ MainWindow::MainWindow(QWidget* parent) : FramelessWindow(parent), stack(new QSt
 
     // 信号连接
     connect(btnMinimize, &QPushButton::clicked, this, &QWidget::showMinimized);
-    connect(btnMaximize, &QPushButton::clicked, this, [=] () {
+    connect(btnMaximize, &QPushButton::clicked, this, [=, this]() {
         if (isMaximized())
             showNormal();
         else
@@ -124,7 +124,7 @@ void MainWindow::mousePressEvent(QMouseEvent* event) {
     FramelessWindow::mousePressEvent(event);
 }
 
-void MainWindow::onBarItemClicked(ApplicationBarItem*item) {
+void MainWindow::onBarItemClicked(ApplicationBarItem* item) {
     int idx = appBar->indexOfTopItem(item);
 
     if ((idx >= 0) && (idx < stack->count())) {
@@ -132,7 +132,7 @@ void MainWindow::onBarItemClicked(ApplicationBarItem*item) {
     }
 }
 
-bool MainWindow::eventFilter(QObject*watched, QEvent*ev) {
+bool MainWindow::eventFilter(QObject* watched, QEvent* ev) {
     if (watched == btnClose) {
         if (ev->type() == QEvent::Enter) {
             btnClose->setIcon(iconCloseHover);
@@ -143,7 +143,7 @@ bool MainWindow::eventFilter(QObject*watched, QEvent*ev) {
     return (FramelessWindow::eventFilter(watched, ev));
 }
 
-QWidget*MainWindow::getInstance() {
+QWidget* MainWindow::getInstance() {
     if (!instance) {
         instance = new MainWindow();
     }

@@ -1,9 +1,16 @@
-#pragma once
+/* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
+
+#ifndef INCLUDE_COMPONENTS_CUSTOM_PUSH_BUTTON
+
+#define INCLUDE_COMPONENTS_CUSTOM_PUSH_BUTTON
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 #include <QColor>
 #include <QPropertyAnimation>
 #include <QPushButton>
 
+/* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 class CustomPushButton : public QPushButton {
     Q_OBJECT Q_PROPERTY(int radius READ radius WRITE setRadius) Q_PROPERTY(QColor backgroundColor READ backgroundColor WRITE setBackgroundColor USER true) Q_PROPERTY(QColor hoverColor READ hoverColor WRITE setHoverColor) Q_PROPERTY(QColor pressColor READ pressColor WRITE setPressColor) Q_PROPERTY(QColor textColor READ textColor WRITE setTextColor) Q_PROPERTY(QColor borderColor READ borderColor WRITE setBorderColor) Q_PROPERTY(int borderWidth READ borderWidth WRITE setBorderWidth) Q_PROPERTY(bool isFlat READ isFlat WRITE setFlat)
 
@@ -101,3 +108,5 @@ class CustomPushButton : public QPushButton {
         bool m_isPressed;
         QPropertyAnimation* m_backgroundAnimation;
 };
+
+#endif /* INCLUDE_COMPONENTS_CUSTOM_PUSH_BUTTON */

@@ -1,6 +1,7 @@
 /* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 
 #ifndef INCLUDE_COMPONENTS_SMOOTH_SCROLL_WIDGET
+
 #define INCLUDE_COMPONENTS_SMOOTH_SCROLL_WIDGET
 
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
@@ -19,11 +20,11 @@ class SmoothScrollWidget : public QWidget {
     Q_OBJECT
 
     protected:
-        void wheelEvent(QWheelEvent*event) override;
+        void wheelEvent(QWheelEvent* event) override;
 
-        void resizeEvent(QResizeEvent*event) override;
+        void resizeEvent(QResizeEvent* event) override;
 
-        bool eventFilter(QObject*obj, QEvent*event) override;
+        bool eventFilter(QObject* obj, QEvent* event) override;
 
         virtual void animateTo(int targetOffset);
 
@@ -36,8 +37,8 @@ class SmoothScrollWidget : public QWidget {
         // 子类通过该 widget 添加内容即可，基类会处理滚动逻辑
         ScrollAreaNoWheel* scrollArea;
         ScrollBarThumb* scrollBarThumb;
-        QWidget*contentWidget;
-        QTimeLine*scrollAnimation;
+        QWidget* contentWidget;
+        QTimeLine* scrollAnimation;
         int contentOffset;
         int thumbOffset;
         bool dragging;
@@ -45,10 +46,9 @@ class SmoothScrollWidget : public QWidget {
         int thumbOffsetAtDragStart;
 
     public:
-        explicit SmoothScrollWidget(QWidget*parent = nullptr);
+        explicit SmoothScrollWidget(QWidget* parent = nullptr);
 
         virtual ~SmoothScrollWidget();
-
 };
 
 #endif /* INCLUDE_COMPONENTS_SMOOTH_SCROLL_WIDGET */

@@ -18,7 +18,7 @@ FriendLeftPane::FriendLeftPane(QWidget* parent) : QWidget(parent), m_topSearch(n
     connect(m_groupNotification, &NotificationItem::clicked, this, &FriendLeftPane::groupNotificationClicked);
 
     // 连接好友请求信号
-    connect(&NetworkManager::instance(), &NetworkManager::friendRequestReceived, this, [this] (int, const QString&, const QString&, const QString&, const QString&, const QString&) {
+    connect(&NetworkManager::instance(), &NetworkManager::friendRequestReceived, this, [=, this](int, const QString&, const QString&, const QString&, const QString&, const QString&) {
         // 如果当前不在好友通知页面，增加未读计数
         if (!m_friendNotification->isSelected()) {
             int currentCount = m_friendNotification->getUnreadCount();

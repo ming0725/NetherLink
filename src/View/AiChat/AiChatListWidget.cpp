@@ -64,7 +64,7 @@ QString AiChatListWidget::timeSectionText(const QDateTime& dt) const {
 
 void AiChatListWidget::layoutContent() {
     // 1. 按时间降序排序
-    std::sort(m_items.begin(), m_items.end(), [] (AiChatListItem* a, AiChatListItem* b) {
+    std::sort(m_items.begin(), m_items.end(), [](AiChatListItem* a, AiChatListItem* b) {
         return (a->time() > b->time());
     });
 

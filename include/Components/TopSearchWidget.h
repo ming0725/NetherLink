@@ -1,6 +1,7 @@
 /* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 
 #ifndef INCLUDE_COMPONENTS_TOP_SEARCH_WIDGET
+
 #define INCLUDE_COMPONENTS_TOP_SEARCH_WIDGET
 
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
@@ -14,9 +15,9 @@ class TopSearchWidget : public QWidget {
     Q_OBJECT
 
     public:
-        explicit TopSearchWidget(QWidget*parent = nullptr);
+        explicit TopSearchWidget(QWidget* parent = nullptr);
 
-        void resizeEvent(QResizeEvent*event) override;
+        void resizeEvent(QResizeEvent* event) override;
 
     protected:
         void paintEvent(QPaintEvent*) Q_DECL_OVERRIDE;
@@ -25,8 +26,8 @@ class TopSearchWidget : public QWidget {
         void showAddMenu();
 
     private:
-        LineEditComponent*searchBox;
-        CustomPushButton*addButton;
+        LineEditComponent* searchBox;
+        CustomPushButton* addButton;
 
         // 边距设置
         int topMargin = 24;
