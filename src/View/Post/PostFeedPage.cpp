@@ -1,9 +1,10 @@
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 #include <QJsonArray>
-#include <QJsonDocument>
 #include <QJsonObject>
 #include <QNetworkReply>
+#include <QTimer>
 
+#include "Components/CustomScrollArea.h"
 #include "Data/CurrentUser.h"
 #include "Network/NetworkConfig.h"
 #include "View/Post/PostFeedPage.h"
@@ -11,9 +12,9 @@
 /* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 PostFeedPage::PostFeedPage(QWidget* parent) : CustomScrollArea(parent) {
-// connect(this, &CustomScrollArea::reachedBottom, this, [=,this]() {
-// QTimer::singleShot(100, this, &PostFeedPage::loadMore);
-// });
+    connect(this, &CustomScrollArea::reachedBottom, this, [=, this]() {
+        QTimer::singleShot(100, this, &PostFeedPage::loadMore);
+    });
     setStyleSheet("border-width:0px;border-style:solid;");
 }
 

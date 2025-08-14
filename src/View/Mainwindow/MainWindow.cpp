@@ -2,7 +2,7 @@
 
 #include <QScreen>
 
-#include "Utils/WindowEffect.h"
+#include "Util/WindowEffect.h"
 #include "View/AiChat/AiChatApplication.h"
 #include "View/Chat/MessageApplication.h"
 #include "View/Friend/FriendApplication.h"

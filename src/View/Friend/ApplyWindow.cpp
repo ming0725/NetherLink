@@ -2,7 +2,6 @@
 
 #include <QApplication>
 #include <QGuiApplication>
-#include <QJsonDocument>
 #include <QJsonObject>
 #include <QPainter>
 #include <QScreen>

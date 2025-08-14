@@ -7,36 +7,28 @@ for %%I in ("%~dp0..") do set "ROOT=%%~fI"
 set "BIN=%ROOT%\tool\Uncrustify\uncrustify.exe"
 set "CFG=%ROOT%\tool\Uncrustify\uncrustify.cfg"
 
-set "TOTAL=0"
 set "FAIL=0"
 
-for %%D in ("%ROOT%\src" "%ROOT%\include") do (
+for %%D in ("%ROOT%\include" "%ROOT%\src") do (
     if exist "%%~D" (
-        echo [INFO] Scanning %%~D
-        echo.
-        echo [FORMAT]
-        echo.
         for /f "usebackq delims=" %%F in (`
-            dir "%%~D\*.cpp" "%%~D\*.h" "%%~D\*.hpp" "%%~D\*.c" "%%~D\*.cc" "%%~D\*.cxx" /b /s 2^>nul
+            dir "%%~D\*.h" "%%~D\*.hpp" "%%~D\*.c" "%%~D\*.cc" "%%~D\*.cpp" "%%~D\*.cxx" /b /s 2^>nul
         `) do (
             "%BIN%" -c "%CFG%" --no-backup "%%F"
             if errorlevel 1 (
-                echo    [FAIL] %%F
                 set /a FAIL+=1
             )
-            set /a TOTAL+=1
         )
-        echo.
-    ) else (
-        echo [WARN] Directory not found: %%~D
     )
 )
 
-echo ===== Summary =====
-echo Total : %TOTAL%
-echo Failed: %FAIL%
-echo ===================
+if !FAIL! neq 0 (
+    if not exist "%ROOT%\log" mkdir "%ROOT%\log"
+    set "logDate=%date:~0,4%-%date:~5,2%-%date:~8,2% %time:~0,2%:%time:~3,2%:%time:~6,2%"
+    echo !logDate! [FAIL] !FAIL!>>"%ROOT%\log\FormatFail.log"
+    echo. >>"%ROOT%\log\FormatFail.log"
+)
 
 endlocal
 
-timeout /t 10
+cls

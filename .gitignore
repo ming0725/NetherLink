@@ -37,8 +37,11 @@
 build/
 doc/html/
 bin/*/
+log/
+
 .vscode/
 .idea/
 .cache/
+
 cmake-build-debug/
 CMakeLists.txt.user

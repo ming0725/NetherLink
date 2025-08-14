@@ -1,6 +1,5 @@
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
-#include <QJsonDocument>
 #include <QJsonObject>
 
 #include "Data/CurrentUser.h"

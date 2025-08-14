@@ -2,12 +2,9 @@
 
 #include <QGraphicsOpacityEffect>
 #include <QJsonArray>
-#include <QJsonDocument>
 #include <QJsonObject>
-#include <QMouseEvent>
 #include <QNetworkReply>
 #include <QPainterPath>
-#include <QPropertyAnimation>
 
 #include "Components/CustomScrollArea.h"
 #include "Data/AvatarLoader.h"

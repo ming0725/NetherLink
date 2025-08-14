@@ -5,7 +5,7 @@
 #define INCLUDE_VIEW_AI_CHAT_AI_CHAT_APPLICATION
 
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
-
+#include <QObject>
 #include <QStackedWidget>
 
 #include "View/AiChat/AiChatListWidget.h"

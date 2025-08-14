@@ -10,8 +10,7 @@
 #include <QTextEdit>
 
 #include "Data/AvatarLoader.h"
-
-#include "Utils/FramelessWindow.h"
+#include "Util/FramelessWindow.h"
 
 /* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 class ApplyWindow : public FramelessWindow {

@@ -2,7 +2,6 @@
 
 #include <QBoxLayout>
 #include <QJsonArray>
-#include <QJsonDocument>
 #include <QJsonObject>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
@@ -14,7 +13,6 @@
 
 #include "Data/CurrentUser.h"
 #include "Network/NetworkConfig.h"
-
 #include "View/Friend/SearchFriendWindow.h" // 这个头文件有问题
 #include "View/Friend/SearchResultList.h"
 #include "View/Mainwindow/NotificationManager.h"

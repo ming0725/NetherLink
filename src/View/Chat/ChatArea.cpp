@@ -1,7 +1,6 @@
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 #include <QBoxLayout>
-#include <QJsonDocument>
 #include <QScrollBar>
 #include <QTimer>
 

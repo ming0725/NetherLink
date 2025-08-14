@@ -1,4 +1,6 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.30.5)
+
+set(QT_FORCE_CMP0156_TO_VALUE NEW)
 
 project(NetherLink-Client VERSION 1.0.0 LANGUAGES CXX)
 
@@ -11,16 +13,18 @@ set(CMAKE_AUTORCC ON)
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
+add_definitions(-DUNICODE -D_UNICODE)
+
 set(CMAKE_PREFIX_PATH "D:/Qt/6.10.0/mingw_64")
 
 set(CMAKE_AUTOUIC_SEARCH_PATHS
     ${CMAKE_CURRENT_SOURCE_DIR}/ui
-    ${CMAKE_CURRENT_SOURCE_DIR}/ui/Menu
-    ${CMAKE_CURRENT_SOURCE_DIR}/ui/View/Mainwindow
+    ${CMAKE_CURRENT_SOURCE_DIR}/ui/Window
+    ${CMAKE_CURRENT_SOURCE_DIR}/ui/Util
 )
 
-find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets Network WebSockets Sql Concurrent)
-find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets Network WebSockets Sql Concurrent)
+find_package(QT NAMES Qt6 REQUIRED COMPONENTS Core Widgets Network WebSockets Sql Concurrent)
+find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Core Widgets Network WebSockets Sql Concurrent)
 
 include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/include)
@@ -41,6 +45,7 @@ if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
 endif()
 
 target_link_libraries(NetherLink-Client PRIVATE
+        Qt6::Core
         Qt6::Widgets
         Qt6::Network
         Qt6::WebSockets

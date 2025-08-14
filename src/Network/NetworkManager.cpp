@@ -1,7 +1,6 @@
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 #include <QJsonArray>
-#include <QJsonDocument>
 #include <QNetworkReply>
 #include <QSslSocket>
 

@@ -1,7 +1,6 @@
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 #include <QEvent>
-#include <QJsonDocument>
 #include <QJsonObject>
 #include <QNetworkReply>
 #include <QPropertyAnimation>

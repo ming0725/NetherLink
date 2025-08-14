@@ -2,29 +2,40 @@
 
 setlocal EnableDelayedExpansion
 
-set "SRC_DIR=%~dp0.."
-for %%I in ("%SRC_DIR%") do set "SRC_DIR=%%~fI"
-
-set "BUILD_DIR=%SRC_DIR%\build\Debug"
-set "BIN_DIR=%SRC_DIR%\bin\Debug"
-
+set "ROOT=%~dp0.."
+for %%I in ("%ROOT%") do set "ROOT=%%~fI"
+set "BUILD_DIR=%ROOT%\build\Debug"
 if not exist "%BUILD_DIR%" md "%BUILD_DIR%"
+
 pushd "%BUILD_DIR%"
 
-cmake "%SRC_DIR%" -G Ninja -DCMAKE_BUILD_TYPE=Debug
-if errorlevel 1 pause & popd & exit /b 1
+set "LOG=%ROOT%\log\DebugFail.log"
+if not exist "%ROOT%\log"  md "%ROOT%\log"
 
-ninja
-if errorlevel 1 pause & popd & exit /b 1
+cmake %ROOT% -G Ninja -DCMAKE_BUILD_TYPE=Debug>cmake.out 2>&1
+set CMAKE_ERR=%errorlevel%
+type cmake.out
+type cmake.out | findstr /i "warning error" >>"%LOG%" & echo. >>"%LOG%"
+
+ninja >ninja.out 2>&1
+set NINJA_ERR=%errorlevel%
+type ninja.out
+type ninja.out | findstr /i "warning error" >>"%LOG%" & echo. >>"%LOG%"
 
 popd
 
-if not exist "%BIN_DIR%" md "%BIN_DIR%"
-copy /y "%BUILD_DIR%\NetherLink-Client.exe" "%BIN_DIR%\NetherLink-Client.exe"
-windeployqt "%BIN_DIR%\NetherLink-Client.exe"
+if %CMAKE_ERR% neq 0 (
+    type "%LOG%" | findstr /i "warning error"
+    exit /b %CMAKE_ERR%
+)
+if %NINJA_ERR% neq 0 (
+    type "%LOG%" | findstr /i "warning error"
+    exit /b %NINJA_ERR%
+)
 
-echo.
-echo ===== Debug build finished =====
-echo.
+set "BIN_DIR=%ROOT%\bin\Debug"
+if not exist "%BIN_DIR%"   md "%BIN_DIR%"
+copy /y "%BUILD_DIR%\NetherLink-Client.exe" "%BIN_DIR%\NetherLink-Client.exe" >nul
+windeployqt "%BIN_DIR%\NetherLink-Client.exe" >nul
 
-timeout /t 10
+cls
