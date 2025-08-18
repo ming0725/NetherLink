@@ -9,8 +9,8 @@
 
 #include "Data/CurrentUser.h"
 #include "Network/NetworkConfig.h"
-#include "View/Mainwindow/MainWindow.h"
 #include "View/Mainwindow/NotificationManager.h"
+#include "View/MainWindow/MainWindow.h"
 #include "View/Post/PostCreatePage.h"
 
 /* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
@@ -179,10 +179,10 @@ void PostCreatePage::sendPost() {
                 m_imageButton->show();
             } else {
                 QJsonObject obj = doc.object();
-                NotificationManager::instance().showMessage(tr("发布失败: %1").arg(obj.value("message").toString()), NotificationManager::Error, MainWindow::getInstance());
+                NotificationManager::instance().showMessage(MainWindow::getInstance(), NotificationManager::Error, tr("发布失败: %1").arg(obj.value("message").toString()));
             }
         } else {
-            NotificationManager::instance().showMessage(tr("网络错误: %1").arg(reply->errorString()), NotificationManager::Error, MainWindow::getInstance());
+            NotificationManager::instance().showMessage(MainWindow::getInstance(), NotificationManager::Error, tr("网络错误: %1").arg(reply->errorString()));
         }
         reply->deleteLater();
         manager->deleteLater();

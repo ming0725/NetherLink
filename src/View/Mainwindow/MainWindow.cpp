@@ -2,12 +2,11 @@
 
 #include <QScreen>
 
-#include "Util/WindowEffect.h"
 #include "View/AiChat/AiChatApplication.h"
 #include "View/Chat/MessageApplication.h"
 #include "View/Friend/FriendApplication.h"
-#include "View/Mainwindow/MainWindow.h"
 #include "View/Post/PostApplication.h"
+#include "Window/MainWindow.hpp"
 
 /* variable --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 QWidget* MainWindow::instance = nullptr;
@@ -20,11 +19,6 @@ MainWindow::MainWindow(QWidget* parent) : FramelessWindow(parent), stack(new QSt
     setMinimumHeight(525);
     setMinimumWidth(685);
     setAttribute(Qt::WA_TranslucentBackground);
-
-    HWND hwnd = HWND(winId());
-    WindowEffect w;
-
-    w.setAeroEffect(hwnd);
     appBar = new ApplicationBar(this);
     appBar->setFixedWidth(54);
 

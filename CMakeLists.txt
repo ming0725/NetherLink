@@ -16,33 +16,31 @@ set(CMAKE_INCLUDE_CURRENT_DIR ON)
 add_definitions(-DUNICODE -D_UNICODE)
 
 set(CMAKE_PREFIX_PATH "D:/Qt/6.10.0/mingw_64")
+set(CMAKE_MAKE_PROGRAM "D:/Qt/Tools/Ninja/ninja.exe")
 
 set(CMAKE_AUTOUIC_SEARCH_PATHS
     ${CMAKE_CURRENT_SOURCE_DIR}/ui
-    ${CMAKE_CURRENT_SOURCE_DIR}/ui/Window
     ${CMAKE_CURRENT_SOURCE_DIR}/ui/Util
+    ${CMAKE_CURRENT_SOURCE_DIR}/ui/Window
 )
 
-find_package(QT NAMES Qt6 REQUIRED COMPONENTS Core Widgets Network WebSockets Sql Concurrent)
-find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Core Widgets Network WebSockets Sql Concurrent)
+find_package(Qt6 REQUIRED COMPONENTS Core Widgets Network WebSockets Sql Concurrent)
 
 include_directories(
     ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
-file(GLOB_RECURSE INCLUDE "include/*.h" "include/**/*.h")
-file(GLOB_RECURSE SOURCE "src/*.cpp" "src/**/*.cpp")
+file(GLOB_RECURSE INCLUDE "include/*.h" "include/*.hpp" "include/**/*.h" "include/**/*.hpp")
+file(GLOB_RECURSE SOURCE "src/*.c" "src/*.cpp" "src/**/*.c" "src/**/*.cpp")
 file(GLOB_RECURSE UI "ui/*.ui" "ui/**/*.ui")
 file(GLOB_RECURSE RESOURCE "res/res.qrc")
 
-if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
-    qt_add_executable(NetherLink-Client
-        MANUAL_FINALIZATION
-        ${INCLUDE}
-        ${SOURCE}
-        ${UI}
-        ${RESOURCE}
-    )
-endif()
+qt_add_executable(NetherLink-Client
+    MANUAL_FINALIZATION
+    ${INCLUDE}
+    ${SOURCE}
+    ${UI}
+    ${RESOURCE}
+)
 
 target_link_libraries(NetherLink-Client PRIVATE
         Qt6::Core
@@ -87,7 +85,7 @@ endif()
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     set(CMAKE_BINARY_DIR "${CMAKE_CURRENT_SOURCE_DIR}/build/Debug")
     set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/bin/Debug")
-else(CMAKE_BUILD_TYPE STREQUAL "Release")
+elseif(CMAKE_BUILD_TYPE STREQUAL "Release")
     set(CMAKE_BINARY_DIR "${CMAKE_CURRENT_SOURCE_DIR}/build/Release")
     set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/bin/Release")
 endif()

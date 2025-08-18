@@ -11,7 +11,7 @@
 #include <QApplication>
 #include <QPixmapCache>
 
-#include "Window/Login.h"
+#include "..\include\Window\Login.hpp"
 
 /* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
@@ -20,9 +20,9 @@ int main(int argc, char* argv[]) {
 
     QPixmapCache::setCacheLimit(20480);
 
-    Window::Login 界面_登录;
+    Window::Login 界面_登录界面;
 
-    界面_登录.show();
+    界面_登录界面.show();
 
     return (a.exec());
 }

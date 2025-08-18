@@ -11,16 +11,16 @@
 
 /* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
-NotificationManager& NotificationManager::instance() {
-    static NotificationManager mgr;
-
-    return (mgr);
-}
-
 NotificationManager::NotificationManager(QWidget* parent) : QWidget(parent) {
     setWindowFlags(Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint | Qt::Tool);
     setAttribute(Qt::WA_TranslucentBackground);
     setupUI();
+}
+
+NotificationManager& NotificationManager::instance() {
+    static NotificationManager mgr;
+
+    return (mgr);
 }
 
 void NotificationManager::setupUI() {
@@ -45,17 +45,17 @@ void NotificationManager::setupUI() {
 /**
  * 全屏顶部居中版本（不变动）
  */
-void NotificationManager::showMessage(const QString& message, Type type) {
+void NotificationManager::showMessage(Type type, const QString& message) {
     QString iconPath = (type == Success) ? ":/icon/correct.png" : ":/icon/fail.png";
 
     iconLabel->setPixmap(QPixmap(iconPath));
     messageLabel->setText(message);
 
-    if (isShowing) {
-        // 如果当前正处于显示中，则先执行隐藏动画，再在动画结束时重回本函数
+    if (成员变量_正在显示) {
+// 如果当前正处于显示中，则先执行隐藏动画，再在动画结束时重回本函数
         startAnimation(false);
-        QTimer::singleShot(300, this, [this, message, type]() {
-            this->showMessage(message, type);
+        QTimer::singleShot(300, this, [this, type, message]() {
+            this->showMessage(type, message);
         });
 
         return;
@@ -70,7 +70,7 @@ void NotificationManager::showMessage(const QString& message, Type type) {
     show();
     startAnimation(true);
 
-    // 3s 后自动隐藏
+// 3s 后自动隐藏
     QTimer::singleShot(3000, this, [=, this]() {
         startAnimation(false);
     });
@@ -79,10 +79,10 @@ void NotificationManager::showMessage(const QString& message, Type type) {
 /**
  * 新增：在指定 QWidget 顶部弹出版本
  */
-void NotificationManager::showMessage(const QString& message, Type type, QWidget* targetWidget) {
+void NotificationManager::showMessage(QWidget* targetWidget, Type type, const QString& message) {
     // 如果没有传入 targetWidget，就退回到全屏居中版本
     if (!targetWidget) {
-        showMessage(message, type);
+        showMessage(type, message);
 
         return;
     }
@@ -108,7 +108,7 @@ void NotificationManager::showMessage(const QString& message, Type type, QWidget
 
     // ======================
     // 如果当前正在显示，则先隐藏后再调用本函数
-    if (isShowing) {
+    if (成员变量_正在显示) {
         // 先让当前动画滑上去隐藏
         animation->stop();
 
@@ -123,8 +123,8 @@ void NotificationManager::showMessage(const QString& message, Type type, QWidget
         animation->start();
 
         // 300ms 后再执行本函数，以播放新一次的显示
-        QTimer::singleShot(300, this, [this, message, type, targetWidget]() {
-            this->showMessage(message, type, targetWidget);
+        QTimer::singleShot(300, this, [this, targetWidget, type, message]() {
+            this->showMessage(targetWidget, type, message);
         });
 
         return;
@@ -152,7 +152,7 @@ void NotificationManager::showMessage(const QString& message, Type type, QWidget
     animation->stop();
     animation->setStartValue(QPoint(x, yHidden));
     animation->setEndValue(QPoint(x, yVisible));
-    isShowing = true;
+    成员变量_正在显示 = true;
     animation->start();
 
     // 1.5s（1500ms）后自动隐藏
@@ -163,11 +163,11 @@ void NotificationManager::showMessage(const QString& message, Type type, QWidget
         animation->setEndValue(QPoint(x, yHidden));
         animation->start();
 
-        // 隐藏动画结束后真正 hide()，并重置 isShowing
+        // 隐藏动画结束后真正 hide()，并重置 成员变量_正在显示
         // 动画时长 150ms，因此延迟 150ms 后 hide()
         QTimer::singleShot(250, this, [=, this]() {
             this->hide();
-            isShowing = false;
+            成员变量_正在显示 = false;
         });
     });
 }
@@ -186,7 +186,7 @@ void NotificationManager::startAnimation(bool show) {
     animation->stop();
     animation->setStartValue(QPoint(x, startY));
     animation->setEndValue(QPoint(x, endY));
-    isShowing = show;
+    成员变量_正在显示 = show;
     animation->start();
 }
 

@@ -145,12 +145,12 @@ void ApplyWindow::setupConnections() {
                 searchFriendWindow->show();
                 searchFriendWindow->raise();
                 searchFriendWindow->activateWindow();
-                NotificationManager::instance().showMessage(message, NotificationManager::Success, searchFriendWindow);
+                NotificationManager::instance().showMessage(searchFriendWindow, NotificationManager::Success, message);
             }
             close();
         } else {
             // 失败时在当前窗口显示错误提示
-            NotificationManager::instance().showMessage(message, NotificationManager::Error, this);
+            NotificationManager::instance().showMessage(this, NotificationManager::Error, message);
         }
     });
 }

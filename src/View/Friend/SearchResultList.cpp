@@ -131,7 +131,7 @@ void SearchResultList::searchUsers(const QString& keyword) {
     QString token = CurrentUser::instance().getToken();
 
     if (token.isEmpty()) {
-        NotificationManager::instance().showMessage("未登录，请先登录", NotificationManager::Error, searchWindow);
+        NotificationManager::instance().showMessage(searchWindow, NotificationManager::Error, "未登录，请先登录");
 
         return;
     }
@@ -157,7 +157,7 @@ void SearchResultList::searchGroups(const QString& keyword) {
     QString token = CurrentUser::instance().getToken();
 
     if (token.isEmpty()) {
-        NotificationManager::instance().showMessage("未登录，请先登录", NotificationManager::Error, searchWindow);
+        NotificationManager::instance().showMessage(searchWindow, NotificationManager::Error, "未登录，请先登录");
 
         return;
     }
@@ -186,7 +186,7 @@ void SearchResultList::onNetworkReplyFinished() {
     QJsonDocument doc = QJsonDocument::fromJson(data);
 
     if (!doc.isObject()) {
-        NotificationManager::instance().showMessage("服务器返回数据格式错误", NotificationManager::Error, searchWindow);
+        NotificationManager::instance().showMessage(searchWindow, NotificationManager::Error, "服务器返回数据格式错误");
 
         return;
     }
@@ -194,7 +194,7 @@ void SearchResultList::onNetworkReplyFinished() {
     QJsonObject response = doc.object();
 
     if (response.contains("error")) {
-        NotificationManager::instance().showMessage(response["error"].toString(), NotificationManager::Error, searchWindow);
+        NotificationManager::instance().showMessage(searchWindow, NotificationManager::Error, response["error"].toString());
 
         return;
     }
@@ -220,7 +220,7 @@ void SearchResultList::onNetworkReplyFinished() {
 void SearchResultList::handleNetworkError(QNetworkReply* reply) {
     QString errorString = reply->errorString();
 
-    NotificationManager::instance().showMessage(QString("网络请求失败: %1").arg(errorString), NotificationManager::Error, searchWindow);
+    NotificationManager::instance().showMessage(searchWindow, NotificationManager::Error, QString("网络请求失败: %1").arg(errorString));
 }
 
 void SearchResultList::processUserResults(const QJsonArray& users) {

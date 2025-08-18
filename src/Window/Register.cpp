@@ -12,62 +12,90 @@
 #include <QHttpMultiPart>
 #include <QJsonObject>
 #include <QNetworkReply>
-#include <QPainter>
-#include <QPainterPath>
 #include <QPushButton>
 #include <QTimer>
 
 #include "Network/NetworkConfig.h"
 #include "ui_Register.h"
-#include "Util/Validator.h"
+
+// #include "Util/ToastTip.hpp"
+#include "Util/Validator.hpp"
 #include "View/Mainwindow/NotificationManager.h"
-#include "Window/Register.h"
+#include "Window/Register.hpp"
+
+#include "Util/RoundedPixmap.hpp"
 
 /* namespace -------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 namespace Window {
 /**//* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
-    Register::Register(QWidget* parent) : QMainWindow(parent), ui(new Ui::Register) {
+    Register::Register(QWidget* parent) : QWidget(parent), ui(new Ui::Register) {
         ui->setupUi(this);
+        setWindowFlags(Qt::FramelessWindowHint);
+        setAttribute(Qt::WA_TranslucentBackground);
+        界面_关闭按钮 = ui->btn_close;
+        界面_头像按钮 = ui->btn_profile;
+        界面_昵称输入框 = ui->edit_userName;
+        界面_邮箱输入框 = ui->edit_email;
+        界面_验证码输入框 = ui->edit_captcha;
+        界面_验证码按钮 = ui->btn_captcha;
+        界面_密码输入框 = ui->edit_password;
+        界面_确认密码输入框 = ui->edit_confirmPassword;
+        界面_注册按钮 = ui->btn_register;
+        界面_登录按钮 = ui->btn_login;
 
         // 禁用按钮的Tab焦点
-        ui->userHead->setFocusPolicy(Qt::NoFocus);
-        ui->getCodeButton->setFocusPolicy(Qt::NoFocus);
-        ui->registerButton->setFocusPolicy(Qt::NoFocus);
-        ui->loginButton->setFocusPolicy(Qt::NoFocus);
+        界面_关闭按钮->setFocusPolicy(Qt::NoFocus);
+        界面_头像按钮->setFocusPolicy(Qt::NoFocus);
+        界面_验证码按钮->setFocusPolicy(Qt::NoFocus);
+        界面_注册按钮->setFocusPolicy(Qt::NoFocus);
+        界面_登录按钮->setFocusPolicy(Qt::NoFocus);
 
         // 设置Tab键顺序
-        QWidget::setTabOrder(ui->nicknameEdit, ui->usernameEdit);
-        QWidget::setTabOrder(ui->usernameEdit, ui->verificationCodeEdit);
-        QWidget::setTabOrder(ui->verificationCodeEdit, ui->passwordEdit);
-        QWidget::setTabOrder(ui->passwordEdit, ui->confirmPasswordEdit);
-        QWidget::setTabOrder(ui->confirmPasswordEdit, ui->nicknameEdit);
+        QWidget::setTabOrder(界面_昵称输入框, 界面_邮箱输入框);
+        QWidget::setTabOrder(界面_邮箱输入框, 界面_验证码输入框);
+        QWidget::setTabOrder(界面_验证码输入框, 界面_密码输入框);
+        QWidget::setTabOrder(界面_密码输入框, 界面_确认密码输入框);
+        QWidget::setTabOrder(界面_确认密码输入框, 界面_昵称输入框);
 
         // 设置焦点
-        ui->nicknameEdit->setFocus();
+        界面_昵称输入框->setFocus();
 
         // 回车键处理
-        connect(ui->nicknameEdit, &QLineEdit::returnPressed, this, [=, this]() {
-            ui->usernameEdit->setFocus();
+        connect(界面_昵称输入框, &QLineEdit::returnPressed, this, [=, this]() {
+            界面_邮箱输入框->setFocus();
         });
-        connect(ui->usernameEdit, &QLineEdit::returnPressed, this, [=, this]() {
-            ui->verificationCodeEdit->setFocus();
-            ui->getCodeButton->click();
+        connect(界面_邮箱输入框, &QLineEdit::returnPressed, this, [=, this]() {
+            界面_验证码输入框->setFocus();
+
+            if (界面_验证码按钮->isEnabled()) {
+                界面_验证码按钮->click();
+            }
         });
-        connect(ui->verificationCodeEdit, &QLineEdit::returnPressed, this, [=, this]() {
-            ui->passwordEdit->setFocus();
+        connect(界面_验证码输入框, &QLineEdit::returnPressed, this, [=, this]() {
+            界面_密码输入框->setFocus();
         });
-        connect(ui->passwordEdit, &QLineEdit::returnPressed, this, [=, this]() {
-            ui->confirmPasswordEdit->setFocus();
+        connect(界面_密码输入框, &QLineEdit::returnPressed, this, [=, this]() {
+            界面_确认密码输入框->setFocus();
         });
-        connect(ui->confirmPasswordEdit, &QLineEdit::returnPressed, this, [=, this]() {
-            if (ui->registerButton->isEnabled()) {
-                ui->registerButton->click();
+        connect(界面_确认密码输入框, &QLineEdit::returnPressed, this, [=, this]() {
+            if (界面_注册按钮->isEnabled()) {
+                界面_注册按钮->click();
             }
         });
 
-        // 设置头像
-        connect(ui->userHead, &QPushButton::clicked, this, [=, this] {
+        QPixmap 默认头像(":/icon/icon.png");
+        QPixmap 圆角头像 = Util::RoundedPixmap::函数_圆角头像(默认头像, 60);
+
+        界面_头像按钮->setIcon(圆角头像);
+
+        // 关闭按钮
+        connect(界面_关闭按钮, &QPushButton::clicked, this, [=, this] {
+            this->close();
+        });
+
+        // 头像按钮
+        connect(界面_头像按钮, &QPushButton::clicked, this, [=, this] {
             QString filePath = QFileDialog::getOpenFileName(this, "选择头像", QString(), "图片文件 (*.png *.jpg *.jpeg *.bmp)");
 
             if (!filePath.isEmpty()) {
@@ -76,41 +104,31 @@ namespace Window {
         });
 
         // 获取验证码按钮
-        connect(ui->getCodeButton, &QPushButton::clicked, this, [=, this]() {
-            邮箱 = ui->usernameEdit->text().trimmed();
-
-            if (邮箱.isEmpty()) {
-                NotificationManager::instance().showMessage("请输入邮箱", NotificationManager::Error, this);
-
-                return;
+        connect(界面_验证码按钮, &QPushButton::clicked, this, [=, this]() {
+            if (Util::Validator::函数_检查输入框信息合法性(this, 界面_邮箱输入框)) {
+                成员变量_邮箱 = 界面_邮箱输入框->text().trimmed();
+                函数_请求验证码(成员变量_邮箱);
             }
-
-            if (!Util::Validator::函数_是否为有效邮箱(邮箱)) {
-                NotificationManager::instance().showMessage("邮箱格式不正确", NotificationManager::Error, this);
-
-                return;
-            }
-            requestVerificationCode(邮箱);
         });
 
         // 注册按钮
-        connect(ui->registerButton, &QPushButton::clicked, this, [=, this]() {
-            if (正在注册) {
+        connect(界面_注册按钮, &QPushButton::clicked, this, [=, this]() {
+            if (成员变量_正在注册) {
                 return;
             }
-            昵称 = ui->nicknameEdit->text().trimmed();
-            邮箱 = ui->usernameEdit->text().trimmed();
-            验证码 = ui->verificationCodeEdit->text().trimmed();
-            密码 = ui->passwordEdit->text();
-            确认密码 = ui->confirmPasswordEdit->text();
 
-            if (函数_检查输入框信息合法性(昵称, 邮箱, 验证码, 密码, 确认密码)) {
-                函数_注册(昵称, 邮箱, 验证码, 密码);
+            if (Util::Validator::函数_检查输入框信息合法性(this, avatarUrl, 界面_昵称输入框, 界面_邮箱输入框, 界面_验证码输入框, 界面_密码输入框, 界面_确认密码输入框)) {
+                成员变量_昵称 = 界面_昵称输入框->text().trimmed();
+                成员变量_邮箱 = 界面_邮箱输入框->text().trimmed();
+                成员变量_验证码 = 界面_验证码输入框->text().trimmed();
+                成员变量_密码 = 界面_密码输入框->text();
+                成员变量_确认密码 = 界面_确认密码输入框->text();
+                函数_注册(成员变量_昵称, 成员变量_邮箱, 成员变量_验证码, 成员变量_密码);
             }
         });
 
         // 登录按钮
-        connect(ui->loginButton, &QPushButton::clicked, this, [=, this]() {
+        connect(界面_登录按钮, &QPushButton::clicked, this, [=, this]() {
             this->close();
         });
     }
@@ -119,42 +137,45 @@ namespace Window {
         delete ui;
     }
 
-    // QPixmap Register::createRoundedPixmap(const QPixmap& source) {
+    void Register::paintEvent(QPaintEvent* event) {
+        QPainter painter(this);
 
-    // if (source.isNull())
+        painter.setRenderHint(QPainter::Antialiasing);
+        painter.setPen(Qt::NoPen);
 
-    // return (QPixmap());
+        // 背景圆角矩形
+        QRectF r = rect();
+        qreal radius = 20;
+        QPainterPath path;
 
-    // QPixmap scaled = source.scaled(ui->userHead->size(), Qt::KeepAspectRatio, Qt::SmoothTransformation);
+        path.addRoundedRect(r, radius, radius);
 
-    // QPixmap rounded(scaled.size());
+        QLinearGradient gradient(QPoint(this->rect().topLeft()), QPoint(this->rect().bottomLeft()));
 
-    // rounded.fill(Qt::transparent);
+        gradient.setColorAt(0.2, QColor(0x0099ff));
+        gradient.setColorAt(0.8, QColor(0xffffff));
+        painter.fillPath(path, gradient);
+        QWidget::paintEvent(event);
+    }
 
-    // QPainter painter(&rounded);
+    void Register::mouseMoveEvent(QMouseEvent* 形参_鼠标事件) {
+        if (形参_鼠标事件->buttons() & Qt::LeftButton)
+            move((形参_鼠标事件->globalPosition() - 成员变量_鼠标偏移量).toPoint());
+        QWidget::mouseMoveEvent(形参_鼠标事件);
+    }
 
-    // painter.setRenderHint(QPainter::Antialiasing);
-
-    // painter.setRenderHint(QPainter::SmoothPixmapTransform);
-
-    // QPainterPath path;
-
-    // path.addEllipse(rounded.rect());
-
-    // painter.setClipPath(path);
-
-    // painter.drawPixmap(0, 0, scaled);
-
-    // return (rounded);
-
-    // }
+    void Register::mousePressEvent(QMouseEvent* 形参_鼠标事件) {
+        if (形参_鼠标事件->button() == Qt::LeftButton)
+            成员变量_鼠标偏移量 = (形参_鼠标事件->globalPosition() - frameGeometry().topLeft()).toPoint();
+        QWidget::mousePressEvent(形参_鼠标事件);
+    }
 
     void Register::函数_上传头像(const QString& filePath) {
         // 先将图片处理成正方形
         QPixmap originalPixmap(filePath);
 
         if (originalPixmap.isNull()) {
-            NotificationManager::instance().showMessage("图片加载失败", NotificationManager::Error, this);
+            NotificationManager::instance().showMessage(this, NotificationManager::Error, "图片加载失败");
 
             return;
         }
@@ -173,7 +194,7 @@ namespace Window {
         QString tempPath = QDir::tempPath() + "/temp_avatar_" + QString::number(QDateTime::currentMSecsSinceEpoch()) + ".png";
 
         if (!squarePixmap.save(tempPath, "PNG")) {
-            NotificationManager::instance().showMessage("图片处理失败", NotificationManager::Error, this);
+            NotificationManager::instance().showMessage(this, NotificationManager::Error, "图片处理失败");
 
             return;
         }
@@ -183,7 +204,7 @@ namespace Window {
         if (!file->open(QIODevice::ReadOnly)) {
             file->remove(); // 删除临时文件
             delete file;
-            NotificationManager::instance().showMessage("文件处理失败", NotificationManager::Error, this);
+            NotificationManager::instance().showMessage(this, NotificationManager::Error, "文件处理失败");
 
             return;
         }
@@ -219,7 +240,7 @@ namespace Window {
             QFile::remove(tempPath);
 
             if (reply->error() != QNetworkReply::NoError) {
-                NotificationManager::instance().showMessage("上传失败：网络错误", NotificationManager::Error, this);
+                NotificationManager::instance().showMessage(this, NotificationManager::Error, "上传失败：网络错误");
 
                 return;
             }
@@ -227,7 +248,7 @@ namespace Window {
             QJsonDocument doc = QJsonDocument::fromJson(responseData);
 
             if (!doc.isObject()) {
-                NotificationManager::instance().showMessage("上传失败：响应格式错误", NotificationManager::Error, this);
+                NotificationManager::instance().showMessage(this, NotificationManager::Error, "上传失败：响应格式错误");
 
                 return;
             }
@@ -235,7 +256,7 @@ namespace Window {
 
             // 检查是否有错误
             if (obj.contains("error")) {
-                NotificationManager::instance().showMessage(QString("上传失败：%1").arg(obj["error"].toString()), NotificationManager::Error, this);
+                NotificationManager::instance().showMessage(this, NotificationManager::Error, QString("上传失败：%1").arg(obj["error"].toString()));
 
                 return;
             }
@@ -248,19 +269,19 @@ namespace Window {
                 // 更新头像显示
                 QPixmap newAvatar(tempPath); // 使用处理后的正方形图片
                 // if (!newAvatar.isNull()) {
-                // ui->userHead->setIcon(createRoundedPixmap(newAvatar));
+                // 界面_头像按钮->setIcon(createRoundedPixmap(newAvatar));
                 // }
-                NotificationManager::instance().showMessage("头像上传成功", NotificationManager::Success, this);
+                NotificationManager::instance().showMessage(this, NotificationManager::Success, "头像上传成功");
             }
         });
     }
 
-    void Register::requestVerificationCode(const QString& 邮箱) {
-        ui->getCodeButton->setEnabled(false);
+    void Register::函数_请求验证码(const QString& 形参_邮箱) {
+        界面_验证码按钮->setEnabled(false);
 
         QJsonObject body;
 
-        body["email"] = 邮箱;
+        body["email"] = 形参_邮箱;
 
         QByteArray payload = QJsonDocument(body).toJson(QJsonDocument::Compact);
         QString baseHttpUrl = NetworkConfig::instance().getHttpAddress();
@@ -280,8 +301,8 @@ namespace Window {
 
             // 处理网络错误，但排除400状态码
             if ((reply->error() != QNetworkReply::NoError) && (statusCode != 400)) {
-                NotificationManager::instance().showMessage(QString("获取验证码失败：网络错误 - %1").arg(reply->errorString()), NotificationManager::Error, this);
-                ui->getCodeButton->setEnabled(true);
+                NotificationManager::instance().showMessage(this, NotificationManager::Error, QString("获取验证码失败：网络错误 - %1").arg(reply->errorString()));
+                界面_验证码按钮->setEnabled(true);
                 reply->deleteLater();
                 manager->deleteLater();
 
@@ -293,8 +314,8 @@ namespace Window {
             QJsonDocument doc = QJsonDocument::fromJson(responseData, &jsonError);
 
             if (jsonError.error != QJsonParseError::NoError) {
-                NotificationManager::instance().showMessage("获取验证码失败：返回数据格式错误", NotificationManager::Error, this);
-                ui->getCodeButton->setEnabled(true);
+                NotificationManager::instance().showMessage(this, NotificationManager::Error, "获取验证码失败：返回数据格式错误");
+                界面_验证码按钮->setEnabled(true);
                 reply->deleteLater();
                 manager->deleteLater();
 
@@ -305,14 +326,14 @@ namespace Window {
             // 处理错误响应
             if ((statusCode == 400) || obj.contains("error")) {
                 QString errorMsg = obj["error"].toString();
-                NotificationManager::instance().showMessage(QString("获取验证码失败：%1").arg(errorMsg), NotificationManager::Error, this);
-                ui->getCodeButton->setEnabled(true);
+                NotificationManager::instance().showMessage(this, NotificationManager::Error, QString("获取验证码失败：%1").arg(errorMsg));
+                界面_验证码按钮->setEnabled(true);
                 reply->deleteLater();
                 manager->deleteLater();
 
                 return;
             }
-            NotificationManager::instance().showMessage("获取验证码成功", NotificationManager::Success, this);
+            NotificationManager::instance().showMessage(this, NotificationManager::Success, "获取验证码成功");
 
             // 倒计时60秒
             int countdown = 60;
@@ -321,10 +342,10 @@ namespace Window {
                 if (--countdown <= 0) {
                     timer->stop();
                     timer->deleteLater();
-                    ui->getCodeButton->setEnabled(true);
-                    ui->getCodeButton->setText("获取验证码");
+                    界面_验证码按钮->setEnabled(true);
+                    界面_验证码按钮->setText("获取验证码");
                 } else {
-                    ui->getCodeButton->setText(QString("%1s").arg(countdown));
+                    界面_验证码按钮->setText(QString("%1s").arg(countdown));
                 }
             });
             timer->start(1000);
@@ -333,58 +354,20 @@ namespace Window {
         });
     }
 
-    bool Register::函数_检查输入框信息合法性(QString 昵称, QString 邮箱, QString 验证码, QString 密码, QString 确认密码) {
-        if (昵称.isEmpty()) {
-            NotificationManager::instance().showMessage("请输入用户名", NotificationManager::Error, this);
-
-            return (false);
-        } else if (邮箱.isEmpty()) {
-            NotificationManager::instance().showMessage("请输入邮箱", NotificationManager::Error, this);
-
-            return (false);
-        } else if (!Util::Validator::函数_是否为有效邮箱(邮箱)) {
-            NotificationManager::instance().showMessage("邮箱格式不正确", NotificationManager::Error, this);
-
-            return (false);
-        } else if (验证码.isEmpty()) {
-            NotificationManager::instance().showMessage("请输入验证码", NotificationManager::Error, this);
-
-            return (false);
-        } else if (密码.isEmpty()) {
-            NotificationManager::instance().showMessage("请输入密码", NotificationManager::Error, this);
-
-            return (false);
-        } else if (确认密码.isEmpty()) {
-            NotificationManager::instance().showMessage("请确认密码", NotificationManager::Error, this);
-
-            return (false);
-        } else if (密码 != 确认密码) {
-            NotificationManager::instance().showMessage("两次输入的密码不一致", NotificationManager::Error, this);
-
-            return (false);
-        } else if (avatarUrl.isEmpty()) {
-            NotificationManager::instance().showMessage("请上传头像", NotificationManager::Error, this);
-
-            return (false);
-        } else {
-            return (true);
-        }
-    }
-
-    void Register::函数_注册(const QString& 昵称, const QString& 邮箱, const QString& 验证码, const QString& 密码) {
-        if (正在注册) {
+    void Register::函数_注册(const QString& 形参_昵称, const QString& 形参_邮箱, const QString& 形参_验证码, const QString& 形参_密码) {
+        if (成员变量_正在注册) {
             return;
         }
-        正在注册 = true;
-        ui->registerButton->setEnabled(false);
-        ui->registerButton->setText("注册中...");
+        成员变量_正在注册 = true;
+        界面_注册按钮->setEnabled(false);
+        界面_注册按钮->setText("注册中...");
 
         QJsonObject body;
 
-        body["email"] = 邮箱;
-        body["varifycode"] = 验证码;
-        body["user"] = 昵称;
-        body["passwd"] = 密码;
+        body["email"] = 形参_邮箱;
+        body["varifycode"] = 形参_验证码;
+        body["user"] = 形参_昵称;
+        body["passwd"] = 形参_密码;
         body["avatar_url"] = avatarUrl;
 
         QByteArray payload = QJsonDocument(body).toJson(QJsonDocument::Compact);
@@ -402,16 +385,16 @@ namespace Window {
         connect(reply, &QNetworkReply::finished, this, [this, reply, manager]() {
             // 确保在函数结束时恢复按钮状态
             auto cleanup = [=, this]() {
-                               正在注册 = false;
-                               ui->registerButton->setEnabled(true);
-                               ui->registerButton->setText("注册");
+                               成员变量_正在注册 = false;
+                               界面_注册按钮->setEnabled(true);
+                               界面_注册按钮->setText("注册");
                            };
             QByteArray responseData = reply->readAll();
             int statusCode = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
 
             // 处理网络错误，但排除400状态码
             if ((reply->error() != QNetworkReply::NoError) && (statusCode != 400)) {
-                NotificationManager::instance().showMessage(QString("注册失败：网络错误 - %1").arg(reply->errorString()), NotificationManager::Error, this);
+                NotificationManager::instance().showMessage(this, NotificationManager::Error, QString("注册失败：网络错误 - %1").arg(reply->errorString()));
                 cleanup();
                 reply->deleteLater();
                 manager->deleteLater();
@@ -424,7 +407,7 @@ namespace Window {
             QJsonDocument doc = QJsonDocument::fromJson(responseData, &jsonError);
 
             if (jsonError.error != QJsonParseError::NoError) {
-                NotificationManager::instance().showMessage("注册失败：返回数据格式错误", NotificationManager::Error, this);
+                NotificationManager::instance().showMessage(this, NotificationManager::Error, "注册失败：返回数据格式错误");
                 cleanup();
                 reply->deleteLater();
                 manager->deleteLater();
@@ -436,7 +419,7 @@ namespace Window {
             // 处理错误响应
             if ((statusCode == 400) || obj.contains("error")) {
                 QString errorMsg = obj["error"].toString();
-                NotificationManager::instance().showMessage(QString("注册失败：%1").arg(errorMsg), NotificationManager::Error, this);
+                NotificationManager::instance().showMessage(this, NotificationManager::Error, QString("注册失败：%1").arg(errorMsg));
                 cleanup();
                 reply->deleteLater();
                 manager->deleteLater();
@@ -445,15 +428,15 @@ namespace Window {
             }
 
             // 注册成功
-            NotificationManager::instance().showMessage("注册成功", NotificationManager::Success, this);
+            NotificationManager::instance().showMessage(this, NotificationManager::Success, "注册成功");
 
             // 保存当前输入的邮箱和密码
-            QString currentEmail = ui->usernameEdit->text().trimmed();
-            QString currentPassword = ui->passwordEdit->text();
+            成员变量_邮箱 = 界面_邮箱输入框->text().trimmed();
+            成员变量_密码 = 界面_密码输入框->text();
 
             // 2秒后关闭窗口并发送信号
-            QTimer::singleShot(2000, this, [this, currentEmail, currentPassword]() {
-                emit registerSuccess(currentEmail, currentPassword);
+            QTimer::singleShot(2000, this, [=, this]() {
+                emit sig_registerSuccess(成员变量_邮箱, 成员变量_密码);
                 this->close();
             });
             cleanup();

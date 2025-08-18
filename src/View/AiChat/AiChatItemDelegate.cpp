@@ -421,7 +421,7 @@ bool AiChatItemDelegate::editorEvent(QEvent* event, QAbstractItemModel* model, c
 
 void AiChatItemDelegate::onCopyMessage() {
     if (!m_selectedText.isEmpty()) {
-        NotificationManager::instance().showMessage("复制成功！", NotificationManager::Success);
+        NotificationManager::instance().showMessage(NotificationManager::Success, "复制成功！");
 
         QClipboard* clipboard = QApplication::clipboard();
 

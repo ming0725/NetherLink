@@ -16,8 +16,8 @@
 #include "View/Chat/ChatArea.h"
 #include "View/Chat/ChatItemDelegate.h"
 #include "View/Chat/ChatListModel.h"
-#include "View/Mainwindow/MainWindow.h"
 #include "View/Mainwindow/NotificationManager.h"
+#include "View/MainWindow/MainWindow.h"
 
 /* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
@@ -514,7 +514,7 @@ void ChatItemDelegate::showContextMenu(const QPoint& pos, const QModelIndex& ind
         connect(copyAction, &QAction::triggered, [message, index, model = const_cast <QAbstractItemModel*>(index.model())]() {
             const TextMessage* textMessage = static_cast <const TextMessage*>(message);
             QApplication::clipboard()->setText(textMessage->getText());
-            NotificationManager::instance().showMessage("复制成功！", NotificationManager::Success, MainWindow::getInstance());
+            NotificationManager::instance().showMessage(MainWindow::getInstance(), NotificationManager::Success, "复制成功！");
 
             // 取消选中状态
             model->setData(index, false, Qt::UserRole + 1);
@@ -529,7 +529,7 @@ void ChatItemDelegate::showContextMenu(const QPoint& pos, const QModelIndex& ind
     connect(deleteAction, &QAction::triggered, [index, model = index.model()]() {
         if (ChatListModel* chatModel = qobject_cast <ChatListModel*>(const_cast <QAbstractItemModel*>(model))) {
             chatModel->removeMessage(index.row());
-            NotificationManager::instance().showMessage("删除成功！", NotificationManager::Success, MainWindow::getInstance());
+            NotificationManager::instance().showMessage(MainWindow::getInstance(), NotificationManager::Success, "删除成功！");
         }
     });
 

@@ -211,7 +211,7 @@ void PostPreviewItem::onClickLike() {
             m_likeCount = oldCount;
             setupUI();
             resizeEvent(nullptr);
-            NotificationManager::instance().showMessage(tr("点赞失败: %1").arg(reply->errorString()), NotificationManager::Error, this);
+            NotificationManager::instance().showMessage(this, NotificationManager::Error, tr("点赞失败: %1").arg(reply->errorString()));
         }
         reply->deleteLater();
     });

@@ -2,8 +2,8 @@
 
 #include "View/AiChat/AiChatItemDelegate.h"
 #include "View/AiChat/AiChatWindow.h"
-#include "View/Mainwindow/MainWindow.h"
 #include "View/Mainwindow/NotificationManager.h"
+#include "View/MainWindow/MainWindow.h"
 
 /* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
@@ -145,10 +145,10 @@ void AiChatWindow::onConnectionEstablished() {
 
 void AiChatWindow::onConnectionError(const QString& error) {
     qDebug() << "WebSocket连接错误:" << error;
-    NotificationManager::instance().showMessage(tr("连接错误: %1").arg(error), NotificationManager::Error, MainWindow::getInstance());
+    NotificationManager::instance().showMessage(MainWindow::getInstance(), NotificationManager::Error, tr("连接错误: %1").arg(error));
 }
 
 void AiChatWindow::onRequestError(const QString& errorMessage) {
     qDebug() << "请求错误:" << errorMessage;
-    NotificationManager::instance().showMessage(tr("请求错误: %1").arg(errorMessage), NotificationManager::Error, MainWindow::getInstance());
+    NotificationManager::instance().showMessage(MainWindow::getInstance(), NotificationManager::Error, tr("请求错误: %1").arg(errorMessage));
 }

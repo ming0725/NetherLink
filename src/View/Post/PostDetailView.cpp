@@ -10,8 +10,8 @@
 #include "Data/AvatarLoader.h"
 #include "Data/CurrentUser.h"
 #include "Network/NetworkConfig.h"
-#include "View/Mainwindow/MainWindow.h"
 #include "View/Mainwindow/NotificationManager.h"
+#include "View/MainWindow/MainWindow.h"
 #include "View/Post/PostDetailView.h"
 
 /* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
@@ -503,12 +503,12 @@ void PostDetailView::sendComment(const QString &content) {
 
             if (doc.isObject()) {
                 // 评论成功
-                NotificationManager::instance().showMessage("评论发布成功", NotificationManager::Success, mainWindow);
+                NotificationManager::instance().showMessage(mainWindow, NotificationManager::Success, "评论发布成功");
 
                 // 这里可以添加刷新评论列表的代码
                 // emit commentAdded(); // 如果你有这样的信号
             } else {
-                NotificationManager::instance().showMessage("评论发布失败：返回数据格式错误", NotificationManager::Error, mainWindow);
+                NotificationManager::instance().showMessage(mainWindow, NotificationManager::Error, "评论发布失败：返回数据格式错误");
             }
         } else {
             // 请求失败，解析错误信息
@@ -523,13 +523,13 @@ void PostDetailView::sendComment(const QString &content) {
                     errorMessage = errorObj["error"].toString();
                 }
             }
-            NotificationManager::instance().showMessage(errorMessage, NotificationManager::Error, mainWindow);
+            NotificationManager::instance().showMessage(mainWindow, NotificationManager::Error, errorMessage);
         }
     });
 
     // 处理网络错误
     connect(reply, &QNetworkReply::errorOccurred, this, [=, this](QNetworkReply::NetworkError code) {
         QString errorMessage = QString("网络错误：%1").arg(code);
-        NotificationManager::instance().showMessage(errorMessage, NotificationManager::Error, mainWindow);
+        NotificationManager::instance().showMessage(mainWindow, NotificationManager::Error, errorMessage);
     });
 }

@@ -20,61 +20,84 @@
 #include "Network/NetworkConfig.h"
 #include "Network/NetworkManager.h"
 #include "ui_Login.h"
-#include "Util/Validator.h"
-#include "View/Mainwindow/MainWindow.h"
+
+// #include "Util/ToastTip.hpp"
+#include "Util/RoundedPixmap.hpp"
+#include "Util/Validator.hpp"
 #include "View/Mainwindow/NotificationManager.h"
-#include "Window/Login.h"
+#include "View/MainWindow/MainWindow.h"
+#include "Window/Login.hpp"
 
 /* namespace -------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 namespace Window {
 /**//* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
-/**
- * @brief 【描述】 构造函数
- */
-    Login::Login(QWidget* parent) : QMainWindow(parent), ui(new Ui::Login) {
+    /**
+     * @brief 【描述】 构造函数
+     */
+    Login::Login(QWidget* parent) : QWidget(parent), ui(new Ui::Login) {
         ui->setupUi(this);
+        setWindowFlags(Qt::FramelessWindowHint);
+        setAttribute(Qt::WA_TranslucentBackground);
+        界面_关闭按钮 = ui->btn_close;
+        界面_头像标签 = ui->lbl_profile;
+        界面_邮箱输入框 = ui->edit_email;
+        界面_密码输入框 = ui->edit_password;
+        界面_登录按钮 = ui->btn_login;
+        界面_注册按钮 = ui->btn_register;
 
         // 禁用按钮的Tab焦点
-        ui->loginButton->setFocusPolicy(Qt::NoFocus);
-        ui->registerButton->setFocusPolicy(Qt::NoFocus);
+        界面_关闭按钮->setFocusPolicy(Qt::NoFocus);
+        界面_登录按钮->setFocusPolicy(Qt::NoFocus);
+        界面_注册按钮->setFocusPolicy(Qt::NoFocus);
 
         // 设置Tab键顺序
-        QWidget::setTabOrder(ui->userAccountEdit, ui->userPasswordEdit);
-        QWidget::setTabOrder(ui->userPasswordEdit, ui->userAccountEdit);
+        QWidget::setTabOrder(界面_邮箱输入框, 界面_密码输入框);
+        QWidget::setTabOrder(界面_密码输入框, 界面_邮箱输入框);
 
         // 设置焦点
-        ui->userAccountEdit->setFocus();
+        界面_邮箱输入框->setFocus();
 
         // 回车键处理
-        connect(ui->userAccountEdit, &QLineEdit::returnPressed, this, [=, this]() {
-            ui->userPasswordEdit->setFocus();
+        connect(界面_邮箱输入框, &QLineEdit::returnPressed, this, [=, this]() {
+            界面_密码输入框->setFocus();
         });
-        connect(ui->userPasswordEdit, &QLineEdit::returnPressed, this, [=, this]() {
-            if (ui->loginButton->isEnabled()) {
-                ui->loginButton->click();
+        connect(界面_密码输入框, &QLineEdit::returnPressed, this, [=, this]() {
+            if (界面_登录按钮->isEnabled()) {
+                界面_登录按钮->click();
             }
+        });
+
+        QPixmap 默认头像(":/icon/icon.png");
+        QPixmap 圆角头像 = Util::RoundedPixmap::函数_圆角头像(默认头像, 60);
+
+        界面_头像标签->setPixmap(圆角头像);
+
+        // 关闭按钮
+        connect(界面_关闭按钮, &QPushButton::clicked, this, [=, this]() {
+            界面_注册界面.close();
+            this->close();
         });
 
         // 登录按钮
-        connect(ui->loginButton, &QPushButton::clicked, this, [=, this]() {
-            if (正在登录) {
+        connect(界面_登录按钮, &QPushButton::clicked, this, [=, this]() {
+            if (成员变量_正在登录) {
                 return;
             }
-            邮箱 = ui->userAccountEdit->text().trimmed();
-            密码 = ui->userPasswordEdit->text();
 
-            if (函数_检查输入框信息合法性(邮箱, 密码)) {
-                函数_登录(邮箱, 密码);
+            if (Util::Validator::函数_检查输入框信息合法性(this, 界面_邮箱输入框, 界面_密码输入框)) {
+                成员变量_邮箱 = 界面_邮箱输入框->text().trimmed();
+                成员变量_密码 = 界面_密码输入框->text();
+                函数_登录(成员变量_邮箱, 成员变量_密码);
             }
         });
 
         // 注册按钮
-        connect(ui->registerButton, &QPushButton::clicked, this, [=, this]() {
-            界面_注册.show();
+        connect(界面_注册按钮, &QPushButton::clicked, this, [=, this]() {
+            界面_注册界面.show();
 
             // 注册成功信号
-            connect(&界面_注册, &Register::registerSuccess, this, &Login::函数_设置登录信息);
+            connect(&界面_注册界面, &Register::sig_registerSuccess, this, &Login::函数_设置登录信息);
         });
     }
 
@@ -85,37 +108,48 @@ namespace Window {
         delete ui;
     }
 
+    void Login::paintEvent(QPaintEvent* event) {
+        QPainter painter(this);
+
+        painter.setRenderHint(QPainter::Antialiasing);
+        painter.setPen(Qt::NoPen);
+
+        // 背景圆角矩形
+        QRectF r = rect();
+        qreal radius = 20;
+        QPainterPath path;
+
+        path.addRoundedRect(r, radius, radius);
+
+        QLinearGradient gradient(QPoint(this->rect().topLeft()), QPoint(this->rect().bottomLeft()));
+
+        gradient.setColorAt(0.2, QColor(0x0099ff));
+        gradient.setColorAt(0.8, QColor(0xffffff));
+        painter.fillPath(path, gradient);
+        QWidget::paintEvent(event);
+    }
+
+    void Login::mousePressEvent(QMouseEvent* 形参_鼠标事件) {
+        if (形参_鼠标事件->button() == Qt::LeftButton)
+            成员变量_鼠标偏移量 = (形参_鼠标事件->globalPosition() - frameGeometry().topLeft()).toPoint();
+        QWidget::mousePressEvent(形参_鼠标事件);
+    }
+
+    void Login::mouseMoveEvent(QMouseEvent* 形参_鼠标事件) {
+        if (形参_鼠标事件->buttons() & Qt::LeftButton)
+            move((形参_鼠标事件->globalPosition() - 成员变量_鼠标偏移量).toPoint());
+        QWidget::mouseMoveEvent(形参_鼠标事件);
+    }
+
     // void Login::函数_获取用户头像(const QPixmap& userhead) {
 
-    // ui->userHead->setPixmap(userhead);
+    // 界面_userHead->setPixmap(userhead);
 
     // }
 
-    bool Login::函数_检查输入框信息合法性(QString 邮箱, QString 密码) {
-        if (邮箱.isEmpty()) {
-            NotificationManager::instance().showMessage("请输入邮箱", NotificationManager::Error, this);
-            ui->userAccountEdit->setFocus();
-
-            return (false);
-        } else if (!Util::Validator::函数_是否为有效邮箱(邮箱)) {
-            NotificationManager::instance().showMessage("邮箱格式不正确", NotificationManager::Error, this);
-            ui->userAccountEdit->selectAll();
-            ui->userAccountEdit->setFocus();
-
-            return (false);
-        } else if (密码.isEmpty()) {
-            NotificationManager::instance().showMessage("请输入密码", NotificationManager::Error, this);
-            ui->userPasswordEdit->setFocus();
-
-            return (false);
-        } else {
-            return (true);
-        }
-    }
-
-    void Login::函数_设置登录信息(const QString& 邮箱, const QString& 密码) {
-        ui->userAccountEdit->setText(邮箱);
-        ui->userPasswordEdit->setText(密码);
+    void Login::函数_设置登录信息(const QString& 形参_邮箱, const QString& 形参_密码) {
+        界面_邮箱输入框->setText(形参_邮箱);
+        界面_密码输入框->setText(形参_密码);
 
         // 激活窗口并置顶
         this->show();
@@ -123,23 +157,23 @@ namespace Window {
         this->activateWindow(); // 激活窗口
     }
 
-    void Login::函数_登录(QString 邮箱, QString 密码) {
-        if (正在登录) {
+    void Login::函数_登录(QString 形参_邮箱, QString 形参_密码) {
+        if (成员变量_正在登录) {
             return;
         }
-        正在登录 = true;
-        ui->loginButton->setEnabled(false);
-        ui->loginButton->setText("登录中...");
+        成员变量_正在登录 = true;
+        界面_登录按钮->setEnabled(false);
+        界面_登录按钮->setText("登录中...");
 
         // 1) 准备HTTP登录请求
         QJsonObject body;
 
-        body["email"] = 邮箱;
-        body["passwd"] = 密码;
+        body["email"] = 形参_邮箱;
+        body["passwd"] = 形参_密码;
 
         QByteArray payload = QJsonDocument(body).toJson(QJsonDocument::Compact);
         QString baseHttpUrl = NetworkConfig::instance().getHttpAddress();
-        QUrl url(baseHttpUrl + "/api/Login");
+        QUrl url(baseHttpUrl + "/api/login");
         QNetworkRequest request(url);
 
         request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
@@ -155,7 +189,7 @@ namespace Window {
         timeoutTimer->setInterval(5000); // 5秒超时
         // 连接超时定时器
         connect(timeoutTimer, &QTimer::timeout, this, [this, reply, manager, timeoutTimer]() {
-            NotificationManager::instance().showMessage("登录超时，请检查网络连接或服务器状态", NotificationManager::Error, this);
+            NotificationManager::instance().showMessage(this, NotificationManager::Error, "登录超时，请检查网络连接或服务器状态");
 
             if (reply) {
                 reply->abort(); // 终止请求
@@ -163,9 +197,9 @@ namespace Window {
             }
             timeoutTimer->deleteLater();
             manager->deleteLater();
-            正在登录 = false;
-            ui->loginButton->setEnabled(true);
-            ui->loginButton->setText("登录");
+            成员变量_正在登录 = false;
+            界面_登录按钮->setEnabled(true);
+            界面_登录按钮->setText("登录");
         });
 
         // 启动超时定时器
@@ -208,10 +242,10 @@ namespace Window {
                         default:
                             errorMsg = QString("网络错误：%1").arg(reply->errorString());
                     }
-                    NotificationManager::instance().showMessage(errorMsg, NotificationManager::Error, this);
-                    正在登录 = false;
-                    ui->loginButton->setEnabled(true);
-                    ui->loginButton->setText("登录");
+                    NotificationManager::instance().showMessage(this, NotificationManager::Error, errorMsg);
+                    成员变量_正在登录 = false;
+                    界面_登录按钮->setEnabled(true);
+                    界面_登录按钮->setText("登录");
                     reply->deleteLater();
                     manager->deleteLater();
 
@@ -226,7 +260,7 @@ namespace Window {
             QJsonDocument doc = QJsonDocument::fromJson(responseData, &jsonError);
 
             if (jsonError.error != QJsonParseError::NoError) {
-                NotificationManager::instance().showMessage("登录失败：返回数据格式错误", NotificationManager::Error, this);
+                NotificationManager::instance().showMessage(this, NotificationManager::Error, "登录失败：返回数据格式错误");
                 reply->deleteLater();
                 manager->deleteLater();
 
@@ -247,7 +281,7 @@ namespace Window {
                 } else {
                     errorMsg = "未知错误";
                 }
-                NotificationManager::instance().showMessage(QString("登录失败：%1").arg(errorMsg), NotificationManager::Error, this);
+                NotificationManager::instance().showMessage(this, NotificationManager::Error, QString("登录失败：%1").arg(errorMsg));
                 reply->deleteLater();
                 manager->deleteLater();
 
@@ -272,34 +306,34 @@ namespace Window {
             }, Qt::SingleShotConnection);
 
             // 6) 处理WebSocket错误
-            connect(&NetworkManager::instance(), &NetworkManager::wssError, this, [this, reply, manager, timeoutTimer](const QString& err) {
-                NotificationManager::instance().showMessage(QString("WebSocket连接失败：%1").arg(err), NotificationManager::Error, this);
+            connect(&NetworkManager::instance(), &NetworkManager::wssError, this, [=, this](const QString& err) {
+                NotificationManager::instance().showMessage(this, NotificationManager::Error, QString("WebSocket连接失败：%1").arg(err));
 
                 if (reply) {
-                    reply->abort();      // 终止请求
+                    reply->abort();  // 终止请求
                     reply->deleteLater();
                 }
 
-                if (timeoutTimer) {
-                    timeoutTimer->stop();
-                    timeoutTimer->deleteLater();
-                }
-
+                // if (timeoutTimer) {
+                // timeoutTimer->stop();
+                // timeoutTimer->deleteLater();
+                // }
                 if (manager) {
                     manager->deleteLater();
                 }
-                正在登录 = false;
-                ui->loginButton->setEnabled(true);
-                ui->loginButton->setText("登录");
+                成员变量_正在登录 = false;
+                界面_登录按钮->setEnabled(true);
+                界面_登录按钮->setText("登录");
             }, Qt::SingleShotConnection);
-            reply->deleteLater();
-            manager->deleteLater();
+
+            // reply->deleteLater();
+            // manager->deleteLater();
         });
 
         // 7) 处理网络请求错误
         connect(reply, &QNetworkReply::errorOccurred, this, [=, this](QNetworkReply::NetworkError code) {
             if (code != QNetworkReply::NoError) {
-                NotificationManager::instance().showMessage("登录网络错误", NotificationManager::Error, this);
+                NotificationManager::instance().showMessage(this, NotificationManager::Error, "登录网络错误");
             }
         });
     }
@@ -311,7 +345,7 @@ namespace Window {
  * @param token 【参数注释】 {text}
  */
     void Login::函数_登录成功(const QString& uid, const QString& token) {
-        NotificationManager::instance().showMessage("登录成功", NotificationManager::Success, this);
+        NotificationManager::instance().showMessage(this, NotificationManager::Success, "登录成功");
         currentUid = uid;
         currentToken = token;
 
@@ -328,7 +362,7 @@ namespace Window {
         }
 
         // 显示加载状态
-        ui->loginButton->setText("加载联系人中...");
+        界面_登录按钮->setText("加载联系人中...");
 
         // 开始异步加载联系人信息
         QFuture <void> future = QtConcurrent::run([this, uid, token]() {
@@ -374,7 +408,7 @@ namespace Window {
                 auto doc = QJsonDocument::fromJson(data, &err);
 
                 if ((err.error != QJsonParseError::NoError) || !doc.isObject()) {
-                    NotificationManager::instance().showMessage("登录返回解析失败", NotificationManager::Error, this);
+                    NotificationManager::instance().showMessage(this, NotificationManager::Error, "登录返回解析失败");
 
                     return;
                 }
@@ -445,7 +479,7 @@ namespace Window {
             // 处理网络错误
             connect(reply, &QNetworkReply::errorOccurred, this, [=, this](QNetworkReply::NetworkError code) {
                 if (code != QNetworkReply::NoError) {
-                    NotificationManager::instance().showMessage(QString("网络错误: %1").arg(code), NotificationManager::Error, this);
+                    NotificationManager::instance().showMessage(this, NotificationManager::Error, QString("网络错误: %1").arg(code));
                 }
             });
         }, Qt::QueuedConnection);
@@ -453,7 +487,7 @@ namespace Window {
 
     void Login::onContactsLoaded() {
         // 显示加载状态
-        ui->loginButton->setText("创建主窗口中...");
+        界面_登录按钮->setText("创建主窗口中...");
 
         // 预先在主线程中创建主窗口，但不显示
         mainWindow = MainWindow::getInstance();
@@ -464,7 +498,7 @@ namespace Window {
             if (mainWindow) {
                 mainWindow->show();
                 this->close();
-                正在登录 = false;
+                成员变量_正在登录 = false;
             }
         });
     }

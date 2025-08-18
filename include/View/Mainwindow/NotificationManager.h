@@ -23,10 +23,11 @@ class NotificationManager : public QWidget {
         static NotificationManager& instance();
 
         // 全屏顶部居中版本
-        void showMessage(const QString& message, Type type = Success);
+
+        void showMessage(Type type, const QString& message);
 
         // 新增：在指定 QWidget 顶部弹出版本
-        void showMessage(const QString& message, Type type, QWidget* targetWidget);
+        void showMessage(QWidget* targetWidget, Type type, const QString& message);
 
     protected:
         void paintEvent(QPaintEvent* event) override;
@@ -44,7 +45,7 @@ class NotificationManager : public QWidget {
         QLabel* iconLabel;
         QLabel* messageLabel;
         QPropertyAnimation* animation;
-        bool isShowing = false;
+        bool 成员变量_正在显示 = false;
 };
 
 #endif /* INCLUDE_VIEW_MAINWINDOW_NOTIFICATION_MANAGER */
