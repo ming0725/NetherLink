@@ -11,7 +11,7 @@ TopSearchWidget::TopSearchWidget(QWidget*parent) : QWidget(parent) {
     addButton = new CustomPushButton("+", this);
     addButton->setCursor(Qt::PointingHandCursor);
     addButton->setRadius(8);
-    addButton->setBackgroundColor(QColor(0xF5F5F5));
+    addButton->setNormalColor(QColor(0xF5F5F5));
     addButton->setHoverColor(QColor(0xEBEBEB));
     addButton->setPressColor(QColor(0xD7D7D7));
     addButton->setFont(QFont("", 18));

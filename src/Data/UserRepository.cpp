@@ -79,6 +79,11 @@ QVector <User> UserRepository::getAllUser() {
             user.status = static_cast <UserStatus>(query.value(4).toInt());
             user.signature = query.value(5).toString();
             users.append(user);
+            users.append(user);
+            users.append(user);
+            users.append(user);
+            users.append(user);
+            users.append(user);
         }
     } else {
         qWarning() << "Failed to get all users:" << query.lastError().text();

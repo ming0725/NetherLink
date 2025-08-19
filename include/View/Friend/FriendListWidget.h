@@ -5,19 +5,19 @@
 
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
-#include <QTimeLine>
-
-#include "FriendListItem.h"
+#include <QWidget>
 
 /* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
-class ScrollAreaNoWheel;
-class ScrollBarThumb;
+class FriendListModel;
+class FriendItemDelegate;
+class FriendListView;
+class User;
 
 class FriendListWidget : public QWidget {
     Q_OBJECT
 
     public:
-        explicit FriendListWidget(QWidget*parent = nullptr);
+        explicit FriendListWidget(QWidget* parent = nullptr);
 
         ~FriendListWidget();
 
@@ -28,34 +28,13 @@ class FriendListWidget : public QWidget {
     public slots:
         void reloadFriendList();
 
-    protected:
-        void resizeEvent(QResizeEvent*event) override;
-
-        void wheelEvent(QWheelEvent*event) override;
-
-        bool eventFilter(QObject*obj, QEvent*event) override;
-
     private slots:
-        void onItemClicked(FriendListItem*);
+        void onItemClicked(int index);
 
     private:
-        void animateTo(int targetOffset);
-
-        void updateScrollBar();
-
-        void relayoutItems();
-
-        ScrollAreaNoWheel*scrollArea = nullptr;
-        ScrollBarThumb*scrollBarThumb = nullptr;
-        QWidget*contentWidget = nullptr;
-        QList <FriendListItem*> itemList;
-        int contentOffset; // 内容区域的偏移
-        int thumbOffset; // 滑块的偏移
-        bool dragging;
-        int dragStartY;
-        int thumbOffsetAtDragStart;
-        QTimeLine*scrollAnimation = nullptr;
-        FriendListItem* selectItem = nullptr;
+        FriendListModel* model = nullptr;
+        FriendItemDelegate* delegate = nullptr;
+        FriendListView* listView = nullptr;
 };
 
 #endif /* INCLUDE_VIEW_FRIEND_FRIEND_LIST_WIDGET */

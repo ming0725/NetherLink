@@ -6,6 +6,7 @@
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 #include <QString>
+#include <QVariant>
 
 /* enum ------------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 enum UserStatus {
@@ -14,6 +15,8 @@ enum UserStatus {
     Mining,
     Flying
 };
+
+Q_DECLARE_METATYPE(UserStatus)
 
 /* struct ----------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 struct User {
@@ -31,5 +34,8 @@ struct User {
 QString statusText(UserStatus userStatus);
 
 QString statusIconPath(UserStatus userStatus);
+
+// QVariant支持
+Q_DECLARE_METATYPE(User)
 
 #endif /* INCLUDE_ENTITY_USER */

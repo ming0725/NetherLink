@@ -53,7 +53,7 @@ void SearchResultItem::setupUI() {
     actionButton = new CustomPushButton(type == UserType ? "添加" : "加入", this);
     actionButton->setFixedSize(BUTTON_WIDTH, BUTTON_HEIGHT);
     actionButton->setRadius(4);
-    actionButton->setBackgroundColor(QColor(0x0099FF));
+    actionButton->setNormalColor(QColor(0x0099FF));
     actionButton->setHoverColor(QColor(0x33ADFF));
     actionButton->setPressColor(QColor(0x0077CC));
     actionButton->setTextColor(Qt::white);

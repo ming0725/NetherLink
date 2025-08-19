@@ -103,7 +103,6 @@ Login::Login(QWidget* parent)
     this->loginButton = new CustomPushButton("登录", this);
     this->loginButton->installEventFilter(this);
     this->loginButton->setFixedHeight(40);
-    this->loginButton->setPrimaryStyle();
 
     QPalette pale;
     pale.setColor(QPalette::WindowText, QColor(0x2d77e5));

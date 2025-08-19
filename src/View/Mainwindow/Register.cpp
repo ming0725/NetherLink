@@ -120,14 +120,12 @@ Register::Register(QWidget* parent)
     this->getCodeButton->setFixedSize(100, 40);
     this->getCodeButton->setCursor(Qt::PointingHandCursor);
     this->getCodeButton->setFocusPolicy(Qt::NoFocus);  // 禁止获取焦点
-    this->getCodeButton->setPrimaryStyle();
 
     // 注册按钮
     this->registerButton = new CustomPushButton("注册", this);
     this->registerButton->setFixedHeight(40);
     this->registerButton->setCursor(Qt::PointingHandCursor);
     this->registerButton->setFocusPolicy(Qt::NoFocus);  // 禁止获取焦点
-    this->registerButton->setPrimaryStyle();
 
     // 验证码输入框和按钮的水平布局
     QHBoxLayout* code_hbox = new QHBoxLayout;
