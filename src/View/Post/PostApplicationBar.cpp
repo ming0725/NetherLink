@@ -7,7 +7,7 @@
 
 #include "View/Post/PostApplicationBar.h"
 
-/* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
+/* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 PostApplicationBar::PostApplicationBar(QWidget* parent) : QWidget(parent), m_parent(parent) {
     setAttribute(Qt::WA_TranslucentBackground);

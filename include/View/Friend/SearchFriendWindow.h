@@ -7,12 +7,12 @@
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 #include "Components/LineEditComponent.h"
-#include "Util/FramelessWindow.h"
 #include "View/Friend/SearchResultList.h"
 #include "View/Friend/SearchTypeTab.h"
+#include <QWidget>
 
 /* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
-class SearchFriendWindow : public FramelessWindow {
+class SearchFriendWindow : public QWidget {
     Q_OBJECT
 
     public:
@@ -27,7 +27,7 @@ class SearchFriendWindow : public FramelessWindow {
 
         void mousePressEvent(QMouseEvent* event) override;
 
-        bool eventFilter(QObject* watched, QEvent* ev) override;
+    // bool eventFilter(QObject* watched, QEvent* ev) override;
 
     private slots:
         void onSearchTypeChanged(int index);

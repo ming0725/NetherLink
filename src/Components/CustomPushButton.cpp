@@ -1,7 +1,12 @@
-#include "Components/CustomPushButton.h"
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
+
+#include "Components/CustomPushButton.h"
+
+/* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 CustomPushButton::CustomPushButton(QWidget* parent) : QPushButton(parent), m_radius(20), m_backgroundColor(QColor(0x0099ff)), m_hoverColor(QColor(0x0088ee)), m_pressColor(QColor(0x0077dd)), m_textColor(Qt::white), m_borderColor(Qt::transparent), m_borderWidth(0), m_isFlat(false), m_animationDuration(250), m_isHovered(false), m_isPressed(false), m_backgroundAnimation(nullptr) {
     initializeButton();

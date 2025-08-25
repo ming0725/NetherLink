@@ -2,8 +2,9 @@
 
 #include "View/AiChat/AiChatItemDelegate.h"
 #include "View/AiChat/AiChatWindow.h"
-#include "View/Mainwindow/NotificationManager.h"
-#include "View/MainWindow/MainWindow.h"
+
+#include "Util/ToastTip.hpp"
+#include "Window/MainWindow.hpp"
 
 /* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
@@ -145,10 +146,10 @@ void AiChatWindow::onConnectionEstablished() {
 
 void AiChatWindow::onConnectionError(const QString& error) {
     qDebug() << "WebSocket连接错误:" << error;
-    NotificationManager::instance().showMessage(MainWindow::getInstance(), NotificationManager::Error, tr("连接错误: %1").arg(error));
+    Util::ToastTip::函数_实例().函数_显示消息(Window::MainWindow::getInstance(), Util::ToastTip::枚举_消息类型::ENUM_ERROR, tr("连接错误: %1").arg(error));
 }
 
 void AiChatWindow::onRequestError(const QString& errorMessage) {
     qDebug() << "请求错误:" << errorMessage;
-    NotificationManager::instance().showMessage(MainWindow::getInstance(), NotificationManager::Error, tr("请求错误: %1").arg(errorMessage));
+    Util::ToastTip::函数_实例().函数_显示消息(Window::MainWindow::getInstance(), Util::ToastTip::枚举_消息类型::ENUM_ERROR, tr("请求错误: %1").arg(errorMessage));
 }

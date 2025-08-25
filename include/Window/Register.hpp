@@ -14,12 +14,8 @@
 
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 #include <QLineEdit>
-#include <QMouseEvent>
-#include <QPainter>
-#include <QPainterPath>
-#include <QPaintEvent>
+
 #include <QPushButton>
-#include <QWidget>
 
 /* namespace -------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 namespace Ui {

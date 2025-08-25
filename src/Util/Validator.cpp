@@ -8,9 +8,8 @@
 
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
-// #include "Util/ToastTip.hpp"
+#include "Util/ToastTip.hpp"
 #include "Util/Validator.hpp"
-#include "View/Mainwindow/NotificationManager.h"
 
 /* namespace -------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 namespace Util {
@@ -40,11 +39,11 @@ namespace Util {
         QString 形参_邮箱 = 形参_邮箱输入框->text().trimmed();
 
         if (形参_邮箱.isEmpty()) {
-            NotificationManager::instance().showMessage(形参_目标窗口, NotificationManager::Error, "请输入邮箱");
+            Util::ToastTip::函数_实例().函数_显示消息(形参_目标窗口, Util::ToastTip::枚举_消息类型::ENUM_ERROR, "请输入邮箱");
 
             return (false);
         } else if (!函数_是否为有效邮箱(形参_邮箱)) {
-            NotificationManager::instance().showMessage(形参_目标窗口, NotificationManager::Error, "邮箱格式不正确");
+            Util::ToastTip::函数_实例().函数_显示消息(形参_目标窗口, Util::ToastTip::枚举_消息类型::ENUM_ERROR, "邮箱格式不正确");
 
             return (false);
         } else {
@@ -58,18 +57,18 @@ namespace Util {
         QString 形参_密码 = 形参_密码输入框->text();
 
         if (形参_邮箱.isEmpty()) {
-            NotificationManager::instance().showMessage(形参_目标窗口, NotificationManager::Error, "请输入邮箱");
+            Util::ToastTip::函数_实例().函数_显示消息(形参_目标窗口, Util::ToastTip::枚举_消息类型::ENUM_ERROR, "请输入邮箱");
             形参_邮箱输入框->setFocus();
 
             return (false);
         } else if (!函数_是否为有效邮箱(形参_邮箱)) {
-            NotificationManager::instance().showMessage(形参_目标窗口, NotificationManager::Error, "邮箱格式不正确");
+            Util::ToastTip::函数_实例().函数_显示消息(形参_目标窗口, Util::ToastTip::枚举_消息类型::ENUM_ERROR, "邮箱格式不正确");
             形参_邮箱输入框->selectAll();
             形参_邮箱输入框->setFocus();
 
             return (false);
         } else if (形参_密码.isEmpty()) {
-            NotificationManager::instance().showMessage(形参_目标窗口, NotificationManager::Error, "请输入密码");
+            Util::ToastTip::函数_实例().函数_显示消息(形参_目标窗口, Util::ToastTip::枚举_消息类型::ENUM_ERROR, "请输入密码");
             形参_密码输入框->setFocus();
 
             return (false);
@@ -87,35 +86,35 @@ namespace Util {
         QString 形参_确认密码 = 形参_确认密码输入框->text();
 
         if (形参_昵称.isEmpty()) {
-            NotificationManager::instance().showMessage(形参_目标窗口, NotificationManager::Error, "请输入用户名");
+            Util::ToastTip::函数_实例().函数_显示消息(形参_目标窗口, Util::ToastTip::枚举_消息类型::ENUM_ERROR, "请输入用户名");
 
             return (false);
         } else if (形参_邮箱.isEmpty()) {
-            NotificationManager::instance().showMessage(形参_目标窗口, NotificationManager::Error, "请输入邮箱");
+            Util::ToastTip::函数_实例().函数_显示消息(形参_目标窗口, Util::ToastTip::枚举_消息类型::ENUM_ERROR, "请输入邮箱");
 
             return (false);
         } else if (!函数_是否为有效邮箱(形参_邮箱)) {
-            NotificationManager::instance().showMessage(形参_目标窗口, NotificationManager::Error, "邮箱格式不正确");
+            Util::ToastTip::函数_实例().函数_显示消息(形参_目标窗口, Util::ToastTip::枚举_消息类型::ENUM_ERROR, "邮箱格式不正确");
 
             return (false);
         } else if (形参_验证码.isEmpty()) {
-            NotificationManager::instance().showMessage(形参_目标窗口, NotificationManager::Error, "请输入验证码");
+            Util::ToastTip::函数_实例().函数_显示消息(形参_目标窗口, Util::ToastTip::枚举_消息类型::ENUM_ERROR, "请输入验证码");
 
             return (false);
         } else if (形参_密码.isEmpty()) {
-            NotificationManager::instance().showMessage(形参_目标窗口, NotificationManager::Error, "请输入密码");
+            Util::ToastTip::函数_实例().函数_显示消息(形参_目标窗口, Util::ToastTip::枚举_消息类型::ENUM_ERROR, "请输入密码");
 
             return (false);
         } else if (形参_确认密码.isEmpty()) {
-            NotificationManager::instance().showMessage(形参_目标窗口, NotificationManager::Error, "请确认密码");
+            Util::ToastTip::函数_实例().函数_显示消息(形参_目标窗口, Util::ToastTip::枚举_消息类型::ENUM_ERROR, "请确认密码");
 
             return (false);
         } else if (形参_密码 != 形参_确认密码) {
-            NotificationManager::instance().showMessage(形参_目标窗口, NotificationManager::Error, "两次输入的密码不一致");
+            Util::ToastTip::函数_实例().函数_显示消息(形参_目标窗口, Util::ToastTip::枚举_消息类型::ENUM_ERROR, "两次输入的密码不一致");
 
             return (false);
         } else if (avatarUrl.isEmpty()) {
-            NotificationManager::instance().showMessage(形参_目标窗口, NotificationManager::Error, "请上传头像");
+            Util::ToastTip::函数_实例().函数_显示消息(形参_目标窗口, Util::ToastTip::枚举_消息类型::ENUM_ERROR, "请上传头像");
 
             return (false);
         } else {

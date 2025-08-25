@@ -11,7 +11,8 @@
 #include "Data/CurrentUser.h"
 #include "View/AiChat/AiChatItemDelegate.h"
 #include "View/AiChat/AiChatListModel.h"
-#include "View/Mainwindow/NotificationManager.h"
+
+#include "Util/ToastTip.hpp"
 
 /* variable --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 const QString docStyleSheet = "h1 { font-size: 20px; font-weight: bold; margin: 0; }""h2 { font-size: 18px; font-weight: bold; margin: 0; }""h3 { font-size: 16px; font-weight: bold; margin: 0; }""h4 { font-size: 15px; font-weight: bold; margin: 0; }""h5 { font-size: 14px; font-weight: bold; margin: 0; }""h6 { font-size: 13px; font-weight: bold; margin: 0; }""p { font-size: 14px; margin: 0; }""code { font-size: 10px; background: #f6f8fa; }""pre { font-family: monospace; font-size: 13px; }""blockquote { padding-left: calc(2ch); margin: 0; border-left: 3px solid #ccc; }""table { border-collapse: collapse; width: 100%; }""th, td { border: 1px solid #aaa; padding: 4px 8px; }""th { background: #eee; }";
@@ -421,7 +422,7 @@ bool AiChatItemDelegate::editorEvent(QEvent* event, QAbstractItemModel* model, c
 
 void AiChatItemDelegate::onCopyMessage() {
     if (!m_selectedText.isEmpty()) {
-        NotificationManager::instance().showMessage(NotificationManager::Success, "复制成功！");
+        Util::ToastTip::函数_实例().函数_显示消息(Util::ToastTip::枚举_消息类型::ENUM_SUCCESS, "复制成功！");
 
         QClipboard* clipboard = QApplication::clipboard();
 

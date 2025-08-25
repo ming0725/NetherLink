@@ -9,9 +9,10 @@
 
 #include "Data/CurrentUser.h"
 #include "Network/NetworkConfig.h"
-#include "View/Mainwindow/NotificationManager.h"
-#include "View/MainWindow/MainWindow.h"
+
+#include "Util/ToastTip.hpp"
 #include "View/Post/PostCreatePage.h"
+#include "Window/MainWindow.hpp"
 
 /* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
@@ -179,10 +180,10 @@ void PostCreatePage::sendPost() {
                 m_imageButton->show();
             } else {
                 QJsonObject obj = doc.object();
-                NotificationManager::instance().showMessage(MainWindow::getInstance(), NotificationManager::Error, tr("发布失败: %1").arg(obj.value("message").toString()));
+                Util::ToastTip::函数_实例().函数_显示消息(Window::MainWindow::getInstance(), Util::ToastTip::枚举_消息类型::ENUM_ERROR, tr("发布失败: %1").arg(obj.value("message").toString()));
             }
         } else {
-            NotificationManager::instance().showMessage(MainWindow::getInstance(), NotificationManager::Error, tr("网络错误: %1").arg(reply->errorString()));
+            Util::ToastTip::函数_实例().函数_显示消息(Window::MainWindow::getInstance(), Util::ToastTip::枚举_消息类型::ENUM_ERROR, tr("网络错误: %1").arg(reply->errorString()));
         }
         reply->deleteLater();
         manager->deleteLater();

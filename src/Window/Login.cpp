@@ -8,8 +8,12 @@
 
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
+#include "Window/Login.hpp"
+
+#include <QMouseEvent>
 #include <QNetworkReply>
 #include <QPushButton>
+
 #include <QtConcurrent>
 
 #include "Data/AvatarLoader.h"
@@ -20,13 +24,12 @@
 #include "Network/NetworkConfig.h"
 #include "Network/NetworkManager.h"
 #include "ui_Login.h"
-
-// #include "Util/ToastTip.hpp"
 #include "Util/RoundedPixmap.hpp"
+#include "Util/ToastTip.hpp"
 #include "Util/Validator.hpp"
-#include "View/Mainwindow/NotificationManager.h"
-#include "View/MainWindow/MainWindow.h"
-#include "Window/Login.hpp"
+#include "Window/MainWindow.hpp"
+#include <QPainter>
+#include <QPainterPath>
 
 /* namespace -------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 namespace Window {
@@ -189,7 +192,7 @@ namespace Window {
         timeoutTimer->setInterval(5000); // 5秒超时
         // 连接超时定时器
         connect(timeoutTimer, &QTimer::timeout, this, [this, reply, manager, timeoutTimer]() {
-            NotificationManager::instance().showMessage(this, NotificationManager::Error, "登录超时，请检查网络连接或服务器状态");
+            Util::ToastTip::函数_实例().函数_显示消息(this, Util::ToastTip::枚举_消息类型::ENUM_ERROR, "登录超时，请检查网络连接或服务器状态");
 
             if (reply) {
                 reply->abort(); // 终止请求
@@ -242,7 +245,7 @@ namespace Window {
                         default:
                             errorMsg = QString("网络错误：%1").arg(reply->errorString());
                     }
-                    NotificationManager::instance().showMessage(this, NotificationManager::Error, errorMsg);
+                    Util::ToastTip::函数_实例().函数_显示消息(this, Util::ToastTip::枚举_消息类型::ENUM_ERROR, errorMsg);
                     成员变量_正在登录 = false;
                     界面_登录按钮->setEnabled(true);
                     界面_登录按钮->setText("登录");
@@ -260,7 +263,7 @@ namespace Window {
             QJsonDocument doc = QJsonDocument::fromJson(responseData, &jsonError);
 
             if (jsonError.error != QJsonParseError::NoError) {
-                NotificationManager::instance().showMessage(this, NotificationManager::Error, "登录失败：返回数据格式错误");
+                Util::ToastTip::函数_实例().函数_显示消息(this, Util::ToastTip::枚举_消息类型::ENUM_ERROR, "登录失败：返回数据格式错误");
                 reply->deleteLater();
                 manager->deleteLater();
 
@@ -281,7 +284,7 @@ namespace Window {
                 } else {
                     errorMsg = "未知错误";
                 }
-                NotificationManager::instance().showMessage(this, NotificationManager::Error, QString("登录失败：%1").arg(errorMsg));
+                Util::ToastTip::函数_实例().函数_显示消息(this, Util::ToastTip::枚举_消息类型::ENUM_ERROR, QString("登录失败：%1").arg(errorMsg));
                 reply->deleteLater();
                 manager->deleteLater();
 
@@ -307,7 +310,7 @@ namespace Window {
 
             // 6) 处理WebSocket错误
             connect(&NetworkManager::instance(), &NetworkManager::wssError, this, [=, this](const QString& err) {
-                NotificationManager::instance().showMessage(this, NotificationManager::Error, QString("WebSocket连接失败：%1").arg(err));
+                Util::ToastTip::函数_实例().函数_显示消息(this, Util::ToastTip::枚举_消息类型::ENUM_ERROR, QString("WebSocket连接失败：%1").arg(err));
 
                 if (reply) {
                     reply->abort();  // 终止请求
@@ -333,7 +336,7 @@ namespace Window {
         // 7) 处理网络请求错误
         connect(reply, &QNetworkReply::errorOccurred, this, [=, this](QNetworkReply::NetworkError code) {
             if (code != QNetworkReply::NoError) {
-                NotificationManager::instance().showMessage(this, NotificationManager::Error, "登录网络错误");
+                Util::ToastTip::函数_实例().函数_显示消息(this, Util::ToastTip::枚举_消息类型::ENUM_ERROR, "登录网络错误");
             }
         });
     }
@@ -345,7 +348,7 @@ namespace Window {
  * @param token 【参数注释】 {text}
  */
     void Login::函数_登录成功(const QString& uid, const QString& token) {
-        NotificationManager::instance().showMessage(this, NotificationManager::Success, "登录成功");
+        Util::ToastTip::函数_实例().函数_显示消息(this, Util::ToastTip::枚举_消息类型::ENUM_SUCCESS, "登录成功");
         currentUid = uid;
         currentToken = token;
 
@@ -408,7 +411,7 @@ namespace Window {
                 auto doc = QJsonDocument::fromJson(data, &err);
 
                 if ((err.error != QJsonParseError::NoError) || !doc.isObject()) {
-                    NotificationManager::instance().showMessage(this, NotificationManager::Error, "登录返回解析失败");
+                    Util::ToastTip::函数_实例().函数_显示消息(this, Util::ToastTip::枚举_消息类型::ENUM_ERROR, "登录返回解析失败");
 
                     return;
                 }
@@ -479,7 +482,7 @@ namespace Window {
             // 处理网络错误
             connect(reply, &QNetworkReply::errorOccurred, this, [=, this](QNetworkReply::NetworkError code) {
                 if (code != QNetworkReply::NoError) {
-                    NotificationManager::instance().showMessage(this, NotificationManager::Error, QString("网络错误: %1").arg(code));
+                    Util::ToastTip::函数_实例().函数_显示消息(this, Util::ToastTip::枚举_消息类型::ENUM_ERROR, QString("网络错误: %1").arg(code));
                 }
             });
         }, Qt::QueuedConnection);
@@ -490,7 +493,7 @@ namespace Window {
         界面_登录按钮->setText("创建主窗口中...");
 
         // 预先在主线程中创建主窗口，但不显示
-        mainWindow = MainWindow::getInstance();
+        mainWindow = Window::MainWindow::getInstance();
         mainWindow->setAttribute(Qt::WA_DeleteOnClose);
 
         // 显示主窗口

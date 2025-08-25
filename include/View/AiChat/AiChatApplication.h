@@ -10,8 +10,9 @@
 
 #include "View/AiChat/AiChatListWidget.h"
 #include "View/Mainwindow/DefaultPage.h"
-#include "View/Mainwindow/NotificationManager.h"
-#include "View/MainWindow/MainWindow.h"
+
+#include "Util/ToastTip.hpp"
+#include "Window/MainWindow.hpp"
 
 /* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 class AiChatWindow;
@@ -74,7 +75,7 @@ class AiChatApplication : public QWidget {
                 item->setTitle("新对话");
                 item->setTime(QDateTime::currentDateTime());
                 m_aiChatList->addChatItem(item);
-                NotificationManager::instance().showMessage(MainWindow::getInstance(), NotificationManager::Success, "新建成功！");
+                Util::ToastTip::函数_实例().函数_显示消息(Window::MainWindow::getInstance(), Util::ToastTip::枚举_消息类型::ENUM_SUCCESS, "新建成功！");
             });
                 }
 

@@ -1,8 +1,13 @@
-#include "Util/RoundedPixmap.hpp"
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
 #include <QPainter>
 #include <QPainterPath>
 
+#include "Util/RoundedPixmap.hpp"
+
+/* namespace -------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 namespace Util {
+/* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
     RoundedPixmap::RoundedPixmap() {}
 
     RoundedPixmap::~RoundedPixmap() {}

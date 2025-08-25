@@ -5,7 +5,8 @@
 
 #include "Data/CurrentUser.h"
 #include "Network/NetworkConfig.h"
-#include "View/Mainwindow/NotificationManager.h"
+
+#include "Util/ToastTip.hpp"
 #include "View/Post/PostPreviewItem.h"
 
 /* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
@@ -211,7 +212,7 @@ void PostPreviewItem::onClickLike() {
             m_likeCount = oldCount;
             setupUI();
             resizeEvent(nullptr);
-            NotificationManager::instance().showMessage(this, NotificationManager::Error, tr("点赞失败: %1").arg(reply->errorString()));
+            Util::ToastTip::函数_实例().函数_显示消息(this, Util::ToastTip::枚举_消息类型::ENUM_ERROR, tr("点赞失败: %1").arg(reply->errorString()));
         }
         reply->deleteLater();
     });

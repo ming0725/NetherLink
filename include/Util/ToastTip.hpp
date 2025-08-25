@@ -1,12 +1,12 @@
 /* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 
-#ifndef INCLUDE_UTIL_MESSAGE_BOX
+#ifndef INCLUDE_UTIL_TOAST_TIP
 
-#define INCLUDE_UTIL_MESSAGE_BOX
+#define INCLUDE_UTIL_TOAST_TIP
 
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
-#include <QMainWindow>
+#include <QLabel>
 #include <QPropertyAnimation>
 
 /* namespace -------------------------------------------------------------- 80 // ! ----------------------------- 120 */
@@ -17,7 +17,7 @@ namespace Ui {
 namespace Util {
 
 /**//* class --枚举_消息类型------------------------------------------------------- 80 // ! ----------------------------- 120 */
-    class ToastTip : public QMainWindow {
+    class ToastTip : public QWidget {
         Q_OBJECT
 
         public:
@@ -41,13 +41,22 @@ namespace Util {
 
             void startAnimation(bool show); // 保留给全屏居中版本使用
 
+        protected:
+            void paintEvent(QPaintEvent* event) override;
+
         private:
             Ui::ToastTip* ui;
+            QLabel* 界面_图片标签;
+            QLabel* 界面_标题标签;
+            QLabel* 界面_内容标签;
+
+        private:
+            QString 成员变量_图片;
+            QString 成员变量_标题;
+            QString 成员变量_内容;
             QPropertyAnimation* animation;
-            QString 成员变量_消息图片;
-            QString 成员变量_消息标题;
             bool 成员变量_正在显示 = false;
     };
 }
 
-#endif /* INCLUDE_UTIL_MESSAGE_BOX */
+#endif /* INCLUDE_UTIL_TOAST_TIP */

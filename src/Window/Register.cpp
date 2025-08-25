@@ -8,20 +8,24 @@
 
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
-#include <QFileDialog>
-#include <QHttpMultiPart>
-#include <QJsonObject>
-#include <QNetworkReply>
-#include <QPushButton>
-#include <QTimer>
-
 #include "Network/NetworkConfig.h"
 #include "ui_Register.h"
+#include "Util/ToastTip.hpp"
 
-// #include "Util/ToastTip.hpp"
+#include <QFileDialog>
+
+#include <QHttpMultiPart>
+
+#include <QJsonObject>
+#include <QMouseEvent>
+#include <QNetworkReply>
+#include <QTimer>
+
 #include "Util/Validator.hpp"
-#include "View/Mainwindow/NotificationManager.h"
 #include "Window/Register.hpp"
+#include <QPainter>
+
+#include <QPainterPath>
 
 #include "Util/RoundedPixmap.hpp"
 
@@ -175,7 +179,7 @@ namespace Window {
         QPixmap originalPixmap(filePath);
 
         if (originalPixmap.isNull()) {
-            NotificationManager::instance().showMessage(this, NotificationManager::Error, "图片加载失败");
+            Util::ToastTip::函数_实例().函数_显示消息(this, Util::ToastTip::枚举_消息类型::ENUM_ERROR, "图片加载失败");
 
             return;
         }
@@ -194,7 +198,7 @@ namespace Window {
         QString tempPath = QDir::tempPath() + "/temp_avatar_" + QString::number(QDateTime::currentMSecsSinceEpoch()) + ".png";
 
         if (!squarePixmap.save(tempPath, "PNG")) {
-            NotificationManager::instance().showMessage(this, NotificationManager::Error, "图片处理失败");
+            Util::ToastTip::函数_实例().函数_显示消息(this, Util::ToastTip::枚举_消息类型::ENUM_ERROR, "图片处理失败");
 
             return;
         }
@@ -204,7 +208,7 @@ namespace Window {
         if (!file->open(QIODevice::ReadOnly)) {
             file->remove(); // 删除临时文件
             delete file;
-            NotificationManager::instance().showMessage(this, NotificationManager::Error, "文件处理失败");
+            Util::ToastTip::函数_实例().函数_显示消息(this, Util::ToastTip::枚举_消息类型::ENUM_ERROR, "文件处理失败");
 
             return;
         }
@@ -240,7 +244,7 @@ namespace Window {
             QFile::remove(tempPath);
 
             if (reply->error() != QNetworkReply::NoError) {
-                NotificationManager::instance().showMessage(this, NotificationManager::Error, "上传失败：网络错误");
+                Util::ToastTip::函数_实例().函数_显示消息(this, Util::ToastTip::枚举_消息类型::ENUM_ERROR, "上传失败：网络错误");
 
                 return;
             }
@@ -248,7 +252,7 @@ namespace Window {
             QJsonDocument doc = QJsonDocument::fromJson(responseData);
 
             if (!doc.isObject()) {
-                NotificationManager::instance().showMessage(this, NotificationManager::Error, "上传失败：响应格式错误");
+                Util::ToastTip::函数_实例().函数_显示消息(this, Util::ToastTip::枚举_消息类型::ENUM_ERROR, "上传失败：响应格式错误");
 
                 return;
             }
@@ -256,7 +260,7 @@ namespace Window {
 
             // 检查是否有错误
             if (obj.contains("error")) {
-                NotificationManager::instance().showMessage(this, NotificationManager::Error, QString("上传失败：%1").arg(obj["error"].toString()));
+                Util::ToastTip::函数_实例().函数_显示消息(this, Util::ToastTip::枚举_消息类型::ENUM_ERROR, QString("上传失败：%1").arg(obj["error"].toString()));
 
                 return;
             }
@@ -271,7 +275,7 @@ namespace Window {
                 // if (!newAvatar.isNull()) {
                 // 界面_头像按钮->setIcon(createRoundedPixmap(newAvatar));
                 // }
-                NotificationManager::instance().showMessage(this, NotificationManager::Success, "头像上传成功");
+                Util::ToastTip::函数_实例().函数_显示消息(this, Util::ToastTip::枚举_消息类型::ENUM_SUCCESS, "头像上传成功");
             }
         });
     }
@@ -301,7 +305,7 @@ namespace Window {
 
             // 处理网络错误，但排除400状态码
             if ((reply->error() != QNetworkReply::NoError) && (statusCode != 400)) {
-                NotificationManager::instance().showMessage(this, NotificationManager::Error, QString("获取验证码失败：网络错误 - %1").arg(reply->errorString()));
+                Util::ToastTip::函数_实例().函数_显示消息(this, Util::ToastTip::枚举_消息类型::ENUM_ERROR, QString("获取验证码失败：网络错误 - %1").arg(reply->errorString()));
                 界面_验证码按钮->setEnabled(true);
                 reply->deleteLater();
                 manager->deleteLater();
@@ -314,7 +318,7 @@ namespace Window {
             QJsonDocument doc = QJsonDocument::fromJson(responseData, &jsonError);
 
             if (jsonError.error != QJsonParseError::NoError) {
-                NotificationManager::instance().showMessage(this, NotificationManager::Error, "获取验证码失败：返回数据格式错误");
+                Util::ToastTip::函数_实例().函数_显示消息(this, Util::ToastTip::枚举_消息类型::ENUM_ERROR, "获取验证码失败：返回数据格式错误");
                 界面_验证码按钮->setEnabled(true);
                 reply->deleteLater();
                 manager->deleteLater();
@@ -326,14 +330,14 @@ namespace Window {
             // 处理错误响应
             if ((statusCode == 400) || obj.contains("error")) {
                 QString errorMsg = obj["error"].toString();
-                NotificationManager::instance().showMessage(this, NotificationManager::Error, QString("获取验证码失败：%1").arg(errorMsg));
+                Util::ToastTip::函数_实例().函数_显示消息(this, Util::ToastTip::枚举_消息类型::ENUM_ERROR, QString("获取验证码失败：%1").arg(errorMsg));
                 界面_验证码按钮->setEnabled(true);
                 reply->deleteLater();
                 manager->deleteLater();
 
                 return;
             }
-            NotificationManager::instance().showMessage(this, NotificationManager::Success, "获取验证码成功");
+            Util::ToastTip::函数_实例().函数_显示消息(this, Util::ToastTip::枚举_消息类型::ENUM_SUCCESS, "获取验证码成功");
 
             // 倒计时60秒
             int countdown = 60;
@@ -394,7 +398,7 @@ namespace Window {
 
             // 处理网络错误，但排除400状态码
             if ((reply->error() != QNetworkReply::NoError) && (statusCode != 400)) {
-                NotificationManager::instance().showMessage(this, NotificationManager::Error, QString("注册失败：网络错误 - %1").arg(reply->errorString()));
+                Util::ToastTip::函数_实例().函数_显示消息(this, Util::ToastTip::枚举_消息类型::ENUM_ERROR, QString("注册失败：网络错误 - %1").arg(reply->errorString()));
                 cleanup();
                 reply->deleteLater();
                 manager->deleteLater();
@@ -407,7 +411,7 @@ namespace Window {
             QJsonDocument doc = QJsonDocument::fromJson(responseData, &jsonError);
 
             if (jsonError.error != QJsonParseError::NoError) {
-                NotificationManager::instance().showMessage(this, NotificationManager::Error, "注册失败：返回数据格式错误");
+                Util::ToastTip::函数_实例().函数_显示消息(this, Util::ToastTip::枚举_消息类型::ENUM_ERROR, "注册失败：返回数据格式错误");
                 cleanup();
                 reply->deleteLater();
                 manager->deleteLater();
@@ -419,7 +423,7 @@ namespace Window {
             // 处理错误响应
             if ((statusCode == 400) || obj.contains("error")) {
                 QString errorMsg = obj["error"].toString();
-                NotificationManager::instance().showMessage(this, NotificationManager::Error, QString("注册失败：%1").arg(errorMsg));
+                Util::ToastTip::函数_实例().函数_显示消息(this, Util::ToastTip::枚举_消息类型::ENUM_ERROR, QString("注册失败：%1").arg(errorMsg));
                 cleanup();
                 reply->deleteLater();
                 manager->deleteLater();
@@ -428,7 +432,7 @@ namespace Window {
             }
 
             // 注册成功
-            NotificationManager::instance().showMessage(this, NotificationManager::Success, "注册成功");
+            Util::ToastTip::函数_实例().函数_显示消息(this, Util::ToastTip::枚举_消息类型::ENUM_SUCCESS, "注册成功");
 
             // 保存当前输入的邮箱和密码
             成员变量_邮箱 = 界面_邮箱输入框->text().trimmed();

@@ -10,9 +10,10 @@
 #include "Data/AvatarLoader.h"
 #include "Data/CurrentUser.h"
 #include "Network/NetworkConfig.h"
-#include "View/Mainwindow/NotificationManager.h"
-#include "View/MainWindow/MainWindow.h"
+
+#include "Util/ToastTip.hpp"
 #include "View/Post/PostDetailView.h"
+#include "Window/MainWindow.hpp"
 
 /* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
@@ -465,7 +466,7 @@ void PostDetailView::addComment(const QString& content) {
 void PostDetailView::sendComment(const QString &content) {
     // 获取token和主窗口
     QString token = CurrentUser::instance().getToken();
-    QWidget* mainWindow = MainWindow::getInstance();
+    QWidget* mainWindow = Window::MainWindow::getInstance();
 
     // 构建请求URL
     QString baseUrl = NetworkConfig::instance().getHttpAddress();
@@ -503,12 +504,12 @@ void PostDetailView::sendComment(const QString &content) {
 
             if (doc.isObject()) {
                 // 评论成功
-                NotificationManager::instance().showMessage(mainWindow, NotificationManager::Success, "评论发布成功");
+                Util::ToastTip::函数_实例().函数_显示消息(mainWindow, Util::ToastTip::枚举_消息类型::ENUM_SUCCESS, "评论发布成功");
 
                 // 这里可以添加刷新评论列表的代码
                 // emit commentAdded(); // 如果你有这样的信号
             } else {
-                NotificationManager::instance().showMessage(mainWindow, NotificationManager::Error, "评论发布失败：返回数据格式错误");
+                Util::ToastTip::函数_实例().函数_显示消息(mainWindow, Util::ToastTip::枚举_消息类型::ENUM_ERROR, "评论发布失败：返回数据格式错误");
             }
         } else {
             // 请求失败，解析错误信息
@@ -523,13 +524,13 @@ void PostDetailView::sendComment(const QString &content) {
                     errorMessage = errorObj["error"].toString();
                 }
             }
-            NotificationManager::instance().showMessage(mainWindow, NotificationManager::Error, errorMessage);
+            Util::ToastTip::函数_实例().函数_显示消息(mainWindow, Util::ToastTip::枚举_消息类型::ENUM_ERROR, errorMessage);
         }
     });
 
     // 处理网络错误
     connect(reply, &QNetworkReply::errorOccurred, this, [=, this](QNetworkReply::NetworkError code) {
         QString errorMessage = QString("网络错误：%1").arg(code);
-        NotificationManager::instance().showMessage(mainWindow, NotificationManager::Error, errorMessage);
+        Util::ToastTip::函数_实例().函数_显示消息(mainWindow, Util::ToastTip::枚举_消息类型::ENUM_ERROR, errorMessage);
     });
 }

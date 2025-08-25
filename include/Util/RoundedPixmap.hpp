@@ -1,10 +1,17 @@
-#ifndef INCLUDE_UTIL_ROUNDEDPIXMAP_H
+/* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 
-#define INCLUDE_UTIL_ROUNDEDPIXMAP_H
+#ifndef INCLUDE_UTIL_ROUNDED_PIXMAP
+
+#define INCLUDE_UTIL_ROUNDED_PIXMAP
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
 #include <QPixmap>
 
+/* namespace -------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 namespace Util {
 
+/**//* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
     class RoundedPixmap {
         public:
             RoundedPixmap();
@@ -17,4 +24,4 @@ namespace Util {
     };
 }
 
-#endif // INCLUDE/UTIL/ROUNDEDPIXMAP_H
+#endif /* INCLUDE_UTIL_ROUNDED_PIXMAP */

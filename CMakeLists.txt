@@ -49,14 +49,14 @@ target_link_libraries(NetherLink-Client PRIVATE
         Qt6::WebSockets
         Qt6::Sql
         Qt6::Concurrent
-        dwmapi
-        user32
+        # dwmapi
+        # user32
 )
 
 target_compile_options(NetherLink-Client PRIVATE
     -Wall
     -Wextra
-    # -Werror
+    -Werror
     -Wbuiltin-macro-redefined
     -Wunused-variable
     -Wunused-function

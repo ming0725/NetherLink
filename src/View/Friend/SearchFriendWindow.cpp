@@ -10,11 +10,12 @@ SearchFriendWindow* SearchFriendWindow::instance = nullptr;
 
 /* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
-SearchFriendWindow::SearchFriendWindow(QWidget* parent) : FramelessWindow(parent) {
+SearchFriendWindow::SearchFriendWindow(QWidget* parent) : QWidget(parent) {
     // 窗口基础设置
     resize(400, 500);
     setMinimumWidth(400);
     setMinimumHeight(500);
+    setWindowFlags(Qt::FramelessWindowHint);
     setAttribute(Qt::WA_DeleteOnClose);
 
     // 创建标题标签
@@ -101,9 +102,7 @@ SearchFriendWindow* SearchFriendWindow::getInstance() {
     return (instance);
 }
 
-void SearchFriendWindow::resizeEvent(QResizeEvent* event) {
-    FramelessWindow::resizeEvent(event);
-
+void SearchFriendWindow::resizeEvent(QResizeEvent*) {
     int w = width();
 
     // 设置标题位置
@@ -138,7 +137,7 @@ void SearchFriendWindow::paintEvent(QPaintEvent*) {
     painter.drawRect(rect());
 }
 
-void SearchFriendWindow::mousePressEvent(QMouseEvent* event) {
+void SearchFriendWindow::mousePressEvent(QMouseEvent*) {
     // 获取当前焦点控件
     QWidget* fw = QApplication::focusWidget();
 
@@ -149,7 +148,7 @@ void SearchFriendWindow::mousePressEvent(QMouseEvent* event) {
     }
 
     // 调用父类的mousePressEvent以保持窗口拖动功能
-    FramelessWindow::mousePressEvent(event);
+    // FramelessWindow::mousePressEvent(event);
 }
 
 void SearchFriendWindow::onSearchTypeChanged(int index) {
@@ -179,13 +178,13 @@ void SearchFriendWindow::onSearchTextChanged(const QString& text) {
     resultList->setSearchText(text);
 }
 
-bool SearchFriendWindow::eventFilter(QObject* watched, QEvent* ev) {
-    if (watched == btnClose) {
-        if (ev->type() == QEvent::Enter) {
-            btnClose->setIcon(iconCloseHover);
-        } else if (ev->type() == QEvent::Leave) {
-            btnClose->setIcon(iconClose);
-        }
-    }
-    return (FramelessWindow::eventFilter(watched, ev));
-}
+// bool SearchFriendWindow::eventFilter(QObject* watched, QEvent* ev) {
+// if (watched == btnClose) {
+// if (ev->type() == QEvent::Enter) {
+// btnClose->setIcon(iconCloseHover);
+// } else if (ev->type() == QEvent::Leave) {
+// btnClose->setIcon(iconClose);
+// }
+// }
+// return (FramelessWindow::eventFilter(watched, ev));
+// }

@@ -1,22 +1,25 @@
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
-#include <QApplication>
-#include <QFontMetrics>
-#include <QPixmap>
+#include "Util/ToastTip.hpp"
+
+#include <QPainter>
+#include <QPainterPath>
+
 #include <QScreen>
+
 #include <QTimer>
 
 #include "ui_ToastTip.h"
-#include "Util/ToastTip.hpp"
 
 /* namespace -------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 namespace Util {
 /* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
-    ToastTip::ToastTip(QWidget* parent) : QMainWindow(parent), ui(new Ui::ToastTip) {
+    ToastTip::ToastTip(QWidget* parent) : QWidget(parent), ui(new Ui::ToastTip) {
         ui->setupUi(this);
         setWindowFlags(Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint | Qt::Tool);
         setAttribute(Qt::WA_StyledBackground);
+        setAttribute(Qt::WA_TranslucentBackground);
         animation = new QPropertyAnimation(this, "pos", this);
         animation->setDuration(300);
         animation->setEasingCurve(QEasingCurve::OutCubic);
@@ -26,6 +29,19 @@ namespace Util {
         delete ui;
     }
 
+    void ToastTip::paintEvent(QPaintEvent* event) {
+        QPainter painter(this);
+
+        painter.setRenderHint(QPainter::Antialiasing);
+
+        QPainterPath path;
+
+        path.addRoundedRect(rect(), 30, 30);
+        painter.setPen(Qt::NoPen);
+        painter.fillPath(path, QColor(0, 0, 0, 180));
+        QWidget::paintEvent(event);
+    }
+
     ToastTip& ToastTip::函数_实例() {
         static ToastTip 实例;
 
@@ -33,10 +49,10 @@ namespace Util {
     }
 
     void ToastTip::函数_显示消息(枚举_消息类型 形参_消息类型, const QString& 形参_消息内容) {
-        成员变量_消息图片 = (形参_消息类型 == 枚举_消息类型::ENUM_SUCCESS) ? ":/icon/correct.png" : ":/icon/fail.png";
-        成员变量_消息标题 = (形参_消息类型 == 枚举_消息类型::ENUM_SUCCESS) ? "成功" : "错误";
-        ui->lbl_title->setText(成员变量_消息标题);
-        ui->lbl_icon->setPixmap(QPixmap(成员变量_消息图片));
+        成员变量_图片 = (形参_消息类型 == 枚举_消息类型::ENUM_SUCCESS) ? ":/icon/correct.png" : ":/icon/fail.png";
+        成员变量_标题 = (形参_消息类型 == 枚举_消息类型::ENUM_SUCCESS) ? "成功" : "错误";
+        ui->lbl_title->setText(成员变量_标题);
+        ui->lbl_icon->setPixmap(QPixmap(成员变量_图片));
         ui->lbl_message->setText(形参_消息内容);
 
         if (成员变量_正在显示) {
@@ -72,22 +88,22 @@ namespace Util {
 
             return;
         }
-        成员变量_消息图片 = (形参_消息类型 == 枚举_消息类型::ENUM_SUCCESS) ? ":/icon/correct.png" : ":/icon/fail.png";
-        成员变量_消息标题 = (形参_消息类型 == 枚举_消息类型::ENUM_SUCCESS) ? "成功" : "错误";
-        ui->lbl_title->setText(成员变量_消息标题);
-        ui->lbl_icon->setPixmap(QPixmap(成员变量_消息图片));
+        成员变量_图片 = (形参_消息类型 == 枚举_消息类型::ENUM_SUCCESS) ? ":/icon/correct.png" : ":/icon/fail.png";
+        成员变量_标题 = (形参_消息类型 == 枚举_消息类型::ENUM_SUCCESS) ? "成功" : "错误";
+        ui->lbl_title->setText(成员变量_标题);
+        ui->lbl_icon->setPixmap(QPixmap(成员变量_图片));
         ui->lbl_message->setText(形参_消息内容);
 
         // === 动态计算宽度 ===
         // 保持高度固定 40px，但宽度根据文字长度 + 图标 + 左右 margin/spacing 自动调整
         QFontMetrics fm(ui->lbl_message->font());
         int textWidth = fm.horizontalAdvance(形参_消息内容);
-        int iconW = ui->lbl_icon->width();           // 通常为 20px
+        int iconWidth = ui->lbl_icon->width();           // 通常为 20px
         int leftMargin = 10; // 布局左侧 margin
         int rightMargin = 10; // 布局右侧 margin
         int spacing = 10; // icon 与文字之间的间距
-        int totalWidth = leftMargin + iconW + spacing + textWidth + rightMargin;
-        int totalHeight = 40;                     // 保持原来固定高度
+        int totalWidth = leftMargin + iconWidth + spacing + textWidth + rightMargin;
+        int totalHeight = 60;                     // 保持原来固定高度
 
         setFixedSize(totalWidth, totalHeight);
 

@@ -6,12 +6,11 @@
 
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
-#include <QMainWindow>
+#include "Window/NavBar.hpp"
+#include "Window/RoundStackedWidget.hpp"
+
 #include <QPushButton>
 #include <QSplitter>
-#include <QStackedWidget>
-
-#include "View/Mainwindow/ApplicationBar.h"
 
 /* namespace -------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 namespace Ui {
@@ -21,7 +20,7 @@ namespace Ui {
 namespace Window {
 
 /* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
-    class MainWindow : public QMainWindow {
+    class MainWindow : public QWidget {
         Q_OBJECT
 
         public:
@@ -32,19 +31,20 @@ namespace Window {
             static QWidget* getInstance();
 
         protected:
-            void resizeEvent(QResizeEvent* event) override;
+            void paintEvent(QPaintEvent* event) override;
 
-            void mousePressEvent(QMouseEvent* event) override;
+            void mousePressEvent(QMouseEvent* 形参_鼠标事件)override;
 
-        // bool eventFilter(QObject* watched, QEvent* ev);
+            void mouseMoveEvent(QMouseEvent* 形参_鼠标事件)override;
 
-        private slots:
-            void onBarItemClicked(ApplicationBarItem* item);
+        // void resizeEvent(QResizeEvent* event) override;
 
         private:
             Ui::MainWindow* ui;
             static QWidget* instance;
-            ApplicationBar* appBar;
+            QPushButton* 界面_关闭按钮;
+            NavBar* 界面_导航栏;
+            RoundStackedWidget* 界面_容器;
             QWidget* rightContent;
             int contentFixedWidth;
             QSplitter* splitter;
@@ -52,6 +52,16 @@ namespace Window {
             QPushButton* btnMaximize;
             QPushButton* btnClose;
             QStackedWidget* stack;
+
+        private:
+            QPoint 成员变量_鼠标偏移量;
+            enum PageIndex {
+                PAGE_MESSAGE = 0,
+                PAGE_FRIEND = 1,
+                PAGE_POST = 2,
+                PAGE_AI = 3,
+                PAGE_DEFAULT = 4,
+            };
 
             // QIcon iconClose, iconCloseHover;
     };

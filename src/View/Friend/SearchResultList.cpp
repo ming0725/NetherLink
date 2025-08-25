@@ -15,7 +15,8 @@
 #include "Network/NetworkConfig.h"
 #include "View/Friend/SearchFriendWindow.h" // 这个头文件有问题
 #include "View/Friend/SearchResultList.h"
-#include "View/Mainwindow/NotificationManager.h"
+
+#include "Util/ToastTip.hpp"
 
 /* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
@@ -131,7 +132,7 @@ void SearchResultList::searchUsers(const QString& keyword) {
     QString token = CurrentUser::instance().getToken();
 
     if (token.isEmpty()) {
-        NotificationManager::instance().showMessage(searchWindow, NotificationManager::Error, "未登录，请先登录");
+        Util::ToastTip::函数_实例().函数_显示消息(searchWindow, Util::ToastTip::枚举_消息类型::ENUM_ERROR, "未登录，请先登录");
 
         return;
     }
@@ -157,7 +158,7 @@ void SearchResultList::searchGroups(const QString& keyword) {
     QString token = CurrentUser::instance().getToken();
 
     if (token.isEmpty()) {
-        NotificationManager::instance().showMessage(searchWindow, NotificationManager::Error, "未登录，请先登录");
+        Util::ToastTip::函数_实例().函数_显示消息(searchWindow, Util::ToastTip::枚举_消息类型::ENUM_ERROR, "未登录，请先登录");
 
         return;
     }
@@ -186,7 +187,7 @@ void SearchResultList::onNetworkReplyFinished() {
     QJsonDocument doc = QJsonDocument::fromJson(data);
 
     if (!doc.isObject()) {
-        NotificationManager::instance().showMessage(searchWindow, NotificationManager::Error, "服务器返回数据格式错误");
+        Util::ToastTip::函数_实例().函数_显示消息(searchWindow, Util::ToastTip::枚举_消息类型::ENUM_ERROR, "服务器返回数据格式错误");
 
         return;
     }
@@ -194,7 +195,7 @@ void SearchResultList::onNetworkReplyFinished() {
     QJsonObject response = doc.object();
 
     if (response.contains("error")) {
-        NotificationManager::instance().showMessage(searchWindow, NotificationManager::Error, response["error"].toString());
+        Util::ToastTip::函数_实例().函数_显示消息(searchWindow, Util::ToastTip::枚举_消息类型::ENUM_ERROR, response["error"].toString());
 
         return;
     }
@@ -220,7 +221,7 @@ void SearchResultList::onNetworkReplyFinished() {
 void SearchResultList::handleNetworkError(QNetworkReply* reply) {
     QString errorString = reply->errorString();
 
-    NotificationManager::instance().showMessage(searchWindow, NotificationManager::Error, QString("网络请求失败: %1").arg(errorString));
+    Util::ToastTip::函数_实例().函数_显示消息(searchWindow, Util::ToastTip::枚举_消息类型::ENUM_ERROR, QString("网络请求失败: %1").arg(errorString));
 }
 
 void SearchResultList::processUserResults(const QJsonArray& users) {

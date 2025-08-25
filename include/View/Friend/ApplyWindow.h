@@ -10,10 +10,10 @@
 #include <QTextEdit>
 
 #include "Data/AvatarLoader.h"
-#include "Util/FramelessWindow.h"
+#include <QWidget>
 
 /* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
-class ApplyWindow : public FramelessWindow {
+class ApplyWindow : public QWidget {
     Q_OBJECT
 
     public:
@@ -31,7 +31,7 @@ class ApplyWindow : public FramelessWindow {
 
         void paintEvent(QPaintEvent* event) override;
 
-        bool eventFilter(QObject* watched, QEvent* ev) override;
+    // bool eventFilter(QObject* watched, QEvent* ev) override;
 
     private slots:
         void onCancelClicked();

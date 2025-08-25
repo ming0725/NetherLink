@@ -15,6 +15,7 @@
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 #include <QFutureWatcher>
+
 #include <QLabel>
 
 #include "Window/Register.hpp"
