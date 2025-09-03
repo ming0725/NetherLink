@@ -1,6 +1,7 @@
 /* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 
 #ifndef INCLUDE_VIEW_CHAT_CHAT_ITEM_DELEGATE
+
 #define INCLUDE_VIEW_CHAT_CHAT_ITEM_DELEGATE
 
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
@@ -64,6 +65,6 @@ class ChatItemDelegate : public QStyledItemDelegate {
         QRect calculateTimeHeaderRect(const QRect& contentRect, const QString& text) const;
 
         void showContextMenu(const QPoint& pos, const QModelIndex& index, const ChatMessage* message) const;
-
 };
+
 #endif /* INCLUDE_VIEW_CHAT_CHAT_ITEM_DELEGATE */

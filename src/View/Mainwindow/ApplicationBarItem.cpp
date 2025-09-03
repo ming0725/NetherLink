@@ -12,7 +12,7 @@ ApplicationBarItem::ApplicationBarItem(QPixmap normal, QPixmap selected, QWidget
     rippleAnim = new QVariantAnimation(this);
     rippleAnim->setDuration(700);
     rippleAnim->setEasingCurve(QEasingCurve::OutCubic);
-    connect(rippleAnim, &QVariantAnimation::valueChanged, this, [this] (const QVariant &value) {
+    connect(rippleAnim, &QVariantAnimation::valueChanged, this, [=, this](const QVariant &value) {
         rippleRadius = value.toReal();
         update();
     });
@@ -72,7 +72,7 @@ void ApplicationBarItem::paintEvent(QPaintEvent*) {
 }
 
 void ApplicationBarItem::mousePressEvent(QMouseEvent* event) {
-    QMouseEvent*mouseEvent = static_cast <QMouseEvent*>(event);
+    QMouseEvent* mouseEvent = static_cast <QMouseEvent*>(event);
 
     if (mouseEvent->button() == Qt::LeftButton) {
         emit itemClicked(this);

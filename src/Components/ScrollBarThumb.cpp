@@ -6,7 +6,7 @@
 
 /* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
-ScrollBarThumb::ScrollBarThumb(QWidget*parent) : QWidget(parent), color(QColor(0x3f, 0x3f, 0x3f)) {}
+ScrollBarThumb::ScrollBarThumb(QWidget* parent) : QWidget(parent), color(QColor(0x3f, 0x3f, 0x3f)) {}
 
 void ScrollBarThumb::setColor(const QColor &newColor) {
     color = newColor;

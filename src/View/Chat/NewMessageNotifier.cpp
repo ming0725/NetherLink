@@ -8,11 +8,11 @@
 
 /* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
-NewMessageNotifier::NewMessageNotifier(QWidget*parent) : QWidget(parent) {
+NewMessageNotifier::NewMessageNotifier(QWidget* parent) : QWidget(parent) {
     setFixedHeight(32);
     setAttribute(Qt::WA_TranslucentBackground);
 
-    QHBoxLayout*layout = new QHBoxLayout(this);
+    QHBoxLayout* layout = new QHBoxLayout(this);
 
     layout->setContentsMargins(10, 0, 10, 0);
     label = new QLabel(this);
@@ -23,7 +23,7 @@ NewMessageNotifier::NewMessageNotifier(QWidget*parent) : QWidget(parent) {
     QWidget::hide();
 }
 
-void NewMessageNotifier::paintEvent(QPaintEvent*event) {
+void NewMessageNotifier::paintEvent(QPaintEvent* event) {
     Q_UNUSED(event);
 
     QPainter painter(this);
@@ -45,13 +45,13 @@ void NewMessageNotifier::paintEvent(QPaintEvent*event) {
     painter.drawPath(path);
 }
 
-void NewMessageNotifier::mousePressEvent(QMouseEvent*event) {
+void NewMessageNotifier::mousePressEvent(QMouseEvent* event) {
     Q_UNUSED(event);
 
     emit clicked();
 }
 
-void NewMessageNotifier::resizeEvent(QResizeEvent*event) {
+void NewMessageNotifier::resizeEvent(QResizeEvent* event) {
     QWidget::resizeEvent(event);
     updateLayout();
 }

@@ -1,6 +1,7 @@
 /* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 
 #ifndef INCLUDE_VIEW_FRIEND_NOTIFICATION_PAGE
+
 #define INCLUDE_VIEW_FRIEND_NOTIFICATION_PAGE
 
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
@@ -38,7 +39,6 @@ class NotificationPage : public QWidget {
         QStackedWidget* contentStack;
 
         void setupUI();
-
 };
 
 #endif /* INCLUDE_VIEW_FRIEND_NOTIFICATION_PAGE */

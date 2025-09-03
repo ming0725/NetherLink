@@ -8,7 +8,7 @@
 
 /* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
-LineEditComponent::LineEditComponent(QWidget*parent) : QWidget(parent) {
+LineEditComponent::LineEditComponent(QWidget* parent) : QWidget(parent) {
     iconLabel = new QLabel(this);
     iconLabel->setFixedSize(15, 15);
     iconLabel->setScaledContents(true);
@@ -23,7 +23,6 @@ LineEditComponent::LineEditComponent(QWidget*parent) : QWidget(parent) {
     lineEdit->setStyleSheet("QLineEdit{background-color:transparent;} ""QLineEdit:hover{background:transparent;}");
     lineEdit->setFrame(QFrame::NoFrame);
     lineEdit->setPlaceholderText("搜索");
-
     clearBtn = new QToolButton(this);
     clearBtn->setAttribute(Qt::WA_TranslucentBackground);
     clearBtn->setCursor(Qt::PointingHandCursor);
@@ -33,13 +32,11 @@ LineEditComponent::LineEditComponent(QWidget*parent) : QWidget(parent) {
     clearBtn->setVisible(false);
     clearBtn->setFocusPolicy(Qt::NoFocus);
     clearBtn->setStyleSheet("QToolButton{background:transparent;} ""QToolButton:hover{background:transparent;}");
-
     connect(clearBtn, &QToolButton::clicked, lineEdit, &QLineEdit::clear);
-    connect(lineEdit, &QLineEdit::textChanged, this, [=] (const QString &t) {
+    connect(lineEdit, &QLineEdit::textChanged, this, [=, this](const QString &t) {
         clearBtn->setVisible(!t.isEmpty());
         emit userAccountChanged(t);
     });
-
     iconPixmap.load(":/icon/search.png");
 }
 
@@ -51,7 +48,7 @@ QString LineEditComponent::currentText() const {
     return (this->lineEdit->text());
 }
 
-void LineEditComponent::paintEvent(QPaintEvent*ev) {
+void LineEditComponent::paintEvent(QPaintEvent* ev) {
     QPainter painter(this);
     int radius = 8;
 
@@ -75,16 +72,16 @@ void LineEditComponent::paintEvent(QPaintEvent*ev) {
     QWidget::paintEvent(ev);
 }
 
-QLineEdit*LineEditComponent::getLineEdit() const {
+QLineEdit* LineEditComponent::getLineEdit() const {
     return (this->lineEdit);
 }
 
-void LineEditComponent::keyPressEvent(QKeyEvent*event) {
+void LineEditComponent::keyPressEvent(QKeyEvent* event) {
     // 移除Tab键的特殊处理，让它自然传递
     QWidget::keyPressEvent(event);
 }
 
-bool LineEditComponent::eventFilter(QObject*watched, QEvent*event) {
+bool LineEditComponent::eventFilter(QObject* watched, QEvent* event) {
     if (watched == lineEdit) {
         if (event->type() == QEvent::FocusIn) {
             hasFocus = true;
@@ -101,7 +98,7 @@ bool LineEditComponent::eventFilter(QObject*watched, QEvent*event) {
     return (QWidget::eventFilter(watched, event));
 }
 
-void LineEditComponent::resizeEvent(QResizeEvent*event) {
+void LineEditComponent::resizeEvent(QResizeEvent* event) {
     QWidget::resizeEvent(event);
 
     const int marginLeft = 5;

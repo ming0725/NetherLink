@@ -1,8 +1,10 @@
-cmake_minimum_required(VERSION 3.10)
+cmake_minimum_required(VERSION 3.30.5)
+
+set(QT_FORCE_CMP0156_TO_VALUE NEW)
 
 project(NetherLink-Client VERSION 1.0.0 LANGUAGES CXX)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 set(CMAKE_AUTOUIC ON)
@@ -11,39 +13,50 @@ set(CMAKE_AUTORCC ON)
 
 set(CMAKE_INCLUDE_CURRENT_DIR ON)
 
-find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets Network WebSockets Sql Concurrent)
-find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets Network WebSockets Sql Concurrent)
+add_definitions(-DUNICODE -D_UNICODE)
+
+set(CMAKE_PREFIX_PATH "D:/Qt/6.10.0/mingw_64")
+set(CMAKE_MAKE_PROGRAM "D:/Qt/Tools/Ninja/ninja.exe")
+
+set(CMAKE_AUTOUIC_SEARCH_PATHS
+    ${CMAKE_CURRENT_SOURCE_DIR}/ui
+    ${CMAKE_CURRENT_SOURCE_DIR}/ui/Util
+    ${CMAKE_CURRENT_SOURCE_DIR}/ui/Window
+)
+
+find_package(Qt6 REQUIRED COMPONENTS Core Widgets Network WebSockets Sql Concurrent)
 
 include_directories(
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/src)
+    ${CMAKE_CURRENT_SOURCE_DIR}/include)
 
-file(GLOB_RECURSE INCLUDES "include/*.h" "include/**/*.h")
-file(GLOB_RECURSE SOURCES "src/*.cpp" "src/**/*.cpp")
+file(GLOB_RECURSE INCLUDE "include/*.h" "include/*.hpp" "include/**/*.h" "include/**/*.hpp")
+file(GLOB_RECURSE SOURCE "src/*.c" "src/*.cpp" "src/**/*.c" "src/**/*.cpp")
+file(GLOB_RECURSE UI "ui/*.ui" "ui/**/*.ui")
+file(GLOB_RECURSE RESOURCE "res/res.qrc")
 
-if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
-    qt_add_executable(NetherLink-Client
-        MANUAL_FINALIZATION
-        ${INCLUDES}
-        ${SOURCES}
-        res/res.qrc
-    )
-endif()
+qt_add_executable(NetherLink-Client
+    MANUAL_FINALIZATION
+    ${INCLUDE}
+    ${SOURCE}
+    ${UI}
+    ${RESOURCE}
+)
 
 target_link_libraries(NetherLink-Client PRIVATE
+        Qt6::Core
         Qt6::Widgets
         Qt6::Network
         Qt6::WebSockets
         Qt6::Sql
         Qt6::Concurrent
-        dwmapi
-        user32
+        # dwmapi
+        # user32
 )
 
 target_compile_options(NetherLink-Client PRIVATE
     -Wall
     -Wextra
-    # -Werror
+    -Werror
     -Wbuiltin-macro-redefined
     -Wunused-variable
     -Wunused-function
@@ -72,7 +85,7 @@ endif()
 if(CMAKE_BUILD_TYPE STREQUAL "Debug")
     set(CMAKE_BINARY_DIR "${CMAKE_CURRENT_SOURCE_DIR}/build/Debug")
     set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/bin/Debug")
-else(CMAKE_BUILD_TYPE STREQUAL "Release")
+elseif(CMAKE_BUILD_TYPE STREQUAL "Release")
     set(CMAKE_BINARY_DIR "${CMAKE_CURRENT_SOURCE_DIR}/build/Release")
     set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/bin/Release")
 endif()

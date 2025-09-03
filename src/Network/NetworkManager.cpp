@@ -1,7 +1,6 @@
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 #include <QJsonArray>
-#include <QJsonDocument>
 #include <QNetworkReply>
 #include <QSslSocket>
 
@@ -100,7 +99,7 @@ void NetworkManager::reloadContacts() {
     m_http->get(request);
 
     // 连接一次性的响应处理
-    connect(m_http, &QNetworkAccessManager::finished, this, [this] (QNetworkReply* reply) {
+    connect(m_http, &QNetworkAccessManager::finished, this, [=, this](QNetworkReply* reply) {
         reply->deleteLater();
 
         if (reply->error() != QNetworkReply::NoError) {

@@ -1,16 +1,12 @@
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
-#include "Data/AvatarLoader.h"
-
 #include <QDir>
-
 #include <QNetworkReply>
-
 #include <QPainter>
-
 #include <QPainterPath>
-
 #include <QStandardPaths>
+
+#include "Data/AvatarLoader.h"
 
 /* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
@@ -226,7 +222,7 @@ void AvatarLoader::downloadAvatar(const QString& id, const QUrl& url, bool isGro
     QNetworkRequest request(url);
     QNetworkReply* reply = networkManager.get(request);
 
-    connect(reply, &QNetworkReply::finished, this, [=] () {
+    connect(reply, &QNetworkReply::finished, this, [=, this]() {
         if (reply->error() == QNetworkReply::NoError) {
             QByteArray data = reply->readAll();
             processDownloadedAvatar(id, data, isGroup);
@@ -241,7 +237,7 @@ void AvatarLoader::downloadAvatar(const QString& id, const QUrl& url, bool isGro
         }
         reply->deleteLater();
     });
-    connect(reply, &QNetworkReply::sslErrors, this, [=] (const QList <QSslError>& errors) {
+    connect(reply, &QNetworkReply::sslErrors, this, [=, this](const QList <QSslError>& errors) {
         qWarning() << "SSL errors while downloading avatar for" << id << ":";
 
         for (const QSslError& error : errors) {

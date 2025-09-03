@@ -1,6 +1,7 @@
 /* guard ------------------------------------------------------------------ 80 // ! ---------------------------- 120 */
 
 #ifndef INCLUDE_DATA_MESSAGE_REPOSITORY
+
 #define INCLUDE_DATA_MESSAGE_REPOSITORY
 
 /* include ---------------------------------------------------------------- 80 // ! ---------------------------- 120 */
@@ -43,7 +44,6 @@ class MessageRepository : public QObject {
 
         // 创建消息对象
         QSharedPointer <ChatMessage> createMessageFromQuery(QSqlQuery&, bool);
-
 };
 
 #endif /* INCLUDE_DATA_MESSAGE_REPOSITORY */

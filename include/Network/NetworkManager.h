@@ -1,6 +1,7 @@
 /* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 
 #ifndef INCLUDE_NETWORK_NETWORK_MANAGER
+
 #define INCLUDE_NETWORK_NETWORK_MANAGER
 
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
@@ -69,7 +70,7 @@ class NetworkManager : public QObject {
         ~NetworkManager();
 
         QNetworkAccessManager* m_http;
-        QWebSocket*            m_wss;
+        QWebSocket* m_wss;
 };
 
 #endif /* INCLUDE_NETWORK_NETWORK_MANAGER */

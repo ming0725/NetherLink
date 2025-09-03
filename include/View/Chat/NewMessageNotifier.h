@@ -1,6 +1,7 @@
 /* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 
 #ifndef INCLUDE_VIEW_CHAT_NEW_MESSAGE_NOTIFIER
+
 #define INCLUDE_VIEW_CHAT_NEW_MESSAGE_NOTIFIER
 
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
@@ -12,7 +13,7 @@ class NewMessageNotifier : public QWidget {
     Q_OBJECT
 
     public:
-        explicit NewMessageNotifier(QWidget*parent = nullptr);
+        explicit NewMessageNotifier(QWidget* parent = nullptr);
 
         void setMessageCount(int count);
 
@@ -20,19 +21,18 @@ class NewMessageNotifier : public QWidget {
         void clicked();
 
     protected:
-        void paintEvent(QPaintEvent*event) override;
+        void paintEvent(QPaintEvent* event) override;
 
-        void mousePressEvent(QMouseEvent*event) override;
+        void mousePressEvent(QMouseEvent* event) override;
 
-        void resizeEvent(QResizeEvent*event) override;
+        void resizeEvent(QResizeEvent* event) override;
 
     private:
-        QLabel*label;
+        QLabel* label;
 
         void updateText(int count);
 
         void updateLayout();
-
 };
 
 #endif /* INCLUDE_VIEW_CHAT_NEW_MESSAGE_NOTIFIER */

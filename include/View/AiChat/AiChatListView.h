@@ -1,6 +1,7 @@
 /* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 
 #ifndef INCLUDE_VIEW_AI_CHAT_AI_CHAT_LIST_VIEW
+
 #define INCLUDE_VIEW_AI_CHAT_AI_CHAT_LIST_VIEW
 
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
@@ -14,22 +15,22 @@ class AiChatListView : public QListView {
     Q_OBJECT Q_PROPERTY(int smoothScrollValue READ smoothScrollValue WRITE setSmoothScrollValue)
 
     public:
-        explicit AiChatListView(QWidget*parent = nullptr);
+        explicit AiChatListView(QWidget* parent = nullptr);
 
-        void setModel(QAbstractItemModel*model) override;
+        void setModel(QAbstractItemModel* model) override;
 
         void scrollToBottom();
 
     protected:
         void mousePressEvent(QMouseEvent* event) override;
 
-        void resizeEvent(QResizeEvent*event) override;
+        void resizeEvent(QResizeEvent* event) override;
 
-        void wheelEvent(QWheelEvent*event) override;
+        void wheelEvent(QWheelEvent* event) override;
 
-        void enterEvent(QEnterEvent*event) override;
+        void enterEvent(QEnterEvent* event) override;
 
-        void leaveEvent(QEvent*event) override;
+        void leaveEvent(QEvent* event) override;
 
     private slots:
         void onCustomScrollValueChanged(int value);
@@ -41,8 +42,8 @@ class AiChatListView : public QListView {
         void checkScrollBarVisibility();
 
     private:
-        SmoothScrollBar*customScrollBar;
-        QPropertyAnimation*scrollAnimation;
+        SmoothScrollBar* customScrollBar;
+        QPropertyAnimation* scrollAnimation;
         int m_smoothScrollValue;
         bool hovered = false;
 
@@ -55,7 +56,6 @@ class AiChatListView : public QListView {
         void updateCustomScrollBar();
 
         void startScrollAnimation(int targetValue);
-
 };
 
 #endif /* INCLUDE_VIEW_AI_CHAT_AI_CHAT_LIST_VIEW */

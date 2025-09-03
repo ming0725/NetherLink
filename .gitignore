@@ -1,6 +1,10 @@
 # Prerequisites
 *.d
 
+*.rar
+*.zip
+*.7z
+
 # Compiled Object files
 *.slo
 *.lo
@@ -32,8 +36,10 @@
 
 build/
 doc/html/
-.vscode/
-.idea/
-.cache/
+bin/*/
+log/
+
+.*/
+
 cmake-build-debug/
 CMakeLists.txt.user

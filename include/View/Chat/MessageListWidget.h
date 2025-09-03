@@ -1,6 +1,7 @@
 // MessageListWidget.h
 
 #ifndef INCLUDE_VIEW_CHAT_MESSAGE_LIST_WIDGET
+
 #define INCLUDE_VIEW_CHAT_MESSAGE_LIST_WIDGET
 
 /* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */

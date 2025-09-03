@@ -1,6 +1,7 @@
 /* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 
 #ifndef INCLUDE_VIEW_AI_CHAT_AI_CHAT_WEB_SOCKET
+
 #define INCLUDE_VIEW_AI_CHAT_AI_CHAT_WEB_SOCKET
 
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
@@ -13,7 +14,7 @@ class AiChatWebSocket : public QObject {
     Q_OBJECT
 
     public:
-        explicit AiChatWebSocket(QObject*parent = nullptr);
+        explicit AiChatWebSocket(QObject* parent = nullptr);
 
         void connectToServer();
 

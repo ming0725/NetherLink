@@ -1,6 +1,7 @@
 /* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 
 #ifndef INCLUDE_VIEW_AI_CHAT_AI_CHAT_LIST_WIDGET
+
 #define INCLUDE_VIEW_AI_CHAT_AI_CHAT_LIST_WIDGET
 
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
@@ -53,7 +54,6 @@ class AiChatListWidget : public CustomScrollArea {
 
         // 获取当前可见区域最上方的消息时间
         QString getCurrentVisibleTimeText() const;
-
 };
 
 #endif /* INCLUDE_VIEW_AI_CHAT_AI_CHAT_LIST_WIDGET */

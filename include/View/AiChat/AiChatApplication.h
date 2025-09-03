@@ -1,16 +1,18 @@
 /* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 
 #ifndef INCLUDE_VIEW_AI_CHAT_AI_CHAT_APPLICATION
+
 #define INCLUDE_VIEW_AI_CHAT_AI_CHAT_APPLICATION
 
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
-
+#include <QObject>
 #include <QStackedWidget>
 
 #include "View/AiChat/AiChatListWidget.h"
 #include "View/Mainwindow/DefaultPage.h"
-#include "View/Mainwindow/MainWindow.h"
-#include "View/Mainwindow/NotificationManager.h"
+
+#include "Util/ToastTip.hpp"
+#include "Window/MainWindow.hpp"
 
 /* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 class AiChatWindow;
@@ -68,12 +70,12 @@ class AiChatApplication : public QWidget {
 
                     // 设置列表样式
                     m_aiChatList->setStyleSheet("border-width:0px; border-style:solid;");
-                    connect(m_button, &QPushButton::clicked, [this] () {
+                    connect(m_button, &QPushButton::clicked, [=, this]() {
                 auto* item = new AiChatListItem(m_aiChatList);
                 item->setTitle("新对话");
                 item->setTime(QDateTime::currentDateTime());
                 m_aiChatList->addChatItem(item);
-                NotificationManager::instance().showMessage("新建成功！", NotificationManager::Success, MainWindow::getInstance());
+                Util::ToastTip::函数_实例().函数_显示消息(Window::MainWindow::getInstance(), Util::ToastTip::枚举_消息类型::ENUM_SUCCESS, "新建成功！");
             });
                 }
 
@@ -101,7 +103,6 @@ class AiChatApplication : public QWidget {
                     y += buttonSize + btnListDist;
                     m_aiChatList->setGeometry(0, y, width(), height() - y);
                 }
-
         };
 
         LeftPane* m_leftPane;

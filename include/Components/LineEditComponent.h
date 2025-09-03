@@ -1,6 +1,7 @@
 /* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 
 #ifndef INCLUDE_COMPONENTS_LINE_EDIT_COMPONENT
+
 #define INCLUDE_COMPONENTS_LINE_EDIT_COMPONENT
 
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
@@ -31,7 +32,7 @@ class LineEditComponent : public QWidget {
     protected:
         void paintEvent(QPaintEvent*) Q_DECL_OVERRIDE;
 
-        bool eventFilter(QObject*watched, QEvent*event) Q_DECL_OVERRIDE;
+        bool eventFilter(QObject* watched, QEvent* event) Q_DECL_OVERRIDE;
 
         void resizeEvent(QResizeEvent*) Q_DECL_OVERRIDE;
 
@@ -50,7 +51,6 @@ class LineEditComponent : public QWidget {
         void lineEditUnfocused();
 
         void lineEditFocused();
-
 };
 
 #endif /* INCLUDE_COMPONENTS_LINE_EDIT_COMPONENT */

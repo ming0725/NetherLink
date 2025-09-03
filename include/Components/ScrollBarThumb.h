@@ -9,6 +9,7 @@
 /* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 
 #ifndef INCLUDE_COMPONENTS_SCROLL_BAR_THUMB
+
 #define INCLUDE_COMPONENTS_SCROLL_BAR_THUMB
 
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
@@ -20,11 +21,11 @@ class ScrollBarThumb : public QWidget {
     Q_OBJECT
 
     public:
-        explicit ScrollBarThumb(QWidget*parent = nullptr);
+        explicit ScrollBarThumb(QWidget* parent = nullptr);
 
         /**
          * @brief 【描述】 Set the Color object
-         * 
+         *
          * @param newColor 【参数注释】 {text}
          */
         void setColor(const QColor &newColor);
@@ -35,7 +36,7 @@ class ScrollBarThumb : public QWidget {
          *
          * @param event 【参数注释】 {text}
          */
-        void paintEvent(QPaintEvent*event) override;
+        void paintEvent(QPaintEvent* event) override;
 
     private:
         QColor color;

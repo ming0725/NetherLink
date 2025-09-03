@@ -41,7 +41,7 @@ void AiChatListItem::initMenu() {
     QAction* renameAction = m_menu->addAction("重命名");
     QAction* deleteAction = m_menu->addAction("删除");
 
-    connect(renameAction, &QAction::triggered, [this] () {
+    connect(renameAction, &QAction::triggered, [=, this]() {
         bool ok = false;
         QString newTitle = QInputDialog::getText(this, "重命名", "新标题：", QLineEdit::Normal, m_title, &ok);
 
@@ -50,7 +50,7 @@ void AiChatListItem::initMenu() {
             emit requestRename(this);
         }
     });
-    connect(deleteAction, &QAction::triggered, [this] () {
+    connect(deleteAction, &QAction::triggered, [=, this]() {
         emit requestDelete(this);
     });
 }

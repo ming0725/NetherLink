@@ -137,7 +137,7 @@ void MessageListItem::leaveEvent(QEvent*) {
 }
 
 void MessageListItem::mousePressEvent(QMouseEvent* event) {
-    QMouseEvent*mouseEvent = static_cast <QMouseEvent*>(event);
+    QMouseEvent* mouseEvent = static_cast <QMouseEvent*>(event);
 
     if (mouseEvent->button() == Qt::LeftButton) {
         emit itemClicked(this);

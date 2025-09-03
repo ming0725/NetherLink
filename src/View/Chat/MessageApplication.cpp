@@ -67,7 +67,7 @@ void MessageApplication::paintEvent(QPaintEvent*) {
     p.drawRect(rect());
 }
 
-void MessageApplication::onMessageClicked(MessageListItem*item) {
+void MessageApplication::onMessageClicked(MessageListItem* item) {
     if (!item)
         return;
     m_chatArea->clearAll();

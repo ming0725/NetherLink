@@ -1,6 +1,7 @@
 /* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 
 #ifndef INCLUDE_ENTITY_CHAT_MESSAGE
+
 #define INCLUDE_ENTITY_CHAT_MESSAGE
 
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
@@ -90,7 +91,6 @@ class ChatMessage {
 
         // 群聊相关属性
         GroupRole role;
-
 };
 
 class TextMessage : public ChatMessage {
@@ -111,7 +111,6 @@ class TextMessage : public ChatMessage {
 
     private:
         QString text;
-
 };
 
 class ImageMessage : public ChatMessage {

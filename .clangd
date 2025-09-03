@@ -1,0 +1,4 @@
+CompileFlags:
+  Add:
+  - "-I${workspaceFolder}/**"
+  - "-ID:/Qt/6.10.0/mingw_64/include/**"

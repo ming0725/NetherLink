@@ -6,12 +6,13 @@
 #include <QClipboard>
 #include <QPainter>
 
+#include "Components/TransparentMenu.h"
 #include "Data/AvatarLoader.h"
 #include "Data/CurrentUser.h"
-#include "Components/TransparentMenu.h"
 #include "View/AiChat/AiChatItemDelegate.h"
 #include "View/AiChat/AiChatListModel.h"
-#include "View/Mainwindow/NotificationManager.h"
+
+#include "Util/ToastTip.hpp"
 
 /* variable --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 const QString docStyleSheet = "h1 { font-size: 20px; font-weight: bold; margin: 0; }""h2 { font-size: 18px; font-weight: bold; margin: 0; }""h3 { font-size: 16px; font-weight: bold; margin: 0; }""h4 { font-size: 15px; font-weight: bold; margin: 0; }""h5 { font-size: 14px; font-weight: bold; margin: 0; }""h6 { font-size: 13px; font-weight: bold; margin: 0; }""p { font-size: 14px; margin: 0; }""code { font-size: 10px; background: #f6f8fa; }""pre { font-family: monospace; font-size: 13px; }""blockquote { padding-left: calc(2ch); margin: 0; border-left: 3px solid #ccc; }""table { border-collapse: collapse; width: 100%; }""th, td { border: 1px solid #aaa; padding: 4px 8px; }""th { background: #eee; }";
@@ -31,13 +32,9 @@ AiChatItemDelegate::AiChatItemDelegate(QWidget* parent) : QStyledItemDelegate(pa
     if (!m_aiAvatar.isNull()) {
         m_aiAvatar = m_aiAvatar.scaled(AVATAR_SIZE, AVATAR_SIZE, Qt::KeepAspectRatio, Qt::SmoothTransformation);
     }
-
-
 }
 
-AiChatItemDelegate::~AiChatItemDelegate() {
-
-}
+AiChatItemDelegate::~AiChatItemDelegate() {}
 
 void AiChatItemDelegate::paint(QPainter* painter, const QStyleOptionViewItem& option, const QModelIndex& index) const {
     painter->save();
@@ -404,8 +401,10 @@ bool AiChatItemDelegate::editorEvent(QEvent* event, QAbstractItemModel* model, c
 
                     if (mouseEvent->button() == Qt::RightButton) {
                         m_selectedText = message->content();
+
                         TransparentMenu* m_contextMenu = new TransparentMenu;
                         QAction* copyAction = new QAction(QIcon(":/icon/copy.png"), "复制", this);
+
                         connect(copyAction, &QAction::triggered, this, &AiChatItemDelegate::onCopyMessage);
                         m_contextMenu->addAction(copyAction);
                         m_contextMenu->popup(mouseEvent->globalPosition().toPoint());
@@ -423,7 +422,7 @@ bool AiChatItemDelegate::editorEvent(QEvent* event, QAbstractItemModel* model, c
 
 void AiChatItemDelegate::onCopyMessage() {
     if (!m_selectedText.isEmpty()) {
-        NotificationManager::instance().showMessage("复制成功！", NotificationManager::Success);
+        Util::ToastTip::函数_实例().函数_显示消息(Util::ToastTip::枚举_消息类型::ENUM_SUCCESS, "复制成功！");
 
         QClipboard* clipboard = QApplication::clipboard();
 

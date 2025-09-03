@@ -1,6 +1,7 @@
 /* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 
 #ifndef INCLUDE_VIEW_CHAT_MESSAGE_APPLICATION
+
 #define INCLUDE_VIEW_CHAT_MESSAGE_APPLICATION
 
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
@@ -29,12 +30,12 @@ class MessageApplication : public QWidget {
         void onMessageClicked(MessageListItem* item);
 
     private:
-        QSplitter*          m_splitter;
-        TopSearchWidget*    m_topSearch;
-        MessageListWidget*  m_msgList;
-        QStackedWidget*     m_rightStack;
-        DefaultPage*        m_defaultPage;
-        ChatArea*           m_chatArea;
+        QSplitter* m_splitter;
+        TopSearchWidget* m_topSearch;
+        MessageListWidget* m_msgList;
+        QStackedWidget* m_rightStack;
+        DefaultPage* m_defaultPage;
+        ChatArea* m_chatArea;
 };
 
 #endif /* INCLUDE_VIEW_CHAT_MESSAGE_APPLICATION */

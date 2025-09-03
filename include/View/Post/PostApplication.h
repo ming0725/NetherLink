@@ -1,6 +1,7 @@
 /* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 
 #ifndef INCLUDE_VIEW_POST_POST_APPLICATION
+
 #define INCLUDE_VIEW_POST_POST_APPLICATION
 
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
@@ -35,9 +36,9 @@ class PostApplication : public QWidget {
 
         void onPostCreated();
 
-        PostApplicationBar*   m_bar;
+        PostApplicationBar* m_bar;
         QWidget* m_overlay = nullptr;
-        QStackedWidget*       m_stack;
+        QStackedWidget* m_stack;
         QImage noiseTexture;
         PostDetailView* m_detailView;
         PostCreatePage* m_createPage;

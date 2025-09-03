@@ -2,7 +2,6 @@
 
 #include <QApplication>
 #include <QGuiApplication>
-#include <QJsonDocument>
 #include <QJsonObject>
 #include <QPainter>
 #include <QScreen>
@@ -11,11 +10,13 @@
 #include "Network/NetworkManager.h"
 #include "View/Friend/ApplyWindow.h"
 #include "View/Friend/SearchFriendWindow.h"
-#include "View/Mainwindow/NotificationManager.h"
+
+#include "Util/ToastTip.hpp"
 
 /* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
-ApplyWindow::ApplyWindow(Type type, const QString& id, const QString& name, const QString& avatarUrl, QWidget* parent) : FramelessWindow(parent), type(type), targetId(id), targetName(name), targetAvatar(avatarUrl) {
+ApplyWindow::ApplyWindow(Type type, const QString& id, const QString& name, const QString& avatarUrl, QWidget* parent) : QWidget(parent), type(type), targetId(id), targetName(name), targetAvatar(avatarUrl) {
+    setWindowFlags(Qt::FramelessWindowHint);
     setAttribute(Qt::WA_DeleteOnClose);
     setMinimumWidth(WINDOW_MIN_WIDTH);
     setMinimumHeight(WINDOW_MIN_HEIGHT);
@@ -134,7 +135,7 @@ void ApplyWindow::setupConnections() {
     connect(btnSend, &QPushButton::clicked, this, &ApplyWindow::onSendClicked);
 
     // 添加好友请求响应的处理
-    connect(&NetworkManager::instance(), &NetworkManager::friendRequestResponse, this, [this] (bool success, const QString& message) {
+    connect(&NetworkManager::instance(), &NetworkManager::friendRequestResponse, this, [=, this](bool success, const QString& message) {
         // 重新启用发送按钮
         btnSend->setEnabled(true);
 
@@ -146,19 +147,18 @@ void ApplyWindow::setupConnections() {
                 searchFriendWindow->show();
                 searchFriendWindow->raise();
                 searchFriendWindow->activateWindow();
-                NotificationManager::instance().showMessage(message, NotificationManager::Success, searchFriendWindow);
+                Util::ToastTip::函数_实例().函数_显示消息(searchFriendWindow, Util::ToastTip::枚举_消息类型::ENUM_SUCCESS, message);
             }
             close();
         } else {
             // 失败时在当前窗口显示错误提示
-            NotificationManager::instance().showMessage(message, NotificationManager::Error, this);
+            Util::ToastTip::函数_实例().函数_显示消息(this, Util::ToastTip::枚举_消息类型::ENUM_ERROR, message);
         }
     });
 }
 
-void ApplyWindow::resizeEvent(QResizeEvent* event) {
-    FramelessWindow::resizeEvent(event);
-
+void ApplyWindow::resizeEvent(QResizeEvent*) {
+    // FramelessWindow::resizeEvent(event);
     int w = width();
 
     // 设置标题和关闭按钮位置
@@ -207,16 +207,25 @@ void ApplyWindow::paintEvent(QPaintEvent*) {
     painter.drawRect(rect());
 }
 
-bool ApplyWindow::eventFilter(QObject* watched, QEvent* ev) {
-    if (watched == btnClose) {
-        if (ev->type() == QEvent::Enter) {
-            btnClose->setIcon(iconCloseHover);
-        } else if (ev->type() == QEvent::Leave) {
-            btnClose->setIcon(iconClose);
-        }
-    }
-    return (FramelessWindow::eventFilter(watched, ev));
-}
+// bool ApplyWindow::eventFilter(QObject* watched, QEvent* ev) {
+
+// if (watched == btnClose) {
+
+// if (ev->type() == QEvent::Enter) {
+
+// btnClose->setIcon(iconCloseHover);
+
+// } else if (ev->type() == QEvent::Leave) {
+
+// btnClose->setIcon(iconClose);
+
+// }
+
+// }
+
+// return (FramelessWindow::eventFilter(watched, ev));
+
+// }
 
 void ApplyWindow::onCancelClicked() {
     close();

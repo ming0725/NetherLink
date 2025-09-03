@@ -1,96 +1,112 @@
-#pragma once
+/* guard ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
 
-#include <QPushButton>
+#ifndef INCLUDE_COMPONENTS_CUSTOM_PUSH_BUTTON
+
+#define INCLUDE_COMPONENTS_CUSTOM_PUSH_BUTTON
+
+/* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
+
 #include <QColor>
 #include <QPropertyAnimation>
+#include <QPushButton>
 
-class CustomPushButton : public QPushButton
-{
-Q_OBJECT
-    Q_PROPERTY(int radius          READ radius          WRITE setRadius)
-    Q_PROPERTY(QColor normalColor  READ normalColor     WRITE setNormalColor)
-    Q_PROPERTY(QColor hoverColor   READ hoverColor      WRITE setHoverColor)
-    Q_PROPERTY(QColor pressColor   READ pressColor      WRITE setPressColor)
-    Q_PROPERTY(QColor disabledColor READ disabledColor  WRITE setDisabledColor)
-    Q_PROPERTY(QColor currentColor READ currentColor    WRITE setCurrentColor USER true)
-    Q_PROPERTY(QColor textColor    READ textColor       WRITE setTextColor)
-    Q_PROPERTY(QColor borderColor  READ borderColor     WRITE setBorderColor)
-    Q_PROPERTY(int borderWidth     READ borderWidth     WRITE setBorderWidth)
-    Q_PROPERTY(bool isFlat         READ isFlat          WRITE setFlat)
+/* class ------------------------------------------------------------------ 80 // ! ----------------------------- 120 */
+class CustomPushButton : public QPushButton {
+    Q_OBJECT Q_PROPERTY(int radius READ radius WRITE setRadius) Q_PROPERTY(QColor backgroundColor READ backgroundColor WRITE setBackgroundColor USER true) Q_PROPERTY(QColor hoverColor READ hoverColor WRITE setHoverColor) Q_PROPERTY(QColor pressColor READ pressColor WRITE setPressColor) Q_PROPERTY(QColor textColor READ textColor WRITE setTextColor) Q_PROPERTY(QColor borderColor READ borderColor WRITE setBorderColor) Q_PROPERTY(int borderWidth READ borderWidth WRITE setBorderWidth) Q_PROPERTY(bool isFlat READ isFlat WRITE setFlat)
 
-public:
-    explicit CustomPushButton(QWidget* parent = nullptr);
-    explicit CustomPushButton(const QString& text, QWidget* parent = nullptr);
-    ~CustomPushButton() override;
+    public:
+        explicit CustomPushButton(QWidget* parent = nullptr);
 
-    // 圆角
-    int  radius() const;
-    void setRadius(int radius);
+        explicit CustomPushButton(const QString& text, QWidget* parent = nullptr);
 
-    // 各种色
-    QColor normalColor() const;
-    void   setNormalColor(const QColor& c);
+        ~CustomPushButton() override;
 
-    QColor hoverColor() const;
-    void   setHoverColor(const QColor& c);
+        // 圆角相关
+        int radius() const;
 
-    QColor pressColor() const;
-    void   setPressColor(const QColor& c);
+        void setRadius(int radius);
 
-    QColor disabledColor() const;
-    void   setDisabledColor(const QColor& c);
+        // 颜色相关
+        QColor backgroundColor() const;
 
-    QColor currentColor() const;
-    void   setCurrentColor(const QColor& c);
+        void setBackgroundColor(const QColor& color);
 
-    QColor textColor() const;
-    void   setTextColor(const QColor& c);
+        QColor hoverColor() const;
 
-    QColor borderColor() const;
-    void   setBorderColor(const QColor& c);
+        void setHoverColor(const QColor& color);
 
-    int borderWidth() const;
-    void setBorderWidth(int w);
+        QColor pressColor() const;
 
-    bool isFlat() const;
-    void setFlat(bool flat);
+        void setPressColor(const QColor& color);
 
-    // 动画时长
-    void setAnimationDuration(int ms);
-    int  animationDuration() const;
+        QColor textColor() const;
 
-    // 预设样式
-    void setDefaultStyle();
-    void setPrimaryStyle();
-    void setSuccessStyle();
-    void setWarningStyle();
-    void setDangerStyle();
+        void setTextColor(const QColor& color);
 
-protected:
-    void enterEvent(QEnterEvent*  event) override;
-    void leaveEvent(QEvent*       event) override;
-    void mousePressEvent(QMouseEvent* event) override;
-    void mouseReleaseEvent(QMouseEvent* event) override;
-    void paintEvent(QPaintEvent*   event) override;
-    bool event(QEvent* e) override;
+        QColor borderColor() const;
 
-private:
-    void initializeButton();
-    void applyStateColor();
+        void setBorderColor(const QColor& color);
 
-private:
-    int                m_radius;
-    QColor             m_normalColor;
-    QColor             m_hoverColor;
-    QColor             m_pressColor;
-    QColor             m_disabledColor;
-    QColor             m_currentColor;
-    QColor             m_textColor;
-    QColor             m_borderColor;
-    int                m_borderWidth;
-    bool               m_isFlat;
-    int                m_animationDuration;
-    bool               m_isHovered;
-    bool               m_isPressed;
-    QPropertyAnimation* m_colorAnimation;
+        // 边框相关
+        int borderWidth() const;
+
+        void setBorderWidth(int width);
+
+        // 扁平化
+        bool isFlat() const;
+
+        void setFlat(bool flat);
+
+        // 动画时长
+        void setAnimationDuration(int duration);
+
+        int animationDuration() const;
+
+        // 预设样式
+        void setDefaultStyle();
+
+        void setPrimaryStyle();
+
+        void setSuccessStyle();
+
+        void setWarningStyle();
+
+        void setDangerStyle();
+
+        // 自定义样式
+        void setCustomStyle(const QColor& background, const QColor& hover, const QColor& press, const QColor& text);
+
+    protected:
+        void enterEvent(QEnterEvent* event) override;
+
+        void leaveEvent(QEvent* event) override;
+
+        void mousePressEvent(QMouseEvent* event) override;
+
+        void mouseReleaseEvent(QMouseEvent* event) override;
+
+        void paintEvent(QPaintEvent* event) override;
+
+        bool event(QEvent* e) override;
+
+    private:
+        void initializeButton();
+
+        void updateStyle();
+
+    private:
+        int m_radius;
+        QColor m_backgroundColor;
+        QColor m_hoverColor;
+        QColor m_pressColor;
+        QColor m_textColor;
+        QColor m_borderColor;
+        int m_borderWidth;
+        bool m_isFlat;
+        int m_animationDuration;
+        bool m_isHovered;
+        bool m_isPressed;
+        QPropertyAnimation* m_backgroundAnimation;
 };
+
+#endif /* INCLUDE_COMPONENTS_CUSTOM_PUSH_BUTTON */

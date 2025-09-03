@@ -2,7 +2,6 @@
 
 #include <QFileDialog>
 #include <QHttpMultiPart>
-#include <QJsonDocument>
 #include <QJsonObject>
 #include <QMessageBox>
 #include <QMimeDatabase>
@@ -10,9 +9,10 @@
 
 #include "Data/CurrentUser.h"
 #include "Network/NetworkConfig.h"
-#include "View/Mainwindow/MainWindow.h"
-#include "View/Mainwindow/NotificationManager.h"
+
+#include "Util/ToastTip.hpp"
 #include "View/Post/PostCreatePage.h"
+#include "Window/MainWindow.hpp"
 
 /* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
@@ -166,7 +166,7 @@ void PostCreatePage::sendPost() {
     QNetworkReply* reply = manager->post(request, multiPart);
 
     multiPart->setParent(reply);
-    connect(reply, &QNetworkReply::finished, this, [=] () {
+    connect(reply, &QNetworkReply::finished, this, [=, this]() {
         if (reply->error() == QNetworkReply::NoError) {
             QByteArray data = reply->readAll();
             QJsonDocument doc = QJsonDocument::fromJson(data);
@@ -180,10 +180,10 @@ void PostCreatePage::sendPost() {
                 m_imageButton->show();
             } else {
                 QJsonObject obj = doc.object();
-                NotificationManager::instance().showMessage(tr("发布失败: %1").arg(obj.value("message").toString()), NotificationManager::Error, MainWindow::getInstance());
+                Util::ToastTip::函数_实例().函数_显示消息(Window::MainWindow::getInstance(), Util::ToastTip::枚举_消息类型::ENUM_ERROR, tr("发布失败: %1").arg(obj.value("message").toString()));
             }
         } else {
-            NotificationManager::instance().showMessage(tr("网络错误: %1").arg(reply->errorString()), NotificationManager::Error, MainWindow::getInstance());
+            Util::ToastTip::函数_实例().函数_显示消息(Window::MainWindow::getInstance(), Util::ToastTip::枚举_消息类型::ENUM_ERROR, tr("网络错误: %1").arg(reply->errorString()));
         }
         reply->deleteLater();
         manager->deleteLater();

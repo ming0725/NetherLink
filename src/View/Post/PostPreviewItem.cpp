@@ -5,7 +5,8 @@
 
 #include "Data/CurrentUser.h"
 #include "Network/NetworkConfig.h"
-#include "View/Mainwindow/NotificationManager.h"
+
+#include "Util/ToastTip.hpp"
 #include "View/Post/PostPreviewItem.h"
 
 /* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
@@ -53,7 +54,7 @@ void PostPreviewItem::downloadAndSetupImages() {
 
     QNetworkReply* reply = m_networkManager.get(request);
 
-    connect(reply, &QNetworkReply::finished, this, [this, reply] () {
+    connect(reply, &QNetworkReply::finished, this, [this, reply]() {
         if (reply->error() == QNetworkReply::NoError) {
             QByteArray data = reply->readAll();
             QPixmap origPostImage;
@@ -204,19 +205,19 @@ void PostPreviewItem::onClickLike() {
 
     QNetworkReply* reply = m_networkManager.post(request, QByteArray());
 
-    connect(reply, &QNetworkReply::finished, this, [this, reply, oldLiked, oldCount] () {
+    connect(reply, &QNetworkReply::finished, this, [this, reply, oldLiked, oldCount]() {
         if (reply->error() != QNetworkReply::NoError) {
             // 网络或服务器错误，回滚状态并通知
             m_liked = oldLiked;
             m_likeCount = oldCount;
             setupUI();
             resizeEvent(nullptr);
-            NotificationManager::instance().showMessage(tr("点赞失败: %1").arg(reply->errorString()), NotificationManager::Error, this);
+            Util::ToastTip::函数_实例().函数_显示消息(this, Util::ToastTip::枚举_消息类型::ENUM_ERROR, tr("点赞失败: %1").arg(reply->errorString()));
         }
         reply->deleteLater();
     });
 }
 
-void PostPreviewItem::showEvent(QShowEvent*ev) {
+void PostPreviewItem::showEvent(QShowEvent* ev) {
     QWidget::showEvent(ev);
 }

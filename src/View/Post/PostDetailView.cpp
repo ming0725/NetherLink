@@ -1,17 +1,19 @@
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
+#include <QGraphicsOpacityEffect>
 #include <QJsonArray>
-#include <QJsonDocument>
 #include <QJsonObject>
 #include <QNetworkReply>
 #include <QPainterPath>
 
+#include "Components/CustomScrollArea.h"
 #include "Data/AvatarLoader.h"
 #include "Data/CurrentUser.h"
 #include "Network/NetworkConfig.h"
-#include "View/Mainwindow/MainWindow.h"
-#include "View/Mainwindow/NotificationManager.h"
+
+#include "Util/ToastTip.hpp"
 #include "View/Post/PostDetailView.h"
+#include "Window/MainWindow.hpp"
 
 /* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
@@ -139,12 +141,12 @@ void PostDetailView::setupUI() {
     m_commentCount = new QLabel("91", this);
 
     // 3. 连接信号槽
-    connect(m_followBtn, &QPushButton::clicked, this, [this] () {
+    connect(m_followBtn, &QPushButton::clicked, this, [=, this]() {
         m_isFollowed = !m_isFollowed;
         m_followBtn->setText(m_isFollowed ? "已关注" : "关注");
         emit followClicked(m_isFollowed);
     });
-    connect(m_likeBtn, &QPushButton::clicked, this, [this] () {
+    connect(m_likeBtn, &QPushButton::clicked, this, [=, this]() {
         m_isLiked = !m_isLiked;
         m_likeBtn->setIcon(QIcon(m_isLiked ? ":/icon/full_heart.png" : ":/icon/heart.png"));
         m_likes += m_isLiked ? 1 : -1;
@@ -154,7 +156,7 @@ void PostDetailView::setupUI() {
     connect(m_commentBtn, &QPushButton::clicked, this, &PostDetailView::commentClicked);
 
     // 连接评论输入框的回车信号
-    connect(commentLineEdit->getLineEdit(), &QLineEdit::returnPressed, this, [this] () {
+    connect(commentLineEdit->getLineEdit(), &QLineEdit::returnPressed, this, [=, this]() {
         QString content = commentLineEdit->getLineEdit()->text().trimmed();
 
         if (!content.isEmpty()) {
@@ -464,7 +466,7 @@ void PostDetailView::addComment(const QString& content) {
 void PostDetailView::sendComment(const QString &content) {
     // 获取token和主窗口
     QString token = CurrentUser::instance().getToken();
-    QWidget* mainWindow = MainWindow::getInstance();
+    QWidget* mainWindow = Window::MainWindow::getInstance();
 
     // 构建请求URL
     QString baseUrl = NetworkConfig::instance().getHttpAddress();
@@ -491,7 +493,7 @@ void PostDetailView::sendComment(const QString &content) {
     QNetworkReply* reply = manager->post(request, jsonData);
 
     // 处理响应
-    connect(reply, &QNetworkReply::finished, this, [=] () {
+    connect(reply, &QNetworkReply::finished, this, [=, this]() {
         reply->deleteLater();
         manager->deleteLater();
 
@@ -502,12 +504,12 @@ void PostDetailView::sendComment(const QString &content) {
 
             if (doc.isObject()) {
                 // 评论成功
-                NotificationManager::instance().showMessage("评论发布成功", NotificationManager::Success, mainWindow);
+                Util::ToastTip::函数_实例().函数_显示消息(mainWindow, Util::ToastTip::枚举_消息类型::ENUM_SUCCESS, "评论发布成功");
 
                 // 这里可以添加刷新评论列表的代码
                 // emit commentAdded(); // 如果你有这样的信号
             } else {
-                NotificationManager::instance().showMessage("评论发布失败：返回数据格式错误", NotificationManager::Error, mainWindow);
+                Util::ToastTip::函数_实例().函数_显示消息(mainWindow, Util::ToastTip::枚举_消息类型::ENUM_ERROR, "评论发布失败：返回数据格式错误");
             }
         } else {
             // 请求失败，解析错误信息
@@ -522,13 +524,13 @@ void PostDetailView::sendComment(const QString &content) {
                     errorMessage = errorObj["error"].toString();
                 }
             }
-            NotificationManager::instance().showMessage(errorMessage, NotificationManager::Error, mainWindow);
+            Util::ToastTip::函数_实例().函数_显示消息(mainWindow, Util::ToastTip::枚举_消息类型::ENUM_ERROR, errorMessage);
         }
     });
 
     // 处理网络错误
-    connect(reply, &QNetworkReply::errorOccurred, this, [=] (QNetworkReply::NetworkError code) {
+    connect(reply, &QNetworkReply::errorOccurred, this, [=, this](QNetworkReply::NetworkError code) {
         QString errorMessage = QString("网络错误：%1").arg(code);
-        NotificationManager::instance().showMessage(errorMessage, NotificationManager::Error, mainWindow);
+        Util::ToastTip::函数_实例().函数_显示消息(mainWindow, Util::ToastTip::枚举_消息类型::ENUM_ERROR, errorMessage);
     });
 }

@@ -1,6 +1,5 @@
 /* include ---------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
-#include <QJsonDocument>
 #include <QSqlError>
 
 #include "Data/CurrentUser.h"

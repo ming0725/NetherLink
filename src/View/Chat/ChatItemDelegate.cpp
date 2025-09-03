@@ -16,14 +16,15 @@
 #include "View/Chat/ChatArea.h"
 #include "View/Chat/ChatItemDelegate.h"
 #include "View/Chat/ChatListModel.h"
-#include "View/Mainwindow/MainWindow.h"
-#include "View/Mainwindow/NotificationManager.h"
+
+#include "Util/ToastTip.hpp"
+#include "Window/MainWindow.hpp"
 
 /* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
 ChatItemDelegate::ChatItemDelegate(QObject* parent) : QStyledItemDelegate(parent) {
     // 连接头像加载完成信号
-    connect(&AvatarLoader::instance(), &AvatarLoader::avatarLoadStatusChanged, this, [this] (AvatarLoadEvent* event) {
+    connect(&AvatarLoader::instance(), &AvatarLoader::avatarLoadStatusChanged, this, [=, this](AvatarLoadEvent* event) {
         if (event->status == AvatarLoadEvent::Status::Success) {
             onAvatarLoaded(event->id, event->avatar);
         }
@@ -511,10 +512,10 @@ void ChatItemDelegate::showContextMenu(const QPoint& pos, const QModelIndex& ind
         QIcon copyIcon(":/icon/copy.png");
         QAction* copyAction = menu->addAction(copyIcon, "复制");
 
-        connect(copyAction, &QAction::triggered, [message, index, model = const_cast <QAbstractItemModel*>(index.model())] () {
+        connect(copyAction, &QAction::triggered, [message, index, model = const_cast <QAbstractItemModel*>(index.model())]() {
             const TextMessage* textMessage = static_cast <const TextMessage*>(message);
             QApplication::clipboard()->setText(textMessage->getText());
-            NotificationManager::instance().showMessage("复制成功！", NotificationManager::Success, MainWindow::getInstance());
+            Util::ToastTip::函数_实例().函数_显示消息(Window::MainWindow::getInstance(), Util::ToastTip::枚举_消息类型::ENUM_SUCCESS, "复制成功！");
 
             // 取消选中状态
             model->setData(index, false, Qt::UserRole + 1);
@@ -526,10 +527,10 @@ void ChatItemDelegate::showContextMenu(const QPoint& pos, const QModelIndex& ind
     QIcon deleteIcon(":/icon/delete.png");
     QAction* deleteAction = menu->addAction(deleteIcon, "删除");
 
-    connect(deleteAction, &QAction::triggered, [index, model = index.model()] () {
+    connect(deleteAction, &QAction::triggered, [index, model = index.model()]() {
         if (ChatListModel* chatModel = qobject_cast <ChatListModel*>(const_cast <QAbstractItemModel*>(model))) {
             chatModel->removeMessage(index.row());
-            NotificationManager::instance().showMessage("删除成功！", NotificationManager::Success, MainWindow::getInstance());
+            Util::ToastTip::函数_实例().函数_显示消息(Window::MainWindow::getInstance(), Util::ToastTip::枚举_消息类型::ENUM_SUCCESS, "删除成功！");
         }
     });
 
@@ -537,7 +538,7 @@ void ChatItemDelegate::showContextMenu(const QPoint& pos, const QModelIndex& ind
     menu->popup(pos);
 
     // 菜单关闭后自动删除，并取消选中状态
-    connect(menu, &QMenu::aboutToHide, [index, model = const_cast <QAbstractItemModel*>(index.model())] () {
+    connect(menu, &QMenu::aboutToHide, [index, model = const_cast <QAbstractItemModel*>(index.model())]() {
         model->setData(index, false, Qt::UserRole + 1);
     });
 }

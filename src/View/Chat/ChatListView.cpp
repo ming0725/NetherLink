@@ -12,7 +12,7 @@
 
 /* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
-ChatListView::ChatListView(QWidget*parent) : QListView(parent), m_smoothScrollValue(0) {
+ChatListView::ChatListView(QWidget* parent) : QListView(parent), m_smoothScrollValue(0) {
     setVerticalScrollMode(QAbstractItemView::ScrollPerPixel);
     setHorizontalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
     setVerticalScrollBarPolicy(Qt::ScrollBarAlwaysOff);
@@ -35,7 +35,7 @@ ChatListView::ChatListView(QWidget*parent) : QListView(parent), m_smoothScrollVa
     connect(scrollAnimation, &QPropertyAnimation::finished, this, &ChatListView::onAnimationFinished);
 }
 
-void ChatListView::setModel(QAbstractItemModel*model) {
+void ChatListView::setModel(QAbstractItemModel* model) {
     if (this->model()) {
         disconnect(this->model(), &QAbstractItemModel::rowsInserted, this, &ChatListView::onModelRowsChanged);
         disconnect(this->model(), &QAbstractItemModel::rowsRemoved, this, &ChatListView::onModelRowsChanged);
@@ -94,7 +94,7 @@ void ChatListView::mousePressEvent(QMouseEvent* event) {
     QListView::mousePressEvent(event);
 }
 
-void ChatListView::resizeEvent(QResizeEvent*event) {
+void ChatListView::resizeEvent(QResizeEvent* event) {
     QListView::resizeEvent(event);
 
     // 更新自定义滚动条位置和大小
@@ -112,7 +112,7 @@ void ChatListView::resizeEvent(QResizeEvent*event) {
     }
 }
 
-void ChatListView::wheelEvent(QWheelEvent*event) {
+void ChatListView::wheelEvent(QWheelEvent* event) {
     if (model() && (model()->rowCount() > 0)) {
         // 检查是否真的需要滚动
         QScrollBar* vScrollBar = verticalScrollBar();
@@ -225,7 +225,7 @@ void ChatListView::onAnimationFinished() {
     updateCustomScrollBar();
 }
 
-bool ChatListView::viewportEvent(QEvent*event) {
+bool ChatListView::viewportEvent(QEvent* event) {
     // 处理所有视口相关的事件
     switch (event->type()) {
         case QEvent::Enter:
@@ -256,7 +256,7 @@ bool ChatListView::viewportEvent(QEvent*event) {
     return (QListView::viewportEvent(event));
 }
 
-void ChatListView::enterEvent(QEnterEvent*event) {
+void ChatListView::enterEvent(QEnterEvent* event) {
     QListView::enterEvent(event);
     hovered = true;
 
@@ -265,7 +265,7 @@ void ChatListView::enterEvent(QEnterEvent*event) {
     }
 }
 
-void ChatListView::leaveEvent(QEvent*event) {
+void ChatListView::leaveEvent(QEvent* event) {
     QListView::leaveEvent(event);
 
     QPoint globalPos = QCursor::pos();

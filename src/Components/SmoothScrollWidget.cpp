@@ -10,13 +10,13 @@
 
 /* function --------------------------------------------------------------- 80 // ! ----------------------------- 120 */
 
-SmoothScrollWidget::SmoothScrollWidget(QWidget*parent) : QWidget(parent), scrollArea(new ScrollAreaNoWheel(this)), scrollBarThumb(new ScrollBarThumb(this)), contentWidget(new QWidget), scrollAnimation(new QTimeLine(300, this)), contentOffset(0), thumbOffset(0), dragging(false) {
+SmoothScrollWidget::SmoothScrollWidget(QWidget* parent) : QWidget(parent), scrollArea(new ScrollAreaNoWheel(this)), scrollBarThumb(new ScrollBarThumb(this)), contentWidget(new QWidget), scrollAnimation(new QTimeLine(300, this)), contentOffset(0), thumbOffset(0), dragging(false) {
     scrollBarThumb->installEventFilter(this);
     installEventFilter(this);
     scrollArea->viewport()->installEventFilter(this);
     contentWidget->installEventFilter(this);
 
-    auto*opacity = new QGraphicsOpacityEffect(scrollBarThumb);
+    auto* opacity = new QGraphicsOpacityEffect(scrollBarThumb);
 
     opacity->setOpacity(0.0);
     scrollBarThumb->setGraphicsEffect(opacity);
@@ -25,7 +25,7 @@ SmoothScrollWidget::SmoothScrollWidget(QWidget*parent) : QWidget(parent), scroll
     scrollArea->setGeometry(rect());
     scrollAnimation->setEasingCurve(QEasingCurve::OutCubic);
     scrollAnimation->setUpdateInterval(0);
-    connect(scrollAnimation, &QTimeLine::frameChanged, this, [=] (int value) {
+    connect(scrollAnimation, &QTimeLine::frameChanged, this, [=, this](int value) {
         int maxOffset = qMax(0, contentWidget->height() - height());
         contentOffset = qBound(0, value, maxOffset);
         contentWidget->move(0, -contentOffset);
@@ -37,13 +37,13 @@ SmoothScrollWidget::SmoothScrollWidget(QWidget*parent) : QWidget(parent), scroll
 
 SmoothScrollWidget::~SmoothScrollWidget() {}
 
-void SmoothScrollWidget::resizeEvent(QResizeEvent*event) {
+void SmoothScrollWidget::resizeEvent(QResizeEvent* event) {
     QWidget::resizeEvent(event);
     scrollArea->setGeometry(rect());
     updateScrollBar();
 }
 
-void SmoothScrollWidget::wheelEvent(QWheelEvent*event) {
+void SmoothScrollWidget::wheelEvent(QWheelEvent* event) {
     if (contentWidget->height() <= height()) {
         event->ignore();
 
@@ -56,26 +56,26 @@ void SmoothScrollWidget::wheelEvent(QWheelEvent*event) {
     event->accept();
 }
 
-bool SmoothScrollWidget::eventFilter(QObject*obj, QEvent*event) {
+bool SmoothScrollWidget::eventFilter(QObject* obj, QEvent* event) {
     if (event->type() == QEvent::Enter) {
         if (contentWidget->height() > height()) {
             scrollBarThumb->show();
 
-            auto*anim = new QPropertyAnimation(scrollBarThumb->graphicsEffect(), "opacity", this);
+            auto* anim = new QPropertyAnimation(scrollBarThumb->graphicsEffect(), "opacity", this);
 
             anim->setDuration(150);
             anim->setEndValue(1.0);
             anim->start(QAbstractAnimation::DeleteWhenStopped);
         }
     } else if (event->type() == QEvent::Leave) {
-        auto*anim = new QPropertyAnimation(scrollBarThumb->graphicsEffect(), "opacity", this);
+        auto* anim = new QPropertyAnimation(scrollBarThumb->graphicsEffect(), "opacity", this);
 
         anim->setDuration(150);
         anim->setEndValue(0.0);
         connect(anim, &QPropertyAnimation::finished, scrollBarThumb, &QWidget::hide);
         anim->start(QAbstractAnimation::DeleteWhenStopped);
     } else if (obj == scrollBarThumb) {
-        auto*me = static_cast <QMouseEvent*>(event);
+        auto* me = static_cast <QMouseEvent*>(event);
 
         if ((event->type() == QEvent::MouseButtonPress) && (me->button() == Qt::LeftButton)) {
             dragging = true;
