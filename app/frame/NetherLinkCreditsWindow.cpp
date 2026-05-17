@@ -22,7 +22,7 @@ namespace {
 const QString kBackgroundSource(QStringLiteral(":/resources/icon/options_background.png"));
 const QString kLogoSource(QStringLiteral(":/resources/icon/netherlink.png"));
 
-constexpr int kFrameIntervalMs = 33;
+constexpr int kFrameIntervalMs = 16;
 constexpr int kRevealDurationMs = 2400;
 constexpr int kCreditsPauseAfterRevealMs = 0;
 constexpr qreal kBackgroundSpeed = 15;
@@ -92,6 +92,7 @@ NetherLinkCreditsWindow::NetherLinkCreditsWindow(QWidget* parent)
     setAttribute(Qt::WA_NoSystemBackground);
     setAttribute(Qt::WA_NoMousePropagation);
     setFocusPolicy(Qt::StrongFocus);
+    m_frameTimer->setTimerType(Qt::PreciseTimer);
     m_clock.start();
 
     connect(m_frameTimer, &QTimer::timeout, this, [this]() {
@@ -342,7 +343,8 @@ void NetherLinkCreditsWindow::rebuildBackgroundStrip(qreal devicePixelRatio)
         return;
     }
 
-    const QSize logicalSize(width(), height() + m_backgroundTileSize.height());
+    const int backgroundTravel = qMax(0, qCeil(totalRuntimeMs() / 1000.0 * kBackgroundSpeed));
+    const QSize logicalSize(width(), height() + backgroundTravel + m_backgroundTileSize.height());
     if (!m_backgroundStrip.isNull()
         && m_backgroundStripSize == logicalSize
         && sameDevicePixelRatio(m_backgroundStripDevicePixelRatio, dpr)) {
@@ -461,12 +463,13 @@ void NetherLinkCreditsWindow::drawBackground(QPainter& painter)
         return;
     }
 
-    const int tileHeight = m_backgroundTileSize.height();
-    const int offsetY = tileHeight > 0
-        ? qRound(std::fmod(m_clock.elapsed() / 1000.0 * kBackgroundSpeed, tileHeight))
-        : 0;
-    painter.drawPixmap(QRect(0, -offsetY, m_backgroundStripSize.width(), m_backgroundStripSize.height()),
-                       m_backgroundStrip);
+    const int maxOffsetY = qMax(0, m_backgroundStripSize.height() - height());
+    const int offsetY = qBound(0,
+                               qRound(m_clock.elapsed() / 1000.0 * kBackgroundSpeed),
+                               maxOffsetY);
+    painter.drawPixmap(QRect(0, 0, width(), height()),
+                       m_backgroundStrip,
+                       QRect(0, offsetY, width(), height()));
 }
 
 void NetherLinkCreditsWindow::drawCredits(QPainter& painter)
@@ -476,11 +479,17 @@ void NetherLinkCreditsWindow::drawCredits(QPainter& painter)
         return;
     }
 
-    painter.drawPixmap(QRect(0,
-                             qRound(scrollOffset()),
-                             m_creditsPixmapSize.width(),
-                             m_creditsPixmapSize.height()),
-                       m_creditsPixmap);
+    const int creditsY = qRound(scrollOffset());
+    const int sourceY = qMax(0, -creditsY);
+    const int targetY = qMax(0, creditsY);
+    const int visibleHeight = qMin(height() - targetY, m_creditsPixmapSize.height() - sourceY);
+    if (visibleHeight <= 0) {
+        return;
+    }
+
+    painter.drawPixmap(QRect(0, targetY, m_creditsPixmapSize.width(), visibleHeight),
+                       m_creditsPixmap,
+                       QRect(0, sourceY, m_creditsPixmapSize.width(), visibleHeight));
 }
 
 void NetherLinkCreditsWindow::drawEntry(QPainter& painter, const CreditEntry& entry, qreal y, qreal height)
@@ -777,9 +786,28 @@ qreal NetherLinkCreditsWindow::scrollOffset() const
 {
     const qreal startDelay = kRevealDurationMs + kCreditsPauseAfterRevealMs;
     const qreal scrollMs = qMax<qreal>(0.0, m_clock.elapsed() - startDelay);
-    const qreal scrollStartY = height() + 48.0;
     const qreal progress = scrollMs / 1000.0 * kCreditsSpeed;
-    return scrollStartY - progress;
+    return scrollStartY() - progress;
+}
+
+qreal NetherLinkCreditsWindow::scrollStartY() const
+{
+    return height() + 48.0;
+}
+
+qreal NetherLinkCreditsWindow::scrollDurationMs() const
+{
+    const qreal creditsHeight = visibleCreditsHeight();
+    if (creditsHeight <= 0.0 || kCreditsSpeed <= 0.0) {
+        return 0.0;
+    }
+
+    return (scrollStartY() + creditsHeight) / kCreditsSpeed * 1000.0;
+}
+
+qreal NetherLinkCreditsWindow::totalRuntimeMs() const
+{
+    return kRevealDurationMs + kCreditsPauseAfterRevealMs + scrollDurationMs();
 }
 
 qreal NetherLinkCreditsWindow::totalCreditsHeight() const

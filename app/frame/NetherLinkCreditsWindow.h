@@ -90,7 +90,10 @@ private:
     qreal entryHeight(const CreditEntry& entry) const;
     qreal logoHeight() const;
     bool isScrollFinished() const;
+    qreal scrollStartY() const;
     qreal scrollOffset() const;
+    qreal scrollDurationMs() const;
+    qreal totalRuntimeMs() const;
     qreal totalCreditsHeight() const;
     qreal visibleCreditsHeight() const;
 

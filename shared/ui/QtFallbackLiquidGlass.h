@@ -27,7 +27,7 @@ public:
     static bool isSupported();
 
     void setShape(const QRectF& rect, qreal cornerRadius);
-    QImage render(const QImage& source, qreal devicePixelRatio, bool dark);
+    QImage render(const QImage& source, qreal devicePixelRatio, qreal renderScale, bool dark);
     void release();
 
 private:
@@ -90,14 +90,16 @@ protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
 
 private:
-    void scheduleUpdateInternal(int delayMs, bool force);
+    void scheduleUpdateInternal(int delayMs, bool force, bool interactive = false);
     void installSourceEventFilter();
     void stopUpdateTimer();
+    void stopQualityUpdateTimer();
+    void scheduleHighQualityUpdate();
     void resetRefreshCache();
     int passiveRefreshDelayMs() const;
     void updateBackground();
     QImage captureSource(qreal devicePixelRatio) const;
-    QImage renderBackground(const QImage& source, qreal devicePixelRatio);
+    QImage renderBackground(const QImage& source, qreal devicePixelRatio, qreal renderScale);
     QImage renderBackgroundWithFastBlur(const QImage& source, qreal devicePixelRatio);
     void startGaussianBlurTask(const QImage& source, qreal devicePixelRatio);
     void finishGaussianBlurTask(quint64 generation, const QImage& background);
@@ -106,6 +108,7 @@ private:
     QPointer<QWidget> m_targetWidget;
     QPointer<QWidget> m_sourceWidget;
     QTimer* m_updateTimer = nullptr;
+    QTimer* m_qualityUpdateTimer = nullptr;
     QImage m_background;
     std::unique_ptr<QtFallbackLiquidGlassRenderer> m_renderer;
     QRectF m_shapeRect;
@@ -119,6 +122,7 @@ private:
     bool m_captureInProgress = false;
     bool m_hasSourceSignature = false;
     bool m_pendingUpdateForced = false;
+    bool m_pendingUpdateInteractive = false;
     bool m_gaussianBlurInFlight = false;
     bool m_gaussianBlurUpdatePending = false;
 };

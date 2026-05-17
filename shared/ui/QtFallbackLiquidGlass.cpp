@@ -28,6 +28,7 @@
 namespace {
 
 constexpr qreal kLiquidGlassRenderScale = 0.82;
+constexpr qreal kLiquidGlassInteractiveRenderScale = 0.66;
 constexpr qreal kGaussianBlurRenderScale = 0.62;
 constexpr qreal kLiquidGlassBorderWidth = 1.0;
 constexpr qreal kLiquidGlassLightBorderWidth = 1.0;
@@ -35,6 +36,7 @@ constexpr float kLiquidGlassBlurStep = 1.7f;
 constexpr int kLiquidGlassRefreshDelayMs = 33;
 constexpr int kGaussianScrollRefreshDelayMs = 16;
 constexpr int kGaussianStaticRefreshDelayMs = 33;
+constexpr int kLiquidGlassQualityRefreshDelayMs = 96;
 constexpr int kLiquidGlassQtBlurRadius = 18;
 constexpr int kLiquidGlassPassiveRefreshDelayMs = 100;
 constexpr int kLiquidGlassMaxPassiveRefreshDelayMs = 1000;
@@ -79,9 +81,10 @@ QString loadShaderSource(const QString& path)
 
 QRectF physicalShapeRectFor(const QRectF& logicalShapeRect,
                             const QSize& renderSize,
-                            qreal devicePixelRatio)
+                            qreal devicePixelRatio,
+                            qreal renderScale)
 {
-    const qreal pixelScale = devicePixelRatio * kLiquidGlassRenderScale;
+    const qreal pixelScale = devicePixelRatio * renderScale;
     QRectF shapeRect(logicalShapeRect.x() * pixelScale,
                      logicalShapeRect.y() * pixelScale,
                      logicalShapeRect.width() * pixelScale,
@@ -174,6 +177,7 @@ void QtFallbackLiquidGlassRenderer::setShape(const QRectF& rect, qreal cornerRad
 
 QImage QtFallbackLiquidGlassRenderer::render(const QImage& source,
                                              qreal devicePixelRatio,
+                                             qreal renderScale,
                                              bool dark)
 {
     if (source.isNull() || source.width() <= 0 || source.height() <= 0) {
@@ -190,11 +194,12 @@ QImage QtFallbackLiquidGlassRenderer::render(const QImage& source,
             ? m_shapeRect
             : QRectF(0.0,
                      0.0,
-                     renderSize.width() / (devicePixelRatio * kLiquidGlassRenderScale),
-                     renderSize.height() / (devicePixelRatio * kLiquidGlassRenderScale));
+                     renderSize.width() / (devicePixelRatio * renderScale),
+                     renderSize.height() / (devicePixelRatio * renderScale));
     const QRectF physicalShapeRect = physicalShapeRectFor(logicalShapeRect,
                                                           renderSize,
-                                                          devicePixelRatio);
+                                                          devicePixelRatio,
+                                                          renderScale);
 
     GLuint sourceTexture = uploadTexture(uploadImage);
     if (sourceTexture == 0) {
@@ -218,7 +223,7 @@ QImage QtFallbackLiquidGlassRenderer::render(const QImage& source,
                            QVector2D(0.0f, kLiquidGlassBlurStep / qMax(1, renderSize.height())));
             const qreal borderWidth = liquidGlassBorderWidthForMode(dark);
             const qreal contentInset = liquidGlassContentInset(borderWidth, dark);
-            const qreal pixelScale = devicePixelRatio * kLiquidGlassRenderScale;
+            const qreal pixelScale = devicePixelRatio * renderScale;
             renderGlassPass(verticalFbo.texture(),
                             horizontalFbo,
                             QVector2D(static_cast<float>(renderSize.width()),
@@ -230,7 +235,7 @@ QImage QtFallbackLiquidGlassRenderer::render(const QImage& source,
                             dark ? 1.0f : 0.0f);
 
             output = horizontalFbo.toImage(false).convertToFormat(QImage::Format_ARGB32_Premultiplied);
-            output.setDevicePixelRatio(devicePixelRatio * kLiquidGlassRenderScale);
+            output.setDevicePixelRatio(devicePixelRatio * renderScale);
         }
         m_gl->glDeleteTextures(1, &sourceTexture);
     }
@@ -562,12 +567,16 @@ void QtFallbackLiquidGlassController::scheduleUpdate(int delayMs)
 
 void QtFallbackLiquidGlassController::scheduleInteractiveUpdate()
 {
-    scheduleUpdate(m_effectMode == EffectMode::GaussianBlur
-                   ? kGaussianScrollRefreshDelayMs
-                   : 0);
+    if (m_effectMode == EffectMode::GaussianBlur) {
+        scheduleUpdate(kGaussianScrollRefreshDelayMs);
+        return;
+    }
+
+    scheduleUpdateInternal(0, true, true);
+    scheduleHighQualityUpdate();
 }
 
-void QtFallbackLiquidGlassController::scheduleUpdateInternal(int delayMs, bool force)
+void QtFallbackLiquidGlassController::scheduleUpdateInternal(int delayMs, bool force, bool interactive)
 {
     if (!m_enabled || !m_targetWidget || !m_targetWidget->isVisible() || !m_sourceWidget) {
         return;
@@ -582,6 +591,7 @@ void QtFallbackLiquidGlassController::scheduleUpdateInternal(int delayMs, bool f
                 this, &QtFallbackLiquidGlassController::updateBackground);
     }
 
+    m_pendingUpdateInteractive = m_pendingUpdateInteractive || interactive;
     int clampedDelay = qMax(0, delayMs);
     if (!force && !m_background.isNull()) {
         clampedDelay = qMax(clampedDelay, passiveRefreshDelayMs());
@@ -597,6 +607,7 @@ void QtFallbackLiquidGlassController::scheduleUpdateInternal(int delayMs, bool f
 void QtFallbackLiquidGlassController::release(bool updateWidget)
 {
     stopUpdateTimer();
+    stopQualityUpdateTimer();
     if (m_sourceWidget && m_sourceFilterInstalled) {
         m_sourceWidget->removeEventFilter(this);
     }
@@ -755,12 +766,39 @@ void QtFallbackLiquidGlassController::stopUpdateTimer()
     m_updateTimer = nullptr;
 }
 
+void QtFallbackLiquidGlassController::stopQualityUpdateTimer()
+{
+    if (!m_qualityUpdateTimer) {
+        return;
+    }
+    m_qualityUpdateTimer->stop();
+    delete m_qualityUpdateTimer;
+    m_qualityUpdateTimer = nullptr;
+}
+
+void QtFallbackLiquidGlassController::scheduleHighQualityUpdate()
+{
+    if (m_effectMode != EffectMode::LiquidGlass) {
+        return;
+    }
+
+    if (!m_qualityUpdateTimer) {
+        m_qualityUpdateTimer = new QTimer(this);
+        m_qualityUpdateTimer->setSingleShot(true);
+        connect(m_qualityUpdateTimer, &QTimer::timeout, this, [this]() {
+            scheduleUpdateInternal(0, true, false);
+        });
+    }
+    m_qualityUpdateTimer->start(kLiquidGlassQualityRefreshDelayMs);
+}
+
 void QtFallbackLiquidGlassController::resetRefreshCache()
 {
     m_lastSourceSignature = 0;
     m_unchangedPassiveRefreshCount = 0;
     m_hasSourceSignature = false;
     m_pendingUpdateForced = false;
+    m_pendingUpdateInteractive = false;
     ++m_gaussianBlurGeneration;
     m_gaussianBlurInFlight = false;
     m_gaussianBlurUpdatePending = false;
@@ -792,7 +830,10 @@ void QtFallbackLiquidGlassController::updateBackground()
     }
 
     const bool forcedUpdate = m_pendingUpdateForced;
+    const bool interactiveUpdate =
+            m_effectMode == EffectMode::LiquidGlass && m_pendingUpdateInteractive;
     m_pendingUpdateForced = false;
+    m_pendingUpdateInteractive = false;
 
     if (m_effectMode == EffectMode::GaussianBlur && m_gaussianBlurInFlight) {
         m_gaussianBlurUpdatePending = true;
@@ -809,17 +850,19 @@ void QtFallbackLiquidGlassController::updateBackground()
         return;
     }
 
-    const quint64 sourceSignature = liquidGlassSourceSignature(source);
-    if (!m_background.isNull()
-        && m_hasSourceSignature
-        && m_lastSourceSignature == sourceSignature) {
-        if (!forcedUpdate) {
-            ++m_unchangedPassiveRefreshCount;
+    if (!interactiveUpdate) {
+        const quint64 sourceSignature = liquidGlassSourceSignature(source);
+        if (!m_background.isNull()
+            && m_hasSourceSignature
+            && m_lastSourceSignature == sourceSignature) {
+            if (!forcedUpdate) {
+                ++m_unchangedPassiveRefreshCount;
+            }
+            return;
         }
-        return;
+        m_lastSourceSignature = sourceSignature;
+        m_hasSourceSignature = true;
     }
-    m_lastSourceSignature = sourceSignature;
-    m_hasSourceSignature = true;
     m_unchangedPassiveRefreshCount = 0;
 
     if (m_effectMode == EffectMode::GaussianBlur) {
@@ -827,13 +870,16 @@ void QtFallbackLiquidGlassController::updateBackground()
         return;
     }
 
-    const QSize scaledSize(qMax(1, qRound(source.width() * kLiquidGlassRenderScale)),
-                           qMax(1, qRound(source.height() * kLiquidGlassRenderScale)));
+    const qreal renderScale = interactiveUpdate
+            ? kLiquidGlassInteractiveRenderScale
+            : kLiquidGlassRenderScale;
+    const QSize scaledSize(qMax(1, qRound(source.width() * renderScale)),
+                           qMax(1, qRound(source.height() * renderScale)));
     QImage scaledSource = source.scaled(scaledSize,
                                         Qt::IgnoreAspectRatio,
                                         Qt::SmoothTransformation);
-    scaledSource.setDevicePixelRatio(devicePixelRatio * kLiquidGlassRenderScale);
-    m_background = renderBackground(scaledSource, devicePixelRatio);
+    scaledSource.setDevicePixelRatio(devicePixelRatio * renderScale);
+    m_background = renderBackground(scaledSource, devicePixelRatio, renderScale);
     m_targetWidget->update();
 }
 
@@ -865,7 +911,9 @@ QImage QtFallbackLiquidGlassController::captureSource(qreal devicePixelRatio) co
     return source;
 }
 
-QImage QtFallbackLiquidGlassController::renderBackground(const QImage& source, qreal devicePixelRatio)
+QImage QtFallbackLiquidGlassController::renderBackground(const QImage& source,
+                                                         qreal devicePixelRatio,
+                                                         qreal renderScale)
 {
     if (source.isNull()) {
         return {};
@@ -886,6 +934,7 @@ QImage QtFallbackLiquidGlassController::renderBackground(const QImage& source, q
 
     QImage rendered = m_renderer->render(source,
                                          devicePixelRatio,
+                                         renderScale,
                                          ThemeManager::instance().isDark());
     if (!rendered.isNull()) {
         return rendered;
