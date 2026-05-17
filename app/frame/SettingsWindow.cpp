@@ -19,6 +19,7 @@
 #endif
 
 #include <QApplication>
+#include <QDesktopServices>
 #include <QGuiApplication>
 #include <QKeyEvent>
 #include <QPainter>
@@ -27,6 +28,7 @@
 #include <QResizeEvent>
 #include <QScreen>
 #include <QStackedWidget>
+#include <QUrl>
 
 namespace {
 
@@ -85,7 +87,6 @@ ThemeManager::FontFamilyMode fontFamilyModeFromIndex(int index)
 QStringList proxyChoices()     { return {QStringLiteral("无"), QStringLiteral("HTTP"), QStringLiteral("SOCKS5")}; }
 QStringList timeoutChoices()   { return {QStringLiteral("短"), QStringLiteral("中"), QStringLiteral("长")}; }
 QStringList portChoices()      { return {QStringLiteral("默认"), QStringLiteral("自定义")}; }
-QStringList transparencyChoices() { return {QStringLiteral("低"), QStringLiteral("中"), QStringLiteral("高")}; }
 QStringList volumeChoices()    { return {QStringLiteral("低"), QStringLiteral("中"), QStringLiteral("高")}; }
 QStringList modelChoices()     { return {QStringLiteral("默认"), QStringLiteral("GPT"), QStringLiteral("Claude")}; }
 QStringList responseLenChoices() { return {QStringLiteral("短"), QStringLiteral("中"), QStringLiteral("长")}; }
@@ -1017,8 +1018,6 @@ void SettingsWindow::createAppearancePage()
     updateThemeColorButtonText();
     connect(m_themeColorButton, &QPushButton::clicked, this, &SettingsWindow::openThemeColorPalette);
 
-    auto* transpToggle = createToggleButton(QStringLiteral("窗口透明度"), transparencyChoices(), 1, page);
-
 #ifdef Q_OS_MACOS
     const QVector<MacFloatingInputBarBridge::Mode> inputBarModes =
             MacFloatingInputBarBridge::supportedModes();
@@ -1088,7 +1087,7 @@ void SettingsWindow::createAppearancePage()
     });
 
     PageLayout pl;
-    QVector<QWidget*> orderedItems = {m_appearanceModeToggle, m_fontFamilyToggle, transpToggle};
+    QVector<QWidget*> orderedItems = {m_appearanceModeToggle, m_fontFamilyToggle};
     if (m_inputBarStyleToggle) {
         orderedItems.push_back(m_inputBarStyleToggle);
     }
@@ -1281,12 +1280,15 @@ void SettingsWindow::createAboutPage()
     page->setAutoFillBackground(false);
 
     // Version display — disabled button with dedicated disabled texture
-    auto* versionBtn = createMenuButton(QStringLiteral("版本：v1.0.0"), page);
+    auto* versionBtn = createMenuButton(QStringLiteral("版本：0.9 preview"), page);
     versionBtn->setDisabledImage(QStringLiteral(":/resources/icon/mc_button_disabled.png"));
     versionBtn->setEnabled(false);
 
-    auto* updateToggle  = createToggleButton(QStringLiteral("检查更新"), onOffChoices(), 0, page);
     auto* licenseToggle = createToggleButton(QStringLiteral("开源协议"), QStringList{QStringLiteral("MIT")}, 0, page);
+    auto* githubBtn = createMenuButton(QStringLiteral("打开 GitHub"), page);
+    connect(githubBtn, &QPushButton::clicked, this, []() {
+        QDesktopServices::openUrl(QUrl(QStringLiteral("https://github.com/ming0725/NetherLink-static")));
+    });
     auto* creditsBtn = createMenuButton(QStringLiteral("鸣谢名单"), page);
     connect(creditsBtn, &QPushButton::clicked, this, &SettingsWindow::openCreditsWindow);
 
@@ -1295,7 +1297,7 @@ void SettingsWindow::createAboutPage()
 
     PageLayout pl;
     pl.leftItems  = {versionBtn, licenseToggle};
-    pl.rightItems = {updateToggle, creditsBtn};
+    pl.rightItems = {githubBtn, creditsBtn};
     pl.doneWidget = doneBtn;
     pl.firstRowGap = kSubPageRowGap;
     pl.bodyRowGap  = kSubPageRowGap;
