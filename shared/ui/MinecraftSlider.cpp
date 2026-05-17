@@ -1,4 +1,5 @@
 #include "MinecraftSlider.h"
+#include "shared/services/AppFonts.h"
 
 #include "shared/services/AudioService.h"
 #include "shared/services/ImageService.h"
@@ -219,7 +220,7 @@ void MinecraftSlider::paintEvent(QPaintEvent* event)
 
     QPainter painter(this);
     painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
-    painter.setRenderHint(QPainter::TextAntialiasing, true);
+    AppFonts::configurePainterForText(painter);
 
     const QPixmap sliderPixmap = ImageService::instance().pixmap(m_normalImage);
     if (sliderPixmap.isNull()) {
@@ -238,9 +239,7 @@ void MinecraftSlider::paintEvent(QPaintEvent* event)
     }
 
     if (!m_text.isEmpty()) {
-        QFont textFont = font();
-        textFont.setBold(true);
-        textFont.setPixelSize(13);
+        const QFont textFont = AppFonts::pixelSizedFont(font(), 13, true);
         painter.setFont(textFont);
 
         const QRect textRect = rect().adjusted(8, 0, -8, 0);

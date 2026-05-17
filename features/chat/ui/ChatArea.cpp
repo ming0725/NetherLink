@@ -1,4 +1,5 @@
 #include "ChatArea.h"
+#include "shared/services/AppFonts.h"
 #include "features/chat/data/GroupRepository.h"
 #include "features/friend/data/UserRepository.h"
 #include "features/chat/data/MessageRepository.h"
@@ -66,7 +67,7 @@ protected:
     {
         QPainter painter(this);
         painter.setRenderHint(QPainter::Antialiasing, true);
-        painter.setRenderHint(QPainter::TextAntialiasing, true);
+        AppFonts::configurePainterForText(painter);
 
         if (isDown()) {
             painter.setBrush(ThemeManager::instance().color(ThemeColor::Divider));
@@ -109,7 +110,7 @@ protected:
 
         QPainter painter(this);
         painter.setRenderHint(QPainter::Antialiasing, true);
-        painter.setRenderHint(QPainter::TextAntialiasing, true);
+        AppFonts::configurePainterForText(painter);
 
         QLinearGradient gradient(rect().topLeft(), rect().bottomLeft());
         const qreal fadeStop = rect().height() > 0
@@ -160,7 +161,7 @@ protected:
     {
         Q_UNUSED(event);
         QPainter painter(this);
-        painter.setRenderHint(QPainter::TextAntialiasing, true);
+        AppFonts::configurePainterForText(painter);
         painter.setFont(font());
         painter.setPen(ThemeManager::instance().color(ThemeColor::PrimaryText));
         painter.drawText(rect(), alignment() | Qt::TextSingleLine, text());

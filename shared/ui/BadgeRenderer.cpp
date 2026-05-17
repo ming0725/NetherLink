@@ -4,6 +4,7 @@
 #include <QPixmapCache>
 
 #include "shared/services/ImageService.h"
+#include "shared/services/AppFonts.h"
 #include "shared/theme/ThemeManager.h"
 
 namespace {
@@ -83,6 +84,7 @@ void drawBadge(QPainter* painter, const QRect& rect,
                             QPainter::TextAntialiasing |
                             QPainter::SmoothPixmapTransform,
                             true);
+    AppFonts::configurePainterForText(*painter);
 
     if (layout.drawIcon) {
         const QString iconPath = selected

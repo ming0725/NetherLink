@@ -1,4 +1,5 @@
 #include "NewMessageNotifier.h"
+#include "shared/services/AppFonts.h"
 
 #include "shared/services/AudioService.h"
 #include "shared/services/ImageService.h"
@@ -82,7 +83,7 @@ void NewMessageNotifier::paintEvent(QPaintEvent *event)
     countFont.setWeight(QFont::DemiBold);
     painter.setFont(countFont);
     painter.setPen(foreground);
-    painter.setRenderHint(QPainter::TextAntialiasing, true);
+    AppFonts::configurePainterForText(painter);
     const QRect textRect(iconRect.right() + 1 + kIconTextGap,
                          0,
                          qMax(0, contentRect.right() - iconRect.right() - kIconTextGap),

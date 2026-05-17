@@ -105,6 +105,7 @@ private:
 
     // Cached pointers
     MinecraftButton* m_appearanceModeToggle = nullptr;
+    MinecraftButton* m_fontFamilyToggle = nullptr;
     MinecraftButton* m_inputBarStyleToggle = nullptr;
     MinecraftButton* m_postBarStyleToggle = nullptr;
     MinecraftButton* m_actionMenuStyleToggle = nullptr;
@@ -117,5 +118,10 @@ private:
         QStringLiteral("浅色模式"),
         QStringLiteral("深色模式"),
         QStringLiteral("跟随系统")
+    };
+
+    static inline const QStringList kFontFamilyChoices = {
+        QStringLiteral("默认字体"),
+        QStringLiteral("Minecraft")
     };
 };

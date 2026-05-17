@@ -1,4 +1,5 @@
 #include "StyledActionMenu.h"
+#include "shared/services/AppFonts.h"
 
 #include <QAction>
 #include <QGraphicsDropShadowEffect>
@@ -233,7 +234,7 @@ void StyledActionMenu::paintEvent(QPaintEvent* event)
 
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing, true);
-    painter.setRenderHint(QPainter::TextAntialiasing, true);
+    AppFonts::configurePainterForText(painter);
 
     const QRectF panelRect = QRectF(rect()).adjusted(ShadowMargin, ShadowMargin,
                                                     -ShadowMargin, -ShadowMargin);

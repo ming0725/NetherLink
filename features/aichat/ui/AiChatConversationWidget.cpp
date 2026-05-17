@@ -1,4 +1,5 @@
 #include "AiChatConversationWidget.h"
+#include "shared/services/AppFonts.h"
 
 #include <QLinearGradient>
 #include <QModelIndex>
@@ -53,7 +54,7 @@ protected:
 
         QPainter painter(this);
         painter.setRenderHint(QPainter::Antialiasing, true);
-        painter.setRenderHint(QPainter::TextAntialiasing, true);
+        AppFonts::configurePainterForText(painter);
 
         QLinearGradient gradient(rect().topLeft(), rect().bottomLeft());
         const qreal fadeStop = rect().height() > 0

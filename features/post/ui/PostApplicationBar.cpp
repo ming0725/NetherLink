@@ -1,4 +1,5 @@
 #include "PostApplicationBar.h"
+#include "shared/services/AppFonts.h"
 #include "shared/theme/ThemeManager.h"
 #include "shared/ui/QtFallbackLiquidGlass.h"
 
@@ -297,7 +298,7 @@ void PostApplicationBar::paintEvent(QPaintEvent*)
 
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing, true);
-    painter.setRenderHint(QPainter::TextAntialiasing, true);
+    AppFonts::configurePainterForText(painter);
     painter.setOpacity(m_visualOpacity);
     painter.setPen(Qt::NoPen);
 

@@ -1,4 +1,5 @@
 #include "FriendListWidget.h"
+#include "shared/services/AppFonts.h"
 
 #include <QAbstractItemView>
 #include <QAction>
@@ -706,7 +707,7 @@ void FriendListWidget::drawStickyHeader() const
 
     QPainter painter(viewport());
     painter.setRenderHint(QPainter::Antialiasing, true);
-    painter.setRenderHint(QPainter::TextAntialiasing, true);
+    AppFonts::configurePainterForText(painter);
     painter.setClipRect(QRect(0, m_stickyOffsetY, viewport()->width(), kStickyHeaderHeight));
 
     const QRect headerRect(0, m_stickyOffsetY, viewport()->width(), kStickyHeaderHeight);

@@ -1,4 +1,5 @@
 #include "AiChatMessageDelegate.h"
+#include "shared/services/AppFonts.h"
 
 #include <QAbstractTextDocumentLayout>
 #include <QApplication>
@@ -198,7 +199,7 @@ void AiChatMessageDelegate::paint(QPainter* painter,
 
     painter->save();
     painter->setRenderHint(QPainter::Antialiasing, true);
-    painter->setRenderHint(QPainter::TextAntialiasing, true);
+    AppFonts::configurePainterForText(*painter);
 
     const bool isFromUser = index.data(AiChatMessageListModel::IsFromUserRole).toBool();
     const bool dark = ThemeManager::instance().isDark();

@@ -1,4 +1,5 @@
 #include "AiChatListDelegate.h"
+#include "shared/services/AppFonts.h"
 
 #include <QApplication>
 #include <QCursor>
@@ -18,7 +19,7 @@ void AiChatListDelegate::paint(QPainter* painter,
 {
     painter->save();
     painter->setRenderHint(QPainter::Antialiasing, true);
-    painter->setRenderHint(QPainter::TextAntialiasing, true);
+    AppFonts::configurePainterForText(*painter);
     painter->setRenderHint(QPainter::SmoothPixmapTransform);
 
     const bool selected = option.state & QStyle::State_Selected;

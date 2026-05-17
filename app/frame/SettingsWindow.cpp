@@ -1,4 +1,5 @@
 #include "SettingsWindow.h"
+#include "shared/services/AppFonts.h"
 
 #include "NetherLinkCreditsWindow.h"
 #include "features/post/ui/PostApplicationBar.h"
@@ -18,7 +19,6 @@
 #endif
 
 #include <QApplication>
-#include <QFontDatabase>
 #include <QGuiApplication>
 #include <QKeyEvent>
 #include <QPainter>
@@ -46,7 +46,6 @@ constexpr int kAnimationDuration   = 400;
 constexpr int kTitleFontSize       = 18;
 
 const QString kSettingsBackgroundSource(QStringLiteral(":/resources/icon/options_background.png"));
-const QString kSettingsFontSource(QStringLiteral(":/resources/font/MinecraftAE.ttf"));
 const QStringList kFontSizeLabels = {
     QStringLiteral("特小"),
     QStringLiteral("小"),
@@ -57,20 +56,7 @@ const QStringList kFontSizeLabels = {
 
 QFont settingsFont(const QFont& fallback)
 {
-    static const QString family = [] {
-        const int fontId = QFontDatabase::addApplicationFont(kSettingsFontSource);
-        if (fontId < 0) {
-            return QString();
-        }
-        const QStringList families = QFontDatabase::applicationFontFamilies(fontId);
-        return families.isEmpty() ? QString() : families.first();
-    }();
-
-    QFont font = fallback;
-    if (!family.isEmpty()) {
-        font.setFamily(family);
-    }
-    return font;
+    return AppFonts::minecraftFont(fallback);
 }
 
 ThemeManager::Mode indexToMode(int index)
@@ -81,6 +67,18 @@ ThemeManager::Mode indexToMode(int index)
 int modeToIndex(ThemeManager::Mode mode)
 {
     return static_cast<int>(mode) - 1;
+}
+
+int fontFamilyModeToIndex(ThemeManager::FontFamilyMode mode)
+{
+    return static_cast<int>(mode);
+}
+
+ThemeManager::FontFamilyMode fontFamilyModeFromIndex(int index)
+{
+    return index == 1
+            ? ThemeManager::FontFamilyMode::Minecraft
+            : ThemeManager::FontFamilyMode::Default;
 }
 
 // ---- Choice lists for sub-page toggles ----
@@ -533,7 +531,7 @@ void SettingsWindow::paintEvent(QPaintEvent* event)
     Q_UNUSED(event);
 
     QPainter painter(this);
-    painter.setRenderHint(QPainter::TextAntialiasing, true);
+    AppFonts::configurePainterForText(painter);
     const QPixmap background = ImageService::instance().pixmap(kSettingsBackgroundSource);
     if (background.isNull()) {
         painter.fillRect(rect(), ThemeManager::instance().color(ThemeColor::SettingsFallbackBackground));
@@ -542,9 +540,7 @@ void SettingsWindow::paintEvent(QPaintEvent* event)
     }
     painter.fillRect(rect(), ThemeManager::instance().color(ThemeColor::SettingsOverlay));
 
-    QFont titleFont = font();
-    titleFont.setPixelSize(kTitleFontSize);
-    titleFont.setBold(true);
+    const QFont titleFont = AppFonts::pixelSizedFont(font(), kTitleFontSize, true);
     painter.setFont(titleFont);
 
     const QRect titleRect(kSettingsTitleLeft,
@@ -1008,6 +1004,15 @@ void SettingsWindow::createAppearancePage()
 
     const int curModeIdx = modeToIndex(ThemeManager::instance().configuredMode());
     m_appearanceModeToggle = createToggleButton(QStringLiteral("外观模式"), kAppearanceChoices, curModeIdx, page);
+    m_fontFamilyToggle = createToggleButton(
+            QStringLiteral("界面字体"),
+            kFontFamilyChoices,
+            fontFamilyModeToIndex(ThemeManager::instance().fontFamilyMode()),
+            page);
+    connect(m_fontFamilyToggle, &QPushButton::clicked, this, [this]() {
+        ThemeManager::instance().setFontFamilyMode(
+                fontFamilyModeFromIndex(toggleCurrentIndex(m_fontFamilyToggle)));
+    });
     m_themeColorButton = createMenuButton(QStringLiteral("主题颜色..."), page);
     updateThemeColorButtonText();
     connect(m_themeColorButton, &QPushButton::clicked, this, &SettingsWindow::openThemeColorPalette);
@@ -1083,7 +1088,7 @@ void SettingsWindow::createAppearancePage()
     });
 
     PageLayout pl;
-    QVector<QWidget*> orderedItems = {m_appearanceModeToggle, transpToggle};
+    QVector<QWidget*> orderedItems = {m_appearanceModeToggle, m_fontFamilyToggle, transpToggle};
     if (m_inputBarStyleToggle) {
         orderedItems.push_back(m_inputBarStyleToggle);
     }
@@ -1307,6 +1312,10 @@ void SettingsWindow::resetAppearanceControls()
 {
     const int idx = modeToIndex(ThemeManager::instance().configuredMode());
     setToggleIndex(m_appearanceModeToggle, idx);
+    if (m_fontFamilyToggle) {
+        setToggleIndex(m_fontFamilyToggle,
+                       fontFamilyModeToIndex(ThemeManager::instance().fontFamilyMode()));
+    }
 
 #ifdef Q_OS_MACOS
     if (m_inputBarStyleToggle) {
@@ -1354,6 +1363,10 @@ void SettingsWindow::applyAppearance()
 
     const int idx = toggleCurrentIndex(m_appearanceModeToggle);
     ThemeManager::instance().setMode(indexToMode(idx));
+    if (m_fontFamilyToggle) {
+        ThemeManager::instance().setFontFamilyMode(
+                fontFamilyModeFromIndex(toggleCurrentIndex(m_fontFamilyToggle)));
+    }
     ThemeManager::instance().setQtFallbackInputBarEffect(
             qtFallbackInputBarEffectForToggle(m_inputBarStyleToggle));
     ThemeManager::instance().setPostBarQtFallbackLiquidGlassEnabled(

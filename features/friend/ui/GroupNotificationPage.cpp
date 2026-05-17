@@ -1,4 +1,5 @@
 #include "GroupNotificationPage.h"
+#include "shared/services/AppFonts.h"
 
 #include <QApplication>
 #include <QPainter>
@@ -13,14 +14,9 @@ namespace {
 constexpr int kHeaderHeight = 62;
 constexpr int kPageSize = 16;
 
-const QFont& headerFont()
+QFont headerFont()
 {
-    static const QFont font = []() {
-        QFont f = QApplication::font();
-        f.setPixelSize(17);
-        return f;
-    }();
-    return font;
+    return AppFonts::applicationPixelSizedFont(17);
 }
 
 } // namespace
@@ -104,7 +100,7 @@ void GroupNotificationPage::paintEvent(QPaintEvent* event)
     Q_UNUSED(event);
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing, true);
-    painter.setRenderHint(QPainter::TextAntialiasing, true);
+    AppFonts::configurePainterForText(painter);
     painter.fillRect(rect(), ThemeManager::instance().color(ThemeColor::PageBackground));
     painter.fillRect(QRect(0, 0, width(), kHeaderHeight),
                      ThemeManager::instance().color(ThemeColor::PageBackground));

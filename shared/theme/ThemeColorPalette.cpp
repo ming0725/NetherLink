@@ -1,5 +1,6 @@
 #include "shared/theme/ThemeColorPalette.h"
 
+#include "shared/services/AppFonts.h"
 #include "shared/services/ImageService.h"
 #include "shared/services/AudioService.h"
 #include "shared/theme/ThemeManager.h"
@@ -7,7 +8,6 @@
 
 #include <QEvent>
 #include <QFont>
-#include <QFontDatabase>
 #include <QFontMetrics>
 #include <QKeyEvent>
 #include <QLineEdit>
@@ -28,7 +28,6 @@ const QString kSunSource(QStringLiteral(":/resources/icon/sun.png"));
 const QString kMoonSource(QStringLiteral(":/resources/icon/moon.png"));
 const QString kSliderHandleSource(QStringLiteral(":/resources/icon/mc_slider_handle.png"));
 const QString kSliderHandleHighlightedSource(QStringLiteral(":/resources/icon/mc_slider_handle_highlighted.png"));
-const QString kSettingsFontSource(QStringLiteral(":/resources/font/MinecraftAE.ttf"));
 
 constexpr int kPopupPadding = 18;
 constexpr int kSpectrumMaxWidth = 320;
@@ -60,20 +59,7 @@ const QColor kMoonIconGlowColor(0x4A68A8);
 
 QFont paletteFont(const QFont& fallback)
 {
-    static const QString family = [] {
-        const int fontId = QFontDatabase::addApplicationFont(kSettingsFontSource);
-        if (fontId < 0) {
-            return QString();
-        }
-        const QStringList families = QFontDatabase::applicationFontFamilies(fontId);
-        return families.isEmpty() ? QString() : families.first();
-    }();
-
-    QFont font = fallback;
-    if (!family.isEmpty()) {
-        font.setFamily(family);
-    }
-    return font;
+    return AppFonts::minecraftFont(fallback);
 }
 
 QString rgbToHexText(const QColor& color)
@@ -196,9 +182,7 @@ public:
         setTextMargins(8, 0, 8, 0);
         setMaxLength(15);
 
-        QFont inputFont = paletteFont(font());
-        inputFont.setPixelSize(14);
-        inputFont.setBold(true);
+        const QFont inputFont = AppFonts::pixelSizedFont(paletteFont(font()), 14, true);
         setFont(inputFont);
 
         QPalette p = palette();

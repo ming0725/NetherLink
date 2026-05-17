@@ -1,4 +1,5 @@
 #include "FriendListDelegate.h"
+#include "shared/services/AppFonts.h"
 
 #include <QApplication>
 #include <QPainter>
@@ -15,20 +16,14 @@ namespace {
 
 const int kNoticeArrowYOffset = 2;
 
-const QFont& nameFont()
+QFont nameFont()
 {
-    static const QFont font = []() {
-        QFont value = QApplication::font();
-        value.setPixelSize(14);
-        return value;
-    }();
-    return font;
+    return AppFonts::applicationPixelSizedFont(14);
 }
 
-const QFontMetrics& nameMetrics()
+QFontMetrics nameMetrics()
 {
-    static const QFontMetrics metrics(nameFont());
-    return metrics;
+    return AppFonts::applicationPixelSizedMetrics(14);
 }
 
 void drawFriendDisplayName(QPainter* painter,
@@ -115,54 +110,34 @@ QString cachedStatusIconPath(UserStatus userStatus)
     return mining;
 }
 
-const QFont& subtitleFont()
+QFont subtitleFont()
 {
-    static const QFont font = []() {
-        QFont value = QApplication::font();
-        value.setPixelSize(12);
-        return value;
-    }();
-    return font;
+    return AppFonts::applicationPixelSizedFont(12);
 }
 
-const QFontMetrics& subtitleMetrics()
+QFontMetrics subtitleMetrics()
 {
-    static const QFontMetrics metrics(subtitleFont());
-    return metrics;
+    return AppFonts::applicationPixelSizedMetrics(12);
 }
 
-const QFont& groupFont()
+QFont groupFont()
 {
-    static const QFont font = []() {
-        QFont value = QApplication::font();
-        value.setPixelSize(12);
-        value.setWeight(QFont::Medium);
-        return value;
-    }();
-    return font;
+    return AppFonts::applicationPixelWeightedFont(12, QFont::Medium);
 }
 
-const QFontMetrics& groupMetrics()
+QFontMetrics groupMetrics()
 {
-    static const QFontMetrics metrics(groupFont());
-    return metrics;
+    return AppFonts::applicationPixelWeightedMetrics(12, QFont::Medium);
 }
 
-const QFont& groupCountFont()
+QFont groupCountFont()
 {
-    static const QFont font = []() {
-        QFont value = QApplication::font();
-        value.setPixelSize(11);
-        value.setWeight(QFont::Medium);
-        return value;
-    }();
-    return font;
+    return AppFonts::applicationPixelWeightedFont(11, QFont::Medium);
 }
 
-const QFontMetrics& groupCountMetrics()
+QFontMetrics groupCountMetrics()
 {
-    static const QFontMetrics metrics(groupCountFont());
-    return metrics;
+    return AppFonts::applicationPixelWeightedMetrics(11, QFont::Medium);
 }
 
 } // namespace
@@ -180,7 +155,7 @@ void FriendListDelegate::paint(QPainter* painter,
                                const QModelIndex& index) const
 {
     painter->save();
-    painter->setRenderHint(QPainter::TextAntialiasing, true);
+    AppFonts::configurePainterForText(*painter);
     painter->setClipRect(option.rect);
 
     const ThemePaintCache& theme = themePaintCache();
@@ -203,13 +178,13 @@ void FriendListDelegate::paint(QPainter* painter,
                             qMax(0, hoverColor.green() - delta),
                             qMax(0, hoverColor.blue() - delta));
             painter->setRenderHint(QPainter::Antialiasing, true);
-            painter->setRenderHint(QPainter::TextAntialiasing, true);
+            AppFonts::configurePainterForText(*painter);
             painter->setBrush(selColor);
             painter->setPen(Qt::NoPen);
             painter->drawRoundedRect(overlayRect, 6, 6);
         } else if (hovered) {
             painter->setRenderHint(QPainter::Antialiasing, true);
-            painter->setRenderHint(QPainter::TextAntialiasing, true);
+            AppFonts::configurePainterForText(*painter);
             painter->setBrush(theme.listHover);
             painter->setPen(Qt::NoPen);
             painter->drawRoundedRect(overlayRect, 6, 6);
@@ -262,7 +237,7 @@ void FriendListDelegate::paint(QPainter* painter,
         if (hovered) {
             const QRect hoverRect = option.rect.adjusted(6, 3, -6, -3);
             painter->setRenderHint(QPainter::Antialiasing, true);
-            painter->setRenderHint(QPainter::TextAntialiasing, true);
+            AppFonts::configurePainterForText(*painter);
             painter->setBrush(theme.listHover);
             painter->setPen(Qt::NoPen);
             painter->drawRoundedRect(hoverRect, 6, 6);
@@ -277,7 +252,7 @@ void FriendListDelegate::paint(QPainter* painter,
 
         painter->save();
         painter->setRenderHint(QPainter::Antialiasing, true);
-        painter->setRenderHint(QPainter::TextAntialiasing, true);
+        AppFonts::configurePainterForText(*painter);
         painter->translate(arrowRect.center());
         painter->rotate(progress * 90.0);
         QPen arrowPen(theme.tertiaryText,

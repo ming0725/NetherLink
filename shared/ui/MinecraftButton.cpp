@@ -1,4 +1,5 @@
 #include "MinecraftButton.h"
+#include "shared/services/AppFonts.h"
 
 #include "shared/services/AudioService.h"
 #include "shared/services/ImageService.h"
@@ -178,7 +179,7 @@ void MinecraftButton::paintEvent(QPaintEvent* event)
 
     QPainter painter(this);
     painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
-    painter.setRenderHint(QPainter::TextAntialiasing, true);
+    AppFonts::configurePainterForText(painter);
 
     const QPixmap pixmap = ImageService::instance().pixmap(currentImage());
     if (pixmap.isNull()) {

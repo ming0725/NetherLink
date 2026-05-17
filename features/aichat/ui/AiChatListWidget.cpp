@@ -1,4 +1,5 @@
 #include "AiChatListWidget.h"
+#include "shared/services/AppFonts.h"
 
 #include <QApplication>
 #include <QAction>
@@ -428,7 +429,7 @@ void AiChatListWidget::drawStickyHeader() const
 
     QPainter painter(viewport());
     painter.setRenderHint(QPainter::Antialiasing, true);
-    painter.setRenderHint(QPainter::TextAntialiasing, true);
+    AppFonts::configurePainterForText(painter);
     painter.setClipRect(QRect(0, m_stickyOffsetY, viewport()->width(), m_delegate->stickyHeaderHeight()));
 
     const QRect headerRect(0, m_stickyOffsetY, viewport()->width(), m_delegate->stickyHeaderHeight());

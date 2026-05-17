@@ -1,4 +1,5 @@
 #include "ConversationInfoPanel.h"
+#include "shared/services/AppFonts.h"
 
 #include "app/state/CurrentUser.h"
 #include "shared/services/ImageService.h"
@@ -196,7 +197,7 @@ protected:
 
         QPainter painter(this);
         painter.setRenderHint(QPainter::Antialiasing, true);
-        painter.setRenderHint(QPainter::TextAntialiasing, true);
+        AppFonts::configurePainterForText(painter);
 
         QFont titleFont = QApplication::font();
         titleFont.setPixelSize(14);
@@ -252,7 +253,7 @@ protected:
 
         QPainter painter(this);
         painter.setRenderHint(QPainter::Antialiasing, true);
-        painter.setRenderHint(QPainter::TextAntialiasing, true);
+        AppFonts::configurePainterForText(painter);
 
         QFont font = QApplication::font();
         font.setPixelSize(15);
@@ -438,7 +439,7 @@ protected:
 
         QPainter painter(this);
         painter.setRenderHint(QPainter::Antialiasing, true);
-        painter.setRenderHint(QPainter::TextAntialiasing, true);
+        AppFonts::configurePainterForText(painter);
         painter.setRenderHint(QPainter::SmoothPixmapTransform);
         painter.setPen(Qt::NoPen);
         painter.setBrush(m_hovered ? memberListHoverColor() : memberListBackgroundColor());

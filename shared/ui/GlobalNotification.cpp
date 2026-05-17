@@ -1,4 +1,5 @@
 #include "GlobalNotification.h"
+#include "shared/services/AppFonts.h"
 
 #include "shared/services/AudioService.h"
 #include "shared/services/ImageService.h"
@@ -7,7 +8,6 @@
 #include <QApplication>
 #include <QEvent>
 #include <QFont>
-#include <QFontDatabase>
 #include <QFontMetrics>
 #include <QGraphicsOpacityEffect>
 #include <QMouseEvent>
@@ -24,7 +24,6 @@ namespace {
 const QString kBackgroundSource(QStringLiteral(":/resources/icon/global_notification.png"));
 const QString kSuccessIconSource(QStringLiteral(":/resources/icon/correct.png"));
 const QString kFailureIconSource(QStringLiteral(":/resources/icon/fail.png"));
-const QString kMinecraftFontSource(QStringLiteral(":/resources/font/MinecraftAE.ttf"));
 
 // Notification layout tuning constants.
 constexpr int kNotificationWidth = 260;
@@ -102,22 +101,7 @@ QMargins scaledTargetMargins(const QSize& sourceSize, const QSize& targetSize, c
 
 QFont notificationFont(const QFont& fallback)
 {
-    static const QString family = [] {
-        const int fontId = QFontDatabase::addApplicationFont(kMinecraftFontSource);
-        if (fontId < 0) {
-            return QString();
-        }
-        const QStringList families = QFontDatabase::applicationFontFamilies(fontId);
-        return families.isEmpty() ? QString() : families.first();
-    }();
-
-    QFont font = fallback;
-    if (!family.isEmpty()) {
-        font.setFamily(family);
-    }
-    font.setPixelSize(kTextFontSize);
-    font.setBold(true);
-    return font;
+    return AppFonts::pixelSizedFont(AppFonts::minecraftFont(fallback), kTextFontSize, true);
 }
 
 } // namespace
@@ -265,7 +249,7 @@ void GlobalNotification::paintEvent(QPaintEvent* event)
 
     QPainter painter(this);
     painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
-    painter.setRenderHint(QPainter::TextAntialiasing, true);
+    AppFonts::configurePainterForText(painter);
 
     const QPixmap background = ImageService::instance().pixmap(kBackgroundSource);
     if (background.isNull()) {

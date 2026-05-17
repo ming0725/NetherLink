@@ -1,4 +1,5 @@
 #include "MessageListDelegate.h"
+#include "shared/services/AppFonts.h"
 
 #include <QApplication>
 #include <QPainter>
@@ -10,52 +11,34 @@
 
 namespace {
 
-const QFont& timeFont()
+QFont timeFont()
 {
-    static const QFont font = []() {
-        QFont value = QApplication::font();
-        value.setPixelSize(11);
-        return value;
-    }();
-    return font;
+    return AppFonts::applicationPixelSizedFont(11);
 }
 
-const QFontMetrics& timeMetrics()
+QFontMetrics timeMetrics()
 {
-    static const QFontMetrics metrics(timeFont());
-    return metrics;
+    return AppFonts::applicationPixelSizedMetrics(11);
 }
 
-const QFont& nameFont()
+QFont nameFont()
 {
-    static const QFont font = []() {
-        QFont value = QApplication::font();
-        value.setPixelSize(14);
-        return value;
-    }();
-    return font;
+    return AppFonts::applicationPixelSizedFont(14);
 }
 
-const QFontMetrics& nameMetrics()
+QFontMetrics nameMetrics()
 {
-    static const QFontMetrics metrics(nameFont());
-    return metrics;
+    return AppFonts::applicationPixelSizedMetrics(14);
 }
 
-const QFont& previewFont()
+QFont previewFont()
 {
-    static const QFont font = []() {
-        QFont value = QApplication::font();
-        value.setPixelSize(13);
-        return value;
-    }();
-    return font;
+    return AppFonts::applicationPixelSizedFont(13);
 }
 
-const QFontMetrics& previewMetrics()
+QFontMetrics previewMetrics()
 {
-    static const QFontMetrics metrics(previewFont());
-    return metrics;
+    return AppFonts::applicationPixelSizedMetrics(13);
 }
 
 int fullMonthsBetween(const QDate& from, const QDate& to)
@@ -125,7 +108,7 @@ void MessageListDelegate::paint(QPainter* painter,
                                 const QModelIndex& index) const
 {
     painter->save();
-    painter->setRenderHint(QPainter::TextAntialiasing, true);
+    AppFonts::configurePainterForText(*painter);
 
     const bool selected = option.state & QStyle::State_Selected;
     const bool hovered = (option.state & QStyle::State_MouseOver) ||

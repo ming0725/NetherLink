@@ -4,6 +4,7 @@
 #include <QPainter>
 
 #include "shared/services/ImageService.h"
+#include "shared/services/AppFonts.h"
 #include "shared/theme/ThemeManager.h"
 #include "features/post/model/PostFeedModel.h"
 #include "PostMasonryView.h"
@@ -13,36 +14,24 @@ namespace {
 constexpr int kCachedTitleFontSize = 12;
 constexpr int kCachedMetaFontSize = 9;
 
-const QFont& titleFont()
+QFont titleFont()
 {
-    static const QFont font = []() {
-        QFont value = QApplication::font();
-        value.setPointSize(kCachedTitleFontSize);
-        return value;
-    }();
-    return font;
+    return AppFonts::applicationSizedFont(kCachedTitleFontSize);
 }
 
-const QFontMetrics& titleMetrics()
+QFontMetrics titleMetrics()
 {
-    static const QFontMetrics metrics(titleFont());
-    return metrics;
+    return AppFonts::applicationSizedMetrics(kCachedTitleFontSize);
 }
 
-const QFont& metaFont()
+QFont metaFont()
 {
-    static const QFont font = []() {
-        QFont value = QApplication::font();
-        value.setPointSize(kCachedMetaFontSize);
-        return value;
-    }();
-    return font;
+    return AppFonts::applicationSizedFont(kCachedMetaFontSize);
 }
 
-const QFontMetrics& metaMetrics()
+QFontMetrics metaMetrics()
 {
-    static const QFontMetrics metrics(metaFont());
-    return metrics;
+    return AppFonts::applicationSizedMetrics(kCachedMetaFontSize);
 }
 
 } // namespace
@@ -60,6 +49,7 @@ void PostCardDelegate::paint(QPainter* painter,
     painter->setRenderHints(QPainter::Antialiasing
                             | QPainter::TextAntialiasing
                             | QPainter::SmoothPixmapTransform);
+    AppFonts::configurePainterForText(*painter);
 
     const CardLayout layout = calculateLayout(index, option.rect);
     const qreal devicePixelRatio = painter->device()->devicePixelRatioF();

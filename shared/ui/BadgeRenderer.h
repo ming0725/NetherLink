@@ -1,10 +1,13 @@
 #pragma once
 
 #include <QColor>
+#include <QApplication>
 #include <QFont>
 #include <QFontMetrics>
 #include <QSize>
 #include <QString>
+
+#include "shared/services/AppFonts.h"
 
 class QPainter;
 class QRect;
@@ -23,20 +26,14 @@ namespace BadgeRenderer {
 constexpr int kBadgeHeight = 16;
 constexpr int kBadgeHorizontalPadding = 4;
 
-inline const QFont& badgeFont()
+inline QFont badgeFont()
 {
-    static const QFont font = []() {
-        QFont f;
-        f.setBold(true);
-        f.setPixelSize(11);
-        return f;
-    }();
-    return font;
+    return AppFonts::applicationPixelSizedFont(11, true);
 }
 
 inline QFontMetrics badgeMetrics()
 {
-    return QFontMetrics(badgeFont());
+    return AppFonts::applicationPixelSizedMetrics(11, true);
 }
 
 // Compute badge layout from unread count and do-not-disturb state.

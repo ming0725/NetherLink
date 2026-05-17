@@ -1,4 +1,5 @@
 #include "GroupNotificationDelegate.h"
+#include "shared/services/AppFonts.h"
 
 #include <QApplication>
 #include <QPainter>
@@ -29,42 +30,24 @@ struct TextSegment {
     QColor color;
 };
 
-const QFont& textFont()
+QFont textFont()
 {
-    static const QFont f = []() {
-        QFont font = QApplication::font();
-        font.setPixelSize(kFontSize);
-        return font;
-    }();
-    return f;
+    return AppFonts::applicationPixelSizedFont(kFontSize);
 }
 
-const QFont& emphFont()
+QFont emphFont()
 {
-    static const QFont f = []() {
-        QFont font = QApplication::font();
-        font.setPixelSize(kFontSize);
-        font.setWeight(QFont::Medium);
-        return font;
-    }();
-    return f;
+    return AppFonts::applicationPixelWeightedFont(kFontSize, QFont::Medium);
 }
 
-const QFont& buttonFont()
+QFont buttonFont()
 {
-    static const QFont f = []() {
-        QFont font = QApplication::font();
-        font.setPixelSize(kFontSize);
-        font.setWeight(QFont::Medium);
-        return font;
-    }();
-    return f;
+    return AppFonts::applicationPixelWeightedFont(kFontSize, QFont::Medium);
 }
 
-const QFontMetrics& textFm()
+QFontMetrics textFm()
 {
-    static const QFontMetrics fm(textFont());
-    return fm;
+    return AppFonts::applicationPixelSizedMetrics(kFontSize);
 }
 
 QString formatNotificationTime(const QDateTime& time)
@@ -529,7 +512,7 @@ void GroupNotificationDelegate::paint(QPainter* painter,
 {
     painter->save();
     painter->setRenderHint(QPainter::Antialiasing, true);
-    painter->setRenderHint(QPainter::TextAntialiasing, true);
+    AppFonts::configurePainterForText(*painter);
 
     painter->fillRect(option.rect, ThemeManager::instance().color(ThemeColor::PageBackground));
     if (index.data(GroupNotificationListModel::BottomSpaceRole).toBool()) {

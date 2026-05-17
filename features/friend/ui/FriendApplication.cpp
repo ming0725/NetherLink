@@ -1,4 +1,5 @@
 #include "FriendApplication.h"
+#include "shared/services/AppFonts.h"
 #include "shared/ui/StyledActionMenu.h"
 #include "shared/ui/TransparentSplitter.h"
 #include "shared/theme/ThemeManager.h"
@@ -62,7 +63,7 @@ protected:
 
         QPainter painter(this);
         painter.setRenderHint(QPainter::Antialiasing, true);
-        painter.setRenderHint(QPainter::TextAntialiasing, true);
+        AppFonts::configurePainterForText(painter);
         painter.setPen(Qt::NoPen);
         painter.setBrush(ThemeManager::instance().color(ThemeColor::PageBackground));
         painter.drawRoundedRect(rect(), 6, 6);
@@ -129,7 +130,7 @@ protected:
 
         QPainter painter(this);
         painter.setRenderHint(QPainter::Antialiasing, true);
-        painter.setRenderHint(QPainter::TextAntialiasing, true);
+        AppFonts::configurePainterForText(painter);
 
         QFont textFont = font();
         textFont.setPixelSize(12);
@@ -458,7 +459,7 @@ void FriendApplication::paintEvent(QPaintEvent*)
 {
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing, true);
-    p.setRenderHint(QPainter::TextAntialiasing, true);
+    AppFonts::configurePainterForText(p);
     p.setPen(Qt::NoPen);
     p.setBrush(ThemeManager::instance().color(ThemeColor::PanelBackground));
     p.drawRect(rect());

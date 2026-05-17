@@ -15,6 +15,7 @@
 #include <QTextOption>
 
 #include "features/post/model/PostDetailListModel.h"
+#include "shared/services/AppFonts.h"
 #include "shared/services/ImageService.h"
 #include "shared/theme/ThemeManager.h"
 
@@ -52,47 +53,37 @@ int interpolatedHeight(int collapsedHeight, int fullHeight, qreal progress)
 
 QFont fontWithPointSize(int pointSize, bool bold = false)
 {
-    QFont font = QApplication::font();
-    font.setPointSize(pointSize);
-    font.setBold(bold);
-    font.setStyleStrategy(QFont::PreferAntialias);
-    return font;
+    return AppFonts::applicationSizedFont(pointSize, bold);
 }
 
-const QFont& nameFont()
+QFont nameFont()
 {
-    static const QFont font = fontWithPointSize(13, true);
-    return font;
+    return fontWithPointSize(13, true);
 }
 
-const QFont& nameLayoutFont()
+QFont nameLayoutFont()
 {
-    static const QFont font = fontWithPointSize(12, true);
-    return font;
+    return fontWithPointSize(12, true);
 }
 
-const QFont& metaFont()
+QFont metaFont()
 {
-    static const QFont font = fontWithPointSize(11);
-    return font;
+    return fontWithPointSize(11);
 }
 
-const QFont& bodyFont()
+QFont bodyFont()
 {
-    static const QFont font = fontWithPointSize(13);
-    return font;
+    return fontWithPointSize(13);
 }
 
-const QFont& postTitleFont()
+QFont postTitleFont()
 {
-    static const QFont font = fontWithPointSize(16, true);
-    return font;
+    return fontWithPointSize(16, true);
 }
 
-const QFont& actionFont()
+QFont actionFont()
 {
-    static const QFont font = fontWithPointSize(12);
-    return font;
+    return fontWithPointSize(12);
 }
 
 QString likeIconPath(bool liked)
@@ -231,6 +222,7 @@ void PostCommentDelegate::paint(QPainter* painter,
 
         painter->save();
         painter->setRenderHints(QPainter::Antialiasing | QPainter::TextAntialiasing);
+        AppFonts::configurePainterForText(*painter);
         painter->fillRect(option.rect, ThemeManager::instance().color(ThemeColor::PanelBackground));
         drawMeasuredText(painter, title, titleRect, titleMeasure, PostTitleText, {}, {}, postTitleFont());
         drawMeasuredText(painter, text, textRect, textMeasure, PostContentText, {}, {}, bodyFont());
@@ -269,6 +261,7 @@ void PostCommentDelegate::paint(QPainter* painter,
     painter->setRenderHints(QPainter::Antialiasing
                             | QPainter::TextAntialiasing
                             | QPainter::SmoothPixmapTransform);
+    AppFonts::configurePainterForText(*painter);
     painter->setClipRect(option.rect);
     painter->fillRect(option.rect, ThemeManager::instance().color(ThemeColor::PanelBackground));
 

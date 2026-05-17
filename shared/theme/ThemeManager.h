@@ -119,6 +119,11 @@ public:
         GaussianBlur = 2
     };
 
+    enum class FontFamilyMode {
+        Default = 0,
+        Minecraft = 1
+    };
+
     static ThemeManager& instance();
 
     Mode configuredMode() const;
@@ -129,6 +134,8 @@ public:
     void setThemeColor(const QColor& color);
     QtFallbackInputBarEffect qtFallbackInputBarEffect() const;
     void setQtFallbackInputBarEffect(QtFallbackInputBarEffect effect);
+    FontFamilyMode fontFamilyMode() const;
+    void setFontFamilyMode(FontFamilyMode mode);
     bool qtFallbackLiquidGlassEnabled() const;
     void setQtFallbackLiquidGlassEnabled(bool enabled);
     bool postBarQtFallbackLiquidGlassEnabled() const;
@@ -157,6 +164,7 @@ private:
     Mode m_configuredMode = Mode::FollowSystem;
     QColor m_themeColor = QColor(0x00, 0x99, 0xff);
     QtFallbackInputBarEffect m_qtFallbackInputBarEffect = QtFallbackInputBarEffect::LiquidGlass;
+    FontFamilyMode m_fontFamilyMode = FontFamilyMode::Default;
     bool m_postBarQtFallbackLiquidGlassEnabled = true;
     bool m_refreshing = false;
 };

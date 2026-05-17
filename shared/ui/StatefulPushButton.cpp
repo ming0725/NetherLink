@@ -1,4 +1,5 @@
 #include "StatefulPushButton.h"
+#include "shared/services/AppFonts.h"
 
 #include "shared/theme/ThemeManager.h"
 
@@ -262,7 +263,7 @@ void StatefulPushButton::paintEvent(QPaintEvent* e)
 
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing, true);
-    p.setRenderHint(QPainter::TextAntialiasing, true);
+    AppFonts::configurePainterForText(p);
     QPainterPath path;
     path.addRoundedRect(rect(), m_radius, m_radius);
 

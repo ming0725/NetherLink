@@ -1,4 +1,5 @@
 #include "FriendNotificationDelegate.h"
+#include "shared/services/AppFonts.h"
 
 #include <QApplication>
 #include <QPainter>
@@ -13,41 +14,23 @@ constexpr int kLineSpacing = 1;
 constexpr int kUnifiedFontSize = 12;
 constexpr qreal kButtonBorderWidth = 1.5;
 
-const QFont& nickFont()
+QFont nickFont()
 {
-    static const QFont f = []() {
-        QFont font = QApplication::font();
-        font.setPixelSize(kUnifiedFontSize);
-        font.setWeight(QFont::Medium);
-        return font;
-    }();
-    return f;
+    return AppFonts::applicationPixelWeightedFont(kUnifiedFontSize, QFont::Medium);
 }
 
-const QFont& textFont()
+QFont textFont()
 {
-    static const QFont f = []() {
-        QFont font = QApplication::font();
-        font.setPixelSize(kUnifiedFontSize);
-        font.setWeight(QFont::Normal);
-        return font;
-    }();
-    return f;
+    return AppFonts::applicationPixelWeightedFont(kUnifiedFontSize, QFont::Normal);
 }
 
-const QFont& buttonFont()
+QFont buttonFont()
 {
-    static const QFont f = []() {
-        QFont font = QApplication::font();
-        font.setPixelSize(12);
-        font.setWeight(QFont::Medium);
-        return font;
-    }();
-    return f;
+    return AppFonts::applicationPixelWeightedFont(12, QFont::Medium);
 }
 
-const QFontMetrics& nickFm()   { static const QFontMetrics fm(nickFont()); return fm; }
-const QFontMetrics& textFm()   { static const QFontMetrics fm(textFont()); return fm; }
+QFontMetrics nickFm() { return AppFonts::applicationPixelWeightedMetrics(kUnifiedFontSize, QFont::Medium); }
+QFontMetrics textFm() { return AppFonts::applicationPixelWeightedMetrics(kUnifiedFontSize, QFont::Normal); }
 
 QString formatNotificationTime(const QDateTime& time)
 {
@@ -186,7 +169,7 @@ void FriendNotificationDelegate::paint(QPainter* painter,
 {
     painter->save();
     painter->setRenderHint(QPainter::Antialiasing, true);
-    painter->setRenderHint(QPainter::TextAntialiasing, true);
+    AppFonts::configurePainterForText(*painter);
 
     painter->fillRect(option.rect, ThemeManager::instance().color(ThemeColor::PageBackground));
     if (index.data(FriendNotificationListModel::BottomSpaceRole).toBool()) {

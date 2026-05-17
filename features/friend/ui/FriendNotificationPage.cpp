@@ -1,4 +1,5 @@
 #include "FriendNotificationPage.h"
+#include "shared/services/AppFonts.h"
 
 #include <QApplication>
 #include <QPainter>
@@ -13,14 +14,9 @@ namespace {
 constexpr int kHeaderHeight = 62;
 constexpr int kPageSize = 16;
 
-const QFont& headerFont()
+QFont headerFont()
 {
-    static const QFont font = []() {
-        QFont f = QApplication::font();
-        f.setPixelSize(17);
-        return f;
-    }();
-    return font;
+    return AppFonts::applicationPixelSizedFont(17);
 }
 
 } // namespace
@@ -109,7 +105,7 @@ void FriendNotificationPage::paintEvent(QPaintEvent* event)
 
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing, true);
-    painter.setRenderHint(QPainter::TextAntialiasing, true);
+    AppFonts::configurePainterForText(painter);
 
     // Full background
     painter.fillRect(rect(), ThemeManager::instance().color(ThemeColor::PageBackground));

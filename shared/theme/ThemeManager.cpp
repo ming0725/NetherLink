@@ -1,9 +1,12 @@
 #include "ThemeManager.h"
 
+#include "shared/services/AppFonts.h"
+
 #include <QApplication>
 #include <QAbstractItemView>
 #include <QAbstractScrollArea>
 #include <QEvent>
+#include <QFont>
 #include <QGuiApplication>
 #include <QScopedValueRollback>
 #include <QStyle>
@@ -36,6 +39,14 @@ QColor selectionColorOn(const QColor& background)
     return textColor == QColor(Qt::black)
             ? QColor(0, 0, 0, 52)
             : QColor(255, 255, 255, 88);
+}
+
+QFont applicationFont(const QFont& fallback, ThemeManager::FontFamilyMode mode)
+{
+    if (mode == ThemeManager::FontFamilyMode::Minecraft) {
+        return AppFonts::minecraftFont(fallback);
+    }
+    return AppFonts::defaultUiFont(fallback);
 }
 
 } // namespace
@@ -113,6 +124,24 @@ void ThemeManager::setQtFallbackLiquidGlassEnabled(bool enabled)
 ThemeManager::QtFallbackInputBarEffect ThemeManager::qtFallbackInputBarEffect() const
 {
     return m_qtFallbackInputBarEffect;
+}
+
+ThemeManager::FontFamilyMode ThemeManager::fontFamilyMode() const
+{
+    return m_fontFamilyMode;
+}
+
+void ThemeManager::setFontFamilyMode(FontFamilyMode mode)
+{
+    if (m_fontFamilyMode == mode) {
+        return;
+    }
+
+    m_fontFamilyMode = mode;
+    if (m_application) {
+        m_application->setFont(applicationFont(m_application->font(), m_fontFamilyMode));
+    }
+    refreshApplicationTheme();
 }
 
 void ThemeManager::setQtFallbackInputBarEffect(QtFallbackInputBarEffect effect)
@@ -575,6 +604,7 @@ QPalette ThemeManager::applicationPalette() const
 void ThemeManager::applyToApplication(QApplication& application)
 {
     m_application = &application;
+    application.setFont(applicationFont(application.font(), m_fontFamilyMode));
     installSystemThemeListener(application);
     refreshApplicationTheme();
 }

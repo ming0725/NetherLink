@@ -1,4 +1,5 @@
 #include "ChatItemDelegate.h"
+#include "shared/services/AppFonts.h"
 #include "app/state/CurrentUser.h"
 #include "features/chat/model/ChatListModel.h"
 #include "features/friend/data/UserRepository.h"
@@ -123,7 +124,7 @@ void ChatItemDelegate::paint(QPainter* painter, const QStyleOptionViewItem& opti
 
     painter->save();
     painter->setRenderHint(QPainter::Antialiasing, true);
-    painter->setRenderHint(QPainter::TextAntialiasing, true);
+    AppFonts::configurePainterForText(*painter);
 
     if (timeHeader) {
         // 绘制时间标识
