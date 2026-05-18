@@ -218,10 +218,10 @@ void NetherLinkCreditsWindow::buildCredits()
 
     addLogo();
     addSpacer(44);
-    addYellow(QStringLiteral("======================="));
+    addYellow(QStringLiteral("==================="));
     addYellow(QStringLiteral("NetherLink"));
-    addYellow(QStringLiteral("======================="));
     addYellowSmall(QStringLiteral("GitHub: https://github.com/ming0725/NetherLink-static"));
+    addYellow(QStringLiteral("===================="));
     addYellow(QStringLiteral("鸣谢名单"));
     addYellow(QStringLiteral("愿下界之门始终保持连接"));
     addSpacer(54);
@@ -253,6 +253,7 @@ void NetherLinkCreditsWindow::buildCredits()
     addRole(QStringLiteral("游戏字体"),
             QStringLiteral("Liko铃口"),
             QStringLiteral("https://www.bilibili.com/opus/650428219754807321"));
+    addRole(QStringLiteral("界面字体"), QStringLiteral("MiSans"));
     addSpacer(44);
 
     addSection(QStringLiteral("第三方库"));
@@ -467,9 +468,14 @@ void NetherLinkCreditsWindow::drawBackground(QPainter& painter)
     const int offsetY = qBound(0,
                                qRound(m_clock.elapsed() / 1000.0 * kBackgroundSpeed),
                                maxOffsetY);
-    painter.drawPixmap(QRect(0, 0, width(), height()),
-                       m_backgroundStrip,
-                       QRect(0, offsetY, width(), height()));
+    painter.save();
+    painter.setClipRect(rect());
+    painter.drawPixmap(QRect(0,
+                             -offsetY,
+                             m_backgroundStripSize.width(),
+                             m_backgroundStripSize.height()),
+                       m_backgroundStrip);
+    painter.restore();
 }
 
 void NetherLinkCreditsWindow::drawCredits(QPainter& painter)
@@ -487,9 +493,14 @@ void NetherLinkCreditsWindow::drawCredits(QPainter& painter)
         return;
     }
 
-    painter.drawPixmap(QRect(0, targetY, m_creditsPixmapSize.width(), visibleHeight),
-                       m_creditsPixmap,
-                       QRect(0, sourceY, m_creditsPixmapSize.width(), visibleHeight));
+    painter.save();
+    painter.setClipRect(rect());
+    painter.drawPixmap(QRect(0,
+                             creditsY,
+                             m_creditsPixmapSize.width(),
+                             m_creditsPixmapSize.height()),
+                       m_creditsPixmap);
+    painter.restore();
 }
 
 void NetherLinkCreditsWindow::drawEntry(QPainter& painter, const CreditEntry& entry, qreal y, qreal height)
