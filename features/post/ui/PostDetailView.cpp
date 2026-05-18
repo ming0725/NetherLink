@@ -14,6 +14,7 @@
 
 #include "features/post/model/PostDetailListModel.h"
 #include "features/post/ui/PostSessionController.h"
+#include "shared/services/AppFonts.h"
 #include "shared/services/ImageService.h"
 #include "shared/theme/ThemeManager.h"
 #include "shared/ui/IconLineEdit.h"
@@ -21,6 +22,7 @@
 #include "PostCommentDelegate.h"
 #include "PostDetailListView.h"
 #include "PostDetailView.h"
+#include "PostTypography.h"
 
 namespace {
 
@@ -236,10 +238,7 @@ void PostDetailView::setupUI()
 
     m_authorName = new QLabel(m_panelContainer);
     disableContextMenu(m_authorName);
-    QFont nameFont;
-    nameFont.setStyleStrategy(QFont::PreferAntialias);
-    nameFont.setPointSize(13);
-    nameFont.setBold(true);
+    QFont nameFont = AppFonts::applicationPixelSizedFont(PostTypography::kDetailAuthorNameFontPx, true);
     m_authorName->setFont(nameFont);
     setWidgetTextColor(m_authorName, ThemeManager::instance().color(ThemeColor::PrimaryText));
 

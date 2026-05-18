@@ -8,30 +8,28 @@
 #include "shared/theme/ThemeManager.h"
 #include "features/post/model/PostFeedModel.h"
 #include "PostMasonryView.h"
+#include "PostTypography.h"
 
 namespace {
 
-constexpr int kCachedTitleFontSize = 12;
-constexpr int kCachedMetaFontSize = 9;
-
 QFont titleFont()
 {
-    return AppFonts::applicationSizedFont(kCachedTitleFontSize);
+    return AppFonts::applicationPixelSizedFont(PostTypography::kCardTitleFontPx);
 }
 
 QFontMetrics titleMetrics()
 {
-    return AppFonts::applicationSizedMetrics(kCachedTitleFontSize);
+    return AppFonts::applicationPixelSizedMetrics(PostTypography::kCardTitleFontPx);
 }
 
 QFont metaFont()
 {
-    return AppFonts::applicationSizedFont(kCachedMetaFontSize);
+    return AppFonts::applicationPixelSizedFont(PostTypography::kCardMetaFontPx);
 }
 
 QFontMetrics metaMetrics()
 {
-    return AppFonts::applicationSizedMetrics(kCachedMetaFontSize);
+    return AppFonts::applicationPixelSizedMetrics(PostTypography::kCardMetaFontPx);
 }
 
 } // namespace

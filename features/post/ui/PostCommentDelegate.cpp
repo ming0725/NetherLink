@@ -15,6 +15,7 @@
 #include <QTextOption>
 
 #include "features/post/model/PostDetailListModel.h"
+#include "features/post/ui/PostTypography.h"
 #include "shared/services/AppFonts.h"
 #include "shared/services/ImageService.h"
 #include "shared/theme/ThemeManager.h"
@@ -51,39 +52,44 @@ int interpolatedHeight(int collapsedHeight, int fullHeight, qreal progress)
     return collapsedHeight + qRound((fullHeight - collapsedHeight) * boundedProgress);
 }
 
-QFont fontWithPointSize(int pointSize, bool bold = false)
+QFont fontWithPixelSize(int pixelSize, bool bold = false)
 {
-    return AppFonts::applicationSizedFont(pointSize, bold);
+    return AppFonts::applicationPixelSizedFont(pixelSize, bold);
 }
 
 QFont nameFont()
 {
-    return fontWithPointSize(13, true);
+    return fontWithPixelSize(PostTypography::kCommentAuthorNameFontPx, true);
 }
 
 QFont nameLayoutFont()
 {
-    return fontWithPointSize(12, true);
+    return fontWithPixelSize(PostTypography::kCommentAuthorLayoutFontPx, true);
 }
 
 QFont metaFont()
 {
-    return fontWithPointSize(11);
+    return fontWithPixelSize(PostTypography::kCommentMetaFontPx);
 }
 
-QFont bodyFont()
+QFont commentBodyFont()
 {
-    return fontWithPointSize(13);
+    return fontWithPixelSize(PostTypography::kCommentBodyFontPx);
 }
 
-QFont postTitleFont()
+QFont postDetailTitleFont()
 {
-    return fontWithPointSize(16, true);
+    return fontWithPixelSize(PostTypography::kPostDetailTitleFontPx, true);
+}
+
+QFont postDetailBodyFont()
+{
+    return fontWithPixelSize(PostTypography::kPostDetailBodyFontPx);
 }
 
 QFont actionFont()
 {
-    return fontWithPointSize(12);
+    return fontWithPixelSize(PostTypography::kCommentActionFontPx);
 }
 
 QString likeIconPath(bool liked)
@@ -209,8 +215,8 @@ void PostCommentDelegate::paint(QPainter* painter,
         const QString text = index.data(PostDetailListModel::PostBodyTextRole).toString();
         const QString dateText = index.data(PostDetailListModel::PostBodyDateTextRole).toString();
         const int textWidth = qMax(80, availableWidth(option) - kPostBodyHorizontalMargin * 2);
-        const TextMeasure titleMeasure = measureText(title, postTitleFont(), textWidth, 0);
-        const TextMeasure textMeasure = measureText(text, bodyFont(), textWidth, 0);
+        const TextMeasure titleMeasure = measureText(title, postDetailTitleFont(), textWidth, 0);
+        const TextMeasure textMeasure = measureText(text, postDetailBodyFont(), textWidth, 0);
         const QRect titleRect(option.rect.left() + kPostBodyHorizontalMargin,
                               option.rect.top() + kPostBodyTopMargin,
                               textWidth,
@@ -224,8 +230,8 @@ void PostCommentDelegate::paint(QPainter* painter,
         painter->setRenderHints(QPainter::Antialiasing | QPainter::TextAntialiasing);
         AppFonts::configurePainterForText(*painter);
         painter->fillRect(option.rect, ThemeManager::instance().color(ThemeColor::PanelBackground));
-        drawMeasuredText(painter, title, titleRect, titleMeasure, PostTitleText, {}, {}, postTitleFont());
-        drawMeasuredText(painter, text, textRect, textMeasure, PostContentText, {}, {}, bodyFont());
+        drawMeasuredText(painter, title, titleRect, titleMeasure, PostTitleText, {}, {}, postDetailTitleFont());
+        drawMeasuredText(painter, text, textRect, textMeasure, PostContentText, {}, {}, postDetailBodyFont());
 
         int y = textRect.bottom() + 1 + kPostBodyDateTopGap;
         if (!dateText.isEmpty()) {
@@ -285,7 +291,7 @@ void PostCommentDelegate::paint(QPainter* painter,
                      CommentContentText,
                      comment->commentId,
                      {},
-                     bodyFont());
+                     commentBodyFont());
 
     if (layout.commentCanExpand && !detailModel->isCommentExpanded(comment->commentId)) {
         painter->setFont(actionFont());
@@ -348,7 +354,7 @@ void PostCommentDelegate::paint(QPainter* painter,
                          ReplyContentText,
                          comment->commentId,
                          reply.replyId,
-                         bodyFont());
+                         commentBodyFont());
 
         if (!replyLayout.expandRect.isNull() && !detailModel->isReplyExpanded(reply.replyId)) {
             painter->setFont(actionFont());
@@ -401,8 +407,8 @@ QSize PostCommentDelegate::sizeHint(const QStyleOptionViewItem& option,
         const QString text = index.data(PostDetailListModel::PostBodyTextRole).toString();
         const QString dateText = index.data(PostDetailListModel::PostBodyDateTextRole).toString();
         const int textWidth = qMax(80, availableWidth(option) - kPostBodyHorizontalMargin * 2);
-        const TextMeasure titleMeasure = measureText(title, postTitleFont(), textWidth, 0);
-        const TextMeasure textMeasure = measureText(text, bodyFont(), textWidth, 0);
+        const TextMeasure titleMeasure = measureText(title, postDetailTitleFont(), textWidth, 0);
+        const TextMeasure textMeasure = measureText(text, postDetailBodyFont(), textWidth, 0);
         const QFontMetrics metaMetrics(metaFont());
         const int dateHeight = dateText.isEmpty() ? 0 : metaMetrics.lineSpacing();
         const int height = kPostBodyTopMargin
@@ -505,14 +511,14 @@ PostCommentDelegate::TextHit PostCommentDelegate::textHitAt(const QStyleOptionVi
         const QString title = index.data(PostDetailListModel::PostTitleTextRole).toString();
         const QString text = index.data(PostDetailListModel::PostBodyTextRole).toString();
         const int textWidth = qMax(80, availableWidth(option) - kPostBodyHorizontalMargin * 2);
-        const TextMeasure titleMeasure = measureText(title, postTitleFont(), textWidth, 0);
-        const TextMeasure textMeasure = measureText(text, bodyFont(), textWidth, 0);
+        const TextMeasure titleMeasure = measureText(title, postDetailTitleFont(), textWidth, 0);
+        const TextMeasure textMeasure = measureText(text, postDetailBodyFont(), textWidth, 0);
         const QRect titleRect(option.rect.left() + kPostBodyHorizontalMargin,
                               option.rect.top() + kPostBodyTopMargin,
                               textWidth,
                               titleMeasure.fullHeight);
         const int titleCursor = measuredCharacterIndexAt(title,
-                                                         postTitleFont(),
+                                                         postDetailTitleFont(),
                                                          titleRect,
                                                          point,
                                                          allowLineWhitespace);
@@ -528,7 +534,7 @@ PostCommentDelegate::TextHit PostCommentDelegate::textHitAt(const QStyleOptionVi
                              textWidth,
                              textMeasure.fullHeight);
         const int cursor = measuredCharacterIndexAt(text,
-                                                    bodyFont(),
+                                                    postDetailBodyFont(),
                                                     textRect,
                                                     point,
                                                     allowLineWhitespace);
@@ -552,7 +558,7 @@ PostCommentDelegate::TextHit PostCommentDelegate::textHitAt(const QStyleOptionVi
 
     const Layout layout = calculateLayout(option, index);
     const int commentContentCursor = measuredCharacterIndexAt(comment->content,
-                                                             bodyFont(),
+                                                             commentBodyFont(),
                                                              layout.contentRect,
                                                              point,
                                                              allowLineWhitespace);
@@ -571,7 +577,7 @@ PostCommentDelegate::TextHit PostCommentDelegate::textHitAt(const QStyleOptionVi
 
         const ReplyTextParts text = replyDisplayText(reply);
         const int replyTextCursor = measuredCharacterIndexAt(text.text,
-                                                            bodyFont(),
+                                                            commentBodyFont(),
                                                             replyLayout.textRect,
                                                             point,
                                                             allowLineWhitespace);
@@ -889,7 +895,7 @@ PostCommentDelegate::Layout PostCommentDelegate::buildLayout(const QStyleOptionV
     const int avatarX = left + kOuterMargin;
     const int contentX = avatarX + kCommentAvatarSize + kCommentAvatarTextGap;
     const int textWidth = qMax(80, right - contentX);
-    const QFont body = bodyFont();
+    const QFont body = commentBodyFont();
     const QFontMetrics nameMetrics(nameLayoutFont());
     const QFontMetrics metaMetrics(metaFont());
     const QFontMetrics actionMetrics(actionFont());

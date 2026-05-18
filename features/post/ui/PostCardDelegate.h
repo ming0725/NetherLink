@@ -54,6 +54,4 @@ private:
     static constexpr int kAvatarSize = 30;
     static constexpr int kLikeIconSize = 20;
     static constexpr int kTitleMaxLines = 2;
-    static constexpr int kTitleFontSize = 12;
-    static constexpr int kMetaFontSize = 9;
 };
