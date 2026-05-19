@@ -8,6 +8,7 @@ class AiChatMessageListModel;
 class AiChatMessageListView;
 class AiChatFloatingInputBar;
 class AiChatSessionController;
+class NewMessageNotifier;
 class PaintedLabel;
 
 class AiChatConversationWidget : public QWidget
@@ -29,11 +30,13 @@ protected:
 private slots:
     void onSendText(const QString& text);
     void onStopStreamingRequested();
+    void onRegenerateAiReplyRequested(const QString& conversationId, const QString& messageId);
     void onAiReplyStarted(const QString& conversationId);
     void onAiReplyMessageAdded(const AiChatMessage& message);
     void onAiReplyMessageUpdated(const QString& conversationId,
                                  const QString& messageId,
                                  const QString& text);
+    void onAiReplyMessageRemoved(const QString& conversationId, const QString& messageId);
     void onAiReplyFinished(const QString& conversationId, const QString& messageId);
     void onAiReplyCanceled(const QString& conversationId, const QString& messageId);
 
@@ -41,6 +44,10 @@ private:
     void updateLayout();
     void updateBottomSpace();
     void updateHeader();
+    void updateNewMessageNotifier();
+    void updateNewMessageNotifierPosition();
+    bool shouldShowNewMessageNotifier() const;
+    bool isMessageViewAtBottom() const;
     void cancelActiveAiReplyStream();
     bool hasActiveAiReplyStream() const;
 
@@ -51,8 +58,12 @@ private:
     PaintedLabel* m_titleLabel = nullptr;
     QWidget* m_headerDivider = nullptr;
     QWidget* m_bottomGapGradientOverlay = nullptr;
+    NewMessageNotifier* m_newMessageNotifier = nullptr;
     PaintedLabel* m_emptyLabel = nullptr;
     AiChatListEntry m_currentConversation;
+    int m_unreadAiReplyCount = 0;
+    bool m_newMessageNotifierRevealedByDownScroll = false;
+    bool m_streamingNotifierHeld = false;
 
     static constexpr int kHeaderHeight = 62;
     static constexpr int kHeaderTitleHeight = 28;
@@ -63,4 +74,7 @@ private:
     static constexpr int kInputBarSideMargin = 20;
     static constexpr int kInputBarBottomMargin = 18;
     static constexpr int kListBottomPadding = 10;
+    static constexpr int kNewMessageNotifierInputGap = 10;
+    static constexpr int kNewMessageNotifierMinBottomDistance = 220;
+    static constexpr int kNewMessageNotifierViewportDistanceDivisor = 2;
 };

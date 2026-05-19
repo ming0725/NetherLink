@@ -8,7 +8,14 @@ class NewMessageNotifier : public QWidget
     Q_OBJECT
 
 public:
+    enum class DisplayMode {
+        Count,
+        IconOnly,
+        Dots
+    };
+
     explicit NewMessageNotifier(QWidget *parent = nullptr);
+    void setDisplayMode(DisplayMode mode);
     void setMessageCount(int count);
     QSize sizeHint() const override;
 
@@ -32,6 +39,7 @@ private:
     void playClickSound();
 
     int m_count = 0;
+    DisplayMode m_displayMode = DisplayMode::Count;
     bool m_hovered = false;
     bool m_pressed = false;
 };

@@ -13,6 +13,7 @@
 #import <objc/runtime.h>
 
 #include <QBuffer>
+#include <QByteArray>
 #include <QPainter>
 #include <QPixmap>
 #include <QWidget>
@@ -1828,6 +1829,30 @@ void focusInputBar(QWidget* widget)
     NSView* hostView = topLevelQtViewForWidget(widget, false);
     NLFloatingInputShortcutTextView* inputField = inputTextViewForView(hostView);
     if (inputField && inputField.window) {
+        [inputField.window makeFirstResponder:inputField];
+    }
+}
+
+void appendInputText(QWidget* widget, const QString& text)
+{
+    if (!widget || text.isEmpty()) {
+        return;
+    }
+
+    NSView* hostView = topLevelQtViewForWidget(widget, false);
+    NLFloatingInputShortcutTextView* inputField = inputTextViewForView(hostView);
+    if (!inputField) {
+        return;
+    }
+
+    const QByteArray bytes = text.toUtf8();
+    NSString* appendText = [[[NSString alloc] initWithBytes:bytes.constData()
+                                                     length:static_cast<NSUInteger>(bytes.size())
+                                                   encoding:NSUTF8StringEncoding] autorelease];
+    NSString* currentText = inputField.string ?: @"";
+    [inputField setString:[currentText stringByAppendingString:appendText]];
+    [inputField setSelectedRange:NSMakeRange(inputField.string.length, 0)];
+    if (inputField.window) {
         [inputField.window makeFirstResponder:inputField];
     }
 }

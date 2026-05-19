@@ -1,0 +1,10 @@
+{
+  "id": "markdown",
+  "displayName": "Markdown",
+  "aliases": [
+    "markdown",
+    "md",
+    "mkd"
+  ],
+  "raw": true
+}

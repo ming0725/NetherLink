@@ -1,0 +1,539 @@
+#include "markdownrenderer.h"
+
+#include <QRegularExpression>
+
+namespace {
+
+struct InlineParseResult {
+    QString text;
+    QVector<MarkdownRenderer::InlineSpan> spans;
+};
+
+bool isHorizontalRule(const QString &trimmed)
+{
+    static const QRegularExpression rule(QStringLiteral(R"(^([*\-_])(?:\s*\1){2,}\s*$)"));
+    return rule.match(trimmed).hasMatch();
+}
+
+int listLevelFromIndent(const QString &indent)
+{
+    int columns = 0;
+    for (const QChar ch : indent) {
+        columns += ch == QLatin1Char('\t') ? 4 : 1;
+    }
+    return columns / 2;
+}
+
+void appendStyled(InlineParseResult &result, const QString &text, int style, const QString &href = {})
+{
+    const int start = result.text.size();
+    result.text += text;
+    if (!text.isEmpty() && style != MarkdownRenderer::NoInlineStyle) {
+        MarkdownRenderer::InlineSpan span;
+        span.start = start;
+        span.length = text.size();
+        span.style = style;
+        span.href = href;
+        result.spans.append(span);
+    }
+}
+
+bool isEscaped(const QString &source, int position)
+{
+    int slashCount = 0;
+    for (int i = position - 1; i >= 0 && source.at(i) == QLatin1Char('\\'); --i) {
+        ++slashCount;
+    }
+    return slashCount % 2 == 1;
+}
+
+int findInlineMathEnd(const QString &source, int start)
+{
+    for (int i = start + 1; i < source.size(); ++i) {
+        if (source.at(i) != QLatin1Char('$') || isEscaped(source, i)) {
+            continue;
+        }
+        if (i + 1 < source.size() && source.at(i + 1) == QLatin1Char('$')) {
+            ++i;
+            continue;
+        }
+        return i;
+    }
+    return -1;
+}
+
+InlineParseResult parseInline(const QString &source)
+{
+    InlineParseResult result;
+
+    for (int i = 0; i < source.size();) {
+        if (source.mid(i, 2) == QStringLiteral("**")) {
+            const int end = source.indexOf(QStringLiteral("**"), i + 2);
+            if (end > i + 2) {
+                appendStyled(result, source.mid(i + 2, end - i - 2), MarkdownRenderer::Bold);
+                i = end + 2;
+                continue;
+            }
+        }
+
+        if (source.mid(i, 2) == QStringLiteral("~~")) {
+            const int end = source.indexOf(QStringLiteral("~~"), i + 2);
+            if (end > i + 2) {
+                appendStyled(result, source.mid(i + 2, end - i - 2), MarkdownRenderer::Strike);
+                i = end + 2;
+                continue;
+            }
+        }
+
+        if (source.at(i) == QLatin1Char('`')) {
+            const int end = source.indexOf(QLatin1Char('`'), i + 1);
+            if (end > i + 1) {
+                appendStyled(result, source.mid(i + 1, end - i - 1), MarkdownRenderer::Code);
+                i = end + 1;
+                continue;
+            }
+        }
+
+        if (source.at(i) == QLatin1Char('$') &&
+            (i + 1 >= source.size() || source.at(i + 1) != QLatin1Char('$')) &&
+            !isEscaped(source, i)) {
+            const int end = findInlineMathEnd(source, i);
+            if (end > i + 1) {
+                const QString mathSource = source.mid(i + 1, end - i - 1).trimmed();
+                if (!mathSource.isEmpty()) {
+                    appendStyled(result, mathSource, MarkdownRenderer::Math, mathSource);
+                    i = end + 1;
+                    continue;
+                }
+            }
+        }
+
+        if (source.at(i) == QLatin1Char('[')) {
+            const int closeText = source.indexOf(QStringLiteral("]("), i + 1);
+            if (closeText > i + 1) {
+                const int closeUrl = source.indexOf(QLatin1Char(')'), closeText + 2);
+                if (closeUrl > closeText + 2) {
+                    appendStyled(result,
+                                 source.mid(i + 1, closeText - i - 1),
+                                 MarkdownRenderer::Link,
+                                 source.mid(closeText + 2, closeUrl - closeText - 2));
+                    i = closeUrl + 1;
+                    continue;
+                }
+            }
+        }
+
+        if (source.at(i) == QLatin1Char('*') &&
+            (i + 1 >= source.size() || source.at(i + 1) != QLatin1Char('*'))) {
+            const int end = source.indexOf(QLatin1Char('*'), i + 1);
+            if (end > i + 1) {
+                appendStyled(result, source.mid(i + 1, end - i - 1), MarkdownRenderer::Italic);
+                i = end + 1;
+                continue;
+            }
+        }
+
+        result.text += source.at(i);
+        ++i;
+    }
+
+    return result;
+}
+
+bool hasUnescapedPipe(const QString &line)
+{
+    bool escaped = false;
+    for (const QChar ch : line) {
+        if (escaped) {
+            escaped = false;
+            continue;
+        }
+        if (ch == QLatin1Char('\\')) {
+            escaped = true;
+            continue;
+        }
+        if (ch == QLatin1Char('|')) {
+            return true;
+        }
+    }
+    return false;
+}
+
+QStringList splitTableRow(const QString &line)
+{
+    QString trimmed = line.trimmed();
+    if (trimmed.startsWith(QLatin1Char('|'))) {
+        trimmed.remove(0, 1);
+    }
+    if (trimmed.endsWith(QLatin1Char('|')) &&
+        (trimmed.size() < 2 || trimmed.at(trimmed.size() - 2) != QLatin1Char('\\'))) {
+        trimmed.chop(1);
+    }
+
+    QStringList cells;
+    QString cell;
+    bool escaped = false;
+    for (const QChar ch : trimmed) {
+        if (escaped) {
+            cell += ch;
+            escaped = false;
+            continue;
+        }
+        if (ch == QLatin1Char('\\')) {
+            escaped = true;
+            continue;
+        }
+        if (ch == QLatin1Char('|')) {
+            cells.append(cell.trimmed());
+            cell.clear();
+            continue;
+        }
+        cell += ch;
+    }
+
+    if (escaped) {
+        cell += QLatin1Char('\\');
+    }
+    cells.append(cell.trimmed());
+    return cells;
+}
+
+bool isTableSeparatorCell(QString cell)
+{
+    cell.remove(QLatin1Char(' '));
+    static const QRegularExpression separator(QStringLiteral(R"(^:?-{3,}:?$)"));
+    return separator.match(cell).hasMatch();
+}
+
+MarkdownRenderer::TableAlignment tableAlignment(QString cell)
+{
+    cell.remove(QLatin1Char(' '));
+    const bool left = cell.startsWith(QLatin1Char(':'));
+    const bool right = cell.endsWith(QLatin1Char(':'));
+    if (left && right) {
+        return MarkdownRenderer::TableAlignment::Center;
+    }
+    if (left) {
+        return MarkdownRenderer::TableAlignment::Left;
+    }
+    if (right) {
+        return MarkdownRenderer::TableAlignment::Right;
+    }
+    return MarkdownRenderer::TableAlignment::None;
+}
+
+bool isTableSeparatorRow(const QString &line)
+{
+    if (!hasUnescapedPipe(line)) {
+        return false;
+    }
+
+    const QStringList cells = splitTableRow(line);
+    if (cells.size() < 2) {
+        return false;
+    }
+
+    for (const QString &cell : cells) {
+        if (!isTableSeparatorCell(cell)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+bool isTableStart(const QStringList &lines, int index)
+{
+    if (index + 1 >= lines.size() || !hasUnescapedPipe(lines.at(index))) {
+        return false;
+    }
+
+    const QStringList headerCells = splitTableRow(lines.at(index));
+    return headerCells.size() >= 2 && isTableSeparatorRow(lines.at(index + 1));
+}
+
+MarkdownRenderer::TableCell tableCell(const QString &source)
+{
+    const InlineParseResult parsed = parseInline(source);
+    MarkdownRenderer::TableCell cell;
+    cell.text = parsed.text;
+    cell.spans = parsed.spans;
+    return cell;
+}
+
+MarkdownRenderer::TableRow tableRow(const QStringList &sources, int columnCount, bool header)
+{
+    MarkdownRenderer::TableRow row;
+    row.header = header;
+    for (int column = 0; column < columnCount; ++column) {
+        row.cells.append(tableCell(column < sources.size() ? sources.at(column) : QString()));
+    }
+    return row;
+}
+
+QString tableRowText(const MarkdownRenderer::TableRow &row)
+{
+    QStringList cells;
+    for (const MarkdownRenderer::TableCell &cell : row.cells) {
+        cells.append(cell.text);
+    }
+    return cells.join(QLatin1Char('\t'));
+}
+
+MarkdownRenderer::Block parseTable(const QStringList &lines, int *index)
+{
+    const QStringList headerCells = splitTableRow(lines.at(*index));
+    const QStringList separatorCells = splitTableRow(lines.at(*index + 1));
+    int columnCount = qMax(headerCells.size(), separatorCells.size());
+
+    QVector<QStringList> bodyRows;
+    int cursor = *index + 2;
+    while (cursor < lines.size()) {
+        QString line = lines.at(cursor);
+        line.remove(QLatin1Char('\r'));
+        if (line.trimmed().isEmpty() || !hasUnescapedPipe(line) || isTableSeparatorRow(line)) {
+            break;
+        }
+
+        const QStringList cells = splitTableRow(line);
+        columnCount = qMax(columnCount, cells.size());
+        bodyRows.append(cells);
+        ++cursor;
+    }
+
+    MarkdownRenderer::Block block;
+    block.type = MarkdownRenderer::BlockType::Table;
+    block.tableAlignments.reserve(columnCount);
+    for (int column = 0; column < columnCount; ++column) {
+        block.tableAlignments.append(column < separatorCells.size()
+                                         ? tableAlignment(separatorCells.at(column))
+                                         : MarkdownRenderer::TableAlignment::None);
+    }
+
+    block.tableRows.append(tableRow(headerCells, columnCount, true));
+    for (const QStringList &cells : bodyRows) {
+        block.tableRows.append(tableRow(cells, columnCount, false));
+    }
+
+    QStringList rowTexts;
+    for (const MarkdownRenderer::TableRow &row : block.tableRows) {
+        rowTexts.append(tableRowText(row));
+    }
+    block.text = rowTexts.join(QLatin1Char('\n'));
+
+    *index = cursor - 1;
+    return block;
+}
+
+MarkdownRenderer::Block paragraphBlock(QStringList &paragraphLines)
+{
+    MarkdownRenderer::Block block;
+    block.type = MarkdownRenderer::BlockType::Paragraph;
+    block = MarkdownRenderer::parseInlineText(block, paragraphLines.join(QLatin1Char(' ')).trimmed());
+    paragraphLines.clear();
+    return block;
+}
+
+QString codeLanguageFromFence(const QString &trimmedFence)
+{
+    QString info = trimmedFence.mid(3).trimmed();
+    if (info.startsWith(QStringLiteral("{.")) && info.endsWith(QLatin1Char('}'))) {
+        info = info.mid(2, info.size() - 3).trimmed();
+    }
+
+    static const QRegularExpression whitespace(QStringLiteral(R"(\s+)"));
+    const QString language = info.split(whitespace, Qt::SkipEmptyParts).value(0).trimmed();
+    return language.startsWith(QLatin1Char('.')) ? language.mid(1) : language;
+}
+
+QString displayBlockText(const QStringList &lines)
+{
+    QString text = lines.join(QLatin1Char('\n'));
+    while (!text.isEmpty() && text.back().isSpace()) {
+        text.chop(1);
+    }
+    return text;
+}
+
+} // namespace
+
+QList<MarkdownRenderer::Block> MarkdownRenderer::parseBlocks(const QString &markdown)
+{
+    QList<Block> blocks;
+    QStringList paragraphLines;
+    bool inCodeBlock = false;
+    bool inMathBlock = false;
+    QStringList codeLines;
+    QStringList mathLines;
+    QString mathBlockEndMarker;
+    QString codeLanguage;
+
+    const QStringList lines = markdown.split(QLatin1Char('\n'));
+    for (int lineIndex = 0; lineIndex < lines.size(); ++lineIndex) {
+        QString line = lines.at(lineIndex);
+        line.remove(QLatin1Char('\r'));
+        const QString trimmed = line.trimmed();
+
+        if (trimmed.startsWith(QStringLiteral("```"))) {
+            if (!inCodeBlock) {
+                if (!paragraphLines.isEmpty()) {
+                    blocks.append(paragraphBlock(paragraphLines));
+                }
+                codeLines.clear();
+                codeLanguage = codeLanguageFromFence(trimmed);
+                inCodeBlock = true;
+            } else {
+                Block block;
+                block.type = BlockType::CodeBlock;
+                block.text = displayBlockText(codeLines);
+                block.language = codeLanguage;
+                blocks.append(block);
+                codeLines.clear();
+                codeLanguage.clear();
+                inCodeBlock = false;
+            }
+            continue;
+        }
+
+        if (inCodeBlock) {
+            codeLines.append(line);
+            continue;
+        }
+
+        if ((!inMathBlock && (trimmed == QStringLiteral("$$") || trimmed == QStringLiteral("\\["))) ||
+            (inMathBlock && trimmed == mathBlockEndMarker)) {
+            if (!inMathBlock) {
+                if (!paragraphLines.isEmpty()) {
+                    blocks.append(paragraphBlock(paragraphLines));
+                }
+                mathLines.clear();
+                mathBlockEndMarker = trimmed == QStringLiteral("$$")
+                                         ? QStringLiteral("$$")
+                                         : QStringLiteral("\\]");
+                inMathBlock = true;
+            } else {
+                Block block;
+                block.type = BlockType::MathBlock;
+                block.text = displayBlockText(mathLines);
+                blocks.append(block);
+                mathLines.clear();
+                mathBlockEndMarker.clear();
+                inMathBlock = false;
+            }
+            continue;
+        }
+
+        if (inMathBlock) {
+            mathLines.append(line);
+            continue;
+        }
+
+        if (isTableStart(lines, lineIndex)) {
+            if (!paragraphLines.isEmpty()) {
+                blocks.append(paragraphBlock(paragraphLines));
+            }
+            blocks.append(parseTable(lines, &lineIndex));
+            continue;
+        }
+
+        if (trimmed.isEmpty()) {
+            if (!paragraphLines.isEmpty()) {
+                blocks.append(paragraphBlock(paragraphLines));
+            }
+            continue;
+        }
+
+        if (isHorizontalRule(trimmed)) {
+            if (!paragraphLines.isEmpty()) {
+                blocks.append(paragraphBlock(paragraphLines));
+            }
+            Block block;
+            block.type = BlockType::HorizontalRule;
+            blocks.append(block);
+            continue;
+        }
+
+        static const QRegularExpression headingExpression(QStringLiteral(R"(^(#{1,6})\s+(.+)$)"));
+        const QRegularExpressionMatch headingMatch = headingExpression.match(trimmed);
+        if (headingMatch.hasMatch()) {
+            if (!paragraphLines.isEmpty()) {
+                blocks.append(paragraphBlock(paragraphLines));
+            }
+            Block block;
+            block.type = BlockType::Heading;
+            block.level = headingMatch.captured(1).size();
+            blocks.append(parseInlineText(block, headingMatch.captured(2).trimmed()));
+            continue;
+        }
+
+        static const QRegularExpression quoteExpression(QStringLiteral(R"(^>\s?(.*)$)"));
+        const QRegularExpressionMatch quoteMatch = quoteExpression.match(trimmed);
+        if (quoteMatch.hasMatch()) {
+            if (!paragraphLines.isEmpty()) {
+                blocks.append(paragraphBlock(paragraphLines));
+            }
+            Block block;
+            block.type = BlockType::BlockQuote;
+            blocks.append(parseInlineText(block, quoteMatch.captured(1).trimmed()));
+            continue;
+        }
+
+        static const QRegularExpression unorderedExpression(QStringLiteral(R"(^(\s*)[-+*]\s+(.+)$)"));
+        const QRegularExpressionMatch unorderedMatch = unorderedExpression.match(line);
+        if (unorderedMatch.hasMatch()) {
+            if (!paragraphLines.isEmpty()) {
+                blocks.append(paragraphBlock(paragraphLines));
+            }
+            Block block;
+            block.type = BlockType::UnorderedList;
+            block.level = listLevelFromIndent(unorderedMatch.captured(1));
+            blocks.append(parseInlineText(block, unorderedMatch.captured(2).trimmed()));
+            continue;
+        }
+
+        static const QRegularExpression orderedExpression(QStringLiteral(R"(^(\s*)(\d+)[.)]\s+(.+)$)"));
+        const QRegularExpressionMatch orderedMatch = orderedExpression.match(line);
+        if (orderedMatch.hasMatch()) {
+            if (!paragraphLines.isEmpty()) {
+                blocks.append(paragraphBlock(paragraphLines));
+            }
+            Block block;
+            block.type = BlockType::OrderedList;
+            block.level = listLevelFromIndent(orderedMatch.captured(1));
+            block.number = orderedMatch.captured(2).toInt();
+            blocks.append(parseInlineText(block, orderedMatch.captured(3).trimmed()));
+            continue;
+        }
+
+        paragraphLines.append(trimmed);
+    }
+
+    if (inCodeBlock) {
+        Block block;
+        block.type = BlockType::CodeBlock;
+        block.text = displayBlockText(codeLines);
+        block.language = codeLanguage;
+        blocks.append(block);
+    }
+
+    if (inMathBlock) {
+        Block block;
+        block.type = BlockType::MathBlock;
+        block.text = displayBlockText(mathLines);
+        blocks.append(block);
+        mathBlockEndMarker.clear();
+    }
+
+    if (!paragraphLines.isEmpty()) {
+        blocks.append(paragraphBlock(paragraphLines));
+    }
+
+    return blocks;
+}
+
+MarkdownRenderer::Block MarkdownRenderer::parseInlineText(Block block, const QString &markdownText)
+{
+    const InlineParseResult result = parseInline(markdownText);
+    block.text = result.text;
+    block.spans = result.spans;
+    return block;
+}

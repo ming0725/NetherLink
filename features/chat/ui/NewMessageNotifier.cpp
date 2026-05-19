@@ -16,9 +16,12 @@ namespace {
 
 constexpr int kHeight = 34;
 constexpr int kMinWidth = 62;
+constexpr int kIconOnlyWidth = 42;
 constexpr int kHorizontalPadding = 10;
 constexpr int kIconSize = 20;
 constexpr int kIconTextGap = 6;
+constexpr int kDotSize = 4;
+constexpr int kDotGap = 3;
 constexpr int kCornerRadius = 15;
 const QString kIconSource = QStringLiteral(":/resources/icon/ender_pearl.png");
 
@@ -65,7 +68,13 @@ void NewMessageNotifier::paintEvent(QPaintEvent *event)
     painter.setBrush(background);
     painter.drawPath(path);
 
-    const QRect contentRect = rect().adjusted(kHorizontalPadding, 0, -kHorizontalPadding, 0);
+    const int dotsWidth = kDotSize * 3 + kDotGap * 2;
+    const int contentWidth = m_displayMode == DisplayMode::Dots
+            ? kIconSize + kIconTextGap + dotsWidth
+            : kIconSize;
+    const QRect contentRect = m_displayMode == DisplayMode::Count
+            ? rect().adjusted(kHorizontalPadding, 0, -kHorizontalPadding, 0)
+            : QRect((width() - contentWidth) / 2, 0, contentWidth, height());
     const QRect iconRect(contentRect.left(),
                          (height() - kIconSize) / 2,
                          kIconSize,
@@ -78,16 +87,32 @@ void NewMessageNotifier::paintEvent(QPaintEvent *event)
         painter.drawPixmap(iconRect, icon);
     }
 
-    QFont countFont = font();
-    countFont.setPixelSize(14);
-    countFont.setWeight(QFont::DemiBold);
-    painter.setFont(countFont);
     painter.setPen(foreground);
     AppFonts::configurePainterForText(painter);
+
+    if (m_displayMode == DisplayMode::IconOnly) {
+        return;
+    }
+
     const QRect textRect(iconRect.right() + 1 + kIconTextGap,
                          0,
                          qMax(0, contentRect.right() - iconRect.right() - kIconTextGap),
                          height());
+    if (m_displayMode == DisplayMode::Dots) {
+        painter.setBrush(foreground);
+        painter.setPen(Qt::NoPen);
+        const int startX = textRect.left() + (textRect.width() - dotsWidth) / 2;
+        const int y = (height() - kDotSize) / 2;
+        for (int i = 0; i < 3; ++i) {
+            painter.drawEllipse(QRect(startX + i * (kDotSize + kDotGap), y, kDotSize, kDotSize));
+        }
+        return;
+    }
+
+    QFont countFont = font();
+    countFont.setPixelSize(14);
+    countFont.setWeight(QFont::DemiBold);
+    painter.setFont(countFont);
     painter.drawText(textRect, Qt::AlignVCenter | Qt::AlignRight, displayText());
 }
 
@@ -139,6 +164,17 @@ void NewMessageNotifier::leaveEvent(QEvent *event)
     update();
 }
 
+void NewMessageNotifier::setDisplayMode(DisplayMode mode)
+{
+    if (m_displayMode == mode) {
+        return;
+    }
+
+    m_displayMode = mode;
+    updateSize();
+    update();
+}
+
 void NewMessageNotifier::setMessageCount(int count)
 {
     m_count = qMax(0, count);
@@ -148,6 +184,13 @@ void NewMessageNotifier::setMessageCount(int count)
 
 QSize NewMessageNotifier::sizeHint() const
 {
+    if (m_displayMode == DisplayMode::IconOnly) {
+        return QSize(kIconOnlyWidth, kHeight);
+    }
+    if (m_displayMode == DisplayMode::Dots) {
+        return QSize(kHorizontalPadding * 2 + kIconSize + kIconTextGap + kDotSize * 3 + kDotGap * 2, kHeight);
+    }
+
     QFont countFont = font();
     countFont.setPixelSize(14);
     countFont.setWeight(QFont::DemiBold);

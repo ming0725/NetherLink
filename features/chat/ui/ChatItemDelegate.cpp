@@ -99,6 +99,19 @@ int textCacheCost(const QString& text)
     return qBound(1, text.size() / 512 + 1, 16);
 }
 
+QString roleText(GroupRole role)
+{
+    switch (role) {
+    case GroupRole::Owner:
+        return QStringLiteral("群主");
+    case GroupRole::Admin:
+        return QStringLiteral("管理员");
+    case GroupRole::Member:
+    default:
+        return QStringLiteral("群成员");
+    }
+}
+
 } // namespace
 
 ChatItemDelegate::ChatItemDelegate(QObject* parent)
@@ -109,15 +122,23 @@ ChatItemDelegate::ChatItemDelegate(QObject* parent)
     m_urlRangesCache.setMaxCost(256);
 }
 
+void ChatItemDelegate::setRecallEligibilityCallback(std::function<bool(const ChatMessage*)> callback)
+{
+    m_recallEligibilityCallback = std::move(callback);
+}
+
 void ChatItemDelegate::paint(QPainter* painter, const QStyleOptionViewItem& option,
                            const QModelIndex& index) const
 {
     QVariant data = index.data(Qt::UserRole);
     const ChatMessage* message = nullptr;
     const TimeHeader* timeHeader = nullptr;
+    const NewMessageDivider* newMessageDivider = nullptr;
 
     if (data.canConvert<TimeHeader*>()) {
         timeHeader = data.value<TimeHeader*>();
+    } else if (data.canConvert<NewMessageDivider*>()) {
+        newMessageDivider = data.value<NewMessageDivider*>();
     } else if (data.canConvert<ChatMessage*>()) {
         message = data.value<ChatMessage*>();
     }
@@ -126,7 +147,9 @@ void ChatItemDelegate::paint(QPainter* painter, const QStyleOptionViewItem& opti
     painter->setRenderHint(QPainter::Antialiasing, true);
     AppFonts::configurePainterForText(*painter);
 
-    if (timeHeader) {
+    if (newMessageDivider) {
+        drawNewMessageDivider(painter, option.rect, newMessageDivider->text);
+    } else if (timeHeader) {
         // 绘制时间标识
         QRect timeHeaderRect = QRect(
             0,                          // x
@@ -136,6 +159,12 @@ void ChatItemDelegate::paint(QPainter* painter, const QStyleOptionViewItem& opti
         );
         drawTimeHeader(painter, timeHeaderRect, timeHeader->text);
     } else if (message) {
+        if (message->getType() == MessageType::Recall) {
+            drawRecallMessage(painter, option.rect, static_cast<const RecallMessage*>(message), index);
+            painter->restore();
+            return;
+        }
+
         const int maxBubbleWidth = calculateMaxBubbleWidth(option.rect);
         bool isFromMe = message->isFromMe();
 
@@ -174,7 +203,9 @@ bool ChatItemDelegate::editorEvent(QEvent* event, QAbstractItemModel* model,
 
         // 检查是否是底部空白区域或时间标识
         if (ChatListModel* chatModel = qobject_cast<ChatListModel*>(model)) {
-            if (chatModel->isBottomSpace(index.row()) || chatModel->isTimeHeader(index.row())) {
+            if (chatModel->isBottomSpace(index.row()) ||
+                    chatModel->isTimeHeader(index.row()) ||
+                    chatModel->isNewMessageDivider(index.row())) {
                 chatModel->clearSelection();
                 return true;
             }
@@ -182,6 +213,18 @@ bool ChatItemDelegate::editorEvent(QEvent* event, QAbstractItemModel* model,
 
         const ChatMessage* message = index.data(Qt::UserRole).value<ChatMessage*>();
         if (!message) return false;
+
+        if (message->getType() == MessageType::Recall) {
+            const RecallMessage* recallMessage = static_cast<const RecallMessage*>(message);
+            if (mouseEvent->button() == Qt::LeftButton &&
+                    recallMessage->canReedit() &&
+                    calculateRecallReeditRect(option.rect, recallMessage).contains(mouseEvent->pos())) {
+                emit reeditRequested(index.row());
+                return true;
+            }
+            model->setData(index, false, Qt::UserRole + 1);
+            return true;
+        }
 
         if (bubbleHitTest(option, index, mouseEvent->pos())) {
             // 无论是左键还是右键点击，都设置选中状态
@@ -218,6 +261,10 @@ bool ChatItemDelegate::bubbleHitTest(const QStyleOptionViewItem& option,
     const ChatMessage* message = index.data(Qt::UserRole).value<ChatMessage*>();
     if (!message) {
         return false;
+    }
+    if (message->getType() == MessageType::Recall) {
+        const RecallMessage* recallMessage = static_cast<const RecallMessage*>(message);
+        return calculateRecallContentRect(option.rect, recallMessage).contains(viewportPos);
     }
 
     const int maxBubbleWidth = calculateMaxBubbleWidth(option.rect);
@@ -403,10 +450,42 @@ QPersistentModelIndex ChatItemDelegate::selectionIndex() const
     return m_selectionIndex;
 }
 
+bool ChatItemDelegate::reeditHitTest(const QStyleOptionViewItem& option,
+                                     const QModelIndex& index,
+                                     const QPoint& viewportPos) const
+{
+    const ChatMessage* message = index.data(Qt::UserRole).value<ChatMessage*>();
+    if (!message || message->getType() != MessageType::Recall) {
+        return false;
+    }
+
+    const RecallMessage* recallMessage = static_cast<const RecallMessage*>(message);
+    if (!recallMessage->canReedit()) {
+        return false;
+    }
+
+    return calculateRecallReeditRect(option.rect, recallMessage).adjusted(-4, -4, 4, 4).contains(viewportPos);
+}
+
+bool ChatItemDelegate::triggerReeditIfHit(const QStyleOptionViewItem& option,
+                                          const QModelIndex& index,
+                                          const QPoint& viewportPos)
+{
+    if (!reeditHitTest(option, index, viewportPos)) {
+        return false;
+    }
+
+    emit reeditRequested(index.row());
+    return true;
+}
+
 void ChatItemDelegate::drawBubble(QPainter* painter, const QRect& rect,
                                   bool isFromMe, const ChatMessage* message, bool isSelected,
                                   const QModelIndex& index) const
 {
+    if (message->getType() == MessageType::Recall) {
+        return;
+    }
     if (message->getType() == MessageType::Image) {
         const ImageMessage* imgMsg = static_cast<const ImageMessage*>(message);
         drawImageMessage(painter, rect, imgMsg->getImageSource(), isSelected);
@@ -496,6 +575,61 @@ void ChatItemDelegate::drawTextMessage(QPainter* painter, const QRect& rect,
     painter->save();
     painter->translate(textRect.left(), textRect.top());
     textDocument.documentLayout()->draw(painter, paintContext);
+    painter->restore();
+}
+
+void ChatItemDelegate::drawRecallMessage(QPainter* painter,
+                                         const QRect& rect,
+                                         const RecallMessage* message,
+                                         const QModelIndex&) const
+{
+    if (!message) {
+        return;
+    }
+
+    painter->save();
+    AppFonts::configurePainterForText(*painter);
+    const QFont font = recallFont();
+    painter->setFont(font);
+    const QFontMetrics fm(font);
+    const QRect contentRect = calculateRecallContentRect(rect, message);
+    const QString displayText = message->getDisplayText();
+    const QColor normalColor = ThemeManager::instance().color(ThemeColor::TertiaryText);
+    const QColor accentColor = ThemeManager::instance().color(ThemeColor::Accent);
+
+    int x = contentRect.left();
+    const int baselineY = contentRect.top() + (contentRect.height() + fm.ascent() - fm.descent()) / 2;
+
+    if (message->isInGroupChat()) {
+        const QString name = message->isModeratorRecall()
+                ? message->getActorName()
+                : message->getSenderName();
+        const QString prefix = message->isModeratorRecall()
+                ? QStringLiteral("%1 ").arg(roleText(message->getActorRole()))
+                : QStringLiteral("%1 ").arg(roleText(message->getRole()));
+        const QString suffix = message->isModeratorRecall()
+                ? QStringLiteral(" 撤回了一条群成员消息")
+                : QStringLiteral(" 撤回了一条消息");
+
+        painter->setPen(normalColor);
+        painter->drawText(x, baselineY, prefix);
+        x += fm.horizontalAdvance(prefix);
+        painter->setPen(accentColor);
+        painter->drawText(x, baselineY, name);
+        x += fm.horizontalAdvance(name);
+        painter->setPen(normalColor);
+        painter->drawText(x, baselineY, suffix);
+    } else {
+        painter->setPen(normalColor);
+        painter->drawText(x, baselineY, displayText);
+    }
+
+    if (message->canReedit()) {
+        const QRect reeditRect = calculateRecallReeditRect(rect, message);
+        painter->setPen(accentColor);
+        painter->drawText(reeditRect, Qt::AlignLeft | Qt::AlignVCenter, QStringLiteral("重新编辑"));
+    }
+
     painter->restore();
 }
 
@@ -653,9 +787,12 @@ QSize ChatItemDelegate::sizeHint(const QStyleOptionViewItem& option,
     QVariant data = index.data(Qt::UserRole);
     const ChatMessage* message = nullptr;
     const TimeHeader* timeHeader = nullptr;
+    const NewMessageDivider* newMessageDivider = nullptr;
 
     if (data.canConvert<TimeHeader*>()) {
         timeHeader = data.value<TimeHeader*>();
+    } else if (data.canConvert<NewMessageDivider*>()) {
+        newMessageDivider = data.value<NewMessageDivider*>();
     } else if (data.canConvert<ChatMessage*>()) {
         message = data.value<ChatMessage*>();
     } else if (data.canConvert<int>()) {
@@ -664,10 +801,16 @@ QSize ChatItemDelegate::sizeHint(const QStyleOptionViewItem& option,
         return QSize(option.rect.width(), height);
     }
 
-    if (timeHeader) {
+    if (newMessageDivider) {
+        return QSize(option.rect.width(), NEW_MESSAGE_DIVIDER_HEIGHT);
+    } else if (timeHeader) {
         // 时间标识的高度（包括上下间距）
         return QSize(option.rect.width(), TIME_HEADER_HEIGHT + 12);  // 12是上下各6像素的间距
     } else if (message) {
+        if (message->getType() == MessageType::Recall) {
+            return QSize(option.rect.width(), 32);
+        }
+
         const int maxBubbleWidth = calculateMaxBubbleWidth(option.rect);
 
         int bubbleHeight = 0;
@@ -756,10 +899,87 @@ QRect ChatItemDelegate::calculateTextRect(const QRect& bubbleRect) const
                                -BUBBLE_PADDING, -BUBBLE_PADDING);
 }
 
+QRect ChatItemDelegate::calculateRecallContentRect(const QRect& contentRect,
+                                                   const RecallMessage* message) const
+{
+    if (!message) {
+        return {};
+    }
+
+    const QFontMetrics fm(recallFont());
+    int textWidth = 0;
+    if (message->isInGroupChat()) {
+        const QString name = message->isModeratorRecall()
+                ? message->getActorName()
+                : message->getSenderName();
+        const QString prefix = message->isModeratorRecall()
+                ? QStringLiteral("%1 ").arg(roleText(message->getActorRole()))
+                : QStringLiteral("%1 ").arg(roleText(message->getRole()));
+        const QString suffix = message->isModeratorRecall()
+                ? QStringLiteral(" 撤回了一条群成员消息")
+                : QStringLiteral(" 撤回了一条消息");
+        textWidth = fm.horizontalAdvance(prefix) +
+                fm.horizontalAdvance(name) +
+                fm.horizontalAdvance(suffix);
+    } else {
+        textWidth = fm.horizontalAdvance(message->getDisplayText());
+    }
+
+    if (message->canReedit()) {
+        textWidth += fm.horizontalAdvance(QStringLiteral(" 重新编辑"));
+    }
+
+    const int width = qMin(textWidth, qMax(0, contentRect.width() - HORIZONTAL_EDGE_MARGIN * 2));
+    return QRect(contentRect.left() + (contentRect.width() - width) / 2,
+                 contentRect.top(),
+                 width,
+                 contentRect.height());
+}
+
+QRect ChatItemDelegate::calculateRecallReeditRect(const QRect& contentRect,
+                                                  const RecallMessage* message) const
+{
+    if (!message || !message->canReedit()) {
+        return {};
+    }
+
+    const QFontMetrics fm(recallFont());
+    int leftWidth = 0;
+    if (message->isInGroupChat()) {
+        const QString name = message->isModeratorRecall()
+                ? message->getActorName()
+                : message->getSenderName();
+        const QString prefix = message->isModeratorRecall()
+                ? QStringLiteral("%1 ").arg(roleText(message->getActorRole()))
+                : QStringLiteral("%1 ").arg(roleText(message->getRole()));
+        const QString suffix = message->isModeratorRecall()
+                ? QStringLiteral(" 撤回了一条群成员消息 ")
+                : QStringLiteral(" 撤回了一条消息 ");
+        leftWidth = fm.horizontalAdvance(prefix) +
+                fm.horizontalAdvance(name) +
+                fm.horizontalAdvance(suffix);
+    } else {
+        leftWidth = fm.horizontalAdvance(message->getDisplayText() + QStringLiteral(" "));
+    }
+
+    const QRect fullRect = calculateRecallContentRect(contentRect, message);
+    return QRect(fullRect.left() + leftWidth,
+                 fullRect.top(),
+                 fm.horizontalAdvance(QStringLiteral("重新编辑")),
+                 fullRect.height());
+}
+
 QFont ChatItemDelegate::messageFont() const
 {
     QFont font = QApplication::font();
     font.setPixelSize(14);
+    return font;
+}
+
+QFont ChatItemDelegate::recallFont() const
+{
+    QFont font = QApplication::font();
+    font.setPixelSize(12);
     return font;
 }
 
@@ -900,19 +1120,36 @@ void ChatItemDelegate::showContextMenu(const QPoint& pos, const QModelIndex& ind
     const QPersistentModelIndex persistentIndex(index);
 
     // 添加复制选项
+    bool hasPrimaryAction = false;
     if (message->getType() == MessageType::Text) {
-        QAction* copyAction = menu->addAction("复制");
+        QAction* copyAction = menu->addAction(QStringLiteral("复制"));
         connect(copyAction, &QAction::triggered, [this, message, index, model = const_cast<QAbstractItemModel*>(index.model())]() {
             const TextMessage* textMessage = static_cast<const TextMessage*>(message);
             QApplication::clipboard()->setText(textMessage->getText());
             showCopyNotification(parent());
             model->setData(index, false, Qt::UserRole + 1);
         });
+        hasPrimaryAction = true;
+    }
+
+    const bool canRecall = message &&
+            message->getType() != MessageType::Recall &&
+            m_recallEligibilityCallback &&
+            m_recallEligibilityCallback(message);
+    if (canRecall) {
+        QAction* recallAction = menu->addAction(QStringLiteral("撤回"));
+        connect(recallAction, &QAction::triggered, [this, index]() {
+            emit const_cast<ChatItemDelegate*>(this)->recallRequested(index.row());
+        });
+        hasPrimaryAction = true;
+    }
+
+    if (hasPrimaryAction) {
         menu->addSeparator();
     }
 
     // 添加删除选项
-    QAction* deleteAction = menu->addAction("删除");
+    QAction* deleteAction = menu->addAction(QStringLiteral("删除"));
     StyledActionMenu::setActionColors(deleteAction,
                                       ThemeManager::instance().color(ThemeColor::DestructiveActionText),
                                       ThemeManager::instance().color(ThemeColor::DestructiveActionBackground),
@@ -966,6 +1203,38 @@ void ChatItemDelegate::drawTimeHeader(QPainter* painter, const QRect& rect,
     // 绘制文本
     painter->setPen(ThemeManager::instance().color(ThemeColor::TertiaryText));
     painter->drawText(timeRect, Qt::AlignCenter, text);
+}
+
+void ChatItemDelegate::drawNewMessageDivider(QPainter* painter, const QRect& rect,
+                                             const QString& text) const
+{
+    QFont font = QApplication::font();
+    font.setPixelSize(NEW_MESSAGE_DIVIDER_FONT_SIZE);
+    painter->setFont(font);
+
+    QFontMetrics metrics(font);
+    const int textWidth = metrics.horizontalAdvance(text);
+    const int textLeft = rect.left() + (rect.width() - textWidth) / 2;
+    const int textRight = textLeft + textWidth;
+    const int lineY = rect.top() + rect.height() / 2;
+    const int leftStart = rect.left() + NEW_MESSAGE_DIVIDER_MARGIN;
+    const int leftEnd = textLeft - NEW_MESSAGE_DIVIDER_TEXT_GAP;
+    const int rightStart = textRight + NEW_MESSAGE_DIVIDER_TEXT_GAP;
+    const int rightEnd = rect.right() - NEW_MESSAGE_DIVIDER_MARGIN;
+
+    const QColor accent = ThemeManager::instance().color(ThemeColor::Accent);
+    QPen linePen(accent, 1);
+    linePen.setCapStyle(Qt::FlatCap);
+    painter->setPen(linePen);
+    if (leftEnd > leftStart) {
+        painter->drawLine(QPoint(leftStart, lineY), QPoint(leftEnd, lineY));
+    }
+    if (rightEnd > rightStart) {
+        painter->drawLine(QPoint(rightStart, lineY), QPoint(rightEnd, lineY));
+    }
+
+    painter->setPen(accent);
+    painter->drawText(rect, Qt::AlignCenter, text);
 }
 
 QRect ChatItemDelegate::calculateTimeHeaderRect(const QRect& contentRect,

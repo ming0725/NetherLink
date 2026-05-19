@@ -1,24 +1,133 @@
 #include "AiChatMessageDelegate.h"
 #include "shared/services/AppFonts.h"
 
+#include <QAbstractListModel>
 #include <QAbstractTextDocumentLayout>
 #include <QApplication>
 #include <QFontMetricsF>
+#include <QImage>
+#include <QDebug>
 #include <QPainter>
 #include <QPainterPath>
+#include <QPixmap>
 #include <QRegularExpression>
+#include <QStyle>
 #include <QTextBlock>
 #include <QTextBlockFormat>
 #include <QTextCharFormat>
 #include <QTextCursor>
 #include <QTextDocument>
+#include <QTextLayout>
 #include <QTextOption>
+#include <QTransform>
 #include <QtMath>
 
+#include <algorithm>
+
 #include "features/aichat/model/AiChatMessageListModel.h"
+#include "shared/services/ImageService.h"
 #include "shared/theme/ThemeManager.h"
+#include "shared/ui/markdown/markdowndocumentmodel.h"
 
 namespace {
+
+constexpr bool kAiChatLayoutDebug = false;
+constexpr int kViewPaintWidthInset = 4;
+
+QStyleOptionViewItem optionWithPaintWidth(const QStyleOptionViewItem& option)
+{
+    QStyleOptionViewItem adjusted(option);
+    adjusted.rect.setWidth(qMax(1, adjusted.rect.width() - kViewPaintWidthInset));
+    return adjusted;
+}
+
+QString rectDebugString(const QRect& rect)
+{
+    return QStringLiteral("(%1,%2 %3x%4)")
+            .arg(rect.x())
+            .arg(rect.y())
+            .arg(rect.width())
+            .arg(rect.height());
+}
+
+QString pointDebugString(const QPoint& point)
+{
+    return QStringLiteral("(%1,%2)").arg(point.x()).arg(point.y());
+}
+
+QString messageActionDebugString(AiChatMessageDelegate::MessageAction action)
+{
+    switch (action) {
+    case AiChatMessageDelegate::MessageAction::None:
+        return QStringLiteral("None");
+    case AiChatMessageDelegate::MessageAction::Copy:
+        return QStringLiteral("Copy");
+    case AiChatMessageDelegate::MessageAction::Refresh:
+        return QStringLiteral("Refresh");
+    case AiChatMessageDelegate::MessageAction::Like:
+        return QStringLiteral("Like");
+    case AiChatMessageDelegate::MessageAction::Dislike:
+        return QStringLiteral("Dislike");
+    case AiChatMessageDelegate::MessageAction::ToggleExpansion:
+        return QStringLiteral("ToggleExpansion");
+    }
+    return QStringLiteral("Unknown");
+}
+
+struct MarkdownBlockSelection {
+    int start = -1;
+    int end = -1;
+};
+
+class MarkdownBlockModel final : public QAbstractListModel
+{
+public:
+    MarkdownBlockModel(const QList<MarkdownRenderer::Block>* blocks,
+                       const QVector<MarkdownBlockSelection>& selections,
+                       QObject* parent = nullptr)
+        : QAbstractListModel(parent)
+        , m_blocks(blocks)
+        , m_selections(selections)
+    {
+    }
+
+    int rowCount(const QModelIndex& parent = QModelIndex()) const override
+    {
+        return parent.isValid() || !m_blocks ? 0 : m_blocks->size();
+    }
+
+    QVariant data(const QModelIndex& index, int role = Qt::DisplayRole) const override
+    {
+        if (!m_blocks || !index.isValid() || index.row() < 0 || index.row() >= m_blocks->size()) {
+            return {};
+        }
+
+        const MarkdownRenderer::Block& block = m_blocks->at(index.row());
+        switch (role) {
+        case Qt::DisplayRole:
+        case MarkdownDocumentModel::TextRole:
+            return block.text;
+        case MarkdownDocumentModel::TypeRole:
+            return static_cast<int>(block.type);
+        case MarkdownDocumentModel::LevelRole:
+            return block.level;
+        case MarkdownDocumentModel::NumberRole:
+            return block.number;
+        case MarkdownDocumentModel::BlockRole:
+            return QVariant::fromValue(block);
+        case MarkdownDocumentModel::SelectionStartRole:
+            return index.row() < m_selections.size() ? m_selections.at(index.row()).start : -1;
+        case MarkdownDocumentModel::SelectionEndRole:
+            return index.row() < m_selections.size() ? m_selections.at(index.row()).end : -1;
+        default:
+            return {};
+        }
+    }
+
+private:
+    const QList<MarkdownRenderer::Block>* m_blocks = nullptr;
+    QVector<MarkdownBlockSelection> m_selections;
+};
 
 QColor userBubbleColor(bool dark)
 {
@@ -174,6 +283,138 @@ int textCacheCost(const QString& text)
     return qBound(1, text.size() / 512 + 1, 16);
 }
 
+int firstMarkdownBlockAtY(const QVector<int>& blockOffsets, const QVector<int>& blockHeights, int y)
+{
+    if (blockOffsets.isEmpty()) {
+        return 0;
+    }
+
+    const auto begin = blockOffsets.cbegin();
+    const auto end = blockOffsets.cend();
+    int row = static_cast<int>(std::upper_bound(begin, end, y) - begin) - 1;
+    row = qBound(0, row, blockOffsets.size() - 1);
+    while (row < blockHeights.size() &&
+           blockOffsets.at(row) + blockHeights.at(row) <= y) {
+        ++row;
+    }
+    return qBound(0, row, blockOffsets.size());
+}
+
+int lastMarkdownBlockAtY(const QVector<int>& blockOffsets, int y)
+{
+    if (blockOffsets.isEmpty()) {
+        return -1;
+    }
+
+    const auto begin = blockOffsets.cbegin();
+    const auto end = blockOffsets.cend();
+    int row = static_cast<int>(std::upper_bound(begin, end, y) - begin) - 1;
+    return qBound(0, row, blockOffsets.size() - 1);
+}
+
+int collapsedDocumentHeight(const QTextDocument& document, int maxLines, int fallbackHeight, bool* canExpand)
+{
+    if (canExpand) {
+        *canExpand = false;
+    }
+    if (maxLines <= 0) {
+        return qMax(1, qCeil(document.size().height()));
+    }
+
+    int lineCount = 0;
+    int collapsedHeight = qMax(1, fallbackHeight);
+    for (QTextBlock block = document.begin(); block.isValid(); block = block.next()) {
+        const QTextLayout* layout = block.layout();
+        if (!layout) {
+            continue;
+        }
+
+        const QPointF blockPosition = document.documentLayout()->blockBoundingRect(block).topLeft();
+        for (int i = 0; i < layout->lineCount(); ++i) {
+            const QTextLine line = layout->lineAt(i);
+            ++lineCount;
+            if (lineCount == maxLines) {
+                collapsedHeight = qMax(fallbackHeight,
+                                       qCeil(blockPosition.y() + line.y() + line.height()));
+            } else if (lineCount > maxLines) {
+                if (canExpand) {
+                    *canExpand = true;
+                }
+                return collapsedHeight;
+            }
+        }
+    }
+
+    return qMax(collapsedHeight, qCeil(document.size().height()));
+}
+
+int interpolatedHeight(int collapsedHeight, int fullHeight, qreal progress)
+{
+    const qreal boundedProgress = qBound(0.0, progress, 1.0);
+    return collapsedHeight + qRound((fullHeight - collapsedHeight) * boundedProgress);
+}
+
+qreal painterDevicePixelRatio(QPainter* painter)
+{
+    if (!painter || !painter->device()) {
+        return 1.0;
+    }
+    return qMax<qreal>(1.0, painter->device()->devicePixelRatioF());
+}
+
+QPixmap transformedActionIcon(const QString& source,
+                              const QSize& iconSize,
+                              qreal dpr,
+                              bool invert,
+                              bool upsideDown)
+{
+    QPixmap icon = ImageService::instance().scaled(source,
+                                                   iconSize,
+                                                   Qt::KeepAspectRatio,
+                                                   dpr);
+    if (icon.isNull()) {
+        return {};
+    }
+
+    QImage image = icon.toImage().convertToFormat(QImage::Format_ARGB32_Premultiplied);
+    if (invert) {
+        image.invertPixels(QImage::InvertRgb);
+    }
+    if (upsideDown) {
+        QTransform transform;
+        transform.scale(-1.0, -1.0);
+        image = image.transformed(transform);
+    }
+
+    QPixmap result = QPixmap::fromImage(image);
+    result.setDevicePixelRatio(icon.devicePixelRatio());
+    return result;
+}
+
+void drawActionIcon(QPainter* painter,
+                    const QString& source,
+                    const QRect& buttonRect,
+                    const QSize& iconSize,
+                    bool invert,
+                    bool upsideDown)
+{
+    const QPixmap icon = transformedActionIcon(source,
+                                               iconSize,
+                                               painterDevicePixelRatio(painter),
+                                               invert,
+                                               upsideDown);
+    if (icon.isNull()) {
+        return;
+    }
+
+    QRect target(QPoint(0, 0), iconSize);
+    target.moveCenter(buttonRect.center());
+    painter->save();
+    painter->setRenderHint(QPainter::SmoothPixmapTransform, true);
+    painter->drawPixmap(target, icon);
+    painter->restore();
+}
+
 } // namespace
 
 AiChatMessageDelegate::AiChatMessageDelegate(QObject* parent)
@@ -182,6 +423,8 @@ AiChatMessageDelegate::AiChatMessageDelegate(QObject* parent)
     m_textDocumentCache.setMaxCost(96);
     m_textSizeCache.setMaxCost(256);
     m_urlRangesCache.setMaxCost(256);
+    m_markdownCache.setMaxCost(128);
+    m_markdownLayoutCache.setMaxCost(512);
 }
 
 void AiChatMessageDelegate::paint(QPainter* painter,
@@ -219,6 +462,35 @@ void AiChatMessageDelegate::paint(QPainter* painter,
             : ThemeManager::instance().color(ThemeColor::AccentTextSelection);
 
     const LayoutMetrics metrics = layoutMetrics(option, index);
+    if (kAiChatLayoutDebug && isFromUser) {
+        const QString messageId = index.data(AiChatMessageListModel::MessageIdRole).toString();
+        qDebug().noquote()
+                << "AICHAT_LAYOUT paint"
+                << "row=" << index.row()
+                << "id=" << messageId
+                << "option=" << rectDebugString(option.rect)
+                << "bubble=" << rectDebugString(metrics.bubbleRect)
+                << "text=" << rectDebugString(metrics.textRect)
+                << "expand=" << rectDebugString(metrics.expandRect)
+                << "copy=" << rectDebugString(metrics.copyButtonRect)
+                << "contentBottom=" << qMax(metrics.bubbleRect.bottom(), metrics.copyButtonRect.bottom())
+                << "canExpand=" << metrics.userCanExpand
+                << "progress=" << userMessageExpansionProgress(messageId)
+                << "copyOpacity=" << userCopyButtonOpacity(messageId);
+    }
+    if (!isFromUser) {
+        const MarkdownCacheEntry& markdown = cachedMarkdown(text);
+        paintMarkdownMessage(painter,
+                             option,
+                             index,
+                             metrics,
+                             markdown,
+                             textColor);
+        paintAiReplyActions(painter, metrics, index);
+        painter->restore();
+        return;
+    }
+
     QPainterPath bubblePath;
     bubblePath.addRoundedRect(metrics.bubbleRect, kBubbleRadius, kBubbleRadius);
     painter->fillPath(bubblePath, effectiveBubbleColor);
@@ -250,6 +522,8 @@ void AiChatMessageDelegate::paint(QPainter* painter,
     textDocument.documentLayout()->draw(painter, paintContext);
     painter->restore();
 
+    paintUserMessageChrome(painter, metrics, index, textColor);
+
     painter->restore();
 }
 
@@ -266,8 +540,25 @@ QSize AiChatMessageDelegate::sizeHint(const QStyleOptionViewItem& option,
         return QSize(option.rect.width(), 0);
     }
 
-    const LayoutMetrics metrics = layoutMetrics(option, index);
-    return QSize(option.rect.width(), metrics.bubbleRect.height() + kVerticalMargin * 2);
+    const QStyleOptionViewItem layoutOption = optionWithPaintWidth(option);
+    const LayoutMetrics metrics = layoutMetrics(layoutOption, index);
+    const int contentBottom = qMax(metrics.bubbleRect.bottom(), metrics.copyButtonRect.bottom());
+    const QSize result(option.rect.width(), contentBottom - layoutOption.rect.top() + 1 + kVerticalMargin);
+    if (kAiChatLayoutDebug && index.data(AiChatMessageListModel::IsFromUserRole).toBool()) {
+        const QString messageId = index.data(AiChatMessageListModel::MessageIdRole).toString();
+        qDebug().noquote()
+                << "AICHAT_LAYOUT sizeHint"
+                << "row=" << index.row()
+                << "id=" << messageId
+                << "option=" << rectDebugString(layoutOption.rect)
+                << "bubble=" << rectDebugString(metrics.bubbleRect)
+                << "expand=" << rectDebugString(metrics.expandRect)
+                << "copy=" << rectDebugString(metrics.copyButtonRect)
+                << "height=" << result.height()
+                << "canExpand=" << metrics.userCanExpand
+                << "progress=" << userMessageExpansionProgress(messageId);
+    }
+    return result;
 }
 
 bool AiChatMessageDelegate::bubbleHitTest(const QStyleOptionViewItem& option,
@@ -303,10 +594,71 @@ int AiChatMessageDelegate::characterIndexAt(const QStyleOptionViewItem& option,
             ? metrics.bubbleRect.adjusted(-2, -2, 2, 2)
             : metrics.textRect;
     if (!hitRect.contains(viewportPos)) {
+        if (kAiChatLayoutDebug && index.data(AiChatMessageListModel::IsFromUserRole).toBool()) {
+            qDebug().noquote()
+                    << "AICHAT_LAYOUT charAt outside"
+                    << "row=" << index.row()
+                    << "id=" << index.data(AiChatMessageListModel::MessageIdRole).toString()
+                    << "pos=" << pointDebugString(viewportPos)
+                    << "allowLineWhitespace=" << allowLineWhitespace
+                    << "option=" << rectDebugString(option.rect)
+                    << "hitRect=" << rectDebugString(hitRect)
+                    << "bubble=" << rectDebugString(metrics.bubbleRect)
+                    << "text=" << rectDebugString(metrics.textRect)
+                    << "expand=" << rectDebugString(metrics.expandRect)
+                    << "copy=" << rectDebugString(metrics.copyButtonRect);
+        }
         return -1;
     }
 
     const bool isFromUser = index.data(AiChatMessageListModel::IsFromUserRole).toBool();
+    if (!isFromUser) {
+        const MarkdownCacheEntry& markdown = cachedMarkdown(text);
+        if (markdown.blocks.isEmpty()) {
+            return -1;
+        }
+
+        const MarkdownLayoutCacheEntry& markdownLayout = cachedMarkdownLayout(markdown,
+                                                                              option,
+                                                                              messageFont(),
+                                                                              metrics.textRect.width());
+        const int localY = viewportPos.y() - metrics.textRect.top();
+        const int row = firstMarkdownBlockAtY(markdownLayout.blockOffsets,
+                                              markdownLayout.blockHeights,
+                                              localY);
+        if (row >= 0 && row < markdown.blocks.size()) {
+            MarkdownBlockModel markdownModel(&markdown.blocks, {});
+            QStyleOptionViewItem blockOption(option);
+            blockOption.font = messageFont();
+            blockOption.palette.setColor(QPalette::Text,
+                                         ThemeManager::instance().color(ThemeColor::PrimaryText));
+            blockOption.rect = QRect(metrics.textRect.left(),
+                                     metrics.textRect.top() + markdownLayout.blockOffsets.at(row),
+                                     metrics.textRect.width(),
+                                     markdownLayout.blockHeights.at(row));
+            const QModelIndex blockIndex = markdownModel.index(row, 0);
+
+            if (blockOption.rect.adjusted(-2, -2, 2, 2).contains(viewportPos)) {
+                if (!allowLineWhitespace &&
+                        !m_markdownDelegate.hasTextAtPosition(blockOption, blockIndex, viewportPos)) {
+                    return -1;
+                }
+
+                const int localCursor = m_markdownDelegate.cursorForPosition(blockOption,
+                                                                             blockIndex,
+                                                                             viewportPos);
+                return qBound(0,
+                              markdown.blockStartOffsets.value(row) + localCursor,
+                              markdown.plainText.size());
+            }
+        }
+
+        if (allowLineWhitespace) {
+            return viewportPos.y() < metrics.textRect.center().y() ? 0 : markdown.plainText.size();
+        }
+        return -1;
+    }
+
     const bool dark = ThemeManager::instance().isDark();
     const QColor textColor = isFromUser
             ? ThemeManager::textColorOn(userBubbleColor(dark))
@@ -337,19 +689,58 @@ int AiChatMessageDelegate::characterIndexAt(const QStyleOptionViewItem& option,
                                                             textLength,
                                                             allowLineWhitespace);
     if (lineCursor >= 0) {
+        if (kAiChatLayoutDebug) {
+            qDebug().noquote()
+                    << "AICHAT_LAYOUT charAt line"
+                    << "row=" << index.row()
+                    << "id=" << index.data(AiChatMessageListModel::MessageIdRole).toString()
+                    << "pos=" << pointDebugString(viewportPos)
+                    << "local=" << pointDebugString(local.toPoint())
+                    << "cursor=" << lineCursor
+                    << "allowLineWhitespace=" << allowLineWhitespace
+                    << "option=" << rectDebugString(option.rect)
+                    << "text=" << rectDebugString(metrics.textRect);
+        }
         return lineCursor;
     }
 
     const Qt::HitTestAccuracy accuracy = allowLineWhitespace ? Qt::FuzzyHit : Qt::ExactHit;
     const int cursor = textDocument.documentLayout()->hitTest(local, accuracy);
     if (cursor < 0) {
-        return SelectableText::lineCursorAt(textDocument,
-                                                local,
-                                                textLength,
-                                                allowLineWhitespace);
+        const int fallbackCursor = SelectableText::lineCursorAt(textDocument,
+                                                                local,
+                                                                textLength,
+                                                                allowLineWhitespace);
+        if (kAiChatLayoutDebug) {
+            qDebug().noquote()
+                    << "AICHAT_LAYOUT charAt fallback"
+                    << "row=" << index.row()
+                    << "id=" << index.data(AiChatMessageListModel::MessageIdRole).toString()
+                    << "pos=" << pointDebugString(viewportPos)
+                    << "local=" << pointDebugString(local.toPoint())
+                    << "cursor=" << fallbackCursor
+                    << "allowLineWhitespace=" << allowLineWhitespace
+                    << "option=" << rectDebugString(option.rect)
+                    << "text=" << rectDebugString(metrics.textRect);
+        }
+        return fallbackCursor;
     }
 
-    return qBound(0, cursor, textLength);
+    const int boundedCursor = qBound(0, cursor, textLength);
+    if (kAiChatLayoutDebug) {
+        qDebug().noquote()
+                << "AICHAT_LAYOUT charAt hit"
+                << "row=" << index.row()
+                << "id=" << index.data(AiChatMessageListModel::MessageIdRole).toString()
+                << "pos=" << pointDebugString(viewportPos)
+                << "local=" << pointDebugString(local.toPoint())
+                << "cursor=" << boundedCursor
+                << "rawCursor=" << cursor
+                << "allowLineWhitespace=" << allowLineWhitespace
+                << "option=" << rectDebugString(option.rect)
+                << "text=" << rectDebugString(metrics.textRect);
+    }
+    return boundedCursor;
 }
 
 QString AiChatMessageDelegate::urlAt(const QStyleOptionViewItem& option,
@@ -372,6 +763,47 @@ QString AiChatMessageDelegate::urlAt(const QStyleOptionViewItem& option,
     }
 
     const bool isFromUser = index.data(AiChatMessageListModel::IsFromUserRole).toBool();
+    if (!isFromUser) {
+        const MarkdownCacheEntry& markdown = cachedMarkdown(text);
+        const MarkdownLayoutCacheEntry& markdownLayout = cachedMarkdownLayout(markdown,
+                                                                              option,
+                                                                              messageFont(),
+                                                                              metrics.textRect.width());
+        const int localY = viewportPos.y() - metrics.textRect.top();
+        const int row = firstMarkdownBlockAtY(markdownLayout.blockOffsets,
+                                              markdownLayout.blockHeights,
+                                              localY);
+        if (row >= 0 && row < markdown.blocks.size()) {
+            MarkdownBlockModel markdownModel(&markdown.blocks, {});
+            QStyleOptionViewItem blockOption(option);
+            blockOption.font = messageFont();
+            blockOption.palette.setColor(QPalette::Text,
+                                         ThemeManager::instance().color(ThemeColor::PrimaryText));
+            blockOption.rect = QRect(metrics.textRect.left(),
+                                     metrics.textRect.top() + markdownLayout.blockOffsets.at(row),
+                                     metrics.textRect.width(),
+                                     markdownLayout.blockHeights.at(row));
+            const QModelIndex blockIndex = markdownModel.index(row, 0);
+            if (blockOption.rect.contains(viewportPos)) {
+                const QString markdownLink = m_markdownDelegate.linkAtPosition(blockOption,
+                                                                               blockIndex,
+                                                                               viewportPos);
+                if (!markdownLink.isEmpty()) {
+                    return markdownLink;
+                }
+            }
+        }
+
+        const QVector<TextRange> urls = cachedUrlRanges(markdown.plainText);
+        for (const TextRange& url : urls) {
+            const int end = url.start + url.length;
+            if (cursor >= url.start && cursor <= end) {
+                return url.text;
+            }
+        }
+        return {};
+    }
+
     const bool dark = ThemeManager::instance().isDark();
     const QColor textColor = isFromUser
             ? ThemeManager::textColorOn(userBubbleColor(dark))
@@ -402,6 +834,118 @@ QString AiChatMessageDelegate::urlAt(const QStyleOptionViewItem& option,
     return {};
 }
 
+bool AiChatMessageDelegate::isCodeCopyButtonAt(const QStyleOptionViewItem& option,
+                                               const QModelIndex& index,
+                                               const QPoint& viewportPos) const
+{
+    const MarkdownBlockHit hit = markdownBlockAt(option, index, viewportPos);
+    if (!hit.valid || hit.block.type != MarkdownRenderer::BlockType::CodeBlock) {
+        return false;
+    }
+
+    const QList<MarkdownRenderer::Block> blocks{hit.block};
+    MarkdownBlockModel markdownModel(&blocks, {});
+    return m_markdownDelegate.isCodeCopyButtonAtPosition(hit.option,
+                                                        markdownModel.index(0, 0),
+                                                        viewportPos);
+}
+
+int AiChatMessageDelegate::codeCopyBlockRowAt(const QStyleOptionViewItem& option,
+                                              const QModelIndex& index,
+                                              const QPoint& viewportPos) const
+{
+    const MarkdownBlockHit hit = markdownBlockAt(option, index, viewportPos);
+    if (!hit.valid ||
+            hit.block.type != MarkdownRenderer::BlockType::CodeBlock ||
+            !isCodeCopyButtonAt(option, index, viewportPos)) {
+        return -1;
+    }
+
+    return hit.row;
+}
+
+QString AiChatMessageDelegate::codeBlockTextAt(const QStyleOptionViewItem& option,
+                                               const QModelIndex& index,
+                                               const QPoint& viewportPos) const
+{
+    const MarkdownBlockHit hit = markdownBlockAt(option, index, viewportPos);
+    if (!hit.valid ||
+            hit.block.type != MarkdownRenderer::BlockType::CodeBlock ||
+            !isCodeCopyButtonAt(option, index, viewportPos)) {
+        return {};
+    }
+
+    return hit.block.text;
+}
+
+AiChatMessageDelegate::MessageAction AiChatMessageDelegate::messageActionAt(
+        const QStyleOptionViewItem& option,
+        const QModelIndex& index,
+        const QPoint& viewportPos) const
+{
+    if (index.data(AiChatMessageListModel::IsBottomSpaceRole).toBool()) {
+        return MessageAction::None;
+    }
+
+    const LayoutMetrics metrics = layoutMetrics(option, index);
+    if (index.data(AiChatMessageListModel::IsFromUserRole).toBool()) {
+        if (metrics.copyButtonRect.contains(viewportPos)) {
+            if (kAiChatLayoutDebug) {
+                qDebug().noquote()
+                        << "AICHAT_LAYOUT actionAt"
+                        << "row=" << index.row()
+                        << "id=" << index.data(AiChatMessageListModel::MessageIdRole).toString()
+                        << "pos=" << pointDebugString(viewportPos)
+                        << "action=" << messageActionDebugString(MessageAction::Copy)
+                        << "option=" << rectDebugString(option.rect)
+                        << "bubble=" << rectDebugString(metrics.bubbleRect)
+                        << "expand=" << rectDebugString(metrics.expandRect)
+                        << "copy=" << rectDebugString(metrics.copyButtonRect);
+            }
+            return MessageAction::Copy;
+        }
+        if (metrics.userCanExpand && metrics.expandRect.contains(viewportPos)) {
+            if (kAiChatLayoutDebug) {
+                qDebug().noquote()
+                        << "AICHAT_LAYOUT actionAt"
+                        << "row=" << index.row()
+                        << "id=" << index.data(AiChatMessageListModel::MessageIdRole).toString()
+                        << "pos=" << pointDebugString(viewportPos)
+                        << "action=" << messageActionDebugString(MessageAction::ToggleExpansion)
+                        << "option=" << rectDebugString(option.rect)
+                        << "bubble=" << rectDebugString(metrics.bubbleRect)
+                        << "expand=" << rectDebugString(metrics.expandRect)
+                        << "copy=" << rectDebugString(metrics.copyButtonRect);
+            }
+            return MessageAction::ToggleExpansion;
+        }
+        if (kAiChatLayoutDebug &&
+                (metrics.bubbleRect.adjusted(-4, -4, 4, 4).contains(viewportPos) ||
+                 metrics.expandRect.adjusted(-10, -10, 10, 10).contains(viewportPos) ||
+                 metrics.copyButtonRect.adjusted(-10, -10, 10, 10).contains(viewportPos))) {
+            qDebug().noquote()
+                    << "AICHAT_LAYOUT actionAt"
+                    << "row=" << index.row()
+                    << "id=" << index.data(AiChatMessageListModel::MessageIdRole).toString()
+                    << "pos=" << pointDebugString(viewportPos)
+                    << "action=" << messageActionDebugString(MessageAction::None)
+                    << "option=" << rectDebugString(option.rect)
+                    << "bubble=" << rectDebugString(metrics.bubbleRect)
+                    << "expand=" << rectDebugString(metrics.expandRect)
+                    << "copy=" << rectDebugString(metrics.copyButtonRect);
+        }
+        return MessageAction::None;
+    }
+
+    const QVector<QPair<MessageAction, QRect>> actions = aiReplyActionRects(metrics, index);
+    for (const QPair<MessageAction, QRect>& action : actions) {
+        if (action.second.contains(viewportPos)) {
+            return action.first;
+        }
+    }
+    return MessageAction::None;
+}
+
 bool AiChatMessageDelegate::selectWordAt(const QStyleOptionViewItem& option,
                                          const QModelIndex& index,
                                          const QPoint& viewportPos)
@@ -420,6 +964,116 @@ bool AiChatMessageDelegate::selectWordAt(const QStyleOptionViewItem& option,
 
     setSelection(index, range.start, range.end);
     return hasSelection();
+}
+
+void AiChatMessageDelegate::setMessageFeedback(const QString& messageId, MessageFeedback feedback)
+{
+    if (messageId.isEmpty()) {
+        return;
+    }
+
+    if (feedback == MessageFeedback::None) {
+        m_messageFeedback.remove(messageId);
+        return;
+    }
+
+    m_messageFeedback.insert(messageId, feedback);
+}
+
+AiChatMessageDelegate::MessageFeedback AiChatMessageDelegate::messageFeedback(
+        const QString& messageId) const
+{
+    return m_messageFeedback.value(messageId, MessageFeedback::None);
+}
+
+void AiChatMessageDelegate::setStreamingMessageId(const QString& messageId)
+{
+    m_streamingMessageId = messageId;
+}
+
+QString AiChatMessageDelegate::streamingMessageId() const
+{
+    return m_streamingMessageId;
+}
+
+void AiChatMessageDelegate::setCopiedCodeBlock(const QModelIndex& index, int blockRow)
+{
+    m_copiedCodeMessageIndex = QPersistentModelIndex(index);
+    m_copiedCodeBlockRow = blockRow;
+}
+
+void AiChatMessageDelegate::clearCopiedCodeBlock()
+{
+    m_copiedCodeMessageIndex = QPersistentModelIndex();
+    m_copiedCodeBlockRow = -1;
+}
+
+void AiChatMessageDelegate::setUserMessageExpanded(const QString& messageId, bool expanded)
+{
+    if (messageId.isEmpty()) {
+        return;
+    }
+
+    if (expanded) {
+        if (!m_userMessageExpansionProgress.contains(messageId)) {
+            m_userMessageExpansionProgress.insert(messageId, 1.0);
+        }
+        return;
+    }
+
+    m_userMessageExpansionProgress.remove(messageId);
+}
+
+bool AiChatMessageDelegate::isUserMessageExpanded(const QString& messageId) const
+{
+    return !messageId.isEmpty() && m_userMessageExpansionProgress.contains(messageId);
+}
+
+void AiChatMessageDelegate::setUserMessageExpansionProgress(const QString& messageId, qreal progress)
+{
+    if (messageId.isEmpty()) {
+        return;
+    }
+
+    const qreal boundedProgress = qBound(0.0, progress, 1.0);
+    if (boundedProgress <= 0.0001) {
+        m_userMessageExpansionProgress.insert(messageId, 0.0);
+        return;
+    }
+    m_userMessageExpansionProgress.insert(messageId, boundedProgress);
+}
+
+qreal AiChatMessageDelegate::userMessageExpansionProgress(const QString& messageId) const
+{
+    return m_userMessageExpansionProgress.value(messageId, 0.0);
+}
+
+void AiChatMessageDelegate::notifySizeHintChanged(const QModelIndex& index)
+{
+    if (!index.isValid()) {
+        return;
+    }
+
+    emit sizeHintChanged(index);
+}
+
+void AiChatMessageDelegate::setUserCopyButtonOpacity(const QString& messageId, qreal opacity)
+{
+    if (messageId.isEmpty()) {
+        return;
+    }
+
+    const qreal boundedOpacity = qBound(0.0, opacity, 1.0);
+    if (boundedOpacity <= 0.001) {
+        m_userCopyButtonOpacity.remove(messageId);
+        return;
+    }
+    m_userCopyButtonOpacity.insert(messageId, boundedOpacity);
+}
+
+qreal AiChatMessageDelegate::userCopyButtonOpacity(const QString& messageId) const
+{
+    return m_userCopyButtonOpacity.value(messageId, 0.0);
 }
 
 void AiChatMessageDelegate::setSelection(const QModelIndex& index, int anchor, int cursor)
@@ -501,20 +1155,62 @@ AiChatMessageDelegate::LayoutMetrics AiChatMessageDelegate::layoutMetrics(
     const int bubbleMaxWidth = maxBubbleWidth(option.rect.width());
     const int maxTextWidth = qMax(1, bubbleMaxWidth - kBubblePadding * 2);
     const bool isFromUser = index.data(AiChatMessageListModel::IsFromUserRole).toBool();
-    const QSize textSize = textDocumentSize(text, messageFont(), maxTextWidth, isFromUser);
-    const int bubbleWidth = qMin(textSize.width() + kBubblePadding * 2,
+    if (!isFromUser) {
+        const int markdownWidth = qMax(1,
+                                       option.rect.width() - kHorizontalMargin * 2 +
+                                               kMarkdownHorizontalInset * 2);
+        const QSize markdownSize = markdownDocumentSize(cachedMarkdown(text),
+                                                        option,
+                                                        messageFont(),
+                                                        markdownWidth);
+        const int x = option.rect.left() + kHorizontalMargin - kMarkdownHorizontalInset;
+        const int y = option.rect.top() + kVerticalMargin;
+        const bool hasActions = isAiReplyActionVisible(index, MessageAction::Copy) ||
+                isAiReplyActionVisible(index, MessageAction::Refresh) ||
+                isAiReplyActionVisible(index, MessageAction::Like) ||
+                isAiReplyActionVisible(index, MessageAction::Dislike);
+        const int actionHeight = hasActions ? kActionTopMargin + kActionButtonSize : 0;
+        const QRect markdownRect(x, y, markdownSize.width(), markdownSize.height());
+        const QRect outerRect(x,
+                              y,
+                              markdownSize.width(),
+                              markdownSize.height() + actionHeight);
+        return {outerRect, markdownRect, markdownSize};
+    }
+
+    const TextSizeCacheEntry& textMeasure = cachedTextSize(text, messageFont(), maxTextWidth, isFromUser);
+    const int visibleTextHeight = textMeasure.canExpand
+            ? interpolatedHeight(textMeasure.collapsedHeight,
+                                 textMeasure.fullSize.height(),
+                                 userMessageExpansionProgress(
+                                         index.data(AiChatMessageListModel::MessageIdRole).toString()))
+            : textMeasure.fullSize.height();
+    const QSize textSize(textMeasure.fullSize.width(), visibleTextHeight);
+    const int expandHeight = textMeasure.canExpand ? kUserExpandTopGap + kUserExpandHeight : 0;
+    const int bubbleWidth = qMin(textMeasure.fullSize.width() + kBubblePadding * 2,
                                  bubbleMaxWidth);
-    const int bubbleHeight = textSize.height() + kBubblePadding * 2;
+    const int bubbleHeight = visibleTextHeight + kBubblePadding * 2 + expandHeight;
     const int x = isFromUser
             ? option.rect.right() - kHorizontalMargin - bubbleWidth + 1
             : option.rect.left() + kHorizontalMargin;
     const QRect bubbleRect(x, option.rect.top() + kVerticalMargin, bubbleWidth, bubbleHeight);
-    const QRect textRect = bubbleRect.adjusted(kBubblePadding,
-                                               kBubblePadding,
-                                               -kBubblePadding,
-                                               -kBubblePadding);
+    const QRect textRect(bubbleRect.left() + kBubblePadding,
+                         bubbleRect.top() + kBubblePadding,
+                         qMax(1, bubbleRect.width() - kBubblePadding * 2),
+                         qMax(1, visibleTextHeight));
+    QRect expandRect;
+    if (textMeasure.canExpand) {
+        expandRect = QRect(textRect.left(),
+                           textRect.bottom() + 1 + kUserExpandTopGap,
+                           textRect.width(),
+                           kUserExpandHeight);
+    }
+    const QRect copyButtonRect(bubbleRect.right() - kUserCopyButtonSize + 1,
+                               bubbleRect.bottom() + 1 + kUserCopyButtonTopMargin,
+                               kUserCopyButtonSize,
+                               kUserCopyButtonSize);
 
-    return {bubbleRect, textRect, textSize};
+    return {bubbleRect, textRect, textSize, expandRect, copyButtonRect, textMeasure.canExpand};
 }
 
 void AiChatMessageDelegate::configureTextDocument(QTextDocument& document,
@@ -583,9 +1279,18 @@ QSize AiChatMessageDelegate::textDocumentSize(const QString& text,
                                               int maxTextWidth,
                                               bool isFromUser) const
 {
+    return cachedTextSize(text, font, maxTextWidth, isFromUser).fullSize;
+}
+
+const AiChatMessageDelegate::TextSizeCacheEntry& AiChatMessageDelegate::cachedTextSize(
+        const QString& text,
+        const QFont& font,
+        int maxTextWidth,
+        bool isFromUser) const
+{
     const QString key = textLayoutCacheKey(text, font, maxTextWidth, isFromUser);
     if (const TextSizeCacheEntry* entry = m_textSizeCache.object(key)) {
-        return entry->size;
+        return *entry;
     }
 
     QTextDocument textDocument;
@@ -599,12 +1304,20 @@ QSize AiChatMessageDelegate::textDocumentSize(const QString& text,
 
     const int width = qMin(qCeil(textDocument.idealWidth()), maxTextWidth);
     const int height = qCeil(textDocument.size().height());
-    const QSize size(qCeil(width), qCeil(height));
 
     auto* entry = new TextSizeCacheEntry;
-    entry->size = size;
+    entry->fullSize = QSize(qCeil(width), qCeil(height));
+    entry->collapsedHeight = height;
+    if (isFromUser) {
+        const int fallbackLineHeight = QFontMetrics(font).lineSpacing();
+        entry->collapsedHeight = collapsedDocumentHeight(textDocument,
+                                                         kUserCollapsedMaxLines,
+                                                         fallbackLineHeight,
+                                                         &entry->canExpand);
+        entry->collapsedHeight = qMin(entry->collapsedHeight, entry->fullSize.height());
+    }
     m_textSizeCache.insert(key, entry, textCacheCost(text));
-    return size;
+    return *m_textSizeCache.object(key);
 }
 
 const QTextDocument& AiChatMessageDelegate::cachedTextDocument(const QString& text,
@@ -670,6 +1383,288 @@ QVector<AiChatMessageDelegate::TextRange> AiChatMessageDelegate::urlRanges(const
     return ranges;
 }
 
+const AiChatMessageDelegate::MarkdownCacheEntry& AiChatMessageDelegate::cachedMarkdown(
+        const QString& text) const
+{
+    const QString normalizedText = documentTextForLayout(text);
+    if (const MarkdownCacheEntry* entry = m_markdownCache.object(normalizedText)) {
+        return *entry;
+    }
+
+    auto* entry = new MarkdownCacheEntry;
+    entry->sourceText = normalizedText;
+    entry->blocks = MarkdownRenderer::parseBlocks(normalizedText);
+    entry->blockStartOffsets.reserve(entry->blocks.size());
+
+    for (int row = 0; row < entry->blocks.size(); ++row) {
+        if (row > 0) {
+            entry->plainText += QLatin1Char('\n');
+        }
+        entry->blockStartOffsets.append(entry->plainText.size());
+        entry->plainText += entry->blocks.at(row).text;
+    }
+
+    m_markdownCache.insert(normalizedText, entry, textCacheCost(normalizedText));
+    return *m_markdownCache.object(normalizedText);
+}
+
+const AiChatMessageDelegate::MarkdownLayoutCacheEntry& AiChatMessageDelegate::cachedMarkdownLayout(
+        const MarkdownCacheEntry& entry,
+        const QStyleOptionViewItem& option,
+        const QFont& font,
+        int maxTextWidth) const
+{
+    QString key = font.toString();
+    key += QLatin1Char('\x1f');
+    key += QString::number(qMax(1, maxTextWidth));
+    key += QLatin1Char('\x1f');
+    key += QString::number(option.widget ? qMax(1, option.widget->logicalDpiY()) : 96);
+    key += QLatin1Char('\x1f');
+    key += QString::number(qHash(entry.sourceText));
+    key += QLatin1Char(':');
+    key += QString::number(entry.sourceText.size());
+
+    if (const MarkdownLayoutCacheEntry* cached = m_markdownLayoutCache.object(key)) {
+        return *cached;
+    }
+
+    auto* layout = new MarkdownLayoutCacheEntry;
+    layout->blockHeights.reserve(entry.blocks.size());
+    layout->blockOffsets.reserve(entry.blocks.size());
+
+    MarkdownBlockModel markdownModel(&entry.blocks, {});
+    int height = 0;
+    for (int row = 0; row < entry.blocks.size(); ++row) {
+        QStyleOptionViewItem blockOption(option);
+        blockOption.font = font;
+        blockOption.rect = QRect(0, 0, qMax(1, maxTextWidth), 1);
+        blockOption.state &= ~(QStyle::State_Selected |
+                               QStyle::State_MouseOver |
+                               QStyle::State_HasFocus);
+        blockOption.state |= QStyle::State_Enabled;
+
+        const QModelIndex blockIndex = markdownModel.index(row, 0);
+        const int blockHeight = m_markdownDelegate.sizeHint(blockOption, blockIndex).height();
+        layout->blockOffsets.append(height);
+        layout->blockHeights.append(blockHeight);
+        height += blockHeight;
+    }
+
+    layout->size = QSize(qMax(1, maxTextWidth), height);
+    const int cost = qBound(1,
+                            entry.sourceText.size() / 1024 + layout->blockHeights.size() / 24 + 1,
+                            64);
+    m_markdownLayoutCache.insert(key, layout, cost);
+    return *m_markdownLayoutCache.object(key);
+}
+
+QSize AiChatMessageDelegate::markdownDocumentSize(const MarkdownCacheEntry& entry,
+                                                  const QStyleOptionViewItem& option,
+                                                  const QFont& font,
+                                                  int maxTextWidth) const
+{
+    if (entry.blocks.isEmpty()) {
+        return QSize(qMax(1, maxTextWidth), 0);
+    }
+
+    return cachedMarkdownLayout(entry, option, font, maxTextWidth).size;
+}
+
+AiChatMessageDelegate::MarkdownBlockHit AiChatMessageDelegate::markdownBlockAt(
+        const QStyleOptionViewItem& option,
+        const QModelIndex& index,
+        const QPoint& viewportPos) const
+{
+    MarkdownBlockHit hit;
+    if (index.data(AiChatMessageListModel::IsBottomSpaceRole).toBool() ||
+            index.data(AiChatMessageListModel::IsFromUserRole).toBool()) {
+        return hit;
+    }
+
+    const QString text = index.data(AiChatMessageListModel::TextRole).toString();
+    if (text.isEmpty()) {
+        return hit;
+    }
+
+    const LayoutMetrics metrics = layoutMetrics(option, index);
+    const MarkdownCacheEntry& markdown = cachedMarkdown(text);
+    if (markdown.blocks.isEmpty()) {
+        return hit;
+    }
+
+    const MarkdownLayoutCacheEntry& markdownLayout = cachedMarkdownLayout(markdown,
+                                                                          option,
+                                                                          messageFont(),
+                                                                          metrics.textRect.width());
+    const int localY = viewportPos.y() - metrics.textRect.top();
+    const int row = firstMarkdownBlockAtY(markdownLayout.blockOffsets,
+                                          markdownLayout.blockHeights,
+                                          localY);
+    if (row < 0 || row >= markdown.blocks.size()) {
+        return hit;
+    }
+
+    QStyleOptionViewItem blockOption(option);
+    blockOption.font = messageFont();
+    blockOption.palette.setColor(QPalette::Text,
+                                 ThemeManager::instance().color(ThemeColor::PrimaryText));
+    blockOption.rect = QRect(metrics.textRect.left(),
+                             metrics.textRect.top() + markdownLayout.blockOffsets.at(row),
+                             metrics.textRect.width(),
+                             markdownLayout.blockHeights.at(row));
+    blockOption.state &= ~(QStyle::State_Selected |
+                           QStyle::State_MouseOver |
+                           QStyle::State_HasFocus);
+    blockOption.state |= QStyle::State_Enabled;
+
+    hit.valid = blockOption.rect.adjusted(0, -30, 0, 0).contains(viewportPos);
+    hit.row = row;
+    hit.block = markdown.blocks.at(row);
+    hit.option = blockOption;
+    return hit;
+}
+
+void AiChatMessageDelegate::paintMarkdownMessage(QPainter* painter,
+                                                 const QStyleOptionViewItem& option,
+                                                 const QModelIndex& index,
+                                                 const LayoutMetrics& metrics,
+                                                 const MarkdownCacheEntry& entry,
+                                                 const QColor& textColor) const
+{
+    if (entry.blocks.isEmpty()) {
+        return;
+    }
+
+    const MarkdownLayoutCacheEntry& markdownLayout = cachedMarkdownLayout(entry,
+                                                                          option,
+                                                                          messageFont(),
+                                                                          metrics.textRect.width());
+    const QRect viewportRect = option.widget ? option.widget->rect() : option.rect;
+    const QRect visibleRect = viewportRect.intersected(option.rect);
+    constexpr int kVisibleBlockBuffer = 96;
+    const int visibleTop = qMax(0, visibleRect.top() - metrics.textRect.top() - kVisibleBlockBuffer);
+    const int visibleBottom = qMin(markdownLayout.size.height(),
+                                   visibleRect.bottom() - metrics.textRect.top() + kVisibleBlockBuffer);
+    if (visibleBottom < 0 || visibleTop > markdownLayout.size.height()) {
+        return;
+    }
+
+    const int firstRow = firstMarkdownBlockAtY(markdownLayout.blockOffsets,
+                                               markdownLayout.blockHeights,
+                                               visibleTop);
+    const int lastRow = lastMarkdownBlockAtY(markdownLayout.blockOffsets, visibleBottom);
+    if (firstRow < 0 || lastRow < firstRow || firstRow >= entry.blocks.size()) {
+        return;
+    }
+
+    QVector<MarkdownBlockSelection> selections;
+    if (m_selectionIndex == index && hasSelection()) {
+        selections.resize(entry.blocks.size());
+        const int selectionStart = m_selection.start();
+        const int selectionEnd = m_selection.end();
+        for (int row = firstRow; row <= qMin(lastRow, entry.blocks.size() - 1); ++row) {
+            const int blockStart = entry.blockStartOffsets.value(row);
+            const int blockEnd = blockStart + entry.blocks.at(row).text.size();
+            const int localStart = qMax(selectionStart, blockStart) - blockStart;
+            const int localEnd = qMin(selectionEnd, blockEnd) - blockStart;
+            if (localEnd > localStart) {
+                selections[row] = {localStart, localEnd};
+            }
+        }
+    }
+
+    MarkdownBlockModel markdownModel(&entry.blocks, selections);
+    QVariant previousCopiedRowProperty;
+    QWidget* optionWidget = const_cast<QWidget*>(option.widget);
+    if (optionWidget) {
+        previousCopiedRowProperty = optionWidget->property("markdownCopiedCodeRow");
+        const int copiedRow = m_copiedCodeMessageIndex == index ? m_copiedCodeBlockRow : -1;
+        optionWidget->setProperty("markdownCopiedCodeRow", copiedRow);
+    }
+
+    for (int row = firstRow; row <= qMin(lastRow, entry.blocks.size() - 1); ++row) {
+        QStyleOptionViewItem blockOption(option);
+        blockOption.font = messageFont();
+        blockOption.palette.setColor(QPalette::Text, textColor);
+        blockOption.rect = QRect(metrics.textRect.left(),
+                                 metrics.textRect.top() + markdownLayout.blockOffsets.at(row),
+                                 metrics.textRect.width(),
+                                 markdownLayout.blockHeights.at(row));
+        blockOption.state &= ~(QStyle::State_Selected |
+                               QStyle::State_MouseOver |
+                               QStyle::State_HasFocus);
+        blockOption.state |= QStyle::State_Enabled;
+
+        const QModelIndex blockIndex = markdownModel.index(row, 0);
+        m_markdownDelegate.paint(painter, blockOption, blockIndex);
+    }
+
+    if (optionWidget) {
+        optionWidget->setProperty("markdownCopiedCodeRow", previousCopiedRowProperty);
+    }
+}
+
+void AiChatMessageDelegate::paintUserMessageChrome(QPainter* painter,
+                                                   const LayoutMetrics& metrics,
+                                                   const QModelIndex& index,
+                                                   const QColor& textColor) const
+{
+    const QString messageId = index.data(AiChatMessageListModel::MessageIdRole).toString();
+    if (metrics.userCanExpand && !metrics.expandRect.isEmpty()) {
+        const qreal progress = userMessageExpansionProgress(messageId);
+        const bool expanded = isUserMessageExpanded(messageId) && progress > 0.001;
+        QColor controlColor = textColor;
+        controlColor.setAlphaF(0.82);
+
+        painter->save();
+        painter->setPen(controlColor);
+        painter->setFont(messageFont());
+        const QString label = expanded ? QStringLiteral("收起") : QStringLiteral("展开");
+        const QFontMetrics metricsFont(messageFont());
+        const int labelWidth = metricsFont.horizontalAdvance(label);
+        const QRect labelRect(metrics.expandRect.left(),
+                              metrics.expandRect.top(),
+                              qMin(labelWidth + 4, metrics.expandRect.width()),
+                              metrics.expandRect.height());
+        painter->drawText(labelRect, Qt::AlignLeft | Qt::AlignVCenter, label);
+
+        const int chevronSize = 8;
+        const int chevronLeft = labelRect.right() + 5;
+        const int chevronTop = metrics.expandRect.top() + (metrics.expandRect.height() - chevronSize) / 2;
+        if (chevronLeft + chevronSize <= metrics.expandRect.right()) {
+            QPen pen(controlColor, 1.6, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
+            painter->setPen(pen);
+            QPainterPath chevron;
+            if (expanded) {
+                chevron.moveTo(chevronLeft, chevronTop + chevronSize * 0.64);
+                chevron.lineTo(chevronLeft + chevronSize * 0.5, chevronTop + chevronSize * 0.36);
+                chevron.lineTo(chevronLeft + chevronSize, chevronTop + chevronSize * 0.64);
+            } else {
+                chevron.moveTo(chevronLeft, chevronTop + chevronSize * 0.36);
+                chevron.lineTo(chevronLeft + chevronSize * 0.5, chevronTop + chevronSize * 0.64);
+                chevron.lineTo(chevronLeft + chevronSize, chevronTop + chevronSize * 0.36);
+            }
+            painter->drawPath(chevron);
+        }
+        painter->restore();
+    }
+
+    const qreal copyOpacity = userCopyButtonOpacity(messageId);
+    if (copyOpacity <= 0.001 || metrics.copyButtonRect.isEmpty()) {
+        return;
+    }
+
+    painter->save();
+    painter->setOpacity(copyOpacity);
+    drawActionIcon(painter,
+                   QStringLiteral(":/resources/icon/copy.png"),
+                   metrics.copyButtonRect,
+                   QSize(kActionIconSize, kActionIconSize),
+                   ThemeManager::instance().isDark(),
+                   false);
+    painter->restore();
+}
+
 QString AiChatMessageDelegate::renderedPlainText(const QString& text, bool isFromUser) const
 {
 #if QT_VERSION >= QT_VERSION_CHECK(5, 14, 0)
@@ -677,12 +1672,9 @@ QString AiChatMessageDelegate::renderedPlainText(const QString& text, bool isFro
         return documentTextForLayout(text);
     }
 
-    QTextDocument document;
-    document.setMarkdown(markdownTextForLayout(text));
-    return document.toPlainText();
+    return cachedMarkdown(text).plainText;
 #else
-    Q_UNUSED(isFromUser)
-    return documentTextForLayout(text);
+    return isFromUser ? documentTextForLayout(text) : cachedMarkdown(text).plainText;
 #endif
 }
 
@@ -697,4 +1689,114 @@ int AiChatMessageDelegate::maxBubbleWidth(int itemWidth) const
 {
     const int availableWidth = qMax(0, itemWidth - kHorizontalMargin * 2);
     return qMin(static_cast<int>(itemWidth * 0.72), availableWidth);
+}
+
+bool AiChatMessageDelegate::isAiReplyActionVisible(const QModelIndex& index,
+                                                   MessageAction action) const
+{
+    if (!index.isValid() ||
+            index.data(AiChatMessageListModel::IsBottomSpaceRole).toBool() ||
+            index.data(AiChatMessageListModel::IsFromUserRole).toBool()) {
+        return false;
+    }
+
+    const QString messageId = index.data(AiChatMessageListModel::MessageIdRole).toString();
+    if (!messageId.isEmpty() && messageId == m_streamingMessageId) {
+        return false;
+    }
+
+    if (action != MessageAction::Refresh) {
+        return action == MessageAction::Copy ||
+                action == MessageAction::Like ||
+                action == MessageAction::Dislike;
+    }
+
+    const QAbstractItemModel* itemModel = index.model();
+    if (!itemModel) {
+        return false;
+    }
+
+    return index.row() == itemModel->rowCount() - 2;
+}
+
+QVector<QPair<AiChatMessageDelegate::MessageAction, QRect>>
+AiChatMessageDelegate::aiReplyActionRects(const LayoutMetrics& metrics,
+                                          const QModelIndex& index) const
+{
+    QVector<MessageAction> visibleActions;
+    visibleActions.reserve(4);
+    const QVector<MessageAction> orderedActions{
+            MessageAction::Copy,
+            MessageAction::Refresh,
+            MessageAction::Like,
+            MessageAction::Dislike
+    };
+    for (MessageAction action : orderedActions) {
+        if (isAiReplyActionVisible(index, action)) {
+            visibleActions.append(action);
+        }
+    }
+
+    QVector<QPair<MessageAction, QRect>> rects;
+    rects.reserve(visibleActions.size());
+    const int contentLeft = metrics.textRect.left() + kMarkdownHorizontalInset;
+    const int y = metrics.textRect.bottom() + 1 + kActionTopMargin;
+    int x = contentLeft;
+    for (MessageAction action : visibleActions) {
+        rects.append(qMakePair(action, QRect(x, y, kActionButtonSize, kActionButtonSize)));
+        x += kActionButtonSize + kActionGap;
+    }
+    return rects;
+}
+
+void AiChatMessageDelegate::paintAiReplyActions(QPainter* painter,
+                                                const LayoutMetrics& metrics,
+                                                const QModelIndex& index) const
+{
+    const QVector<QPair<MessageAction, QRect>> actions = aiReplyActionRects(metrics, index);
+    if (actions.isEmpty()) {
+        return;
+    }
+
+    const bool dark = ThemeManager::instance().isDark();
+    const bool invertIcon = dark;
+    const QString messageId = index.data(AiChatMessageListModel::MessageIdRole).toString();
+    const MessageFeedback feedback = messageFeedback(messageId);
+    const QSize iconSize(kActionIconSize, kActionIconSize);
+
+    painter->save();
+    painter->setRenderHint(QPainter::Antialiasing, true);
+    for (const QPair<MessageAction, QRect>& action : actions) {
+        const QRect buttonRect = action.second;
+        QString iconSource;
+        bool upsideDown = false;
+        switch (action.first) {
+        case MessageAction::Copy:
+            iconSource = QStringLiteral(":/resources/icon/copy.png");
+            break;
+        case MessageAction::Refresh:
+            iconSource = QStringLiteral(":/resources/icon/refresh.png");
+            break;
+        case MessageAction::Like:
+            iconSource = feedback == MessageFeedback::Liked
+                    ? QStringLiteral(":/resources/icon/liked.png")
+                    : QStringLiteral(":/resources/icon/like.png");
+            break;
+        case MessageAction::Dislike:
+            iconSource = feedback == MessageFeedback::Disliked
+                    ? QStringLiteral(":/resources/icon/liked.png")
+                    : QStringLiteral(":/resources/icon/like.png");
+            upsideDown = true;
+            break;
+        case MessageAction::None:
+            break;
+        case MessageAction::ToggleExpansion:
+            break;
+        }
+
+        if (!iconSource.isEmpty()) {
+            drawActionIcon(painter, iconSource, buttonRect, iconSize, invertIcon, upsideDown);
+        }
+    }
+    painter->restore();
 }

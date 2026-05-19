@@ -28,6 +28,10 @@ struct BottomSpace {
     static constexpr int DEFAULT_HEIGHT = 200;  // 默认底部空白高度（像素）
 };
 
+struct NewMessageDivider {
+    QString text;
+};
+
 // 时间间隔设置（秒）
 namespace TimeSettings {
     // 调试模式下使用1分钟
@@ -51,6 +55,8 @@ public:
     void setMessages(QVector<QSharedPointer<ChatMessage>> messages);
     void prependMessages(QVector<QSharedPointer<ChatMessage>> messages);
     void addMessage(QSharedPointer<ChatMessage> message);
+    bool replaceMessage(int index, QSharedPointer<ChatMessage> message);
+    void notifyMessageChanged(const ChatMessage* message);
     const ChatMessage* messageAt(int index) const;
     QSharedPointer<ChatMessage> sharedMessageAt(int index) const;
     void clearSelection();
@@ -59,9 +65,14 @@ public:
     bool isTimeHeader(int index) const;
     const TimeHeader* getTimeHeader(int index) const;
     bool isBottomSpace(int index) const;
+    bool isNewMessageDivider(int index) const;
+    QModelIndex newMessageDividerIndex() const;
+    QModelIndex indexForMessage(const ChatMessage* message) const;
 
     void ensureBottomSpace();
-    void setBottomSpaceHeight(int height);
+    bool setBottomSpaceHeight(int height);
+    void setNewMessageDividerBefore(const ChatMessage* message);
+    void clearNewMessageDivider();
 
     void clear();
 
@@ -69,14 +80,17 @@ private:
     struct ListItem {
         QSharedPointer<ChatMessage> message;
         QSharedPointer<TimeHeader> timeHeader;
+        QSharedPointer<NewMessageDivider> newMessageDivider;
         bool isHeader = false;
         bool isBottomSpace = false;
+        bool isNewMessageDivider = false;
         int bottomSpaceHeight = BottomSpace::DEFAULT_HEIGHT;  // 使用默认高度
     };
     QVector<ListItem> items;
     QVector<QSharedPointer<ChatMessage>> messages;
     int selectedMessageIndex = -1;
     int bottomSpaceHeight = BottomSpace::DEFAULT_HEIGHT;
+    const ChatMessage* newMessageDividerBefore = nullptr;
 
     void rebuildItems();
     int messageIndexForRow(int row) const;

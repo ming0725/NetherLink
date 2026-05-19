@@ -47,8 +47,6 @@ MessageListWidget::MessageListWidget(QWidget* parent)
             return;
         }
 
-        m_model->markConversationRead(conversationId);
-        MessageRepository::instance().markConversationRead(conversationId);
         viewport()->update();
     });
     connect(&MessageRepository::instance(), &MessageRepository::lastMessageChanged,
@@ -143,13 +141,13 @@ void MessageListWidget::onCurrentChanged(const QModelIndex& current, const QMode
         return;
     }
 
-    m_model->markConversationRead(conversationId);
-    MessageRepository::instance().markConversationRead(conversationId);
-    update(current);
-
     if (!m_restoringSelection && conversationId != m_model->conversationIdAt(previous)) {
         emit conversationActivated(conversationId);
     }
+
+    m_model->markConversationRead(conversationId);
+    MessageRepository::instance().markConversationRead(conversationId);
+    update(current);
 }
 
 void MessageListWidget::onRepositoryLastMessageChanged(const QString& conversationId,

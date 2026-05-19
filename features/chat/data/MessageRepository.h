@@ -29,6 +29,9 @@ public slots:
     void removeConversation(const QString& conversationId);
     void addMessage(const QString& conversationId,
                     QSharedPointer<ChatMessage> message);
+    bool replaceMessage(const QString& conversationId,
+                        const QSharedPointer<ChatMessage>& oldMessage,
+                        QSharedPointer<ChatMessage> newMessage);
     void removeMessage(const QString& conversationId, int index);
     bool removeMessage(const QString& conversationId,
                        const QSharedPointer<ChatMessage>& message);

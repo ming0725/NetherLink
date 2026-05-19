@@ -19,7 +19,7 @@
 
 namespace {
 
-constexpr int kLightPanelAlpha = 100;
+constexpr int kLightPanelAlpha = 220;
 constexpr int kDarkPanelAlpha = 150;
 
 class IconOnlyButton : public QAbstractButton

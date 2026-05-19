@@ -112,6 +112,10 @@ QString buildPreviewText(const QSharedPointer<ChatMessage>& message,
         return {};
     }
 
+    if (message->getType() == MessageType::Recall) {
+        return message->getContent();
+    }
+
     if (isGroup) {
         QString senderName = message->getSenderName();
         if (senderName.isEmpty()) {
@@ -145,6 +149,86 @@ int sampleUnreadCount(int ordinal, int messageCount)
         return 7;
     default:
         return messageCount > 99 ? 101 : 12;
+    }
+}
+
+QDateTime unreadMessageTimeAfter(const QVector<QDateTime>& timeline, int unreadIndex)
+{
+    const QDateTime baseTime = timeline.isEmpty()
+            ? QDateTime::currentDateTime()
+            : timeline.last();
+    return baseTime.addSecs((unreadIndex + 1) * 60);
+}
+
+void appendSyntheticUnreadMessage(QVector<QSharedPointer<ChatMessage>>& messages,
+                                  const QString& content,
+                                  const QDateTime& timestamp,
+                                  const QString& senderId,
+                                  const QString& senderName,
+                                  bool isGroupChat,
+                                  GroupRole role)
+{
+    if (senderId.isEmpty()) {
+        return;
+    }
+
+    auto msg = QSharedPointer<ChatMessage>(new TextMessage(
+            content,
+            false,
+            senderId,
+            isGroupChat,
+            senderName,
+            role));
+    msg->setTimestamp(timestamp);
+    messages.push_back(msg);
+}
+
+void appendSyntheticDirectUnreadMessages(QVector<QSharedPointer<ChatMessage>>& messages,
+                                         const QVector<QDateTime>& timeline,
+                                         const QString& peerId,
+                                         const QString& peerName,
+                                         int unreadCount)
+{
+    for (int index = 0; index < unreadCount; ++index) {
+        appendSyntheticUnreadMessage(messages,
+                                     QStringLiteral("未读消息%1").arg(index + 1),
+                                     unreadMessageTimeAfter(timeline, index),
+                                     peerId,
+                                     peerName,
+                                     false,
+                                     GroupRole::Member);
+    }
+}
+
+SampleParticipant syntheticUnreadSenderForGroup(const QVector<SampleParticipant>& participants)
+{
+    const CurrentUser& currentUser = CurrentUser::instance();
+    for (const SampleParticipant& participant : participants) {
+        if (!currentUser.isCurrentUserId(participant.userId)) {
+            return participant;
+        }
+    }
+    return {};
+}
+
+void appendSyntheticGroupUnreadMessages(QVector<QSharedPointer<ChatMessage>>& messages,
+                                        const QVector<QDateTime>& timeline,
+                                        const QVector<SampleParticipant>& participants,
+                                        int unreadCount)
+{
+    const SampleParticipant sender = syntheticUnreadSenderForGroup(participants);
+    if (sender.userId.isEmpty()) {
+        return;
+    }
+
+    for (int index = 0; index < unreadCount; ++index) {
+        appendSyntheticUnreadMessage(messages,
+                                     QStringLiteral("未读消息%1").arg(index + 1),
+                                     unreadMessageTimeAfter(timeline, index),
+                                     sender.userId,
+                                     sender.displayName,
+                                     true,
+                                     sender.role);
     }
 }
 
@@ -482,6 +566,8 @@ MessageRepository::MessageRepository(QObject* parent)
                                             const QString& peerName,
                                             int ordinal) {
         const QVector<QDateTime> timeline = buildHistoryTimeline(ordinal);
+        ChatMessageList generatedMessages;
+        generatedMessages.reserve(timeline.size() + sampleUnreadCount(ordinal, timeline.size()));
         for (int index = 0; index < timeline.size(); ++index) {
             const bool fromMe = index % 4 == 1;
             const QString senderId = fromMe ? CurrentUser::instance().getUserId() : peerId;
@@ -494,11 +580,20 @@ MessageRepository::MessageRepository(QObject* parent)
                     senderName,
                     GroupRole::Member));
             msg->setTimestamp(timeline.at(index));
+            generatedMessages.push_back(msg);
+        }
+        const int unreadCount = sampleUnreadCount(ordinal, timeline.size());
+        appendSyntheticDirectUnreadMessages(generatedMessages,
+                                            timeline,
+                                            peerId,
+                                            peerName,
+                                            unreadCount);
+        for (const QSharedPointer<ChatMessage>& msg : generatedMessages) {
             addMessage(conversationId, msg);
         }
         ConversationSyncState state;
         state.conversationId = conversationId;
-        state.unreadCount = sampleUnreadCount(ordinal, timeline.size());
+        state.unreadCount = unreadCount;
         state.isDoNotDisturb = sampleDoNotDisturb(ordinal);
         state.messageListTime = m_conversationStates.value(conversationId).messageListTime;
         m_conversationStates.insert(conversationId, state);
@@ -511,6 +606,8 @@ MessageRepository::MessageRepository(QObject* parent)
             return;
         }
 
+        ChatMessageList generatedMessages;
+        generatedMessages.reserve(timeline.size() + sampleUnreadCount(ordinal, timeline.size()));
         QString lastSenderId;
         for (int index = 0; index < timeline.size(); ++index) {
             int senderIndex = (index + ordinal * 3 + index / participants.size()) % participants.size();
@@ -528,13 +625,21 @@ MessageRepository::MessageRepository(QObject* parent)
                     sender.displayName,
                     sender.role));
             msg->setTimestamp(timeline.at(index));
-            addMessage(group.groupId, msg);
+            generatedMessages.push_back(msg);
             lastSenderId = sender.userId;
         }
 
+        const int unreadCount = sampleUnreadCount(ordinal, timeline.size());
+        appendSyntheticGroupUnreadMessages(generatedMessages,
+                                           timeline,
+                                           participants,
+                                           unreadCount);
+        for (const QSharedPointer<ChatMessage>& msg : generatedMessages) {
+            addMessage(group.groupId, msg);
+        }
         ConversationSyncState state;
         state.conversationId = group.groupId;
-        state.unreadCount = sampleUnreadCount(ordinal, timeline.size());
+        state.unreadCount = unreadCount;
         state.isDoNotDisturb = sampleDoNotDisturb(ordinal);
         state.messageListTime = m_conversationStates.value(group.groupId).messageListTime;
         m_conversationStates.insert(group.groupId, state);
@@ -595,6 +700,7 @@ ConversationThreadData MessageRepository::requestConversationThread(const Conver
         thread.loadedMessageCount = qMin(allMessages.size(),
                                          qMax(0, query.offsetFromLatest) + thread.messages.size());
         thread.hasMoreBefore = thread.loadedMessageCount < allMessages.size();
+        thread.unreadCount = m_conversationStates.value(query.conversationId).unreadCount;
     }
     return thread;
 }
@@ -738,6 +844,52 @@ void MessageRepository::addMessage(const QString& conversationId,
     }
     emit lastMessageChanged(conversationId, message);
     emit conversationListChanged(conversationId);
+}
+
+bool MessageRepository::replaceMessage(const QString& conversationId,
+                                       const QSharedPointer<ChatMessage>& oldMessage,
+                                       QSharedPointer<ChatMessage> newMessage)
+{
+    if (conversationId.isEmpty() || oldMessage.isNull() || newMessage.isNull()) {
+        return false;
+    }
+
+    QSharedPointer<ChatMessage> lastMsg;
+    bool replacedLast = false;
+    {
+        QMutexLocker locker(&m_mutex);
+        auto it = m_store.find(conversationId);
+        if (it == m_store.end()) {
+            return false;
+        }
+
+        ChatMessageList& messages = it.value();
+        for (int index = 0; index < messages.size(); ++index) {
+            if (messages.at(index).data() != oldMessage.data()) {
+                continue;
+            }
+
+            messages[index] = newMessage;
+            replacedLast = index == messages.size() - 1;
+            lastMsg = messages.isEmpty() ? QSharedPointer<ChatMessage>() : messages.last();
+            if (replacedLast) {
+                ConversationSyncState& state = m_conversationStates[conversationId];
+                state.conversationId = conversationId;
+                state.messageListTime = newMessage->getTimestamp();
+            }
+            break;
+        }
+    }
+
+    if (lastMsg.isNull()) {
+        return false;
+    }
+
+    if (replacedLast) {
+        emit lastMessageChanged(conversationId, lastMsg);
+    }
+    emit conversationListChanged(conversationId);
+    return true;
 }
 
 void MessageRepository::removeMessage(const QString& conversationId, int index)

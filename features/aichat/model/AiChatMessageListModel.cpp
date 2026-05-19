@@ -84,6 +84,24 @@ void AiChatMessageListModel::appendMessage(const AiChatMessage& message)
     endInsertRows();
 }
 
+bool AiChatMessageListModel::removeMessage(const QString& messageId)
+{
+    if (messageId.isEmpty()) {
+        return false;
+    }
+
+    for (int row = 0; row < m_messages.size(); ++row) {
+        if (m_messages.at(row).messageId == messageId) {
+            beginRemoveRows(QModelIndex(), row, row);
+            m_messages.removeAt(row);
+            endRemoveRows();
+            return true;
+        }
+    }
+
+    return false;
+}
+
 bool AiChatMessageListModel::updateMessageText(const QString& messageId, const QString& text)
 {
     if (messageId.isEmpty()) {

@@ -12,6 +12,7 @@
 
 class ChatItemDelegate;
 class QKeyEvent;
+class QWheelEvent;
 
 class ChatListView : public OverlayScrollListView
 {
@@ -20,12 +21,21 @@ public:
     explicit ChatListView(QWidget *parent = nullptr);
     void setModel(QAbstractItemModel *model) override;
     void scrollToBottom(bool accelerateFarDistance = false);
+    void scrollToIndexAtTopAnimated(const QModelIndex& index,
+                                    bool accelerateFarDistance = false);
+    bool scrollToBottomIfLocked(bool accelerateFarDistance = false);
     void jumpToBottom();
+    bool isBottomLocked() const { return m_stickToBottom; }
     void preserveScrollPositionAfterPrepend(int previousValue, int previousMaximum);
     void clearTextSelection();
 
+signals:
+    void userScrollUpIntent();
+    void userScrollDownIntent();
+
 protected:
     void keyPressEvent(QKeyEvent* event) override;
+    void wheelEvent(QWheelEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
     void mousePressEvent(QMouseEvent* event) override;
     void mouseDoubleClickEvent(QMouseEvent* event) override;
@@ -35,6 +45,7 @@ protected:
 
 private slots:
     void onModelRowsChanged();
+    void onScrollValueChanged(int value);
 
 private:
     ChatItemDelegate* chatDelegate() const;
@@ -45,6 +56,14 @@ private:
     void showSelectionMenu(const QPoint& globalPos);
     void showUrlMenu(const QPoint& globalPos, const QString& url);
     void openUrl(const QString& url);
+    void animateScrollToValue(int targetValue,
+                              bool accelerateFarDistance,
+                              bool programmaticUpwardScroll);
+    void setScrollBarToBottom();
+    void unlockBottomLockForUserScrollUp();
+    bool isAtBottom() const;
+    bool hasUpwardScrollIntent(const QWheelEvent* event) const;
+    bool hasDownwardScrollIntent(const QWheelEvent* event) const;
 
     QPropertyAnimation* m_scrollAnimation;
     QPersistentModelIndex m_activeBubbleIndex;
@@ -54,6 +73,11 @@ private:
     QPersistentModelIndex m_pressedUrlIndex;
     QPoint m_pressedUrlPos;
     QString m_pressedUrl;
+    bool m_stickToBottom = true;
+    bool m_programmaticScrollChange = false;
+    int m_lastScrollValue = 0;
+
+    static constexpr int kBottomReachedThreshold = 5;
 };
 
 #endif // CHATLISTVIEW_H 

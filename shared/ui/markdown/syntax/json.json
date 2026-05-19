@@ -1,0 +1,22 @@
+{
+  "id": "json",
+  "displayName": "JSON",
+  "aliases": [
+    "json"
+  ],
+  "keywords": [
+    "true",
+    "false",
+    "null"
+  ],
+  "lineComments": [],
+  "blockComments": [],
+  "strings": [
+    {
+      "start": "\"",
+      "end": "\"",
+      "escape": "\\"
+    }
+  ],
+  "functionPattern": ""
+}

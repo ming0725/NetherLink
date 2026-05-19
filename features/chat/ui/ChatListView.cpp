@@ -14,6 +14,7 @@
 #include <QStyleOptionViewItem>
 #include <QTimer>
 #include <QUrl>
+#include <QWheelEvent>
 
 #include "features/chat/ui/ChatItemDelegate.h"
 #include "shared/ui/StyledActionMenu.h"
@@ -79,6 +80,19 @@ ChatListView::ChatListView(QWidget *parent)
     setScrollBarInsets(8, 4);
 
     m_scrollAnimation->setEasingCurve(QEasingCurve::OutCubic);
+    connect(verticalScrollBar(), &QScrollBar::valueChanged,
+            this, &ChatListView::onScrollValueChanged);
+    connect(m_scrollAnimation, &QPropertyAnimation::stateChanged,
+            this, [this](QAbstractAnimation::State newState,
+                         QAbstractAnimation::State oldState) {
+                if (oldState == QAbstractAnimation::Running &&
+                        newState == QAbstractAnimation::Stopped &&
+                        m_programmaticScrollChange) {
+                    m_programmaticScrollChange = false;
+                    m_lastScrollValue = verticalScrollBar()->value();
+                    updateOverlayScrollBar();
+                }
+            });
 }
 
 void ChatListView::setModel(QAbstractItemModel *model)
@@ -110,25 +124,49 @@ void ChatListView::setModel(QAbstractItemModel *model)
 
 void ChatListView::scrollToBottom(bool accelerateFarDistance)
 {
+    m_stickToBottom = true;
     doItemsLayout();
     updateGeometries();
-
-    QScrollBar* scrollBar = verticalScrollBar();
-    const int targetValue = scrollBar->maximum();
-    const int startValue = scrollBar->value();
-
-    if (targetValue <= scrollBar->minimum() || startValue >= targetValue) {
+    if (verticalScrollBar()->value() >= verticalScrollBar()->maximum()) {
         jumpToBottom();
         return;
     }
 
-    m_scrollAnimation->stop();
-    m_scrollAnimation->setDuration(scrollAnimationDuration(targetValue - startValue,
-                                                           viewport()->height(),
-                                                           accelerateFarDistance));
-    m_scrollAnimation->setStartValue(startValue);
-    m_scrollAnimation->setEndValue(targetValue);
-    m_scrollAnimation->start();
+    animateScrollToValue(verticalScrollBar()->maximum(), accelerateFarDistance, false);
+}
+
+void ChatListView::scrollToIndexAtTopAnimated(const QModelIndex& index,
+                                              bool accelerateFarDistance)
+{
+    if (!index.isValid()) {
+        return;
+    }
+
+    m_stickToBottom = false;
+    doItemsLayout();
+    updateGeometries();
+
+    QScrollBar* scrollBar = verticalScrollBar();
+    const int startValue = scrollBar->value();
+
+    m_programmaticScrollChange = true;
+    QListView::scrollTo(index, QAbstractItemView::PositionAtTop);
+    const int targetValue = scrollBar->value();
+    scrollBar->setValue(startValue);
+    m_programmaticScrollChange = false;
+    m_lastScrollValue = startValue;
+
+    animateScrollToValue(targetValue, accelerateFarDistance, true);
+}
+
+bool ChatListView::scrollToBottomIfLocked(bool accelerateFarDistance)
+{
+    if (!m_stickToBottom) {
+        return false;
+    }
+
+    scrollToBottom(accelerateFarDistance);
+    return true;
 }
 
 void ChatListView::jumpToBottom()
@@ -136,8 +174,7 @@ void ChatListView::jumpToBottom()
     m_scrollAnimation->stop();
     doItemsLayout();
     updateGeometries();
-    verticalScrollBar()->setValue(verticalScrollBar()->maximum());
-    updateOverlayScrollBar();
+    setScrollBarToBottom();
 }
 
 void ChatListView::preserveScrollPositionAfterPrepend(int previousValue, int previousMaximum)
@@ -148,9 +185,12 @@ void ChatListView::preserveScrollPositionAfterPrepend(int previousValue, int pre
         updateGeometries();
         QScrollBar* scrollBar = verticalScrollBar();
         const int addedHeight = qMax(0, scrollBar->maximum() - previousMaximum);
+        m_programmaticScrollChange = true;
         scrollBar->setValue(qBound(scrollBar->minimum(),
                                    previousValue + addedHeight,
                                    scrollBar->maximum()));
+        m_programmaticScrollChange = false;
+        m_lastScrollValue = scrollBar->value();
         updateOverlayScrollBar();
     });
 }
@@ -168,6 +208,22 @@ void ChatListView::clearTextSelection()
 
 void ChatListView::keyPressEvent(QKeyEvent* event)
 {
+    switch (event->key()) {
+    case Qt::Key_Up:
+    case Qt::Key_PageUp:
+    case Qt::Key_Home:
+        emit userScrollUpIntent();
+        unlockBottomLockForUserScrollUp();
+        break;
+    case Qt::Key_Down:
+    case Qt::Key_PageDown:
+    case Qt::Key_End:
+        emit userScrollDownIntent();
+        break;
+    default:
+        break;
+    }
+
     if (event->matches(QKeySequence::SelectAll)) {
         selectAllTextInActiveBubble();
         event->accept();
@@ -186,16 +242,28 @@ void ChatListView::keyPressEvent(QKeyEvent* event)
     OverlayScrollListView::keyPressEvent(event);
 }
 
+void ChatListView::wheelEvent(QWheelEvent* event)
+{
+    if (hasUpwardScrollIntent(event)) {
+        emit userScrollUpIntent();
+        unlockBottomLockForUserScrollUp();
+    } else if (hasDownwardScrollIntent(event)) {
+        emit userScrollDownIntent();
+    }
+
+    OverlayScrollListView::wheelEvent(event);
+}
+
 void ChatListView::resizeEvent(QResizeEvent* event)
 {
-    const bool wasNearBottom = verticalScrollBar()->maximum() - verticalScrollBar()->value() <= 5;
+    const bool shouldKeepBottom = m_stickToBottom;
 
     OverlayScrollListView::resizeEvent(event);
     m_scrollAnimation->stop();
     doItemsLayout();
     updateGeometries();
-    if (wasNearBottom) {
-        verticalScrollBar()->setValue(verticalScrollBar()->maximum());
+    if (shouldKeepBottom) {
+        setScrollBarToBottom();
     }
     updateOverlayScrollBar();
 }
@@ -234,6 +302,11 @@ void ChatListView::mousePressEvent(QMouseEvent* event)
         if (index.isValid()) {
             const QStyleOptionViewItem option = viewOptionForIndex(index);
             const bool hitBubble = delegate->bubbleHitTest(option, index, event->pos());
+            if (delegate->triggerReeditIfHit(option, index, event->pos())) {
+                clearTextSelection();
+                event->accept();
+                return;
+            }
             if (hitBubble) {
                 setFocus(Qt::MouseFocusReason);
                 m_activeBubbleIndex = QPersistentModelIndex(index);
@@ -349,6 +422,11 @@ void ChatListView::mouseMoveEvent(QMouseEvent* event)
         if (index.isValid()) {
             const QStyleOptionViewItem option = viewOptionForIndex(index);
             overUrl = !delegate->urlAt(option, index, event->pos()).isEmpty();
+            if (!overUrl && delegate->reeditHitTest(option, index, event->pos())) {
+                viewport()->setCursor(Qt::PointingHandCursor);
+                OverlayScrollListView::mouseMoveEvent(event);
+                return;
+            }
             overText = overUrl || delegate->characterIndexAt(option, index, event->pos()) >= 0;
         }
     }
@@ -402,6 +480,97 @@ void ChatListView::onModelRowsChanged()
         updateGeometries();
         updateOverlayScrollBar();
     });
+}
+
+void ChatListView::onScrollValueChanged(int value)
+{
+    if (!m_programmaticScrollChange && value < m_lastScrollValue && !isAtBottom()) {
+        m_stickToBottom = false;
+        if (m_scrollAnimation->state() == QAbstractAnimation::Running) {
+            m_scrollAnimation->stop();
+        }
+    }
+
+    m_lastScrollValue = value;
+    if (isAtBottom()) {
+        m_stickToBottom = true;
+    }
+}
+
+void ChatListView::animateScrollToValue(int targetValue,
+                                        bool accelerateFarDistance,
+                                        bool programmaticUpwardScroll)
+{
+    doItemsLayout();
+    updateGeometries();
+
+    QScrollBar* scrollBar = verticalScrollBar();
+    targetValue = qBound(scrollBar->minimum(), targetValue, scrollBar->maximum());
+    const int startValue = scrollBar->value();
+    const int distance = qAbs(targetValue - startValue);
+
+    if (distance <= 0) {
+        m_scrollAnimation->stop();
+        m_programmaticScrollChange = false;
+        m_lastScrollValue = startValue;
+        updateOverlayScrollBar();
+        return;
+    }
+
+    m_scrollAnimation->stop();
+    m_programmaticScrollChange = programmaticUpwardScroll;
+    const int duration = scrollAnimationDuration(distance,
+                                                 viewport()->height(),
+                                                 accelerateFarDistance);
+    m_scrollAnimation->setDuration(duration);
+    m_scrollAnimation->setStartValue(startValue);
+    m_scrollAnimation->setEndValue(targetValue);
+    m_scrollAnimation->start();
+}
+
+void ChatListView::setScrollBarToBottom()
+{
+    QScrollBar* scrollBar = verticalScrollBar();
+    m_programmaticScrollChange = true;
+    scrollBar->setValue(scrollBar->maximum());
+    m_programmaticScrollChange = false;
+    m_lastScrollValue = scrollBar->value();
+    m_stickToBottom = true;
+    updateOverlayScrollBar();
+}
+
+void ChatListView::unlockBottomLockForUserScrollUp()
+{
+    if (verticalScrollBar()->value() > verticalScrollBar()->minimum()) {
+        m_stickToBottom = false;
+        if (m_scrollAnimation->state() == QAbstractAnimation::Running) {
+            m_scrollAnimation->stop();
+        }
+    }
+}
+
+bool ChatListView::isAtBottom() const
+{
+    const QScrollBar* scrollBar = verticalScrollBar();
+    return scrollBar->maximum() - scrollBar->value() <= kBottomReachedThreshold;
+}
+
+bool ChatListView::hasUpwardScrollIntent(const QWheelEvent* event) const
+{
+    if (!event->pixelDelta().isNull()) {
+        return event->pixelDelta().y() > 0;
+    }
+
+    return event->angleDelta().y() > 0;
+}
+
+bool ChatListView::hasDownwardScrollIntent(const QWheelEvent* event) const
+{
+    if (!event->pixelDelta().isNull()) {
+        return event->pixelDelta().y() < 0;
+    }
+
+    return event->angleDelta().y() < 0;
 }
 
 ChatItemDelegate* ChatListView::chatDelegate() const

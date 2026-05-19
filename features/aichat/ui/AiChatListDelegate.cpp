@@ -42,7 +42,7 @@ void AiChatListDelegate::paint(QPainter* painter,
     const QColor backgroundColor = selected
             ? ThemeManager::instance().color(ThemeColor::ListPinned)
             : (hovered ? ThemeManager::instance().color(ThemeColor::ListHover)
-                       : ThemeManager::instance().color(ThemeColor::PanelBackground));
+                       : ThemeManager::instance().color(ThemeColor::PageBackground));
 
     painter->setPen(Qt::NoPen);
     painter->setBrush(backgroundColor);

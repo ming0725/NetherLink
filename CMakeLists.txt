@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.5)
+cmake_minimum_required(VERSION 3.23)
 
 project(NetherLink-static VERSION 0.1 LANGUAGES CXX)
 
@@ -13,9 +13,16 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Widgets OpenGL)
-find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Widgets OpenGL)
+find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Core Widgets OpenGL Concurrent Xml)
+find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Core Widgets OpenGL Concurrent Xml)
 find_package(Threads REQUIRED)
+
+set(JKQtPlotter_BUILD_LIB_JKQTMATHTEXT ON CACHE BOOL "" FORCE)
+set(JKQtPlotter_BUILD_INCLUDE_XITS_FONTS ON CACHE BOOL "" FORCE)
+set(JKQtPlotter_BUILD_WITH_PRECOMPILED_HEADERS OFF CACHE BOOL "" FORCE)
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "" FORCE)
+
+add_subdirectory(third_party/JKQtPlotter EXCLUDE_FROM_ALL)
 
 file(GLOB_RECURSE APP_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/app/*.cpp"
@@ -82,10 +89,24 @@ target_include_directories(NetherLink-static PRIVATE
     ${PROJECT_SOURCE_DIR}/third_party/miniaudio
 )
 
+target_compile_definitions(NetherLink-static PRIVATE
+    QMARKDOWN_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}/shared/ui/markdown"
+)
+
 target_link_libraries(NetherLink-static PRIVATE
+    Qt${QT_VERSION_MAJOR}::Core
     Qt${QT_VERSION_MAJOR}::Widgets
     Qt${QT_VERSION_MAJOR}::OpenGL
+    Qt${QT_VERSION_MAJOR}::Concurrent
+    Qt${QT_VERSION_MAJOR}::Xml
+    JKQTPlotter${QT_VERSION_MAJOR}::JKQTMathText${QT_VERSION_MAJOR}
     Threads::Threads
+)
+
+add_custom_command(TARGET NetherLink-static POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_directory
+        "${CMAKE_CURRENT_SOURCE_DIR}/shared/ui/markdown/syntax"
+        "$<TARGET_FILE_DIR:NetherLink-static>/syntax"
 )
 
 if(UNIX AND NOT APPLE)

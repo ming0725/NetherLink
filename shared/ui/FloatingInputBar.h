@@ -18,6 +18,7 @@ public:
     explicit FloatingInputBar(QWidget *parent = nullptr);
     ~FloatingInputBar() override;
     void focusInput();
+    void appendText(const QString& text);
     bool submitNativeText(const QString& text);
     void triggerNativeHelloShortcut();
     void triggerNativeImageShortcut();
@@ -31,6 +32,7 @@ signals:
     void sendImage(const QString &path);
     void sendText(const QString &text);
     void sendTextAsPeer(const QString &text);
+    void recallLatestPeerMessageRequested();
     void inputFocused();
 protected:
     bool event(QEvent *event) override;

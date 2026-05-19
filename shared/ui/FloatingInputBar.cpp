@@ -98,6 +98,29 @@ void FloatingInputBar::focusInput()
 #endif
 }
 
+void FloatingInputBar::appendText(const QString& text)
+{
+    if (text.isEmpty()) {
+        return;
+    }
+
+    if (m_inputEdit) {
+        m_inputEdit->setFocus();
+        QTextCursor cursor = m_inputEdit->textCursor();
+        cursor.movePosition(QTextCursor::End);
+        cursor.insertText(text);
+        m_inputEdit->setTextCursor(cursor);
+        return;
+    }
+
+#ifdef Q_OS_MACOS
+    if (m_usesNativeInput) {
+        MacFloatingInputBarBridge::appendInputText(this, text);
+        return;
+    }
+#endif
+}
+
 bool FloatingInputBar::usesQtFallbackLiquidGlass() const
 {
     return shouldUseQtFallbackLiquidGlass();
@@ -570,6 +593,12 @@ bool FloatingInputBar::eventFilter(QObject *watched, QEvent *event)
             }
             if (keyEvent->key() == Qt::Key_BracketRight && keyEvent->modifiers() == Qt::NoModifier) {
                 sendHelloWorld();
+                return true;
+            }
+            if ((keyEvent->key() == Qt::Key_Apostrophe ||
+                 keyEvent->text() == QStringLiteral("‘")) &&
+                    keyEvent->modifiers() == Qt::NoModifier) {
+                emit recallLatestPeerMessageRequested();
                 return true;
             }
             if (keyEvent->key() == Qt::Key_Backslash && keyEvent->modifiers() == Qt::NoModifier) {

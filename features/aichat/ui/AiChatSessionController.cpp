@@ -50,6 +50,60 @@ AiChatMessage AiChatSessionController::submitUserMessage(const QString& conversa
     return message;
 }
 
+bool AiChatSessionController::regenerateAiReply(const QString& conversationId, const QString& messageId)
+{
+    if (conversationId.isEmpty() || messageId.isEmpty()) {
+        return false;
+    }
+
+    if (hasActiveAiReplyStream() &&
+            (conversationId != m_streamConversationId || messageId != m_streamMessageId)) {
+        return false;
+    }
+
+    const QVector<AiChatMessage> messages = AiChatRepository::instance().requestAiChatMessages(conversationId);
+    int replyRow = -1;
+    for (int row = 0; row < messages.size(); ++row) {
+        if (messages.at(row).messageId == messageId) {
+            replyRow = row;
+            break;
+        }
+    }
+
+    if (replyRow < 0 ||
+            replyRow != messages.size() - 1 ||
+            messages.at(replyRow).isFromUser) {
+        return false;
+    }
+
+    QString prompt;
+    for (int row = replyRow - 1; row >= 0; --row) {
+        if (messages.at(row).isFromUser) {
+            prompt = messages.at(row).text;
+            break;
+        }
+    }
+    if (prompt.trimmed().isEmpty()) {
+        return false;
+    }
+
+    if (conversationId == m_streamConversationId && messageId == m_streamMessageId) {
+        if (m_streamClient) {
+            m_streamClient->cancel();
+        }
+        resetActiveAiReplyStream();
+    }
+
+    if (!AiChatRepository::instance().removeAiChatMessage(conversationId, messageId)) {
+        return false;
+    }
+
+    emit aiReplyMessageRemoved(conversationId, messageId);
+    emit conversationsChanged();
+    startAiReplyStream(conversationId, prompt);
+    return true;
+}
+
 bool AiChatSessionController::renameConversation(const QString& conversationId, const QString& title)
 {
     const bool renamed = AiChatRepository::instance().renameAiChatConversation(conversationId, title);

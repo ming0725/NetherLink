@@ -6,6 +6,7 @@
 #include <QStyledItemDelegate>
 #include <QTextDocument>
 #include <QVector>
+#include <functional>
 
 #include "shared/types/ChatMessage.h"
 #include "shared/ui/SelectableText.h"
@@ -45,9 +46,18 @@ public:
     bool selectionContains(const QModelIndex& index, int cursor) const;
     QString selectedText() const;
     QPersistentModelIndex selectionIndex() const;
+    void setRecallEligibilityCallback(std::function<bool(const ChatMessage*)> callback);
+    bool reeditHitTest(const QStyleOptionViewItem& option,
+                       const QModelIndex& index,
+                       const QPoint& viewportPos) const;
+    bool triggerReeditIfHit(const QStyleOptionViewItem& option,
+                            const QModelIndex& index,
+                            const QPoint& viewportPos);
 
 signals:
     void deleteRequested(int row);
+    void recallRequested(int row);
+    void reeditRequested(int row);
 
 private:
     struct TextRange {
@@ -88,6 +98,10 @@ private:
     static constexpr int TIME_HEADER_RADIUS = 11;  // 时间标识圆角半径
     static constexpr int TIME_HEADER_MIN_WIDTH = 60;  // 时间标识最小宽度
     static constexpr int TIME_HEADER_FONT_SIZE = 11;  // 时间标识字体大小
+    static constexpr int NEW_MESSAGE_DIVIDER_HEIGHT = 34;
+    static constexpr int NEW_MESSAGE_DIVIDER_MARGIN = 16;
+    static constexpr int NEW_MESSAGE_DIVIDER_TEXT_GAP = 14;
+    static constexpr int NEW_MESSAGE_DIVIDER_FONT_SIZE = 12;
     
     void drawBubble(QPainter* painter, const QRect& rect,
                     bool isFromMe, const ChatMessage* message, bool isSelected,
@@ -106,6 +120,12 @@ private:
                           const ChatMessage* message) const;
     void drawTimeHeader(QPainter* painter, const QRect& rect,
                        const QString& text) const;
+    void drawNewMessageDivider(QPainter* painter, const QRect& rect,
+                               const QString& text) const;
+    void drawRecallMessage(QPainter* painter,
+                           const QRect& rect,
+                           const RecallMessage* message,
+                           const QModelIndex& index) const;
 
     QRect calculateBubbleRect(const QRect& contentRect,
                              const ChatMessage* message,
@@ -116,7 +136,12 @@ private:
     QRect calculateTimeHeaderRect(const QRect& contentRect,
                                 const QString& text) const;
     QRect calculateTextRect(const QRect& bubbleRect) const;
+    QRect calculateRecallContentRect(const QRect& contentRect,
+                                     const RecallMessage* message) const;
+    QRect calculateRecallReeditRect(const QRect& contentRect,
+                                    const RecallMessage* message) const;
     QFont messageFont() const;
+    QFont recallFont() const;
     QSize textDocumentSize(const QString& text, const QFont& font, int maxTextWidth) const;
     const QTextDocument& cachedTextDocument(const QString& text,
                                             const QFont& font,
@@ -139,6 +164,7 @@ private:
 
     QPersistentModelIndex m_selectionIndex;
     SelectableText::Selection m_selection;
+    std::function<bool(const ChatMessage*)> m_recallEligibilityCallback;
     mutable QCache<QString, TextDocumentCacheEntry> m_textDocumentCache;
     mutable QCache<QString, TextSizeCacheEntry> m_textSizeCache;
     mutable QCache<QString, UrlRangesCacheEntry> m_urlRangesCache;

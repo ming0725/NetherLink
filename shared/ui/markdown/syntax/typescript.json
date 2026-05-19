@@ -1,0 +1,110 @@
+{
+  "id": "typescript",
+  "displayName": "TypeScript",
+  "aliases": [
+    "ts",
+    "typescript",
+    "tsx"
+  ],
+  "keywords": [
+    "abstract",
+    "any",
+    "as",
+    "asserts",
+    "async",
+    "await",
+    "boolean",
+    "break",
+    "case",
+    "catch",
+    "class",
+    "const",
+    "constructor",
+    "continue",
+    "declare",
+    "default",
+    "delete",
+    "do",
+    "else",
+    "enum",
+    "export",
+    "extends",
+    "false",
+    "finally",
+    "for",
+    "from",
+    "function",
+    "get",
+    "if",
+    "implements",
+    "import",
+    "in",
+    "infer",
+    "instanceof",
+    "interface",
+    "is",
+    "keyof",
+    "let",
+    "module",
+    "namespace",
+    "never",
+    "new",
+    "null",
+    "number",
+    "object",
+    "of",
+    "private",
+    "protected",
+    "public",
+    "readonly",
+    "require",
+    "return",
+    "set",
+    "static",
+    "string",
+    "super",
+    "switch",
+    "symbol",
+    "this",
+    "throw",
+    "true",
+    "try",
+    "type",
+    "typeof",
+    "undefined",
+    "unknown",
+    "var",
+    "void",
+    "while",
+    "with",
+    "yield"
+  ],
+  "lineComments": [
+    "//"
+  ],
+  "blockComments": [
+    {
+      "start": "/*",
+      "end": "*/"
+    }
+  ],
+  "strings": [
+    {
+      "start": "\"",
+      "end": "\"",
+      "escape": "\\"
+    },
+    {
+      "start": "'",
+      "end": "'",
+      "escape": "\\"
+    },
+    {
+      "start": "`",
+      "end": "`",
+      "escape": "\\",
+      "multiline": true
+    }
+  ],
+  "functionPattern": "\\b([A-Za-z_$][A-Za-z0-9_$]*)\\s*(?=\\()"
+}

@@ -48,7 +48,7 @@ private:
     protected:
         void paintEvent(QPaintEvent* event) override {
             QPainter painter(this);
-            painter.fillRect(event->rect(), ThemeManager::instance().color(ThemeColor::PanelBackground));
+            painter.fillRect(event->rect(), ThemeManager::instance().color(ThemeColor::PageBackground));
         }
 
         void resizeEvent(QResizeEvent* ev) override {

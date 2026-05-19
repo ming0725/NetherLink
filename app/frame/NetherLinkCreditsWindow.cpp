@@ -260,6 +260,9 @@ void NetherLinkCreditsWindow::buildCredits()
     addRole(QStringLiteral("miniaudio"),
             QStringLiteral("David Reid"),
             QStringLiteral("https://github.com/mackron/miniaudio"));
+    addRole(QStringLiteral("JKQtPlotter"),
+            QStringLiteral("Jan W. Krieger"),
+            QStringLiteral("https://github.com/jkriege2/JKQtPlotter"));
     addSpacer(48);
 
     addSection(QStringLiteral("特别鸣谢"));

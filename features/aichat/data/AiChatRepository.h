@@ -23,6 +23,7 @@ public:
                                  const QString& messageId,
                                  const QString& text,
                                  const QDateTime& time = QDateTime::currentDateTime());
+    bool removeAiChatMessage(const QString& conversationId, const QString& messageId);
     bool renameAiChatConversation(const QString& conversationId, const QString& title);
     bool removeAiChatConversation(const QString& conversationId);
 

@@ -2,22 +2,29 @@
 #include "shared/services/AppFonts.h"
 
 #include <QLinearGradient>
+#include <QLoggingCategory>
 #include <QModelIndex>
 #include <QPainter>
 #include <QResizeEvent>
+#include <QScrollBar>
 #include <QTimer>
 
 #include "features/aichat/model/AiChatMessageListModel.h"
 #include "features/aichat/ui/AiChatFloatingInputBar.h"
+#include "features/aichat/ui/AiChatMessageDelegate.h"
 #include "features/aichat/ui/AiChatMessageListView.h"
 #include "features/aichat/ui/AiChatSessionController.h"
+#include "features/chat/ui/NewMessageNotifier.h"
 #include "shared/theme/ThemeManager.h"
+#include "shared/ui/GlobalNotification.h"
 #include "shared/ui/PaintedLabel.h"
 
 namespace {
 
 constexpr int kBottomGradientFadeHeight = 32;
 constexpr int kBottomGradientSolidAlpha = 192;
+
+Q_LOGGING_CATEGORY(lcAiChatUnread, "netherlink.aichat.unread")
 
 class ThemeDivider : public QWidget
 {
@@ -62,7 +69,7 @@ protected:
                          static_cast<qreal>(kBottomGradientFadeHeight) / rect().height(),
                          1.0)
                 : 1.0;
-        QColor pageBackground = ThemeManager::instance().color(ThemeColor::PageBackground);
+        QColor pageBackground = ThemeManager::instance().color(ThemeColor::PanelBackground);
         pageBackground.setAlpha(0);
         gradient.setColorAt(0.0, pageBackground);
         pageBackground.setAlpha(kBottomGradientSolidAlpha);
@@ -82,9 +89,12 @@ AiChatConversationWidget::AiChatConversationWidget(QWidget* parent)
     , m_titleLabel(new PaintedLabel(this))
     , m_headerDivider(new ThemeDivider(this))
     , m_bottomGapGradientOverlay(new BottomGapGradientOverlay(this))
+    , m_newMessageNotifier(new NewMessageNotifier(this))
     , m_emptyLabel(new PaintedLabel(QStringLiteral("选择或新建一个 AI 对话"), this))
 {
     m_messageView->setModel(m_messageModel);
+    m_newMessageNotifier->setDisplayMode(NewMessageNotifier::DisplayMode::IconOnly);
+    m_newMessageNotifier->hide();
     m_titleLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
     m_emptyLabel->setAlignment(Qt::AlignCenter);
     m_emptyLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
@@ -103,11 +113,51 @@ AiChatConversationWidget::AiChatConversationWidget(QWidget* parent)
             this, &AiChatConversationWidget::onStopStreamingRequested);
     connect(m_inputBar, &AiChatFloatingInputBar::inputFocused,
             m_messageView, &AiChatMessageListView::clearTextSelection);
+    connect(m_messageView, &AiChatMessageListView::regenerateAiReplyRequested,
+            this, &AiChatConversationWidget::onRegenerateAiReplyRequested);
+    connect(m_messageView->verticalScrollBar(), &QScrollBar::valueChanged,
+            this, [this]() { updateNewMessageNotifier(); });
+    connect(m_messageView, &AiChatMessageListView::userScrollUpIntent, this, [this]() {
+        if (!hasActiveAiReplyStream() && m_unreadAiReplyCount == 0) {
+            m_newMessageNotifierRevealedByDownScroll = false;
+            updateNewMessageNotifier();
+        }
+    });
+    connect(m_messageView, &AiChatMessageListView::userScrollDownIntent, this, [this]() {
+        QTimer::singleShot(0, this, [this]() {
+            if (hasActiveAiReplyStream()) {
+                if (shouldShowNewMessageNotifier()) {
+                    m_streamingNotifierHeld = true;
+                    updateNewMessageNotifier();
+                }
+                return;
+            }
+
+            if (m_unreadAiReplyCount == 0 && shouldShowNewMessageNotifier()) {
+                m_newMessageNotifierRevealedByDownScroll = true;
+                updateNewMessageNotifier();
+            }
+        });
+    });
+    connect(m_newMessageNotifier, &NewMessageNotifier::clicked, this, [this]() {
+        m_messageView->scrollToBottom(true);
+        if (m_unreadAiReplyCount > 0) {
+            qCDebug(lcAiChatUnread).noquote()
+                    << "AICHAT_UNREAD clearByNotifier"
+                    << "conversationId=" << m_currentConversation.conversationId
+                    << "unreadBefore=" << m_unreadAiReplyCount;
+        }
+        m_unreadAiReplyCount = 0;
+        m_newMessageNotifierRevealedByDownScroll = false;
+        m_streamingNotifierHeld = false;
+        m_newMessageNotifier->hide();
+    });
     connect(&ThemeManager::instance(), &ThemeManager::themeChanged, this, [this]() {
         updateHeader();
         update();
         m_headerDivider->update();
         m_bottomGapGradientOverlay->update();
+        m_newMessageNotifier->update();
         m_messageView->viewport()->update();
     });
 
@@ -136,6 +186,8 @@ void AiChatConversationWidget::setController(AiChatSessionController* controller
             this, &AiChatConversationWidget::onAiReplyMessageAdded);
     connect(m_controller, &AiChatSessionController::aiReplyMessageUpdated,
             this, &AiChatConversationWidget::onAiReplyMessageUpdated);
+    connect(m_controller, &AiChatSessionController::aiReplyMessageRemoved,
+            this, &AiChatConversationWidget::onAiReplyMessageRemoved);
     connect(m_controller, &AiChatSessionController::aiReplyFinished,
             this, &AiChatConversationWidget::onAiReplyFinished);
     connect(m_controller, &AiChatSessionController::aiReplyCanceled,
@@ -149,13 +201,25 @@ void AiChatConversationWidget::openConversation(const AiChatListEntry& entry)
         return;
     }
 
+    if (m_currentConversation.conversationId == entry.conversationId) {
+        m_currentConversation = entry;
+        updateHeader();
+        updateLayout();
+        return;
+    }
+
     cancelActiveAiReplyStream();
     m_currentConversation = entry;
+    m_messageView->messageDelegate()->setStreamingMessageId(QString());
     m_messageModel->setMessages(m_controller ? m_controller->loadMessages(entry.conversationId) : QVector<AiChatMessage>{});
     m_messageView->clearTextSelection();
     m_messageView->show();
     m_inputBar->show();
     m_emptyLabel->hide();
+    m_unreadAiReplyCount = 0;
+    m_newMessageNotifierRevealedByDownScroll = false;
+    m_streamingNotifierHeld = false;
+    m_newMessageNotifier->hide();
     updateHeader();
     updateLayout();
     m_messageView->scrollToBottom();
@@ -170,10 +234,15 @@ void AiChatConversationWidget::closeConversation()
 {
     cancelActiveAiReplyStream();
     m_currentConversation = {};
+    m_messageView->messageDelegate()->setStreamingMessageId(QString());
     m_messageModel->clear();
     m_messageView->clearTextSelection();
     m_messageView->hide();
     m_inputBar->hide();
+    m_unreadAiReplyCount = 0;
+    m_newMessageNotifierRevealedByDownScroll = false;
+    m_streamingNotifierHeld = false;
+    m_newMessageNotifier->hide();
     m_emptyLabel->show();
     updateHeader();
     updateLayout();
@@ -182,7 +251,7 @@ void AiChatConversationWidget::closeConversation()
 void AiChatConversationWidget::paintEvent(QPaintEvent* event)
 {
     QPainter painter(this);
-    painter.fillRect(event->rect(), ThemeManager::instance().color(ThemeColor::PageBackground));
+    painter.fillRect(event->rect(), ThemeManager::instance().color(ThemeColor::PanelBackground));
 }
 
 void AiChatConversationWidget::resizeEvent(QResizeEvent* event)
@@ -204,12 +273,30 @@ void AiChatConversationWidget::onSendText(const QString& text)
 
     m_messageModel->appendMessage(message);
     m_messageView->clearTextSelection();
-    m_messageView->scrollToBottom();
+    m_messageView->scrollToBottom(true);
+    m_unreadAiReplyCount = 0;
+    m_newMessageNotifierRevealedByDownScroll = false;
+    m_streamingNotifierHeld = false;
+    updateNewMessageNotifier();
 }
 
 void AiChatConversationWidget::onStopStreamingRequested()
 {
     cancelActiveAiReplyStream();
+}
+
+void AiChatConversationWidget::onRegenerateAiReplyRequested(const QString& conversationId,
+                                                            const QString& messageId)
+{
+    if (!m_controller ||
+            m_currentConversation.conversationId.isEmpty() ||
+            conversationId != m_currentConversation.conversationId) {
+        return;
+    }
+
+    if (!m_controller->regenerateAiReply(conversationId, messageId)) {
+        GlobalNotification::showFailure(this, QStringLiteral("只能重新生成最后一条回复"));
+    }
 }
 
 void AiChatConversationWidget::updateLayout()
@@ -233,6 +320,7 @@ void AiChatConversationWidget::updateLayout()
 
     updateBottomSpace();
     m_inputBar->raise();
+    updateNewMessageNotifier();
 }
 
 void AiChatConversationWidget::updateBottomSpace()
@@ -250,6 +338,7 @@ void AiChatConversationWidget::updateBottomSpace()
     m_bottomGapGradientOverlay->hide();
 
     m_inputBar->raise();
+    updateNewMessageNotifierPosition();
 }
 
 void AiChatConversationWidget::updateHeader()
@@ -260,18 +349,135 @@ void AiChatConversationWidget::updateHeader()
     m_emptyLabel->setTextColor(ThemeManager::instance().color(ThemeColor::SecondaryText));
 }
 
+void AiChatConversationWidget::updateNewMessageNotifier()
+{
+    if (!m_newMessageNotifier) {
+        return;
+    }
+
+    const bool streaming = hasActiveAiReplyStream() &&
+            !m_messageView->messageDelegate()->streamingMessageId().isEmpty();
+    const bool hasUnread = m_unreadAiReplyCount > 0;
+
+    if (isMessageViewAtBottom()) {
+        if (m_unreadAiReplyCount > 0) {
+            qCDebug(lcAiChatUnread).noquote()
+                    << "AICHAT_UNREAD clearAtBottom"
+                    << "conversationId=" << m_currentConversation.conversationId
+                    << "unreadBefore=" << m_unreadAiReplyCount;
+        }
+        m_unreadAiReplyCount = 0;
+        m_streamingNotifierHeld = false;
+        m_newMessageNotifierRevealedByDownScroll = false;
+        m_newMessageNotifier->hide();
+        return;
+    }
+
+    if (hasUnread) {
+        m_newMessageNotifier->setDisplayMode(NewMessageNotifier::DisplayMode::Count);
+        m_newMessageNotifier->setMessageCount(m_unreadAiReplyCount);
+        m_newMessageNotifier->show();
+        m_newMessageNotifier->raise();
+        updateNewMessageNotifierPosition();
+        return;
+    }
+
+    if (streaming && (m_streamingNotifierHeld || shouldShowNewMessageNotifier())) {
+        m_newMessageNotifier->setDisplayMode(NewMessageNotifier::DisplayMode::Dots);
+        m_streamingNotifierHeld = true;
+        m_newMessageNotifier->show();
+        m_newMessageNotifier->raise();
+        updateNewMessageNotifierPosition();
+        return;
+    }
+
+    if (!streaming &&
+            m_newMessageNotifierRevealedByDownScroll &&
+            shouldShowNewMessageNotifier()) {
+        m_newMessageNotifier->setDisplayMode(NewMessageNotifier::DisplayMode::IconOnly);
+        m_newMessageNotifier->show();
+        m_newMessageNotifier->raise();
+        updateNewMessageNotifierPosition();
+        return;
+    }
+
+    m_newMessageNotifier->hide();
+}
+
+void AiChatConversationWidget::updateNewMessageNotifierPosition()
+{
+    if (!m_newMessageNotifier || !m_newMessageNotifier->isVisible() || !m_inputBar) {
+        return;
+    }
+
+    const QRect inputBarRect = m_inputBar->geometry();
+    const int x = inputBarRect.right() + 1 - m_newMessageNotifier->width();
+    const int y = inputBarRect.y() - m_newMessageNotifier->height() - kNewMessageNotifierInputGap;
+    m_newMessageNotifier->move(x, y);
+    m_newMessageNotifier->raise();
+}
+
+bool AiChatConversationWidget::shouldShowNewMessageNotifier() const
+{
+    if (!m_messageView ||
+            !m_inputBar ||
+            m_currentConversation.conversationId.isEmpty() ||
+            m_messageView->isHidden() ||
+            m_inputBar->isHidden()) {
+        return false;
+    }
+
+    const QScrollBar* scrollBar = m_messageView->verticalScrollBar();
+    if (!scrollBar) {
+        return false;
+    }
+
+    const int bottomDistance = scrollBar->maximum() - scrollBar->value();
+    const int threshold = qMax(kNewMessageNotifierMinBottomDistance,
+                               m_messageView->viewport()->height() /
+                                       kNewMessageNotifierViewportDistanceDivisor);
+    return bottomDistance > threshold;
+}
+
+bool AiChatConversationWidget::isMessageViewAtBottom() const
+{
+    if (!m_messageView) {
+        return true;
+    }
+
+    const QScrollBar* scrollBar = m_messageView->verticalScrollBar();
+    return !scrollBar || scrollBar->maximum() - scrollBar->value() <= 2;
+}
+
 void AiChatConversationWidget::onAiReplyStarted(const QString& conversationId)
 {
     if (m_currentConversation.conversationId == conversationId) {
         m_inputBar->setStreaming(true);
+        m_streamingNotifierHeld = false;
+        updateNewMessageNotifier();
     }
 }
 
 void AiChatConversationWidget::onAiReplyMessageAdded(const AiChatMessage& message)
 {
     if (m_currentConversation.conversationId == message.conversationId) {
+        const bool shouldFollowReply = m_messageView->isBottomLocked();
+        m_messageView->messageDelegate()->setStreamingMessageId(message.messageId);
         m_messageModel->appendMessage(message);
-        m_messageView->scrollToBottom();
+        if (!message.isFromUser && !shouldFollowReply) {
+            ++m_unreadAiReplyCount;
+            qCDebug(lcAiChatUnread).noquote()
+                    << "AICHAT_UNREAD replyAdded"
+                    << "conversationId=" << message.conversationId
+                    << "messageId=" << message.messageId
+                    << "unread=" << m_unreadAiReplyCount
+                    << "bottomLocked=" << shouldFollowReply;
+        }
+        m_messageView->scrollToBottomIfLocked();
+        updateNewMessageNotifier();
+        QTimer::singleShot(0, this, [this]() {
+            updateNewMessageNotifier();
+        });
         return;
     }
 }
@@ -281,24 +487,58 @@ void AiChatConversationWidget::onAiReplyMessageUpdated(const QString& conversati
                                                        const QString& text)
 {
     if (m_currentConversation.conversationId == conversationId) {
+        if (m_messageView->messageDelegate()->streamingMessageId().isEmpty()) {
+            m_messageView->messageDelegate()->setStreamingMessageId(messageId);
+        }
         m_messageModel->updateMessageText(messageId, text);
-        m_messageView->scrollToBottom();
+        m_messageView->scrollToBottomIfLocked();
+        updateNewMessageNotifier();
+    }
+}
+
+void AiChatConversationWidget::onAiReplyMessageRemoved(const QString& conversationId,
+                                                       const QString& messageId)
+{
+    if (m_currentConversation.conversationId == conversationId) {
+        if (m_messageView->messageDelegate()->streamingMessageId() == messageId) {
+            m_messageView->messageDelegate()->setStreamingMessageId(QString());
+        }
+        m_messageModel->removeMessage(messageId);
+        m_messageView->clearTextSelection();
+        m_messageView->scrollToBottomIfLocked();
+        updateNewMessageNotifier();
     }
 }
 
 void AiChatConversationWidget::onAiReplyFinished(const QString& conversationId, const QString& messageId)
 {
-    Q_UNUSED(messageId);
     if (m_currentConversation.conversationId == conversationId) {
+        if (m_messageView->messageDelegate()->streamingMessageId() == messageId) {
+            m_messageView->messageDelegate()->setStreamingMessageId(QString());
+            m_messageView->refreshMessageLayout();
+        }
         m_inputBar->setStreaming(false);
+        if (m_streamingNotifierHeld && shouldShowNewMessageNotifier()) {
+            m_newMessageNotifierRevealedByDownScroll = true;
+        }
+        m_streamingNotifierHeld = false;
+        updateNewMessageNotifier();
     }
 }
 
 void AiChatConversationWidget::onAiReplyCanceled(const QString& conversationId, const QString& messageId)
 {
-    Q_UNUSED(messageId);
     if (m_currentConversation.conversationId == conversationId || m_currentConversation.conversationId.isEmpty()) {
+        if (m_messageView->messageDelegate()->streamingMessageId() == messageId) {
+            m_messageView->messageDelegate()->setStreamingMessageId(QString());
+            m_messageView->refreshMessageLayout();
+        }
         m_inputBar->setStreaming(false);
+        if (m_streamingNotifierHeld && shouldShowNewMessageNotifier()) {
+            m_newMessageNotifierRevealedByDownScroll = true;
+        }
+        m_streamingNotifierHeld = false;
+        updateNewMessageNotifier();
     }
 }
 

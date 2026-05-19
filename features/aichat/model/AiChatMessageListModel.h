@@ -28,6 +28,7 @@ public:
 
     void setMessages(QVector<AiChatMessage> messages);
     void appendMessage(const AiChatMessage& message);
+    bool removeMessage(const QString& messageId);
     bool updateMessageText(const QString& messageId, const QString& text);
     bool isBottomSpace(int row) const;
     void setBottomSpaceHeight(int height);

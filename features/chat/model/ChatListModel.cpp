@@ -4,12 +4,14 @@
 
 Q_DECLARE_METATYPE(TimeHeader*)
 Q_DECLARE_METATYPE(ChatMessage*)
+Q_DECLARE_METATYPE(NewMessageDivider*)
 
 ChatListModel::ChatListModel(QObject* parent)
     : QAbstractListModel(parent)
 {
     qRegisterMetaType<TimeHeader*>();
     qRegisterMetaType<ChatMessage*>();
+    qRegisterMetaType<NewMessageDivider*>();
 }
 
 int ChatListModel::rowCount(const QModelIndex& parent) const
@@ -29,6 +31,8 @@ QVariant ChatListModel::data(const QModelIndex& index, int role) const
     if (role == Qt::UserRole) {
         if (item.isHeader) {
             return QVariant::fromValue<TimeHeader*>(item.timeHeader.get());
+        } else if (item.isNewMessageDivider) {
+            return QVariant::fromValue<NewMessageDivider*>(item.newMessageDivider.get());
         } else if (item.isBottomSpace) {
             return QVariant::fromValue<int>(item.bottomSpaceHeight);
         } else {
@@ -94,6 +98,37 @@ void ChatListModel::addMessage(QSharedPointer<ChatMessage> message)
     endResetModel();
 }
 
+bool ChatListModel::replaceMessage(int index, QSharedPointer<ChatMessage> message)
+{
+    if (!message || index < 0 || index >= static_cast<int>(items.size())) {
+        return false;
+    }
+    if (items[index].isBottomSpace || items[index].isHeader || items[index].isNewMessageDivider) {
+        return false;
+    }
+
+    const int messageIndex = messageIndexForRow(index);
+    if (messageIndex < 0 || messageIndex >= messages.size()) {
+        return false;
+    }
+
+    beginResetModel();
+    messages[messageIndex] = std::move(message);
+    selectedMessageIndex = -1;
+    rebuildItems();
+    endResetModel();
+    return true;
+}
+
+void ChatListModel::notifyMessageChanged(const ChatMessage* message)
+{
+    const QModelIndex messageIndex = indexForMessage(message);
+    if (!messageIndex.isValid()) {
+        return;
+    }
+    emit dataChanged(messageIndex, messageIndex, {Qt::DisplayRole, Qt::SizeHintRole, Qt::UserRole});
+}
+
 void ChatListModel::setMessages(QVector<QSharedPointer<ChatMessage>> nextMessages)
 {
     beginResetModel();
@@ -153,7 +188,7 @@ bool ChatListModel::removeMessage(int index)
     }
 
     // 如果要删除的是底部空白或时间标识，直接返回
-    if (items[index].isBottomSpace || items[index].isHeader) {
+    if (items[index].isBottomSpace || items[index].isHeader || items[index].isNewMessageDivider) {
         return false;
     }
 
@@ -245,6 +280,41 @@ bool ChatListModel::isBottomSpace(int index) const
     return false;
 }
 
+bool ChatListModel::isNewMessageDivider(int index) const
+{
+    if (index >= 0 && index < static_cast<int>(items.size())) {
+        return items[index].isNewMessageDivider;
+    }
+    return false;
+}
+
+QModelIndex ChatListModel::newMessageDividerIndex() const
+{
+    for (int row = 0; row < items.size(); ++row) {
+        if (items.at(row).isNewMessageDivider) {
+            return index(row, 0);
+        }
+    }
+    return {};
+}
+
+QModelIndex ChatListModel::indexForMessage(const ChatMessage* message) const
+{
+    if (!message) {
+        return {};
+    }
+
+    for (int row = 0; row < items.size(); ++row) {
+        if (!items.at(row).isHeader &&
+                !items.at(row).isBottomSpace &&
+                !items.at(row).isNewMessageDivider &&
+                items.at(row).message.get() == message) {
+            return index(row, 0);
+        }
+    }
+    return {};
+}
+
 void ChatListModel::ensureBottomSpace()
 {
     // 如果没有底部空白，添加一个
@@ -258,8 +328,12 @@ void ChatListModel::ensureBottomSpace()
     }
 }
 
-void ChatListModel::setBottomSpaceHeight(int height)
+bool ChatListModel::setBottomSpaceHeight(int height)
 {
+    if (bottomSpaceHeight == height) {
+        return false;
+    }
+
     bottomSpaceHeight = height;
     // 更新底部空白的高度
     if (!items.empty() && items.back().isBottomSpace) {
@@ -267,6 +341,31 @@ void ChatListModel::setBottomSpaceHeight(int height)
         QModelIndex lastIndex = index(items.size() - 1, 0);
         emit dataChanged(lastIndex, lastIndex);
     }
+    return true;
+}
+
+void ChatListModel::setNewMessageDividerBefore(const ChatMessage* message)
+{
+    if (newMessageDividerBefore == message) {
+        return;
+    }
+
+    beginResetModel();
+    newMessageDividerBefore = message;
+    rebuildItems();
+    endResetModel();
+}
+
+void ChatListModel::clearNewMessageDivider()
+{
+    if (!newMessageDividerBefore) {
+        return;
+    }
+
+    beginResetModel();
+    newMessageDividerBefore = nullptr;
+    rebuildItems();
+    endResetModel();
 }
 
 void ChatListModel::clear() {
@@ -274,6 +373,7 @@ void ChatListModel::clear() {
     items.clear();
     messages.clear();
     selectedMessageIndex = -1;
+    newMessageDividerBefore = nullptr;
     endResetModel();
 }
 
@@ -283,9 +383,19 @@ void ChatListModel::rebuildItems()
     selectedMessageIndex = -1;
 
     QDateTime previousTime;
+    bool dividerInserted = false;
     for (const QSharedPointer<ChatMessage>& message : messages) {
         if (!message || !message->getTimestamp().isValid()) {
             continue;
+        }
+
+        if (message.get() == newMessageDividerBefore) {
+            ListItem dividerItem;
+            dividerItem.isNewMessageDivider = true;
+            dividerItem.newMessageDivider = QSharedPointer<NewMessageDivider>::create();
+            dividerItem.newMessageDivider->text = QStringLiteral("新消息");
+            items.push_back(std::move(dividerItem));
+            dividerInserted = true;
         }
 
         const bool needTimeHeader = !previousTime.isValid() ||
@@ -310,11 +420,19 @@ void ChatListModel::rebuildItems()
     bottomSpace.isBottomSpace = true;
     bottomSpace.bottomSpaceHeight = bottomSpaceHeight;
     items.push_back(std::move(bottomSpace));
+
+    if (newMessageDividerBefore && !dividerInserted) {
+        newMessageDividerBefore = nullptr;
+    }
 }
 
 int ChatListModel::messageIndexForRow(int row) const
 {
-    if (row < 0 || row >= items.size() || items.at(row).isHeader || items.at(row).isBottomSpace) {
+    if (row < 0 ||
+            row >= items.size() ||
+            items.at(row).isHeader ||
+            items.at(row).isBottomSpace ||
+            items.at(row).isNewMessageDivider) {
         return -1;
     }
 

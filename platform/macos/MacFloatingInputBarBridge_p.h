@@ -34,5 +34,6 @@ void syncInputBar(QWidget* widget,
                   const QString& placeholderText = QString(),
                   double opacity = 1.0);
 void focusInputBar(QWidget* widget);
+void appendInputText(QWidget* widget, const QString& text);
 void clearInputBar(QWidget* widget);
 }

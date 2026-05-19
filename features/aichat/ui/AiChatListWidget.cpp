@@ -47,6 +47,7 @@ AiChatListWidget::AiChatListWidget(QWidget* parent)
     setEditTriggers(QAbstractItemView::NoEditTriggers);
     setMouseTracking(true);
     viewport()->setMouseTracking(true);
+    setThemeBackgroundRole(ThemeColor::PageBackground);
     refreshTheme();
     setWheelStepPixels(64);
     setScrollBarInsets(8, 4);
@@ -433,7 +434,7 @@ void AiChatListWidget::drawStickyHeader() const
     painter.setClipRect(QRect(0, m_stickyOffsetY, viewport()->width(), m_delegate->stickyHeaderHeight()));
 
     const QRect headerRect(0, m_stickyOffsetY, viewport()->width(), m_delegate->stickyHeaderHeight());
-    painter.fillRect(headerRect, ThemeManager::instance().color(ThemeColor::PanelBackground));
+    painter.fillRect(headerRect, ThemeManager::instance().color(ThemeColor::PageBackground));
 
     QFont headerFont = QApplication::font();
     headerFont.setPixelSize(13);

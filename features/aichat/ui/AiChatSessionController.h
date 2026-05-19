@@ -17,6 +17,7 @@ public:
     QVector<AiChatMessage> loadMessages(const QString& conversationId) const;
     QString createConversation(const QString& title);
     AiChatMessage submitUserMessage(const QString& conversationId, const QString& text);
+    bool regenerateAiReply(const QString& conversationId, const QString& messageId);
     bool renameConversation(const QString& conversationId, const QString& title);
     bool deleteConversation(const QString& conversationId);
 
@@ -34,6 +35,7 @@ signals:
     void aiReplyMessageUpdated(const QString& conversationId,
                                const QString& messageId,
                                const QString& text);
+    void aiReplyMessageRemoved(const QString& conversationId, const QString& messageId);
     void aiReplyFinished(const QString& conversationId, const QString& messageId);
     void aiReplyCanceled(const QString& conversationId, const QString& messageId);
 

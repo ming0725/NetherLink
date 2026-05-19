@@ -155,6 +155,7 @@ using ChatMessageList = QVector<QSharedPointer<ChatMessage>>;
 struct ConversationThreadData {
     ConversationMeta meta;
     ChatMessageList messages;
+    int unreadCount = 0;
     int loadedMessageCount = 0;
     bool hasMoreBefore = false;
 };

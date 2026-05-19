@@ -9,7 +9,8 @@ enum class MessageType {
     Text,
     Image,
     File,
-    Voice
+    Voice,
+    Recall
 };
 
 enum class GroupRole {
@@ -82,6 +83,60 @@ public:
 
 private:
     QString imageSource;
+};
+
+class RecallMessage : public ChatMessage {
+public:
+    RecallMessage(const QString& displayText,
+                  const QString& originalText,
+                  bool allowReedit,
+                  bool originalFromMe,
+                  const QString& originalSenderId,
+                  bool isGroupChat = false,
+                  const QString& originalSenderName = QString(),
+                  GroupRole originalSenderRole = GroupRole::Member,
+                  const QString& actorId = QString(),
+                  const QString& actorName = QString(),
+                  GroupRole actorRole = GroupRole::Member,
+                  bool moderatorRecall = false)
+        : ChatMessage(originalFromMe,
+                      originalSenderId,
+                      isGroupChat,
+                      originalSenderName,
+                      originalSenderRole)
+        , displayText(displayText)
+        , originalText(originalText)
+        , allowReedit(allowReedit)
+        , actorId(actorId)
+        , actorName(actorName)
+        , actorRole(actorRole)
+        , moderatorRecall(moderatorRecall)
+    {
+    }
+
+    QString getContent() const override { return displayText; }
+    MessageType getType() const override { return MessageType::Recall; }
+    QString getDisplayText() const { return displayText; }
+    QString getOriginalText() const { return originalText; }
+    bool canReedit() const { return allowReedit && !originalText.isEmpty(); }
+    void clearReeditText()
+    {
+        originalText.clear();
+        allowReedit = false;
+    }
+    QString getActorId() const { return actorId; }
+    QString getActorName() const { return actorName; }
+    GroupRole getActorRole() const { return actorRole; }
+    bool isModeratorRecall() const { return moderatorRecall; }
+
+private:
+    QString displayText;
+    QString originalText;
+    bool allowReedit = false;
+    QString actorId;
+    QString actorName;
+    GroupRole actorRole = GroupRole::Member;
+    bool moderatorRecall = false;
 };
 
 #endif // CHATMESSAGE_H
