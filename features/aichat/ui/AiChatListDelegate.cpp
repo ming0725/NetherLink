@@ -8,6 +8,29 @@
 #include "features/aichat/model/AiChatListModel.h"
 #include "shared/theme/ThemeManager.h"
 
+namespace {
+
+QColor aiChatListItemBackground(bool selected, bool hovered)
+{
+    const auto& theme = ThemeManager::instance();
+    if (theme.isDark()) {
+        return selected ? theme.color(ThemeColor::ListPinned)
+                        : (hovered ? theme.color(ThemeColor::ListHover)
+                                   : theme.color(ThemeColor::PageBackground));
+    }
+
+    const QColor pageBackground = theme.color(ThemeColor::PageBackground);
+    if (selected) {
+        return pageBackground.darker(112);
+    }
+    if (hovered) {
+        return pageBackground.darker(108);
+    }
+    return pageBackground;
+}
+
+} // namespace
+
 AiChatListDelegate::AiChatListDelegate(QObject* parent)
     : QStyledItemDelegate(parent)
 {
@@ -39,10 +62,7 @@ void AiChatListDelegate::paint(QPainter* painter,
     }
 
     const QRect bodyRect = itemBodyRect(option, index);
-    const QColor backgroundColor = selected
-            ? ThemeManager::instance().color(ThemeColor::ListPinned)
-            : (hovered ? ThemeManager::instance().color(ThemeColor::ListHover)
-                       : ThemeManager::instance().color(ThemeColor::PageBackground));
+    const QColor backgroundColor = aiChatListItemBackground(selected, hovered);
 
     painter->setPen(Qt::NoPen);
     painter->setBrush(backgroundColor);

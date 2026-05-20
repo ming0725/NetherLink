@@ -8,14 +8,14 @@
 #include "shared/ui/StatefulPushButton.h"
 #include "features/friend/ui/FriendListWidget.h"
 #include "features/friend/ui/GroupListWidget.h"
-#include "features/friend/ui/FriendDetailPage.h"
-#include "features/friend/ui/GroupDetailPage.h"
-#include "features/friend/ui/FriendNotificationPage.h"
-#include "features/friend/ui/GroupNotificationPage.h"
 #include "app/frame/DefaultPage.h"
 
 class QPushButton;
 class FriendSessionController;
+class FriendDetailPage;
+class GroupDetailPage;
+class FriendNotificationPage;
+class GroupNotificationPage;
 
 class FriendApplication : public QWidget {
     Q_OBJECT
@@ -52,15 +52,15 @@ private:
         GroupListWidget* m_groupList;
     };
 
-    FriendSessionController* m_friendController;
-    LeftPane*    m_leftPane;     // 左侧面板
-    DefaultPage* m_defaultPage;  // 右侧默认页
-    FriendDetailPage* m_detailPage;
-    GroupDetailPage* m_groupDetailPage;
-    FriendNotificationPage* m_notificationPage;
-    GroupNotificationPage* m_groupNotificationPage;
-    QStackedWidget* m_rightStack;
-    QSplitter*   m_splitter;     // 中间分隔器
+    FriendSessionController* m_friendController = nullptr;
+    LeftPane*    m_leftPane = nullptr;     // 左侧面板
+    DefaultPage* m_defaultPage = nullptr;  // 右侧默认页
+    FriendDetailPage* m_detailPage = nullptr;
+    GroupDetailPage* m_groupDetailPage = nullptr;
+    FriendNotificationPage* m_notificationPage = nullptr;
+    GroupNotificationPage* m_groupNotificationPage = nullptr;
+    QStackedWidget* m_rightStack = nullptr;
+    QSplitter*   m_splitter = nullptr;     // 中间分隔器
 
     void showNotificationPage();
     void hideNotificationPage();
@@ -68,4 +68,8 @@ private:
     void showGroupNotificationPage();
     void hideGroupNotificationPage();
     void populateGroupNotificationData();
+    FriendDetailPage* ensureFriendDetailPage();
+    GroupDetailPage* ensureGroupDetailPage();
+    FriendNotificationPage* ensureFriendNotificationPage();
+    GroupNotificationPage* ensureGroupNotificationPage();
 };

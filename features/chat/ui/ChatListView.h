@@ -56,6 +56,7 @@ private:
     void showSelectionMenu(const QPoint& globalPos);
     void showUrlMenu(const QPoint& globalPos, const QString& url);
     void openUrl(const QString& url);
+    void openImageViewer(const QString& imageSource);
     void animateScrollToValue(int targetValue,
                               bool accelerateFarDistance,
                               bool programmaticUpwardScroll);

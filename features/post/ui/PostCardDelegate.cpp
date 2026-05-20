@@ -1,6 +1,8 @@
 #include "PostCardDelegate.h"
 
 #include <QApplication>
+#include <QDateTime>
+#include <QLinearGradient>
 #include <QPainter>
 
 #include "shared/services/ImageService.h"
@@ -50,6 +52,14 @@ void PostCardDelegate::paint(QPainter* painter,
     AppFonts::configurePainterForText(*painter);
 
     const CardLayout layout = calculateLayout(index, option.rect);
+    if (index.data(PostFeedModel::IsLoadingPlaceholderRole).toBool()) {
+        drawLoadingPlaceholder(painter,
+                               layout,
+                               index.data(PostFeedModel::LoadingStartedAtRole).toLongLong());
+        painter->restore();
+        return;
+    }
+
     const qreal devicePixelRatio = painter->device()->devicePixelRatioF();
 
     const QString coverPath = index.data(PostFeedModel::ThumbnailImageRole).toString();
@@ -149,6 +159,10 @@ PostCardDelegate::Action PostCardDelegate::actionAt(const QStyleOptionViewItem& 
                                                     const QPoint& point) const
 {
     const CardLayout layout = calculateLayout(index, option.rect);
+    if (index.data(PostFeedModel::IsLoadingPlaceholderRole).toBool()) {
+        return NoAction;
+    }
+
     if (layout.imageRect.contains(point)) {
         return OpenPostAction;
     }
@@ -173,13 +187,16 @@ PostCardDelegate::CardLayout PostCardDelegate::cachedBaseLayout(const QModelInde
     layout.imageRect = QRect(0, 0, width, imageHeight);
 
     const int titleMaxHeight = titleMetrics().lineSpacing() * kTitleMaxLines;
-    const QRect titleBounds = titleMetrics().boundingRect(0,
-                                                          0,
-                                                          width - 2 * kMargin,
-                                                          titleMaxHeight,
-                                                          Qt::TextWordWrap,
-                                                          index.data(PostFeedModel::TitleRole).toString());
-    const int titleHeight = qMin(titleBounds.height(), titleMaxHeight);
+    int titleHeight = titleMaxHeight;
+    if (!index.data(PostFeedModel::IsLoadingPlaceholderRole).toBool()) {
+        const QRect titleBounds = titleMetrics().boundingRect(0,
+                                                              0,
+                                                              width - 2 * kMargin,
+                                                              titleMaxHeight,
+                                                              Qt::TextWordWrap,
+                                                              index.data(PostFeedModel::TitleRole).toString());
+        titleHeight = qMin(titleBounds.height(), titleMaxHeight);
+    }
     const int titleY = imageHeight + kMargin;
     layout.titleRect = QRect(kMargin,
                              titleY,
@@ -245,4 +262,85 @@ QString PostCardDelegate::layoutCacheKey(const QModelIndex& index, int width) co
                  QString::number(index.data(PostFeedModel::ThumbnailSizeRole).toSize().width()),
                  QString::number(index.data(PostFeedModel::ThumbnailSizeRole).toSize().height()),
                  index.data(PostFeedModel::TitleRole).toString());
+}
+
+void PostCardDelegate::drawLoadingPlaceholder(QPainter* painter,
+                                              const CardLayout& layout,
+                                              qint64 loadingStartedAtMs) const
+{
+    const bool dark = ThemeManager::instance().isDark();
+    QColor base = ThemeManager::instance().color(ThemeColor::LoadingPlaceholderBase);
+    QColor highlight = ThemeManager::instance().color(ThemeColor::LoadingPlaceholderHighlight);
+    base.setAlpha(235);
+    highlight.setAlpha(255);
+
+    constexpr qint64 kShimmerPeriodMs = 1200;
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    const qint64 elapsed = loadingStartedAtMs > 0
+            ? qMax<qint64>(0, now - loadingStartedAtMs)
+            : now;
+    const qreal progress = static_cast<qreal>(elapsed % kShimmerPeriodMs) / kShimmerPeriodMs;
+    const qreal center = -0.35 + progress * 1.7;
+    auto shimmerBrush = [&](const QRectF& targetRect) {
+        QLinearGradient gradient(targetRect.topLeft(), targetRect.topRight());
+        gradient.setColorAt(0.0, base);
+        gradient.setColorAt(qBound(0.0, center - 0.16, 1.0), base);
+        gradient.setColorAt(qBound(0.0, center, 1.0), highlight);
+        gradient.setColorAt(qBound(0.0, center + 0.16, 1.0), base);
+        gradient.setColorAt(1.0, base);
+        return QBrush(gradient);
+    };
+
+    QColor lineBase = ThemeManager::instance().color(ThemeColor::LoadingPlaceholderLineBase);
+    lineBase.setAlpha(dark ? 210 : 220);
+    QColor lineHighlight = ThemeManager::instance().color(ThemeColor::LoadingPlaceholderLineHighlight);
+    lineHighlight.setAlpha(245);
+    auto lineBrush = [&](const QRectF& targetRect) {
+        QLinearGradient gradient(targetRect.topLeft(), targetRect.topRight());
+        gradient.setColorAt(0.0, lineBase);
+        gradient.setColorAt(qBound(0.0, center - 0.14, 1.0), lineBase);
+        gradient.setColorAt(qBound(0.0, center, 1.0), lineHighlight);
+        gradient.setColorAt(qBound(0.0, center + 0.14, 1.0), lineBase);
+        gradient.setColorAt(1.0, lineBase);
+        return QBrush(gradient);
+    };
+
+    painter->save();
+    painter->setPen(Qt::NoPen);
+
+    painter->setBrush(shimmerBrush(layout.imageRect));
+    painter->drawRoundedRect(layout.imageRect, 12, 12);
+
+    const int titleLineHeight = 10;
+    const QRect titleLineOne(layout.titleRect.left(),
+                             layout.titleRect.top() + 2,
+                             qMax(64, layout.titleRect.width() * 4 / 5),
+                             titleLineHeight);
+    const QRect titleLineTwo(titleLineOne.left(),
+                             titleLineOne.bottom() + 7,
+                             qMax(48, layout.titleRect.width() * 3 / 5),
+                             titleLineHeight);
+    painter->setBrush(lineBrush(titleLineOne));
+    painter->drawRoundedRect(titleLineOne, 5, 5);
+    painter->setBrush(lineBrush(titleLineTwo));
+    painter->drawRoundedRect(titleLineTwo, 5, 5);
+
+    painter->setBrush(shimmerBrush(layout.avatarRect));
+    painter->drawEllipse(layout.avatarRect);
+
+    const QRect authorLine(layout.authorRect.left(),
+                           layout.authorRect.top() + (layout.authorRect.height() - 9) / 2,
+                           qMax(46, layout.authorRect.width() * 2 / 5),
+                           9);
+    painter->setBrush(lineBrush(authorLine));
+    painter->drawRoundedRect(authorLine, 4, 4);
+
+    const QRect likeLine(layout.likeIconRect.left(),
+                         layout.likeIconRect.top() + (layout.likeIconRect.height() - 9) / 2,
+                         qMax(24, layout.likeIconRect.width() + layout.likeCountRect.width()),
+                         9);
+    painter->setBrush(lineBrush(likeLine));
+    painter->drawRoundedRect(likeLine, 4, 4);
+
+    painter->restore();
 }

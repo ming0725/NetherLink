@@ -28,6 +28,7 @@ public:
     bool isBottomLocked() const;
     void scrollToBottom(bool accelerateFarDistance = false);
     void scrollToBottomIfLocked(bool accelerateFarDistance = false);
+    void jumpToBottom();
     void clearTextSelection();
     void setBottomViewportMargin(int margin);
     void refreshMessageLayout();

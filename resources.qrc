@@ -7,8 +7,8 @@
         <file>resources/icon/bookmark.png</file>
         <file>resources/icon/clock.png</file>
         <file>resources/icon/close.png</file>
-        <file>resources/icon/coding.png</file>
-        <file>resources/icon/copy.png</file>
+        <file>resources/icon/coding.svg</file>
+        <file>resources/icon/copy.svg</file>
         <file>resources/icon/correct.png</file>
         <file>resources/icon/empty_heart.png</file>
         <file>resources/icon/empty_heart_darkmode.png</file>
@@ -29,6 +29,10 @@
         <file>resources/icon/hovered_shears.png</file>
         <file>resources/icon/hovered_skull.png</file>
         <file>resources/icon/icon.png</file>
+        <file>resources/icon/image_viewer_rotate.svg</file>
+        <file>resources/icon/image_viewer_save_as.svg</file>
+        <file>resources/icon/image_viewer_zoom_in.svg</file>
+        <file>resources/icon/image_viewer_zoom_out.svg</file>
         <file>resources/icon/like.png</file>
         <file>resources/icon/liked.png</file>
         <file>resources/icon/magma.png</file>
@@ -55,7 +59,7 @@
         <file>resources/icon/painting.png</file>
         <file>resources/icon/redstone_lamp.png</file>
         <file>resources/icon/redstone_lamp_on.png</file>
-        <file>resources/icon/refresh.png</file>
+        <file>resources/icon/refresh.svg</file>
         <file>resources/icon/search.png</file>
         <file>resources/icon/search_darkmode.png</file>
         <file>resources/icon/selected_message.png</file>
@@ -92,6 +96,7 @@
         <file>resources/post/8.jpg</file>
         <file>resources/post/9.jpg</file>
         <file>resources/audio/portal.wav</file>
+        <file>resources/audio/portal2.wav</file>
         <file>resources/audio/successful_hit.wav</file>
         <file>resources/audio/click.wav</file>
         <file>resources/audio/break.wav</file>

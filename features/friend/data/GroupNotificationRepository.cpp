@@ -1,10 +1,12 @@
 #include "GroupNotificationRepository.h"
 
 #include <algorithm>
+#include <QSharedPointer>
 #include <QSet>
 
 #include "app/state/CurrentUser.h"
 #include "features/chat/data/GroupRepository.h"
+#include "features/chat/data/MessageRepository.h"
 #include "features/friend/data/UserRepository.h"
 #include "shared/data/RepositoryTemplate.h"
 #include "shared/data/UnreadStateRepository.h"
@@ -59,6 +61,27 @@ GroupMemberRole roleForUser(const Group& group, const QString& userId)
         return GroupMemberRole::Admin;
     }
     return GroupMemberRole::Member;
+}
+
+QString groupJoinDisplayName(const QString& groupId, const QString& userId)
+{
+    const Group group = GroupRepository::instance().requestGroupDetail({groupId});
+    const QString groupNickname = group.memberNicknames.value(userId).trimmed();
+    if (!groupNickname.isEmpty()) {
+        return groupNickname;
+    }
+    if (CurrentUser::instance().isCurrentUserId(userId)) {
+        return CurrentUser::instance().getUserName();
+    }
+
+    const User user = UserRepository::instance().requestUserDetail({userId});
+    if (!user.remark.trimmed().isEmpty()) {
+        return user.remark.trimmed();
+    }
+    if (!user.nick.trimmed().isEmpty()) {
+        return user.nick.trimmed();
+    }
+    return userId;
 }
 
 GroupNotification makeNotification(const QString& id,
@@ -292,9 +315,17 @@ bool GroupNotificationRepository::acceptJoinRequest(const QString& notificationI
             continue;
         }
 
+        const QDateTime acceptedAt = QDateTime::currentDateTime();
         notification.status = GroupNotificationStatus::Accepted;
         notification.operatorUserId = CurrentUser::instance().getUserId();
         GroupRepository::instance().addMember(notification.groupId, notification.actorUserId);
+
+        auto message = QSharedPointer<ChatMessage>(new GroupMemberJoinedMessage(
+            notification.actorUserId,
+            groupJoinDisplayName(notification.groupId, notification.actorUserId)));
+        message->setTimestamp(acceptedAt);
+        MessageRepository::instance().addMessage(notification.groupId, message);
+
         emit notificationListChanged();
         return true;
     }

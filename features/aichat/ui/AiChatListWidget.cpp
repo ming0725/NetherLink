@@ -98,6 +98,8 @@ void AiChatListWidget::setController(AiChatSessionController* controller)
         const QString selectedConversationId = currentIndex().data(AiChatListModel::ConversationIdRole).toString();
         reloadEntries(selectedConversationId);
     });
+    connect(m_controller, &AiChatSessionController::conversationsLoaded,
+            this, &AiChatListWidget::onEntriesLoaded);
 }
 
 void AiChatListWidget::ensureInitialized()
@@ -107,8 +109,13 @@ void AiChatListWidget::ensureInitialized()
     }
 
     m_initialized = true;
-    reloadEntries();
-    updateStickyHeader();
+    QTimer::singleShot(0, this, [this]() {
+        if (!m_initialized || !m_controller) {
+            return;
+        }
+        reloadEntries();
+        updateStickyHeader();
+    });
 }
 
 void AiChatListWidget::createNewConversation()
@@ -131,9 +138,66 @@ void AiChatListWidget::reloadEntries(const QString& selectedConversationId)
 {
     m_nextOffset = 0;
     m_hasMore = true;
+    m_loadingEntries = false;
+    m_selectFirstAfterLoad = selectedConversationId.isEmpty();
+    m_pendingSelectedConversationId = selectedConversationId;
     loadMoreEntries();
+}
 
-    if (selectedConversationId.isEmpty()) {
+void AiChatListWidget::loadMoreEntries()
+{
+    if (!m_controller || !m_hasMore || m_loadingEntries) {
+        return;
+    }
+
+    const AiChatListRequest query {
+            m_nextOffset,
+            kPageSize + 1
+    };
+    m_loadingEntries = true;
+    m_pendingEntriesRequestId = m_controller->loadConversationsAsync(query);
+}
+
+void AiChatListWidget::onEntriesLoaded(int requestId,
+                                       const AiChatListRequest& query,
+                                       const QVector<AiChatListEntry>& loadedEntries)
+{
+    if (requestId != m_pendingEntriesRequestId) {
+        return;
+    }
+
+    m_loadingEntries = false;
+    QVector<AiChatListEntry> entries = loadedEntries;
+    const bool hasMore = entries.size() > kPageSize;
+    if (hasMore) {
+        entries.resize(kPageSize);
+    }
+    const int addedCount = entries.size();
+
+    if (query.offset == 0) {
+        m_model->setEntries(std::move(entries));
+    } else {
+        m_model->appendEntries(entries);
+    }
+
+    m_nextOffset += addedCount;
+    m_hasMore = hasMore;
+    updateStickyHeader();
+
+    if (!m_pendingSelectedConversationId.isEmpty() &&
+            m_model->rowOfConversation(m_pendingSelectedConversationId) < 0 &&
+            m_hasMore) {
+        loadMoreEntries();
+        return;
+    }
+
+    finishPendingSelection();
+}
+
+void AiChatListWidget::finishPendingSelection()
+{
+    if (m_selectFirstAfterLoad) {
+        m_selectFirstAfterLoad = false;
         if (m_model->rowCount() > 0 && selectionModel()) {
             selectionModel()->setCurrentIndex(m_model->index(0, 0),
                                               QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
@@ -143,14 +207,17 @@ void AiChatListWidget::reloadEntries(const QString& selectedConversationId)
                 selectionModel()->clearCurrentIndex();
             }
             setCurrentIndex(QModelIndex());
+            emit conversationCleared();
         }
         return;
     }
 
-    while (m_model->rowOfConversation(selectedConversationId) < 0 && m_hasMore) {
-        loadMoreEntries();
+    if (m_pendingSelectedConversationId.isEmpty()) {
+        return;
     }
 
+    const QString selectedConversationId = m_pendingSelectedConversationId;
+    m_pendingSelectedConversationId.clear();
     const int row = m_model->rowOfConversation(selectedConversationId);
     if (row < 0) {
         clearSelection();
@@ -164,31 +231,6 @@ void AiChatListWidget::reloadEntries(const QString& selectedConversationId)
 
     selectionModel()->setCurrentIndex(m_model->index(row, 0),
                                       QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
-}
-
-void AiChatListWidget::loadMoreEntries()
-{
-    if (!m_controller || !m_hasMore) {
-        return;
-    }
-
-    QVector<AiChatListEntry> entries = m_controller->loadConversations({
-            m_nextOffset,
-            kPageSize + 1
-    });
-    const bool hasMore = entries.size() > kPageSize;
-    if (hasMore) {
-        entries.resize(kPageSize);
-    }
-
-    if (m_nextOffset == 0) {
-        m_model->setEntries(std::move(entries));
-    } else {
-        m_model->appendEntries(entries);
-    }
-
-    m_nextOffset += entries.size();
-    m_hasMore = hasMore;
 }
 
 void AiChatListWidget::mousePressEvent(QMouseEvent* event)

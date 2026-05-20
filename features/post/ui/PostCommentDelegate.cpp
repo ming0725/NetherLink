@@ -5,6 +5,8 @@
 #include <QApplication>
 #include <QAbstractTextDocumentLayout>
 #include <QDate>
+#include <QDateTime>
+#include <QLinearGradient>
 #include <QPainter>
 #include <QPersistentModelIndex>
 #include <QTextBlock>
@@ -45,6 +47,11 @@ constexpr int kPostTitleBodyGap = 12;
 constexpr int kPostBodyDateTopGap = 16;
 constexpr int kPostBodyDividerTopGap = 16;
 constexpr int kPostBodyBottomMargin = 16;
+constexpr int kLoadingBodyLineHeight = 10;
+constexpr int kLoadingBodyLineGap = 8;
+constexpr int kLoadingBodyParagraphGap = 12;
+constexpr int kLoadingDateBlockWidth = 78;
+constexpr int kLoadingCommentPlaceholderHeight = 128;
 
 int interpolatedHeight(int collapsedHeight, int fullHeight, qreal progress)
 {
@@ -124,6 +131,78 @@ QString timeText(const QDateTime& time)
         return time.toString(QStringLiteral("yyyy-MM-dd"));
     }
     return time.toString(QStringLiteral("MM-dd"));
+}
+
+qreal loadingShimmerCenter(qint64 loadingStartedAtMs)
+{
+    constexpr qint64 kShimmerPeriodMs = 1200;
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    const qint64 elapsed = loadingStartedAtMs > 0
+            ? qMax<qint64>(0, now - loadingStartedAtMs)
+            : now;
+    return -0.35 + (static_cast<qreal>(elapsed % kShimmerPeriodMs) / kShimmerPeriodMs) * 1.7;
+}
+
+QBrush loadingBlockBrush(const QRectF& targetRect, bool line, qint64 loadingStartedAtMs)
+{
+    const bool dark = ThemeManager::instance().isDark();
+    QColor base = ThemeManager::instance().color(ThemeColor::LoadingPlaceholderBase);
+    QColor highlight = ThemeManager::instance().color(ThemeColor::LoadingPlaceholderHighlight);
+    if (line) {
+        base = ThemeManager::instance().color(ThemeColor::LoadingPlaceholderLineBase);
+        highlight = ThemeManager::instance().color(ThemeColor::LoadingPlaceholderLineHighlight);
+    }
+    base.setAlpha(line ? (dark ? 210 : 220) : 235);
+    highlight.setAlpha(line ? 245 : 255);
+
+    const qreal center = loadingShimmerCenter(loadingStartedAtMs);
+    QLinearGradient gradient(targetRect.topLeft(), targetRect.topRight());
+    gradient.setColorAt(0.0, base);
+    gradient.setColorAt(qBound(0.0, center - 0.15, 1.0), base);
+    gradient.setColorAt(qBound(0.0, center, 1.0), highlight);
+    gradient.setColorAt(qBound(0.0, center + 0.15, 1.0), base);
+    gradient.setColorAt(1.0, base);
+    return QBrush(gradient);
+}
+
+void drawLoadingBlock(QPainter* painter,
+                      const QRect& rect,
+                      int radius = 5,
+                      bool line = true,
+                      qint64 loadingStartedAtMs = 0)
+{
+    if (!painter || rect.isEmpty()) {
+        return;
+    }
+    painter->setPen(Qt::NoPen);
+    painter->setBrush(loadingBlockBrush(rect, line, loadingStartedAtMs));
+    painter->drawRoundedRect(rect, radius, radius);
+}
+
+int loadingPostBodyHeight(const QString& title, int width)
+{
+    const int textWidth = qMax(80, width - kPostBodyHorizontalMargin * 2);
+    const QFontMetrics titleMetrics(postDetailTitleFont());
+    const int titleHeight = title.isEmpty()
+            ? titleMetrics.lineSpacing()
+            : titleMetrics.boundingRect(0,
+                                        0,
+                                        textWidth,
+                                        titleMetrics.lineSpacing() * 2,
+                                        Qt::TextWordWrap,
+                                        title).height();
+    const int bodyHeight = kLoadingBodyLineHeight * 5
+            + kLoadingBodyLineGap * 3
+            + kLoadingBodyParagraphGap;
+    return kPostBodyTopMargin
+            + titleHeight
+            + kPostTitleBodyGap
+            + bodyHeight
+            + kPostBodyDateTopGap
+            + kLoadingBodyLineHeight
+            + kPostBodyDividerTopGap
+            + 1
+            + kPostBodyBottomMargin;
 }
 
 struct ReplyTextParts {
@@ -212,6 +291,72 @@ void PostCommentDelegate::paint(QPainter* painter,
     const int itemType = index.data(PostDetailListModel::ItemTypeRole).toInt();
     if (itemType == PostDetailListModel::PostBodyItem) {
         const QString title = index.data(PostDetailListModel::PostTitleTextRole).toString();
+        if (index.data(PostDetailListModel::IsLoadingPlaceholderRole).toBool()) {
+            const qint64 loadingStartedAtMs =
+                    index.data(PostDetailListModel::LoadingStartedAtRole).toLongLong();
+            const int textWidth = qMax(80, availableWidth(option) - kPostBodyHorizontalMargin * 2);
+            const QFontMetrics titleMetrics(postDetailTitleFont());
+            const int titleHeight = title.isEmpty()
+                    ? titleMetrics.lineSpacing()
+                    : titleMetrics.boundingRect(0,
+                                                0,
+                                                textWidth,
+                                                titleMetrics.lineSpacing() * 2,
+                                                Qt::TextWordWrap,
+                                                title).height();
+            const QRect titleRect(option.rect.left() + kPostBodyHorizontalMargin,
+                                  option.rect.top() + kPostBodyTopMargin,
+                                  textWidth,
+                                  titleHeight);
+
+            painter->save();
+            painter->setRenderHints(QPainter::Antialiasing | QPainter::TextAntialiasing);
+            AppFonts::configurePainterForText(*painter);
+            painter->fillRect(option.rect, ThemeManager::instance().color(ThemeColor::PanelBackground));
+            if (title.isEmpty()) {
+                drawLoadingBlock(painter,
+                                 QRect(titleRect.left(),
+                                       titleRect.top() + 3,
+                                       qMax(96, textWidth * 3 / 5),
+                                       kLoadingBodyLineHeight),
+                                 5,
+                                 true,
+                                 loadingStartedAtMs);
+            } else {
+                painter->setFont(postDetailTitleFont());
+                painter->setPen(ThemeManager::instance().color(ThemeColor::PrimaryText));
+                painter->drawText(titleRect, Qt::TextWordWrap | Qt::AlignLeft | Qt::AlignTop, title);
+            }
+
+            int y = titleRect.bottom() + 1 + kPostTitleBodyGap;
+            const int firstLineIndent = qMin(34, textWidth / 5);
+            const int fullLineWidth = textWidth;
+            const int halfLineWidth = qMax(80, textWidth / 2);
+            const int indentedLineWidth = qMax(1, textWidth - firstLineIndent);
+            const QRect line1(titleRect.left() + firstLineIndent, y, indentedLineWidth, kLoadingBodyLineHeight);
+            const QRect line2(titleRect.left(), line1.bottom() + 1 + kLoadingBodyLineGap, fullLineWidth, kLoadingBodyLineHeight);
+            const QRect line3(titleRect.left(), line2.bottom() + 1 + kLoadingBodyLineGap, halfLineWidth, kLoadingBodyLineHeight);
+            const QRect line4(titleRect.left() + firstLineIndent, line3.bottom() + 1 + kLoadingBodyParagraphGap, indentedLineWidth, kLoadingBodyLineHeight);
+            const QRect line5(titleRect.left(), line4.bottom() + 1 + kLoadingBodyLineGap, halfLineWidth, kLoadingBodyLineHeight);
+            drawLoadingBlock(painter, line1, 5, true, loadingStartedAtMs);
+            drawLoadingBlock(painter, line2, 5, true, loadingStartedAtMs);
+            drawLoadingBlock(painter, line3, 5, true, loadingStartedAtMs);
+            drawLoadingBlock(painter, line4, 5, true, loadingStartedAtMs);
+            drawLoadingBlock(painter, line5, 5, true, loadingStartedAtMs);
+
+            y = line5.bottom() + 1 + kPostBodyDateTopGap;
+            drawLoadingBlock(painter,
+                             QRect(titleRect.left(), y, kLoadingDateBlockWidth, kLoadingBodyLineHeight),
+                             5,
+                             true,
+                             loadingStartedAtMs);
+
+            y += kLoadingBodyLineHeight + kPostBodyDividerTopGap;
+            painter->setPen(QPen(ThemeManager::instance().color(ThemeColor::Divider), 1));
+            painter->drawLine(titleRect.left(), y, titleRect.right(), y);
+            painter->restore();
+            return;
+        }
         const QString text = index.data(PostDetailListModel::PostBodyTextRole).toString();
         const QString dateText = index.data(PostDetailListModel::PostBodyDateTextRole).toString();
         const int textWidth = qMax(80, availableWidth(option) - kPostBodyHorizontalMargin * 2);
@@ -247,6 +392,63 @@ void PostCommentDelegate::paint(QPainter* painter,
         y += kPostBodyDividerTopGap;
         painter->setPen(QPen(ThemeManager::instance().color(ThemeColor::Divider), 1));
         painter->drawLine(textRect.left(), y, textRect.right(), y);
+        painter->restore();
+        return;
+    }
+
+    if (index.data(PostDetailListModel::IsLoadingPlaceholderRole).toBool()) {
+        const qint64 loadingStartedAtMs =
+                index.data(PostDetailListModel::LoadingStartedAtRole).toLongLong();
+        const int width = availableWidth(option);
+        const int avatarX = option.rect.left() + kOuterMargin;
+        const int contentX = avatarX + kCommentAvatarSize + kCommentAvatarTextGap;
+        const int right = option.rect.left() + width - kOuterMargin;
+        const int textWidth = qMax(80, right - contentX);
+        int y = option.rect.top() + kCommentTopMargin;
+
+        painter->save();
+        painter->setRenderHint(QPainter::Antialiasing);
+        painter->fillRect(option.rect, ThemeManager::instance().color(ThemeColor::PanelBackground));
+        painter->setPen(Qt::NoPen);
+        painter->setBrush(loadingBlockBrush(QRect(avatarX, y, kCommentAvatarSize, kCommentAvatarSize),
+                                            false,
+                                            loadingStartedAtMs));
+        painter->drawEllipse(QRect(avatarX, y, kCommentAvatarSize, kCommentAvatarSize));
+
+        drawLoadingBlock(painter,
+                         QRect(contentX, y + 3, qMax(54, textWidth / 3), 9),
+                         4,
+                         true,
+                         loadingStartedAtMs);
+        y += 24;
+        drawLoadingBlock(painter,
+                         QRect(contentX, y, qMax(120, textWidth * 5 / 6), kLoadingBodyLineHeight),
+                         5,
+                         true,
+                         loadingStartedAtMs);
+        y += kLoadingBodyLineHeight + kLoadingBodyLineGap;
+        drawLoadingBlock(painter,
+                         QRect(contentX, y, qMax(80, textWidth * 7 / 12), kLoadingBodyLineHeight),
+                         5,
+                         true,
+                         loadingStartedAtMs);
+        y += kLoadingBodyLineHeight + 10;
+        drawLoadingBlock(painter,
+                         QRect(contentX, y, 56, 9),
+                         4,
+                         true,
+                         loadingStartedAtMs);
+        y += 18;
+        drawLoadingBlock(painter,
+                         QRect(contentX, y, 36, 9),
+                         4,
+                         true,
+                         loadingStartedAtMs);
+        drawLoadingBlock(painter,
+                         QRect(contentX + 58, y, 42, 9),
+                         4,
+                         true,
+                         loadingStartedAtMs);
         painter->restore();
         return;
     }
@@ -404,6 +606,9 @@ QSize PostCommentDelegate::sizeHint(const QStyleOptionViewItem& option,
     const int itemType = index.data(PostDetailListModel::ItemTypeRole).toInt();
     if (itemType == PostDetailListModel::PostBodyItem) {
         const QString title = index.data(PostDetailListModel::PostTitleTextRole).toString();
+        if (index.data(PostDetailListModel::IsLoadingPlaceholderRole).toBool()) {
+            return QSize(availableWidth(option), loadingPostBodyHeight(title, availableWidth(option)));
+        }
         const QString text = index.data(PostDetailListModel::PostBodyTextRole).toString();
         const QString dateText = index.data(PostDetailListModel::PostBodyDateTextRole).toString();
         const int textWidth = qMax(80, availableWidth(option) - kPostBodyHorizontalMargin * 2);
@@ -423,6 +628,10 @@ QSize PostCommentDelegate::sizeHint(const QStyleOptionViewItem& option,
         return QSize(availableWidth(option), qMax(1, height));
     }
 
+    if (index.data(PostDetailListModel::IsLoadingPlaceholderRole).toBool()) {
+        return QSize(availableWidth(option), kLoadingCommentPlaceholderHeight);
+    }
+
     const Layout layout = calculateLayout(option, index);
     return QSize(availableWidth(option), layout.totalHeight);
 }
@@ -432,7 +641,8 @@ PostCommentDelegate::HitAction PostCommentDelegate::actionAt(const QStyleOptionV
                                                              const QPoint& point) const
 {
     HitAction result;
-    if (index.data(PostDetailListModel::ItemTypeRole).toInt() == PostDetailListModel::PostBodyItem) {
+    if (index.data(PostDetailListModel::IsLoadingPlaceholderRole).toBool()
+        || index.data(PostDetailListModel::ItemTypeRole).toInt() == PostDetailListModel::PostBodyItem) {
         return result;
     }
 
@@ -506,6 +716,10 @@ PostCommentDelegate::TextHit PostCommentDelegate::textHitAt(const QStyleOptionVi
 {
     TextHit hit;
     const int itemType = index.data(PostDetailListModel::ItemTypeRole).toInt();
+
+    if (index.data(PostDetailListModel::IsLoadingPlaceholderRole).toBool()) {
+        return hit;
+    }
 
     if (itemType == PostDetailListModel::PostBodyItem) {
         const QString title = index.data(PostDetailListModel::PostTitleTextRole).toString();
@@ -598,7 +812,8 @@ bool PostCommentDelegate::authorHitAt(const QStyleOptionViewItem& option,
                                       const QModelIndex& index,
                                       const QPoint& point) const
 {
-    if (index.data(PostDetailListModel::ItemTypeRole).toInt() == PostDetailListModel::PostBodyItem) {
+    if (index.data(PostDetailListModel::IsLoadingPlaceholderRole).toBool()
+        || index.data(PostDetailListModel::ItemTypeRole).toInt() == PostDetailListModel::PostBodyItem) {
         return false;
     }
 
@@ -636,7 +851,8 @@ PostCommentDelegate::InteractionTarget PostCommentDelegate::interactionTargetAt(
                                                                                 const QPoint& point) const
 {
     InteractionTarget target;
-    if (index.data(PostDetailListModel::ItemTypeRole).toInt() == PostDetailListModel::PostBodyItem) {
+    if (index.data(PostDetailListModel::IsLoadingPlaceholderRole).toBool()
+        || index.data(PostDetailListModel::ItemTypeRole).toInt() == PostDetailListModel::PostBodyItem) {
         return target;
     }
 

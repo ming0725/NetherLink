@@ -17,6 +17,7 @@ public:
     ChatMessageList requestConversationMessages(const ConversationMessagesRequest& query) const;
     ConversationMeta requestConversationMeta(const ConversationMetaRequest& query) const;
     ConversationThreadData requestConversationThread(const ConversationThreadRequest& query) const;
+    QString requestConversationThreadAsync(const ConversationThreadRequest& query);
 
 public slots:
     void touchConversation(const QString& conversationId,
@@ -41,6 +42,8 @@ signals:
     void lastMessageChanged(const QString& conversationId,
                             QSharedPointer<ChatMessage> lastMessage);
     void conversationListChanged(const QString& conversationId);
+    void conversationThreadReady(const QString& requestId,
+                                 const ConversationThreadData& thread);
 
 private:
     explicit MessageRepository(QObject* parent = nullptr);

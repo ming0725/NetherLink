@@ -10,7 +10,8 @@ enum class MessageType {
     Image,
     File,
     Voice,
-    Recall
+    Recall,
+    GroupMemberJoined
 };
 
 enum class GroupRole {
@@ -137,6 +138,31 @@ private:
     QString actorName;
     GroupRole actorRole = GroupRole::Member;
     bool moderatorRecall = false;
+};
+
+class GroupMemberJoinedMessage : public ChatMessage {
+public:
+    GroupMemberJoinedMessage(const QString& memberId,
+                             const QString& memberName)
+        : ChatMessage(false,
+                      memberId,
+                      true,
+                      memberName,
+                      GroupRole::Member)
+        , memberName(memberName)
+    {
+    }
+
+    QString getContent() const override
+    {
+        return QStringLiteral("%1 加入了群聊").arg(memberName);
+    }
+
+    MessageType getType() const override { return MessageType::GroupMemberJoined; }
+    QString getMemberName() const { return memberName; }
+
+private:
+    QString memberName;
 };
 
 #endif // CHATMESSAGE_H

@@ -13,11 +13,13 @@
 
 class IconLineEdit;
 class QLabel;
+class QMouseEvent;
 class PostCommentDelegate;
 class PostDetailListModel;
 class PostDetailListView;
 class PostSessionController;
 class QPushButton;
+class QTimer;
 class QVariantAnimation;
 
 class PostDetailView : public QWidget {
@@ -40,6 +42,7 @@ signals:
     void followClicked(bool followed);
     void likeClicked(bool liked);
 protected:
+    void mousePressEvent(QMouseEvent* event) override;
     void resizeEvent(QResizeEvent* ev) override;
     void paintEvent(QPaintEvent*) override;
 private:
@@ -70,6 +73,8 @@ private:
     void applySummaryState(const PostSummary& summary, bool resetDetailContent);
     void syncUiFromState();
     void syncEngagementUi();
+    void openPostImageViewer();
+    void requestPostImageViewerReplacement();
     void loadInitialComments();
     void loadMoreComments();
     void maybeLoadMoreComments();
@@ -83,6 +88,8 @@ private:
     void setReplyTarget(const QString& commentId, const QString& replyId = QString());
     void clearReplyTarget();
     void submitCommentText();
+    void showLoadingPreview();
+    void stopLoadingPreviewAnimation();
 private:
     struct ReplyTarget {
         QString commentId;
@@ -98,6 +105,7 @@ private:
     PostDetailListView* m_contentList;
     PostDetailListModel* m_detailModel;
     PostCommentDelegate* m_commentDelegate;
+    QTimer* m_loadingAnimationTimer;
     PostSessionController* m_controller = nullptr;
     QMetaObject::Connection m_commentsLoadedConnection;
     QPushButton* m_likeBtn;
@@ -114,4 +122,6 @@ private:
     QHash<QString, QPointer<QVariantAnimation>> m_replyExpansionAnimations;
     QHash<QString, QPointer<QVariantAnimation>> m_moreReplyAnimations;
     QPointer<QVariantAnimation> m_imageFadeAnimation;
+    QPointer<class ImageViewer> m_postImageViewer;
+    QString m_postImageViewerPostId;
 };

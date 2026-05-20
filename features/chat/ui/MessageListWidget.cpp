@@ -279,6 +279,10 @@ QString MessageListWidget::previewTextForMessage(const QString& conversationId,
         return {};
     }
 
+    if (message->getType() == MessageType::GroupMemberJoined) {
+        return message->getContent();
+    }
+
     const ConversationSummary summary = m_model->conversationById(conversationId);
     if (!summary.isGroup) {
         return message->getContent();

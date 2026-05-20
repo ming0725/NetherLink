@@ -192,6 +192,8 @@ void AiChatConversationWidget::setController(AiChatSessionController* controller
             this, &AiChatConversationWidget::onAiReplyFinished);
     connect(m_controller, &AiChatSessionController::aiReplyCanceled,
             this, &AiChatConversationWidget::onAiReplyCanceled);
+    connect(m_controller, &AiChatSessionController::messagesLoaded,
+            this, &AiChatConversationWidget::onConversationMessagesLoaded);
 }
 
 void AiChatConversationWidget::openConversation(const AiChatListEntry& entry)
@@ -210,8 +212,10 @@ void AiChatConversationWidget::openConversation(const AiChatListEntry& entry)
 
     cancelActiveAiReplyStream();
     m_currentConversation = entry;
+    m_pendingMessagesConversationId = entry.conversationId;
+    m_pendingMessagesRequestId = 0;
     m_messageView->messageDelegate()->setStreamingMessageId(QString());
-    m_messageModel->setMessages(m_controller ? m_controller->loadMessages(entry.conversationId) : QVector<AiChatMessage>{});
+    m_messageModel->clear();
     m_messageView->clearTextSelection();
     m_messageView->show();
     m_inputBar->show();
@@ -222,7 +226,9 @@ void AiChatConversationWidget::openConversation(const AiChatListEntry& entry)
     m_newMessageNotifier->hide();
     updateHeader();
     updateLayout();
-    m_messageView->scrollToBottom();
+    if (m_controller) {
+        m_pendingMessagesRequestId = m_controller->loadMessagesAsync(entry.conversationId);
+    }
     QTimer::singleShot(0, m_inputBar, [this]() {
         if (m_inputBar->isVisible() && !m_currentConversation.conversationId.isEmpty()) {
             m_inputBar->focusInput();
@@ -234,6 +240,8 @@ void AiChatConversationWidget::closeConversation()
 {
     cancelActiveAiReplyStream();
     m_currentConversation = {};
+    m_pendingMessagesRequestId = 0;
+    m_pendingMessagesConversationId.clear();
     m_messageView->messageDelegate()->setStreamingMessageId(QString());
     m_messageModel->clear();
     m_messageView->clearTextSelection();
@@ -538,8 +546,28 @@ void AiChatConversationWidget::onAiReplyCanceled(const QString& conversationId, 
             m_newMessageNotifierRevealedByDownScroll = true;
         }
         m_streamingNotifierHeld = false;
-        updateNewMessageNotifier();
     }
+    updateNewMessageNotifier();
+}
+
+void AiChatConversationWidget::onConversationMessagesLoaded(int requestId,
+                                                            const QString& conversationId,
+                                                            const QVector<AiChatMessage>& messages)
+{
+    if (requestId != m_pendingMessagesRequestId ||
+            conversationId != m_pendingMessagesConversationId ||
+            conversationId != m_currentConversation.conversationId) {
+        return;
+    }
+
+    m_pendingMessagesRequestId = 0;
+    m_pendingMessagesConversationId.clear();
+    m_messageModel->setMessages(messages);
+    QTimer::singleShot(0, this, [this, conversationId]() {
+        if (conversationId == m_currentConversation.conversationId) {
+            m_messageView->jumpToBottom();
+        }
+    });
 }
 
 void AiChatConversationWidget::cancelActiveAiReplyStream()

@@ -1,5 +1,6 @@
 #pragma once
 #include <QObject>
+#include <QImage>
 #include <QMap>
 #include <QVector>
 #include <QMutex>
@@ -16,6 +17,7 @@ public:
     QVector<Group> requestGroupsInCategory(const GroupCategoryItemsRequest& query) const;
     Group requestGroupDetail(const GroupDetailRequest& query) const;
     QString requestGroupAvatarPath(const QString& groupId) const;
+    QString requestGroupAvatarImageAsync(const QString& groupId, int delayMs = 120);
     QMap<QString, QString> requestGroupCategories() const;
     QString effectiveGroupCategoryId(const Group& group) const;
     QString effectiveGroupCategoryName(const Group& group) const;
@@ -32,6 +34,8 @@ public:
 
 signals:
     void groupListChanged();
+    void groupAvatarImageReady(const QString& requestId, const QString& groupId, const QImage& image);
+    void groupAvatarImageFailed(const QString& requestId, const QString& groupId);
 
 private:
     explicit GroupRepository(QObject* parent = nullptr);

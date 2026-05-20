@@ -2277,7 +2277,7 @@ void drawCopyIcon(QPainter *painter,
 
     const QString iconSource = copied
                                    ? QStringLiteral(":/resources/icon/check.png")
-                                   : QStringLiteral(":/resources/icon/copy.png");
+                                   : QStringLiteral(":/resources/icon/copy.svg");
     const QSize iconSize(copied ? 16 : 15, copied ? 16 : 15);
     if (drawRasterIcon(painter, iconSource, buttonRect, iconSize, invertRasterIcon)) {
         return;
@@ -2305,7 +2305,7 @@ void drawCopyIcon(QPainter *painter,
 void drawCodeIcon(QPainter *painter, const QRect &iconRect, const CodeBlockPalette &palette)
 {
     if (drawRasterIcon(painter,
-                       QStringLiteral(":/resources/icon/coding.png"),
+                       QStringLiteral(":/resources/icon/coding.svg"),
                        iconRect,
                        QSize(kCodeHeaderIconSize, kCodeHeaderIconSize),
                        ThemeManager::instance().isDark())) {

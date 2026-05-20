@@ -8,6 +8,7 @@
 #include "shared/services/ImageService.h"
 #include "shared/theme/ThemeManager.h"
 #include "shared/ui/QtFallbackLiquidGlass.h"
+#include <QDateTime>
 #include <QParallelAnimationGroup>
 #include <QPropertyAnimation>
 #include <QPainter>
@@ -17,6 +18,8 @@
 #include <QTimer>
 
 namespace {
+
+constexpr int kPostDetailLoadingMinDurationMs = 300;
 
 class TransitionImageWidget final : public QWidget
 {
@@ -246,12 +249,6 @@ PostApplication::PostApplication(QWidget* parent)
     m_bar->setVisualOpacity(1.0);
     updateLayerOrder();
 
-    if (!m_initialPageLoadScheduled) {
-        m_initialPageLoadScheduled = true;
-        QTimer::singleShot(0, this, [this]() {
-            ensurePageLoaded(0);
-        });
-    }
 }
 
 void PostApplication::setSystemFloatingBarsSuppressed(bool suppressed)
@@ -328,6 +325,17 @@ void PostApplication::resizeEvent(QResizeEvent* ev)
     updateLayerOrder();
 }
 
+void PostApplication::showEvent(QShowEvent* ev)
+{
+    QWidget::showEvent(ev);
+    if (m_initialPageLoadScheduled) {
+        return;
+    }
+
+    m_initialPageLoadScheduled = true;
+    ensurePageLoaded(0);
+}
+
 bool PostApplication::eventFilter(QObject *obj, QEvent *ev) {
     if (obj == m_overlay && ev->type() == QEvent::MouseButtonPress) {
         if (m_detailView) {
@@ -345,6 +353,8 @@ void PostApplication::onPostClickedWithGeometry(const PostSummary& summary, cons
     stopActiveTransition();
     m_openPostSession.postId = summary.postId;
     m_openPostSession.waitingForDetail = true;
+    m_openPostSession.loadingStartedAt = QDateTime::currentMSecsSinceEpoch();
+    m_openPostSession.detailRevealScheduled = false;
     m_openPostSession.sourceGeometry = QRect(mapFromGlobal(sourceGeometry.topLeft()), sourceGeometry.size());
     m_pendingPostDetail.reset();
     removeTransitionImage();
@@ -425,9 +435,12 @@ void PostApplication::onPostClickedWithGeometry(const PostSummary& summary, cons
         m_transitionAnimation = nullptr;
         m_transitionPhase = TransitionPhase::Idle;
         if (m_detailView && !m_openPostSession.waitingForDetail) {
-            revealDetailViewAfterLoad();
+            scheduleDetailRevealAfterLoad();
         } else if (!m_openPostSession.waitingForDetail) {
             removeTransitionImage();
+        } else if (m_detailView) {
+            m_detailView->show();
+            clearDetailSnapshot();
         }
         updateLayerOrder();
         group->deleteLater();
@@ -450,7 +463,7 @@ void PostApplication::onCurrentPostDetailLoaded(const PostDetailData& detail)
         return;
     }
 
-    revealDetailViewAfterLoad();
+    scheduleDetailRevealAfterLoad();
 }
 
 void PostApplication::onPostUpdated(const PostSummary& summary)
@@ -810,6 +823,48 @@ void PostApplication::revealDetailViewAfterLoad()
         removeTransitionImage();
         updateLayerOrder();
         applyPendingPostDetail();
+    });
+}
+
+void PostApplication::scheduleDetailRevealAfterLoad()
+{
+    if (!m_detailView
+        || !m_pendingPostDetail.has_value()
+        || m_openPostSession.waitingForDetail
+        || m_transitionPhase == TransitionPhase::Opening) {
+        return;
+    }
+
+    const qint64 startedAt = m_openPostSession.loadingStartedAt;
+    const int elapsed = startedAt > 0
+            ? static_cast<int>(QDateTime::currentMSecsSinceEpoch() - startedAt)
+            : kPostDetailLoadingMinDurationMs;
+    const int delay = qMax(0, kPostDetailLoadingMinDurationMs - elapsed);
+    if (delay <= 0) {
+        m_openPostSession.detailRevealScheduled = false;
+        revealDetailViewAfterLoad();
+        return;
+    }
+
+    m_detailView->show();
+    clearDetailSnapshot();
+    updateLayerOrder();
+
+    if (m_openPostSession.detailRevealScheduled) {
+        return;
+    }
+
+    m_openPostSession.detailRevealScheduled = true;
+    const QString postId = m_openPostSession.postId;
+    QTimer::singleShot(delay, this, [this, postId]() {
+        if (m_openPostSession.postId != postId
+            || m_openPostSession.waitingForDetail
+            || !m_pendingPostDetail.has_value()
+            || m_transitionPhase == TransitionPhase::Opening) {
+            return;
+        }
+        m_openPostSession.detailRevealScheduled = false;
+        revealDetailViewAfterLoad();
     });
 }
 

@@ -4,6 +4,10 @@
 #include "shared/ui/TransparentSplitter.h"
 #include "shared/theme/ThemeManager.h"
 #include "features/friend/ui/FriendSessionController.h"
+#include "features/friend/ui/FriendDetailPage.h"
+#include "features/friend/ui/FriendNotificationPage.h"
+#include "features/friend/ui/GroupDetailPage.h"
+#include "features/friend/ui/GroupNotificationPage.h"
 #include "shared/types/FriendNotification.h"
 #include <QPainter>
 #include <QPaintEvent>
@@ -270,26 +274,14 @@ FriendApplication::FriendApplication(QWidget* parent)
     // 1) 左侧面板：内部手动布局搜索框、加号按钮和好友列表
     m_leftPane    = new LeftPane(this);
 
-    // 2) 右侧默认页 + 单实例好友详情页
+    // 2) 右侧默认页。详情和通知页按首次打开延迟创建。
     m_rightStack = new QStackedWidget(this);
     m_defaultPage = new DefaultPage(this);
-    m_detailPage = new FriendDetailPage(this);
-    m_groupDetailPage = new GroupDetailPage(this);
-    m_notificationPage = new FriendNotificationPage(this);
-    m_groupNotificationPage = new GroupNotificationPage(this);
     m_leftPane->friendList()->setController(m_friendController);
     m_leftPane->groupList()->setController(m_friendController);
-    m_detailPage->setController(m_friendController);
-    m_groupDetailPage->setController(m_friendController);
-    m_notificationPage->setController(m_friendController);
-    m_groupNotificationPage->setController(m_friendController);
     m_rightStack->setMinimumWidth(0);
     m_rightStack->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Expanding);
     m_rightStack->addWidget(m_defaultPage);
-    m_rightStack->addWidget(m_detailPage);
-    m_rightStack->addWidget(m_groupDetailPage);
-    m_rightStack->addWidget(m_notificationPage);
-    m_rightStack->addWidget(m_groupNotificationPage);
     m_rightStack->setCurrentWidget(m_defaultPage);
 
     // 3) 分割器：将左、右面板加入
@@ -314,7 +306,7 @@ FriendApplication::FriendApplication(QWidget* parent)
             m_leftPane->groupList(), &GroupListWidget::setKeyword);
     connect(m_leftPane->friendList(), &FriendListWidget::noticeClicked,
             this, [this]() {
-                if (m_rightStack->currentWidget() == m_notificationPage) {
+                if (m_notificationPage && m_rightStack->currentWidget() == m_notificationPage) {
                     hideNotificationPage();
                 } else {
                     showNotificationPage();
@@ -322,7 +314,7 @@ FriendApplication::FriendApplication(QWidget* parent)
             });
     connect(m_leftPane->groupList(), &GroupListWidget::noticeClicked,
             this, [this]() {
-                if (m_rightStack->currentWidget() == m_groupNotificationPage) {
+                if (m_groupNotificationPage && m_rightStack->currentWidget() == m_groupNotificationPage) {
                     hideGroupNotificationPage();
                 } else {
                     showGroupNotificationPage();
@@ -337,8 +329,9 @@ FriendApplication::FriendApplication(QWidget* parent)
                     m_rightStack->setCurrentWidget(m_defaultPage);
                     return;
                 }
-                m_detailPage->setUserId(userId);
-                m_rightStack->setCurrentWidget(m_detailPage);
+                FriendDetailPage* detailPage = ensureFriendDetailPage();
+                detailPage->setUserId(userId);
+                m_rightStack->setCurrentWidget(detailPage);
             });
     connect(m_leftPane->groupList(), &GroupListWidget::selectedGroupChanged,
             this, [this](const QString& groupId) {
@@ -348,25 +341,123 @@ FriendApplication::FriendApplication(QWidget* parent)
                     m_rightStack->setCurrentWidget(m_defaultPage);
                     return;
                 }
-                m_groupDetailPage->setGroupId(groupId);
-                m_rightStack->setCurrentWidget(m_groupDetailPage);
+                GroupDetailPage* detailPage = ensureGroupDetailPage();
+                detailPage->setGroupId(groupId);
+                m_rightStack->setCurrentWidget(detailPage);
             });
     connect(m_leftPane->friendList(), &FriendListWidget::requestMessage,
             this, &FriendApplication::requestOpenConversation);
     connect(m_leftPane->groupList(), &GroupListWidget::requestMessage,
             this, &FriendApplication::requestOpenConversation);
+    connect(m_friendController, &FriendSessionController::friendNotificationListChanged,
+            this, [this]() {
+                m_leftPane->friendList()->setNoticeUnreadCount(m_friendController->friendUnreadCount());
+                if (m_notificationPage && m_rightStack->currentWidget() == m_notificationPage) {
+                    m_notificationPage->refreshLoadedNotifications();
+                }
+            });
+    connect(m_friendController, &FriendSessionController::groupNotificationListChanged,
+            this, [this]() {
+                m_leftPane->groupList()->setNoticeUnreadCount(m_friendController->groupUnreadCount());
+                if (m_groupNotificationPage && m_rightStack->currentWidget() == m_groupNotificationPage) {
+                    m_groupNotificationPage->refreshLoadedNotifications();
+                }
+            });
+}
+
+void FriendApplication::showNotificationPage()
+{
+    FriendNotificationPage* notificationPage = ensureFriendNotificationPage();
+    m_leftPane->groupList()->setNoticeSelected(false);
+    m_leftPane->friendList()->setNoticeSelected(true);
+    m_friendController->markFriendNotificationsRead();
+    m_leftPane->friendList()->setNoticeUnreadCount(0);
+    populateNotificationData();
+    m_rightStack->setCurrentWidget(notificationPage);
+}
+
+void FriendApplication::hideNotificationPage()
+{
+    m_leftPane->friendList()->setNoticeSelected(false);
+    if (m_notificationPage && m_rightStack->currentWidget() == m_notificationPage) {
+        m_rightStack->setCurrentWidget(m_defaultPage);
+    }
+}
+
+void FriendApplication::populateNotificationData()
+{
+    ensureFriendNotificationPage()->reloadNotifications();
+}
+
+void FriendApplication::showGroupNotificationPage()
+{
+    GroupNotificationPage* notificationPage = ensureGroupNotificationPage();
+    m_leftPane->friendList()->setNoticeSelected(false);
+    m_leftPane->groupList()->setNoticeSelected(true);
+    m_friendController->markGroupNotificationsRead();
+    m_leftPane->groupList()->setNoticeUnreadCount(0);
+    populateGroupNotificationData();
+    m_rightStack->setCurrentWidget(notificationPage);
+}
+
+void FriendApplication::hideGroupNotificationPage()
+{
+    m_leftPane->groupList()->setNoticeSelected(false);
+    if (m_groupNotificationPage && m_rightStack->currentWidget() == m_groupNotificationPage) {
+        m_rightStack->setCurrentWidget(m_defaultPage);
+    }
+}
+
+void FriendApplication::populateGroupNotificationData()
+{
+    ensureGroupNotificationPage()->reloadNotifications();
+}
+
+FriendDetailPage* FriendApplication::ensureFriendDetailPage()
+{
+    if (m_detailPage) {
+        return m_detailPage;
+    }
+
+    m_detailPage = new FriendDetailPage(this);
+    m_detailPage->setController(m_friendController);
+    m_rightStack->addWidget(m_detailPage);
     connect(m_detailPage, &FriendDetailPage::requestMessage,
-            this, &FriendApplication::requestOpenConversation);
-    connect(m_groupDetailPage, &GroupDetailPage::requestMessage,
             this, &FriendApplication::requestOpenConversation);
     connect(m_detailPage, &FriendDetailPage::friendDeleted,
             this, [this]() {
                 m_rightStack->setCurrentWidget(m_defaultPage);
             });
+    return m_detailPage;
+}
+
+GroupDetailPage* FriendApplication::ensureGroupDetailPage()
+{
+    if (m_groupDetailPage) {
+        return m_groupDetailPage;
+    }
+
+    m_groupDetailPage = new GroupDetailPage(this);
+    m_groupDetailPage->setController(m_friendController);
+    m_rightStack->addWidget(m_groupDetailPage);
+    connect(m_groupDetailPage, &GroupDetailPage::requestMessage,
+            this, &FriendApplication::requestOpenConversation);
     connect(m_groupDetailPage, &GroupDetailPage::groupExited,
             this, [this]() {
                 m_rightStack->setCurrentWidget(m_defaultPage);
             });
+    return m_groupDetailPage;
+}
+
+FriendNotificationPage* FriendApplication::ensureFriendNotificationPage()
+{
+    if (m_notificationPage) {
+        return m_notificationPage;
+    }
+
+    m_notificationPage = new FriendNotificationPage(this);
+    m_notificationPage->setController(m_friendController);
+    m_rightStack->addWidget(m_notificationPage);
     connect(m_notificationPage, &FriendNotificationPage::acceptRequest,
             this, [this](const QString& notificationId) {
                 m_friendController->acceptFriendRequest(notificationId);
@@ -375,13 +466,18 @@ FriendApplication::FriendApplication(QWidget* parent)
             this, [this](const QString& notificationId) {
                 m_friendController->rejectFriendRequest(notificationId);
             });
-    connect(m_friendController, &FriendSessionController::friendNotificationListChanged,
-            this, [this]() {
-                m_leftPane->friendList()->setNoticeUnreadCount(m_friendController->friendUnreadCount());
-                if (m_rightStack->currentWidget() == m_notificationPage) {
-                    m_notificationPage->refreshLoadedNotifications();
-                }
-            });
+    return m_notificationPage;
+}
+
+GroupNotificationPage* FriendApplication::ensureGroupNotificationPage()
+{
+    if (m_groupNotificationPage) {
+        return m_groupNotificationPage;
+    }
+
+    m_groupNotificationPage = new GroupNotificationPage(this);
+    m_groupNotificationPage->setController(m_friendController);
+    m_rightStack->addWidget(m_groupNotificationPage);
     connect(m_groupNotificationPage, &GroupNotificationPage::acceptRequest,
             this, [this](const QString& notificationId) {
                 m_friendController->acceptGroupJoinRequest(notificationId);
@@ -390,63 +486,7 @@ FriendApplication::FriendApplication(QWidget* parent)
             this, [this](const QString& notificationId) {
                 m_friendController->rejectGroupJoinRequest(notificationId);
             });
-    connect(m_friendController, &FriendSessionController::groupNotificationListChanged,
-            this, [this]() {
-                m_leftPane->groupList()->setNoticeUnreadCount(m_friendController->groupUnreadCount());
-                if (m_rightStack->currentWidget() == m_groupNotificationPage) {
-                    m_groupNotificationPage->refreshLoadedNotifications();
-                }
-            });
-
-    // Initial unread badge count
-    m_leftPane->friendList()->setNoticeUnreadCount(m_friendController->friendUnreadCount());
-    m_leftPane->groupList()->setNoticeUnreadCount(m_friendController->groupUnreadCount());
-}
-
-void FriendApplication::showNotificationPage()
-{
-    m_leftPane->groupList()->setNoticeSelected(false);
-    m_leftPane->friendList()->setNoticeSelected(true);
-    m_friendController->markFriendNotificationsRead();
-    m_leftPane->friendList()->setNoticeUnreadCount(0);
-    populateNotificationData();
-    m_rightStack->setCurrentWidget(m_notificationPage);
-}
-
-void FriendApplication::hideNotificationPage()
-{
-    m_leftPane->friendList()->setNoticeSelected(false);
-    if (m_rightStack->currentWidget() == m_notificationPage) {
-        m_rightStack->setCurrentWidget(m_defaultPage);
-    }
-}
-
-void FriendApplication::populateNotificationData()
-{
-    m_notificationPage->reloadNotifications();
-}
-
-void FriendApplication::showGroupNotificationPage()
-{
-    m_leftPane->friendList()->setNoticeSelected(false);
-    m_leftPane->groupList()->setNoticeSelected(true);
-    m_friendController->markGroupNotificationsRead();
-    m_leftPane->groupList()->setNoticeUnreadCount(0);
-    populateGroupNotificationData();
-    m_rightStack->setCurrentWidget(m_groupNotificationPage);
-}
-
-void FriendApplication::hideGroupNotificationPage()
-{
-    m_leftPane->groupList()->setNoticeSelected(false);
-    if (m_rightStack->currentWidget() == m_groupNotificationPage) {
-        m_rightStack->setCurrentWidget(m_defaultPage);
-    }
-}
-
-void FriendApplication::populateGroupNotificationData()
-{
-    m_groupNotificationPage->reloadNotifications();
+    return m_groupNotificationPage;
 }
 
 void FriendApplication::resizeEvent(QResizeEvent* /*event*/)

@@ -8,6 +8,11 @@
 #include <QShowEvent>
 #include <QWindow>
 
+#ifdef Q_OS_WIN
+#include <QAbstractButton>
+#include <QStyle>
+#endif
+
 #ifdef Q_OS_MACOS
 #include "platform/macos/MacWindowBridge_p.h"
 #endif
@@ -35,15 +40,12 @@ SystemWindow::SystemWindow(QWidget* parent)
         m_setWindowCompositionAttribute = reinterpret_cast<PFN_SetWindowCompositionAttribute>(
                 GetProcAddress(user32Handle, "SetWindowCompositionAttribute"));
     }
-#else
-    setWindowFlags(windowFlags() | Qt::WindowSystemMenuHint);
-#if !defined(Q_OS_MACOS)
+#elif !defined(Q_OS_MACOS)
     setWindowFlags(windowFlags() | Qt::FramelessWindowHint);
     if (qApp) {
         qApp->installEventFilter(this);
         m_appEventFilterInstalled = true;
     }
-#endif
 #endif
 
     setAttribute(Qt::WA_TranslucentBackground);
@@ -79,6 +81,19 @@ void SystemWindow::setDragTitleBar(QWidget* titleBar)
     }
 #endif
 }
+
+#ifdef Q_OS_WIN
+void SystemWindow::setSystemMaximizeButton(QWidget* button)
+{
+    m_systemMaximizeButton = button;
+}
+
+void SystemWindow::toggleSystemMaximized()
+{
+    HWND hwnd = reinterpret_cast<HWND>(winId());
+    ::SendMessageW(hwnd, WM_SYSCOMMAND, isMaximized() ? SC_RESTORE : SC_MAXIMIZE, 0);
+}
+#endif
 
 void SystemWindow::setBackdropColor(const QColor& color)
 {
@@ -122,6 +137,23 @@ bool SystemWindow::nativeEvent(const QByteArray& eventType, void* message, qint6
 #ifdef Q_OS_WIN
     MSG* msg = reinterpret_cast<MSG*>(message);
     switch (msg->message) {
+        case WM_GETMINMAXINFO: {
+            auto* minMaxInfo = reinterpret_cast<MINMAXINFO*>(msg->lParam);
+            HMONITOR monitor = ::MonitorFromWindow(reinterpret_cast<HWND>(winId()), MONITOR_DEFAULTTONEAREST);
+            MONITORINFO monitorInfo = {};
+            monitorInfo.cbSize = sizeof(monitorInfo);
+            if (::GetMonitorInfoW(monitor, &monitorInfo)) {
+                const RECT workArea = monitorInfo.rcWork;
+                const RECT monitorArea = monitorInfo.rcMonitor;
+                minMaxInfo->ptMaxPosition.x = workArea.left - monitorArea.left;
+                minMaxInfo->ptMaxPosition.y = workArea.top - monitorArea.top;
+                minMaxInfo->ptMaxSize.x = workArea.right - workArea.left;
+                minMaxInfo->ptMaxSize.y = workArea.bottom - workArea.top;
+            }
+            *result = 0;
+            return true;
+        }
+
         case WM_NCCALCSIZE:
             *result = 0;
             return true;
@@ -130,6 +162,11 @@ bool SystemWindow::nativeEvent(const QByteArray& eventType, void* message, qint6
             const LONG globalX = GET_X_LPARAM(msg->lParam);
             const LONG globalY = GET_Y_LPARAM(msg->lParam);
             const QPoint globalPos(globalX, globalY);
+
+            if (isSystemMaximizeButtonHit(globalPos)) {
+                *result = HTMAXBUTTON;
+                return true;
+            }
 
             const int resizeHit = hitTestResize(globalPos);
             if (resizeHit) {
@@ -145,9 +182,51 @@ bool SystemWindow::nativeEvent(const QByteArray& eventType, void* message, qint6
             return false;
         }
 
+        case WM_NCMOUSEMOVE: {
+            if (msg->wParam == HTMAXBUTTON) {
+                setSystemMaximizeButtonState(true, m_systemMaximizeButtonPressed);
+                TRACKMOUSEEVENT trackEvent = {};
+                trackEvent.cbSize = sizeof(trackEvent);
+                trackEvent.dwFlags = TME_LEAVE | TME_NONCLIENT;
+                trackEvent.hwndTrack = reinterpret_cast<HWND>(winId());
+                ::TrackMouseEvent(&trackEvent);
+                break;
+            }
+            setSystemMaximizeButtonState(false, false);
+            break;
+        }
+
+        case WM_NCMOUSELEAVE:
+            setSystemMaximizeButtonState(false, false);
+            break;
+
+        case WM_NCLBUTTONDOWN:
+            if (msg->wParam == HTMAXBUTTON) {
+                setSystemMaximizeButtonState(true, true);
+                *result = 0;
+                return true;
+            }
+            break;
+
+        case WM_NCLBUTTONUP:
+            if (m_systemMaximizeButtonPressed) {
+                const LONG globalX = GET_X_LPARAM(msg->lParam);
+                const LONG globalY = GET_Y_LPARAM(msg->lParam);
+                const bool stillOnButton = isSystemMaximizeButtonHit(QPoint(globalX, globalY));
+                setSystemMaximizeButtonState(stillOnButton, false);
+                if (stillOnButton) {
+                    toggleSystemMaximized();
+                }
+                *result = 0;
+                return true;
+            }
+            break;
+
         default:
             return QWidget::nativeEvent(eventType, message, result);
     }
+
+    return QWidget::nativeEvent(eventType, message, result);
 #else
     Q_UNUSED(eventType);
     Q_UNUSED(message);
@@ -253,9 +332,17 @@ void SystemWindow::ensurePlatformChrome()
 
 #ifdef Q_OS_WIN
     HWND hwnd = reinterpret_cast<HWND>(winId());
-    LONG style = ::GetWindowLong(hwnd, GWL_STYLE);
-    ::SetWindowLong(hwnd, GWL_STYLE,
-                    style | WS_THICKFRAME | WS_CAPTION | WS_MAXIMIZEBOX | WS_MINIMIZEBOX | WS_SYSMENU);
+    LONG_PTR style = ::GetWindowLongPtrW(hwnd, GWL_STYLE);
+    ::SetWindowLongPtrW(hwnd,
+                        GWL_STYLE,
+                        style | WS_THICKFRAME | WS_CAPTION | WS_MAXIMIZEBOX | WS_MINIMIZEBOX | WS_SYSMENU);
+    ::SetWindowPos(hwnd,
+                   nullptr,
+                   0,
+                   0,
+                   0,
+                   0,
+                   SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOOWNERZORDER | SWP_FRAMECHANGED);
 
     UINT cornerPreference = DWMWCP_ROUND;
     DwmSetWindowAttribute(hwnd,
@@ -291,7 +378,8 @@ void SystemWindow::refreshPlatformMetrics()
 void SystemWindow::updateWindowMargins()
 {
 #ifdef Q_OS_WIN
-    setContentsMargins(isMaximized() ? 0 : 8, isMaximized() ? 0 : 8, isMaximized() ? 0 : 8, isMaximized() ? 0 : 8);
+    const int margin = isMaximized() ? SYSTEM_WINDOW_RESIZE_BORDER : 0;
+    setContentsMargins(margin, margin, margin, margin);
 #else
     setContentsMargins(0, 0, 0, 0);
 #endif
@@ -365,6 +453,48 @@ int SystemWindow::hitTestResize(const QPoint& globalPos) const
     }
 
     return result;
+}
+
+bool SystemWindow::isSystemMaximizeButtonHit(const QPoint& globalPos) const
+{
+    if (!m_systemMaximizeButton || !m_systemMaximizeButton->isVisible() || !m_systemMaximizeButton->isEnabled()) {
+        return false;
+    }
+
+    if (minimumWidth() == maximumWidth() && minimumHeight() == maximumHeight()) {
+        return false;
+    }
+
+    const qreal dpr = devicePixelRatioF();
+    const QPoint localPos = m_systemMaximizeButton->mapFromGlobal(QPoint(globalPos.x() / dpr, globalPos.y() / dpr));
+    return m_systemMaximizeButton->rect().contains(localPos);
+}
+
+void SystemWindow::setSystemMaximizeButtonState(bool hovered, bool pressed)
+{
+    if (!m_systemMaximizeButton) {
+        m_systemMaximizeButtonHovered = false;
+        m_systemMaximizeButtonPressed = false;
+        return;
+    }
+
+    if (m_systemMaximizeButtonHovered != hovered) {
+        m_systemMaximizeButtonHovered = hovered;
+        m_systemMaximizeButton->setProperty("nativeHover", hovered);
+        if (m_systemMaximizeButton->style()) {
+            m_systemMaximizeButton->style()->unpolish(m_systemMaximizeButton);
+            m_systemMaximizeButton->style()->polish(m_systemMaximizeButton);
+        }
+        m_systemMaximizeButton->update();
+
+        QEvent event(hovered ? QEvent::Enter : QEvent::Leave);
+        QApplication::sendEvent(m_systemMaximizeButton, &event);
+    }
+
+    if (auto* button = qobject_cast<QAbstractButton*>(m_systemMaximizeButton.data())) {
+        button->setDown(pressed);
+    }
+    m_systemMaximizeButtonPressed = pressed;
 }
 
 bool SystemWindow::isDragRegion(const QPoint& globalPos) const

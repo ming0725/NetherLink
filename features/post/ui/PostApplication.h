@@ -27,6 +27,7 @@ private slots:
     void onPostClickedWithGeometry(const PostSummary& summary, const QRect& sourceGeometry);
     void onCurrentPostDetailLoaded(const PostDetailData& detail);
 protected:
+    void showEvent(QShowEvent* ev) override;
     void resizeEvent(QResizeEvent* ev) override;
     bool eventFilter(QObject* obj, QEvent* ev) override;
 private:
@@ -40,12 +41,16 @@ private:
         QString postId;
         QRect sourceGeometry;
         bool waitingForDetail = false;
+        qint64 loadingStartedAt = 0;
+        bool detailRevealScheduled = false;
 
         void clear()
         {
             postId.clear();
             sourceGeometry = {};
             waitingForDetail = false;
+            loadingStartedAt = 0;
+            detailRevealScheduled = false;
         }
     };
 
@@ -63,6 +68,7 @@ private:
     void clearDetailView();
     void startCloseAnimation();
     void revealDetailViewAfterLoad();
+    void scheduleDetailRevealAfterLoad();
     void applyPendingPostDetail();
     QWidget* createPlaceholderPage() const;
     void replaceStackPage(int index, QWidget* page);

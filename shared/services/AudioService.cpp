@@ -5,6 +5,7 @@
 #include <QFile>
 #include <QMutex>
 #include <QMutexLocker>
+#include <QRandomGenerator>
 #include <QtGlobal>
 
 #include <memory>
@@ -23,6 +24,7 @@ struct SoundDefinition {
 constexpr SoundDefinition kSoundDefinitions[] = {
     {AudioService::SoundEffect::ButtonClick, ":/resources/audio/click.wav", 0.80f, 24},
     {AudioService::SoundEffect::Portal, ":/resources/audio/portal.wav", 0.75f, 12},
+    {AudioService::SoundEffect::Portal, ":/resources/audio/portal2.wav", 0.75f, 12},
     {AudioService::SoundEffect::SuccessfulHit, ":/resources/audio/successful_hit.wav", 0.80f, 8},
     {AudioService::SoundEffect::Break, ":/resources/audio/break.wav", 0.80f, 8},
     {AudioService::SoundEffect::ClassicHurt, ":/resources/audio/classic_hurt.wav", 0.80f, 8},
@@ -114,11 +116,28 @@ struct AudioServicePrivate {
 
     AudioClip* clipFor(AudioService::SoundEffect effect)
     {
+        int matchingClipCount = 0;
         for (const std::unique_ptr<AudioClip>& clip : clips) {
             if (clip->effect == effect) {
-                return clip.get();
+                ++matchingClipCount;
             }
         }
+
+        if (matchingClipCount == 0) {
+            return nullptr;
+        }
+
+        int selectedIndex = matchingClipCount == 1 ? 0 : QRandomGenerator::global()->bounded(matchingClipCount);
+        for (const std::unique_ptr<AudioClip>& clip : clips) {
+            if (clip->effect != effect) {
+                continue;
+            }
+            if (selectedIndex == 0) {
+                return clip.get();
+            }
+            --selectedIndex;
+        }
+
         return nullptr;
     }
 

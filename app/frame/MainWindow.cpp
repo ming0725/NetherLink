@@ -121,6 +121,18 @@ MainWindow::MainWindow(QWidget* parent)
     btnMaximize->setFixedSize(32, 32);
     btnClose->setFixedSize(32, 32);
 
+#ifdef Q_OS_WIN
+    auto btnStyle = R"(
+        QPushButton {
+            background-color: transparent;
+            border: none;
+        }
+        QPushButton:hover,
+        QPushButton[nativeHover="true"] {
+            background-color: palette(midlight);
+        }
+    )";
+#else
     auto btnStyle = R"(
         QPushButton {
             background-color: transparent;
@@ -130,6 +142,7 @@ MainWindow::MainWindow(QWidget* parent)
             background-color: palette(midlight);
         }
     )";
+#endif
     btnMinimize->setStyleSheet(btnStyle);
     btnMaximize->setStyleSheet(btnStyle);
     const QString closeHoverColor = ThemeManager::instance().color(ThemeColor::WindowCloseHover).name();
@@ -157,13 +170,20 @@ MainWindow::MainWindow(QWidget* parent)
 
     connect(btnMinimize, &QPushButton::clicked, this, &QWidget::showMinimized);
     connect(btnMaximize, &QPushButton::clicked, this, [this]() {
+#ifdef Q_OS_WIN
+        toggleSystemMaximized();
+#else
         if (isMaximized()) {
             showNormal();
         } else {
             showMaximized();
         }
+#endif
     });
     connect(btnClose, &QPushButton::clicked, this, &QWidget::close);
+#ifdef Q_OS_WIN
+    setSystemMaximizeButton(btnMaximize);
+#endif
 #endif
 
     setDragTitleBar(titleBar);
@@ -218,7 +238,11 @@ void MainWindow::resizeEvent(QResizeEvent* event)
     layoutWindow();
 
     if (m_settingsWindow) {
+#ifdef Q_OS_WIN
+        m_settingsWindow->setGeometry(contentsRect());
+#else
         m_settingsWindow->setGeometry(0, 0, event->size().width(), event->size().height());
+#endif
         m_settingsWindow->raise();
     }
 }
@@ -451,13 +475,23 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *ev) {
 
 void MainWindow::layoutWindow()
 {
+#ifdef Q_OS_WIN
+    const QRect contentRect = contentsRect();
+    const int x = contentRect.x();
+    const int y = contentRect.y();
+    const int w = contentRect.width();
+    const int h = contentRect.height();
+#else
+    const int x = 0;
+    const int y = 0;
     const int w = width();
     const int h = height();
+#endif
     const bool useSystemTitleButtons = usesSystemTitleButtons();
     const int titleInset = useSystemTitleButtons ? topInset() : 0;
     const int titleBarHeight = qMax(32, titleInset);
     const int barW = useSystemTitleButtons ? qMax(54, leadingInset()) : 54;
-    const int titleBarX = useSystemTitleButtons ? 0 : barW;
+    const int titleBarX = useSystemTitleButtons ? x : x + barW;
     const int titleBarW = useSystemTitleButtons ? w : w - barW;
 
     if (titleBar->height() != titleBarHeight) {
@@ -466,8 +500,8 @@ void MainWindow::layoutWindow()
 
     appBar->setFixedWidth(barW);
     appBar->setTopInset(titleInset);
-    appBar->setGeometry(0, 0, barW, h);
-    stack->setGeometry(barW, 0, w - barW, h);
-    titleBar->setGeometry(titleBarX, 0, titleBarW, titleBar->height());
+    appBar->setGeometry(x, y, barW, h);
+    stack->setGeometry(x + barW, y, w - barW, h);
+    titleBar->setGeometry(titleBarX, y, titleBarW, titleBar->height());
     titleBar->raise();
 }

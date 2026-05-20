@@ -1,5 +1,7 @@
 #include "PostDetailListModel.h"
 
+#include <QDateTime>
+
 PostDetailListModel::PostDetailListModel(QObject* parent)
     : QAbstractListModel(parent)
 {
@@ -7,7 +9,13 @@ PostDetailListModel::PostDetailListModel(QObject* parent)
 
 int PostDetailListModel::rowCount(const QModelIndex& parent) const
 {
-    return parent.isValid() ? 0 : 1 + m_comments.size();
+    if (parent.isValid()) {
+        return 0;
+    }
+    if (m_loadingPreview) {
+        return 1 + m_loadingCommentPlaceholderCount;
+    }
+    return 1 + m_comments.size();
 }
 
 QVariant PostDetailListModel::data(const QModelIndex& index, int role) const
@@ -29,6 +37,27 @@ QVariant PostDetailListModel::data(const QModelIndex& index, int role) const
             return m_postBodyDateText;
         case PostBodyRevisionRole:
             return m_postBodyRevision;
+        case IsLoadingPlaceholderRole:
+            return m_loadingPreview;
+        case LoadingStartedAtRole:
+            return m_loadingPreview ? m_loadingPreviewStartedAtMs : 0;
+        default:
+            return {};
+        }
+    }
+
+    if (m_loadingPreview) {
+        switch (role) {
+        case ItemTypeRole:
+            return CommentItem;
+        case CommentIdRole:
+            return QStringLiteral("__post_detail_loading_comment_%1").arg(index.row());
+        case CommentRevisionRole:
+            return m_postBodyRevision;
+        case IsLoadingPlaceholderRole:
+            return true;
+        case LoadingStartedAtRole:
+            return m_loadingPreviewStartedAtMs;
         default:
             return {};
         }
@@ -59,12 +88,9 @@ Qt::ItemFlags PostDetailListModel::flags(const QModelIndex& index) const
 
 void PostDetailListModel::resetForPost(const QString& postId)
 {
-    if (!m_comments.isEmpty()) {
-        beginRemoveRows(QModelIndex(), 1, m_comments.size());
-        m_comments.clear();
-        endRemoveRows();
-    }
+    beginResetModel();
     m_postId = postId;
+    m_comments.clear();
     m_commentRows.clear();
     m_commentRevisions.clear();
     m_expandedComments.clear();
@@ -79,13 +105,27 @@ void PostDetailListModel::resetForPost(const QString& postId)
     m_postBodyText.clear();
     m_postBodyDateText.clear();
     ++m_postBodyRevision;
-    const QModelIndex bodyIndex = index(0, 0);
-    emit dataChanged(bodyIndex, bodyIndex,
-                     {PostTitleTextRole, PostBodyTextRole, PostBodyDateTextRole, PostBodyRevisionRole});
+    m_loadingPreview = false;
+    m_loadingCommentPlaceholderCount = 0;
+    m_loadingPreviewStartedAtMs = 0;
+    endResetModel();
 }
 
 void PostDetailListModel::setPostBody(QString title, QString text, QString dateText)
 {
+    if (m_loadingPreview) {
+        beginResetModel();
+        m_loadingPreview = false;
+        m_loadingCommentPlaceholderCount = 0;
+        m_postTitleText = std::move(title);
+        m_postBodyText = std::move(text);
+        m_postBodyDateText = std::move(dateText);
+        ++m_postBodyRevision;
+        m_loadingPreviewStartedAtMs = 0;
+        endResetModel();
+        return;
+    }
+
     if (m_postTitleText == title && m_postBodyText == text && m_postBodyDateText == dateText) {
         return;
     }
@@ -100,8 +140,68 @@ void PostDetailListModel::setPostBody(QString title, QString text, QString dateT
                      {PostTitleTextRole, PostBodyTextRole, PostBodyDateTextRole, PostBodyRevisionRole, CommentLayoutRole});
 }
 
+void PostDetailListModel::showLoadingPreview(QString postId, QString title, int commentPlaceholderCount)
+{
+    beginResetModel();
+    m_postId = std::move(postId);
+    m_comments.clear();
+    m_commentRows.clear();
+    m_commentRevisions.clear();
+    m_expandedComments.clear();
+    m_expandedReplies.clear();
+    m_visibleReplyCounts.clear();
+    m_commentExpansionProgress.clear();
+    m_replyExpansionProgress.clear();
+    m_replyRevealProgress.clear();
+    m_loadMoreRepliesPlaceholderProgress.clear();
+    m_hasMoreComments = false;
+    m_postTitleText = std::move(title);
+    m_postBodyText.clear();
+    m_postBodyDateText.clear();
+    m_loadingPreview = true;
+    m_loadingCommentPlaceholderCount = qMax(0, commentPlaceholderCount);
+    m_loadingPreviewStartedAtMs = QDateTime::currentMSecsSinceEpoch();
+    ++m_postBodyRevision;
+    endResetModel();
+}
+
+bool PostDetailListModel::hasLoadingPreview() const
+{
+    return m_loadingPreview;
+}
+
 void PostDetailListModel::setComments(QVector<PostComment> comments, bool hasMore)
 {
+    if (m_loadingPreview) {
+        beginResetModel();
+        m_loadingPreview = false;
+        m_loadingCommentPlaceholderCount = 0;
+        m_loadingPreviewStartedAtMs = 0;
+        m_comments = std::move(comments);
+        m_expandedComments.clear();
+        m_expandedReplies.clear();
+        m_visibleReplyCounts.clear();
+        m_commentExpansionProgress.clear();
+        m_replyExpansionProgress.clear();
+        m_replyRevealProgress.clear();
+        m_loadMoreRepliesPlaceholderProgress.clear();
+        m_commentRows.clear();
+        m_commentRevisions.clear();
+        for (const PostComment& comment : m_comments) {
+            m_visibleReplyCounts.insert(comment.commentId,
+                                        qMin(1, qMin(comment.totalReplyCount, comment.replies.size())));
+            m_commentRevisions.insert(comment.commentId, 0);
+            const int visibleReplies = qMin(1, comment.replies.size());
+            for (int i = 0; i < visibleReplies; ++i) {
+                m_replyRevealProgress.insert(comment.replies.at(i).replyId, 1.0);
+            }
+        }
+        rebuildCommentRowIndex();
+        m_hasMoreComments = hasMore;
+        endResetModel();
+        return;
+    }
+
     if (!m_comments.isEmpty()) {
         beginRemoveRows(QModelIndex(), 1, m_comments.size());
         m_comments.clear();
@@ -178,7 +278,7 @@ PostComment PostDetailListModel::commentAt(const QModelIndex& index) const
 
 const PostComment* PostDetailListModel::commentAtIndex(const QModelIndex& index) const
 {
-    if (!index.isValid() || index.row() < 1 || index.row() >= rowCount()) {
+    if (m_loadingPreview || !index.isValid() || index.row() < 1 || index.row() >= rowCount()) {
         return {};
     }
     return &m_comments.at(index.row() - 1);

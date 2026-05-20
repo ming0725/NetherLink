@@ -13,6 +13,7 @@
 #include "shared/ui/StyledActionMenu.h"
 
 class QColor;
+struct LoadingPlaceholder;
 
 class ChatItemDelegate : public QStyledItemDelegate
 {
@@ -36,6 +37,9 @@ public:
     QString urlAt(const QStyleOptionViewItem& option,
                   const QModelIndex& index,
                   const QPoint& viewportPos) const;
+    QString imageSourceAt(const QStyleOptionViewItem& option,
+                          const QModelIndex& index,
+                          const QPoint& viewportPos) const;
 
     bool selectWordAt(const QStyleOptionViewItem& option,
                       const QModelIndex& index,
@@ -102,6 +106,8 @@ private:
     static constexpr int NEW_MESSAGE_DIVIDER_MARGIN = 16;
     static constexpr int NEW_MESSAGE_DIVIDER_TEXT_GAP = 14;
     static constexpr int NEW_MESSAGE_DIVIDER_FONT_SIZE = 12;
+    static constexpr int GROUP_EVENT_HEIGHT = 32;
+    static constexpr int LOADING_PLACEHOLDER_HEIGHT = 66;
     
     void drawBubble(QPainter* painter, const QRect& rect,
                     bool isFromMe, const ChatMessage* message, bool isSelected,
@@ -122,10 +128,15 @@ private:
                        const QString& text) const;
     void drawNewMessageDivider(QPainter* painter, const QRect& rect,
                                const QString& text) const;
+    void drawLoadingPlaceholder(QPainter* painter, const QRect& rect,
+                                const LoadingPlaceholder* placeholder) const;
     void drawRecallMessage(QPainter* painter,
                            const QRect& rect,
                            const RecallMessage* message,
                            const QModelIndex& index) const;
+    void drawGroupMemberJoinedMessage(QPainter* painter,
+                                      const QRect& rect,
+                                      const GroupMemberJoinedMessage* message) const;
 
     QRect calculateBubbleRect(const QRect& contentRect,
                              const ChatMessage* message,
@@ -140,6 +151,8 @@ private:
                                      const RecallMessage* message) const;
     QRect calculateRecallReeditRect(const QRect& contentRect,
                                     const RecallMessage* message) const;
+    QRect calculateGroupMemberJoinedContentRect(const QRect& contentRect,
+                                                const GroupMemberJoinedMessage* message) const;
     QFont messageFont() const;
     QFont recallFont() const;
     QSize textDocumentSize(const QString& text, const QFont& font, int maxTextWidth) const;

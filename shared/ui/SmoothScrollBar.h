@@ -14,6 +14,8 @@ class SmoothScrollBar : public QWidget
 public:
     explicit SmoothScrollBar(QWidget *parent = nullptr);
 
+    void setOrientation(Qt::Orientation orientation);
+    Qt::Orientation orientation() const { return m_orientation; }
     void setRange(int min, int max);
     void setPageStep(int step);
     int value() const { return m_value; }
@@ -43,8 +45,10 @@ private:
     int m_maximum;
     int m_pageStep;
     int m_value;
+    Qt::Orientation m_orientation;
     qreal m_opacity;
     bool m_isDragging;
+    bool m_updatingFromDrag = false;
     QPoint m_dragStartPosition;
     int m_dragStartValue;
     
@@ -53,6 +57,7 @@ private:
 
     QRect getHandleRect() const;
     void updateVisibility();
+    void rebaseDragAnchor();
 
     void updateValue(const QPoint &pos);
 };

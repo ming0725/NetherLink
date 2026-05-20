@@ -32,6 +32,11 @@ struct NewMessageDivider {
     QString text;
 };
 
+struct LoadingPlaceholder {
+    bool isFromMe = false;
+    qint64 shimmerStartedAtMs = 0;
+};
+
 // 时间间隔设置（秒）
 namespace TimeSettings {
     // 调试模式下使用1分钟
@@ -66,6 +71,7 @@ public:
     const TimeHeader* getTimeHeader(int index) const;
     bool isBottomSpace(int index) const;
     bool isNewMessageDivider(int index) const;
+    bool isLoadingPlaceholder(int index) const;
     QModelIndex newMessageDividerIndex() const;
     QModelIndex indexForMessage(const ChatMessage* message) const;
 
@@ -73,6 +79,9 @@ public:
     bool setBottomSpaceHeight(int height);
     void setNewMessageDividerBefore(const ChatMessage* message);
     void clearNewMessageDivider();
+    void showLoadingPlaceholderAtTop();
+    void showInitialLoadingPlaceholders(int targetHeight);
+    void removeLoadingPlaceholder();
 
     void clear();
 
@@ -81,9 +90,11 @@ private:
         QSharedPointer<ChatMessage> message;
         QSharedPointer<TimeHeader> timeHeader;
         QSharedPointer<NewMessageDivider> newMessageDivider;
+        QSharedPointer<LoadingPlaceholder> loadingPlaceholder;
         bool isHeader = false;
         bool isBottomSpace = false;
         bool isNewMessageDivider = false;
+        bool isLoadingPlaceholder = false;
         int bottomSpaceHeight = BottomSpace::DEFAULT_HEIGHT;  // 使用默认高度
     };
     QVector<ListItem> items;

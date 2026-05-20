@@ -21,7 +21,9 @@ public:
         AuthorAvatarRole,
         LikeCountRole,
         CommentCountRole,
-        IsLikedRole
+        IsLikedRole,
+        IsLoadingPlaceholderRole,
+        LoadingStartedAtRole
     };
 
     explicit PostFeedModel(QObject* parent = nullptr);
@@ -33,6 +35,8 @@ public:
     void setPosts(QVector<PostSummary> posts);
     void appendPosts(const QVector<PostSummary>& posts);
     void updatePost(const PostSummary& post);
+    void showLoadingPlaceholders(int count);
+    bool hasLoadingPlaceholders() const;
 
     QString postIdAt(const QModelIndex& index) const;
     PostSummary postAt(const QModelIndex& index) const;
@@ -43,4 +47,6 @@ private:
 
     QVector<PostSummary> m_posts;
     QHash<QString, int> m_postRows;
+    int m_loadingPlaceholderCount = 0;
+    qint64 m_loadingStartedAtMs = 0;
 };

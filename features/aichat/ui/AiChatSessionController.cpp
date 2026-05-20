@@ -3,6 +3,9 @@
 #include "features/aichat/data/AiChatRepository.h"
 #include "features/aichat/data/AiChatStreamClient.h"
 
+#include <QFutureWatcher>
+#include <QtConcurrent/QtConcurrentRun>
+
 AiChatSessionController::AiChatSessionController(QObject* parent)
     : QObject(parent)
     , m_streamClient(new AiChatStreamClient(this))
@@ -21,6 +24,36 @@ QVector<AiChatListEntry> AiChatSessionController::loadConversations(const AiChat
 QVector<AiChatMessage> AiChatSessionController::loadMessages(const QString& conversationId) const
 {
     return AiChatRepository::instance().requestAiChatMessages(conversationId);
+}
+
+int AiChatSessionController::loadConversationsAsync(const AiChatListRequest& query)
+{
+    const int requestId = m_nextAsyncRequestId++;
+    auto* watcher = new QFutureWatcher<QVector<AiChatListEntry>>(this);
+    connect(watcher, &QFutureWatcher<QVector<AiChatListEntry>>::finished, this, [this, watcher, requestId, query]() {
+        const QVector<AiChatListEntry> entries = watcher->result();
+        watcher->deleteLater();
+        emit conversationsLoaded(requestId, query, entries);
+    });
+    watcher->setFuture(QtConcurrent::run([query]() {
+        return AiChatRepository::instance().requestAiChatList(query);
+    }));
+    return requestId;
+}
+
+int AiChatSessionController::loadMessagesAsync(const QString& conversationId)
+{
+    const int requestId = m_nextAsyncRequestId++;
+    auto* watcher = new QFutureWatcher<QVector<AiChatMessage>>(this);
+    connect(watcher, &QFutureWatcher<QVector<AiChatMessage>>::finished, this, [this, watcher, requestId, conversationId]() {
+        const QVector<AiChatMessage> messages = watcher->result();
+        watcher->deleteLater();
+        emit messagesLoaded(requestId, conversationId, messages);
+    });
+    watcher->setFuture(QtConcurrent::run([conversationId]() {
+        return AiChatRepository::instance().requestAiChatMessages(conversationId);
+    }));
+    return requestId;
 }
 
 QString AiChatSessionController::createConversation(const QString& title)

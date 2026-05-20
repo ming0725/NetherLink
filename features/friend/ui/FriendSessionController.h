@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QObject>
+#include <QImage>
 #include <QMap>
 #include <QString>
 #include <QVector>
@@ -26,6 +27,7 @@ public:
     User loadFriend(const QString& userId) const;
     QString userNickname(const QString& userId) const;
     QString userAvatarPath(const QString& userId) const;
+    QString requestUserAvatarImage(const QString& userId);
     QMap<QString, QString> loadFriendGroups() const;
     bool saveFriend(const User& user);
     bool changeFriendGroup(const QString& userId, const QString& groupId, const QString& groupName);
@@ -41,6 +43,7 @@ public:
     QString groupNicknameFor(const QString& groupId, const QString& userId) const;
     QString groupManagerRoleText(const QString& groupId, const QString& userId) const;
     QString groupAvatarPath(const QString& groupId) const;
+    QString requestGroupAvatarImage(const QString& groupId);
     QMap<QString, QString> loadGroupCategories() const;
     bool canExitGroup(const Group& group) const;
     bool saveGroup(const Group& group);
@@ -68,4 +71,19 @@ signals:
     void groupListChanged();
     void friendNotificationListChanged();
     void groupNotificationListChanged();
+    void userAvatarImageReady(const QString& requestId, const QString& userId, const QImage& image);
+    void userAvatarImageFailed(const QString& requestId, const QString& userId);
+    void groupAvatarImageReady(const QString& requestId, const QString& groupId, const QImage& image);
+    void groupAvatarImageFailed(const QString& requestId, const QString& groupId);
+
+private:
+    void ensureUserRepositoryConnections() const;
+    void ensureGroupRepositoryConnections() const;
+    void ensureFriendNotificationRepositoryConnections() const;
+    void ensureGroupNotificationRepositoryConnections() const;
+
+    mutable bool m_userRepositoryConnectionsReady = false;
+    mutable bool m_groupRepositoryConnectionsReady = false;
+    mutable bool m_friendNotificationRepositoryConnectionsReady = false;
+    mutable bool m_groupNotificationRepositoryConnectionsReady = false;
 };

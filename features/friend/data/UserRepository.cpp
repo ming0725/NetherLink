@@ -1,7 +1,13 @@
 #include "UserRepository.h"
 
 #include <QCollator>
+#include <QImageReader>
+#include <QMetaObject>
+#include <QRunnable>
 #include <QStringList>
+#include <QThread>
+#include <QThreadPool>
+#include <QUuid>
 
 #include <algorithm>
 
@@ -375,6 +381,30 @@ QString UserRepository::requestUserName(const QString& userId) const
 QString UserRepository::requestUserAvatarPath(const QString& userId) const
 {
     return requestUserDetail({userId}).avatarPath;
+}
+
+QString UserRepository::requestUserAvatarImageAsync(const QString& userId, int delayMs)
+{
+    const QString requestId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    const QString source = requestUserAvatarPath(userId);
+    QThreadPool::globalInstance()->start(QRunnable::create([this, requestId, userId, source, delayMs]() {
+        const int boundedDelayMs = qMax(0, delayMs);
+        if (boundedDelayMs > 0) {
+            QThread::msleep(static_cast<unsigned long>(boundedDelayMs));
+        }
+
+        QImageReader reader(source);
+        reader.setAutoTransform(true);
+        const QImage image = reader.read();
+        QMetaObject::invokeMethod(this, [this, requestId, userId, image]() {
+            if (image.isNull()) {
+                emit userAvatarImageFailed(requestId, userId);
+                return;
+            }
+            emit userAvatarImageReady(requestId, userId, image);
+        }, Qt::QueuedConnection);
+    }));
+    return requestId;
 }
 
 QMap<QString, QString> UserRepository::requestFriendGroups() const

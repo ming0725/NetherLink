@@ -5,13 +5,15 @@
 #include "shared/ui/TransparentSplitter.h"
 #include "shared/theme/ThemeManager.h"
 
-#include <QDateTime>
 #include <QPainter>
+#include <QPointer>
 #include <QResizeEvent>
+#include <QTimer>
 
 namespace {
 
 constexpr int kInitialMessagePageSize = 30;
+constexpr int kConversationLoadingShowDelayMs = 150;
 
 } // namespace
 
@@ -99,6 +101,16 @@ MessageApplication::MessageApplication(QWidget* parent)
             this, &MessageApplication::onMessageClicked);
     connect(m_leftPane->messageList(), &MessageListWidget::currentConversationDeleted,
             this, &MessageApplication::onCurrentConversationDeleted);
+    connect(&MessageRepository::instance(), &MessageRepository::conversationThreadReady,
+            this, [this](const QString& requestId, const ConversationThreadData& conversation) {
+                if (requestId != m_openConversationRequestId) {
+                    return;
+                }
+
+                const int token = m_openConversationLoadToken;
+                m_openConversationRequestId.clear();
+                applyLoadedConversation(token, conversation);
+            });
 
     // 右侧堆栈：初始页 + 聊天页
     m_rightStack  = new QStackedWidget(this);
@@ -160,19 +172,53 @@ void MessageApplication::onMessageClicked(const QString& conversationId)
 
     ensureChatArea();
     m_rightStack->setCurrentWidget(m_chatArea);
-    m_chatArea->openConversation(MessageRepository::instance().requestConversationThread({
+
+    ConversationMeta meta = MessageRepository::instance().requestConversationMeta({conversationId});
+    if (meta.conversationId.isEmpty()) {
+        meta.conversationId = conversationId;
+        meta.title = conversationId;
+    }
+    const int token = ++m_openConversationLoadToken;
+    m_openConversationLoadPending = true;
+    QPointer<MessageApplication> app(this);
+
+    QTimer::singleShot(kConversationLoadingShowDelayMs, this, [app, token, meta]() {
+        if (!app ||
+            token != app->m_openConversationLoadToken ||
+            !app->m_openConversationLoadPending ||
+            !app->m_chatArea) {
+            return;
+        }
+
+        app->m_chatArea->showConversationLoading(meta);
+    });
+
+    m_openConversationRequestId = MessageRepository::instance().requestConversationThreadAsync({
             conversationId,
             0,
             kInitialMessagePageSize
-    }));
+    });
 }
 
 void MessageApplication::onCurrentConversationDeleted()
 {
+    ++m_openConversationLoadToken;
+    m_openConversationLoadPending = false;
+    m_openConversationRequestId.clear();
     if (m_chatArea) {
         m_chatArea->closeConversation();
     }
     m_rightStack->setCurrentWidget(m_defaultPage);
+}
+
+void MessageApplication::applyLoadedConversation(int token, const ConversationThreadData& conversation)
+{
+    if (token != m_openConversationLoadToken || !m_chatArea) {
+        return;
+    }
+
+    m_openConversationLoadPending = false;
+    m_chatArea->openConversation(conversation);
 }
 
 void MessageApplication::openConversationFromContact(const QString& conversationId)

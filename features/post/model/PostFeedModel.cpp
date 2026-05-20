@@ -1,5 +1,16 @@
 #include "PostFeedModel.h"
 
+#include <QDateTime>
+
+namespace {
+
+bool isLoadingPlaceholderId(const QString& postId)
+{
+    return postId.startsWith(QStringLiteral("__post_loading_"));
+}
+
+} // namespace
+
 PostFeedModel::PostFeedModel(QObject* parent)
     : QAbstractListModel(parent)
 {
@@ -17,6 +28,7 @@ QVariant PostFeedModel::data(const QModelIndex& index, int role) const
     }
 
     const PostSummary& post = m_posts.at(index.row());
+    const bool loadingPlaceholder = isLoadingPlaceholderId(post.postId);
     switch (role) {
     case Qt::DisplayRole:
     case TitleRole:
@@ -39,6 +51,10 @@ QVariant PostFeedModel::data(const QModelIndex& index, int role) const
         return post.commentCount;
     case IsLikedRole:
         return post.isLiked;
+    case IsLoadingPlaceholderRole:
+        return loadingPlaceholder;
+    case LoadingStartedAtRole:
+        return loadingPlaceholder ? m_loadingStartedAtMs : 0;
     default:
         return {};
     }
@@ -55,6 +71,8 @@ Qt::ItemFlags PostFeedModel::flags(const QModelIndex& index) const
 void PostFeedModel::setPosts(QVector<PostSummary> posts)
 {
     beginResetModel();
+    m_loadingPlaceholderCount = 0;
+    m_loadingStartedAtMs = 0;
     m_posts = std::move(posts);
     rebuildPostIndex();
     endResetModel();
@@ -63,6 +81,10 @@ void PostFeedModel::setPosts(QVector<PostSummary> posts)
 void PostFeedModel::appendPosts(const QVector<PostSummary>& posts)
 {
     if (posts.isEmpty()) {
+        return;
+    }
+    if (hasLoadingPlaceholders()) {
+        setPosts(posts);
         return;
     }
 
@@ -80,6 +102,10 @@ void PostFeedModel::appendPosts(const QVector<PostSummary>& posts)
 
 void PostFeedModel::updatePost(const PostSummary& post)
 {
+    if (hasLoadingPlaceholders()) {
+        return;
+    }
+
     const int row = indexOfPost(post.postId);
     if (row < 0) {
         return;
@@ -133,6 +159,41 @@ void PostFeedModel::updatePost(const PostSummary& post)
     emit dataChanged(modelIndex, modelIndex, changedRoles);
 }
 
+void PostFeedModel::showLoadingPlaceholders(int count)
+{
+    static const QSize kPlaceholderImageSizes[] = {
+        QSize(240, 310),
+        QSize(240, 220),
+        QSize(240, 280),
+        QSize(240, 360),
+        QSize(240, 250),
+        QSize(240, 330),
+        QSize(240, 205),
+        QSize(240, 295),
+    };
+    constexpr int imageSizeCount = static_cast<int>(
+            sizeof(kPlaceholderImageSizes) / sizeof(kPlaceholderImageSizes[0]));
+
+    beginResetModel();
+    m_posts.clear();
+    m_postRows.clear();
+    m_loadingPlaceholderCount = qMax(0, count);
+    m_loadingStartedAtMs = QDateTime::currentMSecsSinceEpoch();
+    m_posts.reserve(m_loadingPlaceholderCount);
+    for (int i = 0; i < m_loadingPlaceholderCount; ++i) {
+        PostSummary placeholder;
+        placeholder.postId = QStringLiteral("__post_loading_%1").arg(i);
+        placeholder.thumbnailImageSize = kPlaceholderImageSizes[i % imageSizeCount];
+        m_posts.append(std::move(placeholder));
+    }
+    endResetModel();
+}
+
+bool PostFeedModel::hasLoadingPlaceholders() const
+{
+    return m_loadingPlaceholderCount > 0;
+}
+
 QString PostFeedModel::postIdAt(const QModelIndex& index) const
 {
     if (!index.isValid() || index.row() < 0 || index.row() >= m_posts.size()) {
@@ -160,7 +221,7 @@ void PostFeedModel::rebuildPostIndex()
     m_postRows.reserve(m_posts.size());
     for (int i = 0; i < m_posts.size(); ++i) {
         const QString& postId = m_posts.at(i).postId;
-        if (!postId.isEmpty()) {
+        if (!postId.isEmpty() && !isLoadingPlaceholderId(postId)) {
             m_postRows.insert(postId, i);
         }
     }

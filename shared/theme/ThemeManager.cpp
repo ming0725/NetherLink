@@ -329,6 +329,14 @@ QColor ThemeManager::fixedColor(ThemeColor role, bool dark) const
             return QColor(0, 0, 0, 32);
         case ThemeColor::ImagePlaceholder:
             return QColor(0xf2, 0xf2, 0xf2);
+        case ThemeColor::LoadingPlaceholderBase:
+            return QColor(0xd8, 0xd8, 0xd8);
+        case ThemeColor::LoadingPlaceholderHighlight:
+            return QColor(0xe9, 0xe9, 0xe9);
+        case ThemeColor::LoadingPlaceholderLineBase:
+            return QColor(0xc8, 0xc8, 0xc8);
+        case ThemeColor::LoadingPlaceholderLineHighlight:
+            return QColor(0xe0, 0xe0, 0xe0);
         case ThemeColor::ControlHover:
             return QColor(0, 0, 0, 14);
         case ThemeColor::ControlPressed:
@@ -487,6 +495,14 @@ QColor ThemeManager::fixedColor(ThemeColor role, bool dark) const
         return QColor(0x5a, 0x5d, 0x64, 200);
     case ThemeColor::ImagePlaceholder:
         return QColor(0x2b, 0x2d, 0x33);
+    case ThemeColor::LoadingPlaceholderBase:
+        return QColor(0x3b, 0x3f, 0x47);
+    case ThemeColor::LoadingPlaceholderHighlight:
+        return QColor(0x5c, 0x63, 0x70);
+    case ThemeColor::LoadingPlaceholderLineBase:
+        return QColor(0x44, 0x48, 0x52);
+    case ThemeColor::LoadingPlaceholderLineHighlight:
+        return QColor(0x64, 0x6b, 0x78);
     case ThemeColor::ControlHover:
         return QColor(255, 255, 255, 18);
     case ThemeColor::ControlPressed:

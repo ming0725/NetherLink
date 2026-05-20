@@ -45,6 +45,9 @@ private:
     CardLayout calculateLayout(const QModelIndex& index, const QRect& rect) const;
     int imageHeightForWidth(const QModelIndex& index, int width) const;
     QString layoutCacheKey(const QModelIndex& index, int width) const;
+    void drawLoadingPlaceholder(QPainter* painter,
+                                const CardLayout& layout,
+                                qint64 loadingStartedAtMs) const;
 
     mutable QHash<QString, CardLayout> m_layoutCache;
 

@@ -37,6 +37,10 @@ protected:
 private:
     void reloadEntries(const QString& selectedConversationId = {});
     void loadMoreEntries();
+    void onEntriesLoaded(int requestId,
+                         const AiChatListRequest& query,
+                         const QVector<AiChatListEntry>& entries);
+    void finishPendingSelection();
     void onCurrentChanged(const QModelIndex& current, const QModelIndex& previous);
     void updateStickyHeader();
     struct StickyHeaderState {
@@ -61,6 +65,10 @@ private:
     bool m_initialized = false;
     int m_nextOffset = 0;
     bool m_hasMore = true;
+    bool m_loadingEntries = false;
+    bool m_selectFirstAfterLoad = false;
+    int m_pendingEntriesRequestId = 0;
+    QString m_pendingSelectedConversationId;
 
     static constexpr int kPageSize = 20;
 };

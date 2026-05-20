@@ -20,6 +20,7 @@
 class QPropertyAnimation;
 class QPushButton;
 class QLabel;
+class QTimer;
 class ChatSessionController;
 class DirectConversationInfoPanel;
 class GroupConversationInfoPanel;
@@ -30,6 +31,7 @@ class ChatArea : public QWidget
     using ChatMessagePtr = QSharedPointer<ChatMessage>;
 public:
     explicit ChatArea(QWidget *parent = nullptr);
+    void showConversationLoading(const ConversationMeta& meta);
     void openConversation(const ConversationThreadData& conversation);
     void addMessage(ChatMessagePtr message);
     void addImageMessage(QSharedPointer<ImageMessage> message,
@@ -71,6 +73,7 @@ private:
         bool isAtBottom = true;
         bool hasMoreBefore = false;
         bool loadingOlderMessages = false;
+        bool loadingInitialMessages = false;
         bool allowOlderMessageFetch = false;
         bool visibleUnreadCheckScheduled = false;
         bool newMessageNotifierRevealedByDownScroll = false;
@@ -84,6 +87,8 @@ private:
     ChatListModel* chatModel;
     ChatItemDelegate* chatDelegate;
     HistoryUnreadNotifier* historyUnreadNotifier;
+    QTimer* historyUnreadNotifierLoadTimer = nullptr;
+    QTimer* messageLoadingAnimationTimer = nullptr;
     NewMessageNotifier* newMessageNotifier;
     QWidget* bottomGapGradientOverlay;
     FloatingInputBar* inputBar;
@@ -103,6 +108,8 @@ private:
     void updateNewMessageNotifierPosition();
     bool shouldShowNewMessageNotifier() const;
     void updateHistoryUnreadNotifier();
+    void showHistoryUnreadNotifier();
+    void hideHistoryUnreadNotifier();
     void updateHistoryUnreadNotifierPosition();
     void scrollToBottom(bool accelerateFarDistance = false);
     void scrollToFirstHistoryUnread();
@@ -116,6 +123,8 @@ private:
     void updateVisibleUnreadMessages();
     void markPendingHistoryUnreadVisible(const ChatMessage* message);
     void markPendingNewUnreadVisible(const ChatMessage* message);
+    void appendRepositoryMessage(const QString& changedConversationId,
+                                 const ChatMessagePtr& message);
     void reconcileHistoryUnreadAfterHistoryExhausted();
     void adjustBottomSpace();
     void updateInputBarPosition();

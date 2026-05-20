@@ -17,7 +17,9 @@
 #include <QWheelEvent>
 
 #include "features/chat/ui/ChatItemDelegate.h"
+#include "shared/services/ImageService.h"
 #include "shared/ui/StyledActionMenu.h"
+#include "shared/ui/ImageViewer.h"
 
 namespace {
 
@@ -307,6 +309,19 @@ void ChatListView::mousePressEvent(QMouseEvent* event)
                 event->accept();
                 return;
             }
+            const QString imageSource = delegate->imageSourceAt(option, index, event->pos());
+            if (!imageSource.isEmpty()) {
+                const ChatMessage* message = index.data(Qt::UserRole).value<ChatMessage*>();
+                if (message && message->getIsSelected()) {
+                    openImageViewer(imageSource);
+                    if (model()) {
+                        static_cast<ChatListModel*>(model())->clearSelection();
+                    }
+                    clearTextSelection();
+                    event->accept();
+                    return;
+                }
+            }
             if (hitBubble) {
                 setFocus(Qt::MouseFocusReason);
                 m_activeBubbleIndex = QPersistentModelIndex(index);
@@ -375,6 +390,17 @@ void ChatListView::mouseDoubleClickEvent(QMouseEvent* event)
             if (delegate->bubbleHitTest(option, index, event->pos())) {
                 setFocus(Qt::MouseFocusReason);
                 m_activeBubbleIndex = QPersistentModelIndex(index);
+
+                const QString imageSource = delegate->imageSourceAt(option, index, event->pos());
+                if (!imageSource.isEmpty()) {
+                    openImageViewer(imageSource);
+                    if (model()) {
+                        static_cast<ChatListModel*>(model())->clearSelection();
+                    }
+                    clearTextSelection();
+                    event->accept();
+                    return;
+                }
 
                 if (delegate->urlAt(option, index, event->pos()).isEmpty() &&
                         delegate->selectWordAt(option, index, event->pos())) {
@@ -695,4 +721,16 @@ void ChatListView::openUrl(const QString& url)
     }
 
     QDesktopServices::openUrl(resolvedUrl);
+}
+
+void ChatListView::openImageViewer(const QString& imageSource)
+{
+    if (imageSource.isEmpty() || !ImageService::instance().sourceSize(imageSource).isValid()) {
+        return;
+    }
+
+    auto* viewer = new ImageViewer(imageSource, window());
+    viewer->show();
+    viewer->raise();
+    viewer->activateWindow();
 }

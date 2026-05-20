@@ -18,6 +18,7 @@
 #include "shared/services/ImageService.h"
 #include "shared/theme/ThemeManager.h"
 #include "shared/ui/IconLineEdit.h"
+#include "shared/ui/ImageViewer.h"
 #include "shared/ui/StatefulPushButton.h"
 #include "PostCommentDelegate.h"
 #include "PostDetailListView.h"
@@ -32,6 +33,8 @@ constexpr int kMinImageWidth = 220;
 constexpr int kFallbackImageWidth = 3;
 constexpr int kFallbackImageHeight = 4;
 constexpr int kCommentExpandAnimationDurationMs = 420;
+constexpr int kLoadingAnimationFrameMs = 16;
+constexpr int kLoadingCommentPreviewCount = 3;
 const QString kCommentIconSource = QStringLiteral(":/resources/icon/selected_message.png");
 
 QString likeIconSource(bool liked)
@@ -182,6 +185,7 @@ QString postDateText(const QDateTime& time)
 
 PostDetailView::PostDetailView(QWidget* parent)
     : QWidget(parent)
+    , m_loadingAnimationTimer(new QTimer(this))
 {
     setupUI();
     setAttribute(Qt::WA_TranslucentBackground);
@@ -261,6 +265,16 @@ void PostDetailView::setupUI()
     m_contentList->setBackgroundRole(ThemeColor::PanelBackground);
     disableContextMenu(m_contentList);
     disableContextMenu(m_contentList->viewport());
+    m_loadingAnimationTimer->setInterval(kLoadingAnimationFrameMs);
+    connect(m_loadingAnimationTimer, &QTimer::timeout, this, [this]() {
+        if (!m_detailModel || !m_detailModel->hasLoadingPreview()) {
+            stopLoadingPreviewAnimation();
+            return;
+        }
+        if (m_contentList && m_contentList->viewport()) {
+            m_contentList->viewport()->update();
+        }
+    });
 
     connect(m_detailModel, &QAbstractItemModel::dataChanged,
             this, [this](const QModelIndex& topLeft,
@@ -374,6 +388,17 @@ void PostDetailView::resizeEvent(QResizeEvent* ev)
 {
     QWidget::resizeEvent(ev);
     updateLayout();
+}
+
+void PostDetailView::mousePressEvent(QMouseEvent* event)
+{
+    if (event->button() == Qt::LeftButton && paintedImageRect().contains(event->pos())) {
+        openPostImageViewer();
+        event->accept();
+        return;
+    }
+
+    QWidget::mousePressEvent(event);
 }
 
 QSize PostDetailView::preferredSize(const QSize& availableBounds) const
@@ -542,7 +567,9 @@ void PostDetailView::setPostData(const PostDetailData& data)
     }
     m_state.fullImageOpacity = 0.0;
 
-    if (postChanged) {
+    const bool loadingPreviewActive = m_detailModel && m_detailModel->hasLoadingPreview();
+    if (postChanged || loadingPreviewActive) {
+        stopLoadingPreviewAnimation();
         stopCommentAnimations();
         clearReplyTarget();
         m_commentsRequestId.clear();
@@ -553,6 +580,7 @@ void PostDetailView::setPostData(const PostDetailData& data)
     }
     syncUiFromState();
     loadInitialComments();
+    requestPostImageViewerReplacement();
 
     stopImageFadeAnimation();
     auto* imageFade = new QVariantAnimation(this);
@@ -598,7 +626,7 @@ void PostDetailView::applySummaryState(const PostSummary& summary, bool resetDet
     m_state.commentCount = summary.commentCount;
 
     if (resetDetailContent) {
-        m_state.content = QStringLiteral("加载中...");
+        m_state.content.clear();
         m_state.contentCreatedAt = {};
         m_state.fullImageSource.clear();
         m_state.fullImageSize = {};
@@ -611,7 +639,7 @@ void PostDetailView::applySummaryState(const PostSummary& summary, bool resetDet
             m_pendingCommentsOffset = -1;
             m_loadingComments = false;
             m_pendingLoadMoreCheck = false;
-            m_detailModel->resetForPost(m_state.postId);
+            showLoadingPreview();
         }
     }
 
@@ -625,7 +653,9 @@ void PostDetailView::syncUiFromState()
     m_followBtn->setText(m_state.isFollowed ? "已关注" : "关注");
     const QString contentDateText = postDateText(m_state.contentCreatedAt);
     if (m_detailModel) {
-        m_detailModel->setPostBody(m_state.title, m_state.content, contentDateText);
+        if (!m_detailModel->hasLoadingPreview()) {
+            m_detailModel->setPostBody(m_state.title, m_state.content, contentDateText);
+        }
     }
     syncEngagementUi();
     updateLayout();
@@ -637,6 +667,40 @@ void PostDetailView::syncEngagementUi()
     static_cast<IconActionButton*>(m_likeBtn)->setIconSource(likeIconSource(m_state.isLiked));
     m_likeCount->setText(QString::number(m_state.likeCount));
     m_commentCount->setText(QString::number(m_state.commentCount));
+}
+
+void PostDetailView::openPostImageViewer()
+{
+    if (!m_state.imageVisible) {
+        return;
+    }
+
+    const QString initialSource = !m_state.previewImageSource.isEmpty()
+            ? m_state.previewImageSource
+            : m_state.fullImageSource;
+    if (initialSource.isEmpty()) {
+        return;
+    }
+
+    auto* viewer = new ImageViewer(initialSource, window());
+    m_postImageViewer = viewer;
+    m_postImageViewerPostId = m_state.postId;
+    requestPostImageViewerReplacement();
+    viewer->show();
+    viewer->raise();
+    viewer->activateWindow();
+}
+
+void PostDetailView::requestPostImageViewerReplacement()
+{
+    if (!m_postImageViewer || m_postImageViewerPostId != m_state.postId || m_state.fullImageSource.isEmpty()) {
+        return;
+    }
+
+    const QPixmap fullPixmap = ImageService::instance().pixmap(m_state.fullImageSource);
+    if (!fullPixmap.isNull()) {
+        m_postImageViewer->replaceImage(fullPixmap.toImage(), m_state.fullImageSource);
+    }
 }
 
 void PostDetailView::loadInitialComments()
@@ -873,6 +937,32 @@ void PostDetailView::clearReplyTarget()
 {
     m_replyTarget = {};
     m_commentLineEdit->setPlaceholderText(QStringLiteral("说点什么吧..."));
+}
+
+void PostDetailView::showLoadingPreview()
+{
+    if (!m_detailModel) {
+        return;
+    }
+
+    m_detailModel->showLoadingPreview(m_state.postId, m_state.title, kLoadingCommentPreviewCount);
+    if (m_contentList) {
+        m_contentList->scrollToTop();
+        m_contentList->doItemsLayout();
+        if (m_contentList->viewport()) {
+            m_contentList->viewport()->update();
+        }
+    }
+    if (!m_loadingAnimationTimer->isActive()) {
+        m_loadingAnimationTimer->start();
+    }
+}
+
+void PostDetailView::stopLoadingPreviewAnimation()
+{
+    if (m_loadingAnimationTimer->isActive()) {
+        m_loadingAnimationTimer->stop();
+    }
 }
 
 void PostDetailView::submitCommentText()

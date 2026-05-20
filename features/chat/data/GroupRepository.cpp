@@ -1,8 +1,14 @@
 #include "GroupRepository.h"
 
 #include <QCollator>
+#include <QImageReader>
+#include <QMetaObject>
+#include <QRunnable>
 #include <QSet>
 #include <QStringList>
+#include <QThread>
+#include <QThreadPool>
+#include <QUuid>
 
 #include <algorithm>
 
@@ -467,6 +473,30 @@ Group GroupRepository::requestGroupDetail(const GroupDetailRequest& query) const
 QString GroupRepository::requestGroupAvatarPath(const QString& groupId) const
 {
     return requestGroupDetail({groupId}).groupAvatarPath;
+}
+
+QString GroupRepository::requestGroupAvatarImageAsync(const QString& groupId, int delayMs)
+{
+    const QString requestId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    const QString source = requestGroupAvatarPath(groupId);
+    QThreadPool::globalInstance()->start(QRunnable::create([this, requestId, groupId, source, delayMs]() {
+        const int boundedDelayMs = qMax(0, delayMs);
+        if (boundedDelayMs > 0) {
+            QThread::msleep(static_cast<unsigned long>(boundedDelayMs));
+        }
+
+        QImageReader reader(source);
+        reader.setAutoTransform(true);
+        const QImage image = reader.read();
+        QMetaObject::invokeMethod(this, [this, requestId, groupId, image]() {
+            if (image.isNull()) {
+                emit groupAvatarImageFailed(requestId, groupId);
+                return;
+            }
+            emit groupAvatarImageReady(requestId, groupId, image);
+        }, Qt::QueuedConnection);
+    }));
+    return requestId;
 }
 
 QMap<QString, QString> GroupRepository::requestGroupCategories() const

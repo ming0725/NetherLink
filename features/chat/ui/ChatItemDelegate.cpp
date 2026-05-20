@@ -18,6 +18,7 @@
 #include <QApplication>
 #include <QMouseEvent>
 #include <QClipboard>
+#include <QDateTime>
 #include <QPainterPath>
 #include <QPersistentModelIndex>
 #include <QMenu>
@@ -134,11 +135,14 @@ void ChatItemDelegate::paint(QPainter* painter, const QStyleOptionViewItem& opti
     const ChatMessage* message = nullptr;
     const TimeHeader* timeHeader = nullptr;
     const NewMessageDivider* newMessageDivider = nullptr;
+    const LoadingPlaceholder* loadingPlaceholder = nullptr;
 
     if (data.canConvert<TimeHeader*>()) {
         timeHeader = data.value<TimeHeader*>();
     } else if (data.canConvert<NewMessageDivider*>()) {
         newMessageDivider = data.value<NewMessageDivider*>();
+    } else if (data.canConvert<LoadingPlaceholder*>()) {
+        loadingPlaceholder = data.value<LoadingPlaceholder*>();
     } else if (data.canConvert<ChatMessage*>()) {
         message = data.value<ChatMessage*>();
     }
@@ -147,7 +151,9 @@ void ChatItemDelegate::paint(QPainter* painter, const QStyleOptionViewItem& opti
     painter->setRenderHint(QPainter::Antialiasing, true);
     AppFonts::configurePainterForText(*painter);
 
-    if (newMessageDivider) {
+    if (loadingPlaceholder) {
+        drawLoadingPlaceholder(painter, option.rect, loadingPlaceholder);
+    } else if (newMessageDivider) {
         drawNewMessageDivider(painter, option.rect, newMessageDivider->text);
     } else if (timeHeader) {
         // 绘制时间标识
@@ -159,6 +165,14 @@ void ChatItemDelegate::paint(QPainter* painter, const QStyleOptionViewItem& opti
         );
         drawTimeHeader(painter, timeHeaderRect, timeHeader->text);
     } else if (message) {
+        if (message->getType() == MessageType::GroupMemberJoined) {
+            drawGroupMemberJoinedMessage(painter,
+                                         option.rect,
+                                         static_cast<const GroupMemberJoinedMessage*>(message));
+            painter->restore();
+            return;
+        }
+
         if (message->getType() == MessageType::Recall) {
             drawRecallMessage(painter, option.rect, static_cast<const RecallMessage*>(message), index);
             painter->restore();
@@ -205,6 +219,7 @@ bool ChatItemDelegate::editorEvent(QEvent* event, QAbstractItemModel* model,
         if (ChatListModel* chatModel = qobject_cast<ChatListModel*>(model)) {
             if (chatModel->isBottomSpace(index.row()) ||
                     chatModel->isTimeHeader(index.row()) ||
+                    chatModel->isLoadingPlaceholder(index.row()) ||
                     chatModel->isNewMessageDivider(index.row())) {
                 chatModel->clearSelection();
                 return true;
@@ -222,6 +237,10 @@ bool ChatItemDelegate::editorEvent(QEvent* event, QAbstractItemModel* model,
                 emit reeditRequested(index.row());
                 return true;
             }
+            model->setData(index, false, Qt::UserRole + 1);
+            return true;
+        }
+        if (message->getType() == MessageType::GroupMemberJoined) {
             model->setData(index, false, Qt::UserRole + 1);
             return true;
         }
@@ -375,6 +394,21 @@ QString ChatItemDelegate::urlAt(const QStyleOptionViewItem& option,
     }
 
     return {};
+}
+
+QString ChatItemDelegate::imageSourceAt(const QStyleOptionViewItem& option,
+                                        const QModelIndex& index,
+                                        const QPoint& viewportPos) const
+{
+    const ChatMessage* message = index.data(Qt::UserRole).value<ChatMessage*>();
+    if (!message || message->getType() != MessageType::Image) {
+        return {};
+    }
+    if (!bubbleHitTest(option, index, viewportPos)) {
+        return {};
+    }
+
+    return static_cast<const ImageMessage*>(message)->getImageSource();
 }
 
 bool ChatItemDelegate::selectWordAt(const QStyleOptionViewItem& option,
@@ -633,6 +667,39 @@ void ChatItemDelegate::drawRecallMessage(QPainter* painter,
     painter->restore();
 }
 
+void ChatItemDelegate::drawGroupMemberJoinedMessage(QPainter* painter,
+                                                    const QRect& rect,
+                                                    const GroupMemberJoinedMessage* message) const
+{
+    if (!message) {
+        return;
+    }
+
+    painter->save();
+    AppFonts::configurePainterForText(*painter);
+    const QFont font = recallFont();
+    painter->setFont(font);
+    const QFontMetrics fm(font);
+
+    const QString suffix = QStringLiteral("加入了群聊");
+    const QRect contentRect = calculateGroupMemberJoinedContentRect(rect, message);
+    const int baselineY = contentRect.top() + (contentRect.height() + fm.ascent() - fm.descent()) / 2;
+    const QColor normalColor = ThemeManager::instance().color(ThemeColor::TertiaryText);
+    const QColor accentColor = ThemeManager::instance().color(ThemeColor::Accent);
+
+    const int maxNameWidth = qMax(0, contentRect.width() - fm.horizontalAdvance(suffix));
+    const QString name = fm.elidedText(message->getMemberName(), Qt::ElideRight, maxNameWidth);
+
+    int x = contentRect.left();
+    painter->setPen(accentColor);
+    painter->drawText(x, baselineY, name);
+    x += fm.horizontalAdvance(name);
+
+    painter->setPen(normalColor);
+    painter->drawText(x, baselineY, suffix);
+    painter->restore();
+}
+
 void ChatItemDelegate::drawImageMessage(QPainter* painter, const QRect& rect,
                                       const QString& imageSource,
                                       bool isSelected) const
@@ -788,11 +855,14 @@ QSize ChatItemDelegate::sizeHint(const QStyleOptionViewItem& option,
     const ChatMessage* message = nullptr;
     const TimeHeader* timeHeader = nullptr;
     const NewMessageDivider* newMessageDivider = nullptr;
+    const LoadingPlaceholder* loadingPlaceholder = nullptr;
 
     if (data.canConvert<TimeHeader*>()) {
         timeHeader = data.value<TimeHeader*>();
     } else if (data.canConvert<NewMessageDivider*>()) {
         newMessageDivider = data.value<NewMessageDivider*>();
+    } else if (data.canConvert<LoadingPlaceholder*>()) {
+        loadingPlaceholder = data.value<LoadingPlaceholder*>();
     } else if (data.canConvert<ChatMessage*>()) {
         message = data.value<ChatMessage*>();
     } else if (data.canConvert<int>()) {
@@ -801,12 +871,17 @@ QSize ChatItemDelegate::sizeHint(const QStyleOptionViewItem& option,
         return QSize(option.rect.width(), height);
     }
 
-    if (newMessageDivider) {
+    if (loadingPlaceholder) {
+        return QSize(option.rect.width(), LOADING_PLACEHOLDER_HEIGHT);
+    } else if (newMessageDivider) {
         return QSize(option.rect.width(), NEW_MESSAGE_DIVIDER_HEIGHT);
     } else if (timeHeader) {
         // 时间标识的高度（包括上下间距）
         return QSize(option.rect.width(), TIME_HEADER_HEIGHT + 12);  // 12是上下各6像素的间距
     } else if (message) {
+        if (message->getType() == MessageType::GroupMemberJoined) {
+            return QSize(option.rect.width(), GROUP_EVENT_HEIGHT);
+        }
         if (message->getType() == MessageType::Recall) {
             return QSize(option.rect.width(), 32);
         }
@@ -967,6 +1042,26 @@ QRect ChatItemDelegate::calculateRecallReeditRect(const QRect& contentRect,
                  fullRect.top(),
                  fm.horizontalAdvance(QStringLiteral("重新编辑")),
                  fullRect.height());
+}
+
+QRect ChatItemDelegate::calculateGroupMemberJoinedContentRect(
+        const QRect& contentRect,
+        const GroupMemberJoinedMessage* message) const
+{
+    if (!message) {
+        return {};
+    }
+
+    const QFontMetrics fm(recallFont());
+    const QString suffix = QStringLiteral("加入了群聊");
+    const int maxWidth = qMax(0, contentRect.width() - HORIZONTAL_EDGE_MARGIN * 2);
+    const int fullTextWidth = fm.horizontalAdvance(message->getMemberName()) +
+            fm.horizontalAdvance(suffix);
+    const int width = qMin(fullTextWidth, maxWidth);
+    return QRect(contentRect.left() + (contentRect.width() - width) / 2,
+                 contentRect.top(),
+                 width,
+                 contentRect.height());
 }
 
 QFont ChatItemDelegate::messageFont() const
@@ -1235,6 +1330,84 @@ void ChatItemDelegate::drawNewMessageDivider(QPainter* painter, const QRect& rec
 
     painter->setPen(accent);
     painter->drawText(rect, Qt::AlignCenter, text);
+}
+
+void ChatItemDelegate::drawLoadingPlaceholder(QPainter* painter,
+                                             const QRect& rect,
+                                             const LoadingPlaceholder* placeholder) const
+{
+    const bool dark = ThemeManager::instance().isDark();
+    const bool isFromMe = placeholder && placeholder->isFromMe;
+    QColor base = ThemeManager::instance().color(ThemeColor::LoadingPlaceholderBase);
+    QColor highlight = ThemeManager::instance().color(ThemeColor::LoadingPlaceholderHighlight);
+    base.setAlpha(235);
+    highlight.setAlpha(255);
+
+    constexpr qint64 kShimmerPeriodMs = 1200;
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    const qint64 elapsed = placeholder && placeholder->shimmerStartedAtMs > 0
+            ? qMax<qint64>(0, now - placeholder->shimmerStartedAtMs)
+            : now;
+    const qreal progress = static_cast<qreal>(elapsed % kShimmerPeriodMs) / kShimmerPeriodMs;
+    const qreal center = -0.35 + progress * 1.7;
+    auto shimmerBrush = [&](const QRectF& targetRect) {
+        QLinearGradient gradient(targetRect.topLeft(), targetRect.topRight());
+        gradient.setColorAt(0.0, base);
+        gradient.setColorAt(qBound(0.0, center - 0.16, 1.0), base);
+        gradient.setColorAt(qBound(0.0, center, 1.0), highlight);
+        gradient.setColorAt(qBound(0.0, center + 0.16, 1.0), base);
+        gradient.setColorAt(1.0, base);
+        return QBrush(gradient);
+    };
+
+    const QRect avatarRect = calculateAvatarRect(rect, isFromMe);
+    const QFontMetrics fm(messageFont());
+    const int bubbleHeight = fm.height() + 2 * BUBBLE_PADDING;
+    const int maxBubbleWidth = calculateMaxBubbleWidth(rect);
+    const int preferredBubbleWidth = isFromMe ? rect.width() * 9 / 32 : rect.width() / 2;
+    const int bubbleWidth = qMin(maxBubbleWidth, qMax(120, preferredBubbleWidth));
+    const int bubbleX = isFromMe
+            ? rect.right() - HORIZONTAL_EDGE_MARGIN - AVATAR_SIZE - BUBBLE_MARGIN - bubbleWidth + 1
+            : avatarRect.right() + BUBBLE_MARGIN + 1;
+    const QRect bubbleRect(bubbleX,
+                           rect.top() + BUBBLE_MARGIN,
+                           bubbleWidth,
+                           bubbleHeight);
+
+    painter->save();
+    painter->setPen(Qt::NoPen);
+
+    painter->setBrush(shimmerBrush(avatarRect));
+    painter->drawEllipse(avatarRect);
+
+    QPainterPath bubblePath;
+    bubblePath.addRoundedRect(bubbleRect, BUBBLE_RADIUS, BUBBLE_RADIUS);
+    painter->setBrush(shimmerBrush(bubbleRect));
+    painter->drawPath(bubblePath);
+
+    const int lineHeight = 9;
+    const QRect line(bubbleRect.left() + BUBBLE_PADDING,
+                     bubbleRect.top() + (bubbleRect.height() - lineHeight) / 2,
+                     qMax(48, bubbleRect.width() * 3 / 5),
+                     lineHeight);
+    QColor lineBase = ThemeManager::instance().color(ThemeColor::LoadingPlaceholderLineBase);
+    lineBase.setAlpha(dark ? 210 : 220);
+    QColor lineHighlight = ThemeManager::instance().color(ThemeColor::LoadingPlaceholderLineHighlight);
+    lineHighlight.setAlpha(245);
+
+    auto lineBrush = [&](const QRectF& targetRect) {
+        QLinearGradient gradient(targetRect.topLeft(), targetRect.topRight());
+        gradient.setColorAt(0.0, lineBase);
+        gradient.setColorAt(qBound(0.0, center - 0.14, 1.0), lineBase);
+        gradient.setColorAt(qBound(0.0, center, 1.0), lineHighlight);
+        gradient.setColorAt(qBound(0.0, center + 0.14, 1.0), lineBase);
+        gradient.setColorAt(1.0, lineBase);
+        return QBrush(gradient);
+    };
+
+    painter->setBrush(lineBrush(line));
+    painter->drawRoundedRect(line, 4, 4);
+    painter->restore();
 }
 
 QRect ChatItemDelegate::calculateTimeHeaderRect(const QRect& contentRect,

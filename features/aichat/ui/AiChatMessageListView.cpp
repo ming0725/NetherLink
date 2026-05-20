@@ -163,6 +163,17 @@ void AiChatMessageListView::scrollToBottomIfLocked(bool accelerateFarDistance)
     scheduleScrollToBottom(false, accelerateFarDistance);
 }
 
+void AiChatMessageListView::jumpToBottom()
+{
+    m_scrollToBottomPending = false;
+    m_forcePendingScrollToBottom = false;
+    m_pendingScrollAccelerateFarDistance = false;
+    m_scrollAnimation->stop();
+    doItemsLayout();
+    updateGeometries();
+    setScrollBarToBottom();
+}
+
 void AiChatMessageListView::scheduleScrollToBottom(bool force, bool accelerateFarDistance)
 {
     if (force) {

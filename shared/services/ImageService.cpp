@@ -162,7 +162,13 @@ QPixmap ImageService::pixmap(const QString& source) const
 
 QSize ImageService::sourceSize(const QString& source) const
 {
-    return originalImage(source).size();
+    if (source.isEmpty()) {
+        return {};
+    }
+
+    QImageReader reader(source);
+    reader.setAutoTransform(true);
+    return reader.size();
 }
 
 QPixmap ImageService::transformed(const QString& key,

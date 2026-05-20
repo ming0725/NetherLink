@@ -1657,7 +1657,7 @@ void AiChatMessageDelegate::paintUserMessageChrome(QPainter* painter,
     painter->save();
     painter->setOpacity(copyOpacity);
     drawActionIcon(painter,
-                   QStringLiteral(":/resources/icon/copy.png"),
+                   QStringLiteral(":/resources/icon/copy.svg"),
                    metrics.copyButtonRect,
                    QSize(kActionIconSize, kActionIconSize),
                    ThemeManager::instance().isDark(),
@@ -1772,10 +1772,10 @@ void AiChatMessageDelegate::paintAiReplyActions(QPainter* painter,
         bool upsideDown = false;
         switch (action.first) {
         case MessageAction::Copy:
-            iconSource = QStringLiteral(":/resources/icon/copy.png");
+            iconSource = QStringLiteral(":/resources/icon/copy.svg");
             break;
         case MessageAction::Refresh:
-            iconSource = QStringLiteral(":/resources/icon/refresh.png");
+            iconSource = QStringLiteral(":/resources/icon/refresh.svg");
             break;
         case MessageAction::Like:
             iconSource = feedback == MessageFeedback::Liked

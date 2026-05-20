@@ -1,7 +1,8 @@
 #include "SmoothScrollBar.h"
 #include "shared/theme/ThemeManager.h"
-#include <QPainter>
+#include <QCursor>
 #include <QMouseEvent>
+#include <QPainter>
 
 SmoothScrollBar::SmoothScrollBar(QWidget *parent)
     : QWidget(parent)
@@ -9,6 +10,7 @@ SmoothScrollBar::SmoothScrollBar(QWidget *parent)
     , m_maximum(0)
     , m_pageStep(0)
     , m_value(0)
+    , m_orientation(Qt::Vertical)
     , m_opacity(0.0)
     , m_isDragging(false)
 {
@@ -29,8 +31,28 @@ SmoothScrollBar::SmoothScrollBar(QWidget *parent)
     connect(m_fadeOutTimer, &QTimer::timeout, this, &SmoothScrollBar::startFadeOut);
 }
 
+void SmoothScrollBar::setOrientation(Qt::Orientation orientation)
+{
+    if (m_orientation == orientation) {
+        return;
+    }
+
+    m_orientation = orientation;
+    if (m_orientation == Qt::Horizontal) {
+        setMinimumWidth(0);
+        setMaximumWidth(QWIDGETSIZE_MAX);
+        setFixedHeight(8);
+    } else {
+        setMinimumHeight(0);
+        setMaximumHeight(QWIDGETSIZE_MAX);
+        setFixedWidth(8);
+    }
+    update();
+}
+
 void SmoothScrollBar::setRange(int min, int max)
 {
+    const bool changed = (m_minimum != min || m_maximum != max);
     m_minimum = min;
     m_maximum = max;
     if (!needsDisplay()) {
@@ -38,12 +60,19 @@ void SmoothScrollBar::setRange(int min, int max)
         m_opacity = 0.0;
         hide();
     }
+    if (changed && m_isDragging && !m_updatingFromDrag) {
+        rebaseDragAnchor();
+    }
     update();
 }
 
 void SmoothScrollBar::setPageStep(int step)
 {
+    const bool changed = (m_pageStep != step);
     m_pageStep = step;
+    if (changed && m_isDragging && !m_updatingFromDrag) {
+        rebaseDragAnchor();
+    }
     update();
 }
 
@@ -52,6 +81,9 @@ void SmoothScrollBar::setValue(int value)
     value = qBound(m_minimum, value, m_maximum);
     if (m_value != value) {
         m_value = value;
+        if (m_isDragging && !m_updatingFromDrag) {
+            rebaseDragAnchor();
+        }
         emit valueChanged(value);
         update();
     }
@@ -85,12 +117,17 @@ QRect SmoothScrollBar::getHandleRect() const
 {
     if (!needsDisplay()) return QRect();
 
-    qreal visibleRatio = qreal(m_pageStep) / (m_maximum - m_minimum + m_pageStep);
-    int handleHeight = qMax(static_cast<int>(height() * visibleRatio), 30);
-    
-    qreal valueRatio = qreal(m_value - m_minimum) / (m_maximum - m_minimum);
-    int handleY = valueRatio * (height() - handleHeight);
-    
+    const qreal visibleRatio = qreal(m_pageStep) / (m_maximum - m_minimum + m_pageStep);
+    const qreal valueRatio = qreal(m_value - m_minimum) / (m_maximum - m_minimum);
+
+    if (m_orientation == Qt::Horizontal) {
+        const int handleWidth = qMax(static_cast<int>(width() * visibleRatio), 30);
+        const int handleX = valueRatio * (width() - handleWidth);
+        return QRect(handleX, 0, handleWidth, height());
+    }
+
+    const int handleHeight = qMax(static_cast<int>(height() * visibleRatio), 30);
+    const int handleY = valueRatio * (height() - handleHeight);
     return QRect(0, handleY, width(), handleHeight);
 }
 
@@ -140,10 +177,21 @@ void SmoothScrollBar::updateValue(const QPoint &pos)
     if (!needsDisplay()) return;
 
     QRect handleRect = getHandleRect();
-    int handleHeight = handleRect.height();
-    qreal valueRatio = qreal(pos.y() - m_dragStartPosition.y()) / (height() - handleHeight);
-    int valueDelta = valueRatio * (m_maximum - m_minimum);
+    const int trackLength = m_orientation == Qt::Horizontal
+            ? width() - handleRect.width()
+            : height() - handleRect.height();
+    if (trackLength <= 0) {
+        return;
+    }
+
+    const int pointerDelta = m_orientation == Qt::Horizontal
+            ? pos.x() - m_dragStartPosition.x()
+            : pos.y() - m_dragStartPosition.y();
+    const qreal valueRatio = qreal(pointerDelta) / trackLength;
+    const int valueDelta = valueRatio * (m_maximum - m_minimum);
+    m_updatingFromDrag = true;
     setValue(m_dragStartValue + valueDelta);
+    m_updatingFromDrag = false;
 }
 
 void SmoothScrollBar::showScrollBar()
@@ -176,4 +224,10 @@ void SmoothScrollBar::updateVisibility()
     const bool visible = needsDisplay() && (m_opacity > 0.0 || m_isDragging);
     setAttribute(Qt::WA_TransparentForMouseEvents, !visible);
     setVisible(visible);
+}
+
+void SmoothScrollBar::rebaseDragAnchor()
+{
+    m_dragStartPosition = mapFromGlobal(QCursor::pos());
+    m_dragStartValue = m_value;
 }

@@ -39,6 +39,9 @@ private slots:
     void onAiReplyMessageRemoved(const QString& conversationId, const QString& messageId);
     void onAiReplyFinished(const QString& conversationId, const QString& messageId);
     void onAiReplyCanceled(const QString& conversationId, const QString& messageId);
+    void onConversationMessagesLoaded(int requestId,
+                                      const QString& conversationId,
+                                      const QVector<AiChatMessage>& messages);
 
 private:
     void updateLayout();
@@ -61,6 +64,8 @@ private:
     NewMessageNotifier* m_newMessageNotifier = nullptr;
     PaintedLabel* m_emptyLabel = nullptr;
     AiChatListEntry m_currentConversation;
+    int m_pendingMessagesRequestId = 0;
+    QString m_pendingMessagesConversationId;
     int m_unreadAiReplyCount = 0;
     bool m_newMessageNotifierRevealedByDownScroll = false;
     bool m_streamingNotifierHeld = false;

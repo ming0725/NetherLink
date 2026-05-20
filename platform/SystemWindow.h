@@ -7,6 +7,7 @@
 constexpr int SYSTEM_WINDOW_RESIZE_BORDER = 8;
 
 #ifdef Q_OS_WIN
+#include <QPointer>
 #pragma comment(lib, "dwmapi.lib")
 #include <Windows.h>
 #include <dwmapi.h>
@@ -64,6 +65,10 @@ public:
     ~SystemWindow() override;
 
     void setDragTitleBar(QWidget* titleBar);
+#ifdef Q_OS_WIN
+    void setSystemMaximizeButton(QWidget* button);
+    void toggleSystemMaximized();
+#endif
     void setBackdropColor(const QColor& color);
     void setCompactTrafficLightsEnabled(bool enabled);
 
@@ -84,6 +89,8 @@ private:
 
 #ifdef Q_OS_WIN
     int hitTestResize(const QPoint& globalPos) const;
+    bool isSystemMaximizeButtonHit(const QPoint& globalPos) const;
+    void setSystemMaximizeButtonState(bool hovered, bool pressed);
     bool isDragRegion(const QPoint& globalPos) const;
     void applyWindowsBackdrop();
 #else
@@ -99,9 +106,14 @@ private:
     bool m_platformChromeReady = false;
     bool m_isMaximized = false;
     bool m_compactTrafficLightsEnabled = false;
+#ifdef Q_OS_WIN
+    QPointer<QWidget> m_systemMaximizeButton;
+#endif
 
 #ifdef Q_OS_WIN
     PFN_SetWindowCompositionAttribute m_setWindowCompositionAttribute = nullptr;
+    bool m_systemMaximizeButtonHovered = false;
+    bool m_systemMaximizeButtonPressed = false;
 #elif !defined(Q_OS_MACOS)
     bool m_appEventFilterInstalled = false;
 #endif

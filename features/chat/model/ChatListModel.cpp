@@ -5,6 +5,7 @@
 Q_DECLARE_METATYPE(TimeHeader*)
 Q_DECLARE_METATYPE(ChatMessage*)
 Q_DECLARE_METATYPE(NewMessageDivider*)
+Q_DECLARE_METATYPE(LoadingPlaceholder*)
 
 ChatListModel::ChatListModel(QObject* parent)
     : QAbstractListModel(parent)
@@ -12,6 +13,7 @@ ChatListModel::ChatListModel(QObject* parent)
     qRegisterMetaType<TimeHeader*>();
     qRegisterMetaType<ChatMessage*>();
     qRegisterMetaType<NewMessageDivider*>();
+    qRegisterMetaType<LoadingPlaceholder*>();
 }
 
 int ChatListModel::rowCount(const QModelIndex& parent) const
@@ -33,6 +35,8 @@ QVariant ChatListModel::data(const QModelIndex& index, int role) const
             return QVariant::fromValue<TimeHeader*>(item.timeHeader.get());
         } else if (item.isNewMessageDivider) {
             return QVariant::fromValue<NewMessageDivider*>(item.newMessageDivider.get());
+        } else if (item.isLoadingPlaceholder) {
+            return QVariant::fromValue<LoadingPlaceholder*>(item.loadingPlaceholder.get());
         } else if (item.isBottomSpace) {
             return QVariant::fromValue<int>(item.bottomSpaceHeight);
         } else {
@@ -53,6 +57,8 @@ bool ChatListModel::setData(const QModelIndex& index, const QVariant& value, int
     if (role == Qt::UserRole + 1 &&
         !items[index.row()].isHeader &&
         !items[index.row()].isBottomSpace &&
+        !items[index.row()].isNewMessageDivider &&
+        !items[index.row()].isLoadingPlaceholder &&
         items[index.row()].message) {
         bool selected = value.toBool();
         if (selected && selectedMessageIndex != index.row()) {
@@ -103,7 +109,10 @@ bool ChatListModel::replaceMessage(int index, QSharedPointer<ChatMessage> messag
     if (!message || index < 0 || index >= static_cast<int>(items.size())) {
         return false;
     }
-    if (items[index].isBottomSpace || items[index].isHeader || items[index].isNewMessageDivider) {
+    if (items[index].isBottomSpace ||
+            items[index].isHeader ||
+            items[index].isNewMessageDivider ||
+            items[index].isLoadingPlaceholder) {
         return false;
     }
 
@@ -154,7 +163,9 @@ const ChatMessage* ChatListModel::messageAt(int index) const
     if (index >= 0 &&
         index < static_cast<int>(items.size()) &&
         !items[index].isHeader &&
-        !items[index].isBottomSpace) {
+        !items[index].isBottomSpace &&
+        !items[index].isNewMessageDivider &&
+        !items[index].isLoadingPlaceholder) {
         return items[index].message.get();
     }
     return nullptr;
@@ -165,7 +176,9 @@ QSharedPointer<ChatMessage> ChatListModel::sharedMessageAt(int index) const
     if (index >= 0 &&
         index < static_cast<int>(items.size()) &&
         !items[index].isHeader &&
-        !items[index].isBottomSpace) {
+        !items[index].isBottomSpace &&
+        !items[index].isNewMessageDivider &&
+        !items[index].isLoadingPlaceholder) {
         return items[index].message;
     }
     return {};
@@ -188,7 +201,10 @@ bool ChatListModel::removeMessage(int index)
     }
 
     // 如果要删除的是底部空白或时间标识，直接返回
-    if (items[index].isBottomSpace || items[index].isHeader || items[index].isNewMessageDivider) {
+    if (items[index].isBottomSpace ||
+            items[index].isHeader ||
+            items[index].isNewMessageDivider ||
+            items[index].isLoadingPlaceholder) {
         return false;
     }
 
@@ -288,6 +304,14 @@ bool ChatListModel::isNewMessageDivider(int index) const
     return false;
 }
 
+bool ChatListModel::isLoadingPlaceholder(int index) const
+{
+    if (index >= 0 && index < static_cast<int>(items.size())) {
+        return items[index].isLoadingPlaceholder;
+    }
+    return false;
+}
+
 QModelIndex ChatListModel::newMessageDividerIndex() const
 {
     for (int row = 0; row < items.size(); ++row) {
@@ -308,6 +332,7 @@ QModelIndex ChatListModel::indexForMessage(const ChatMessage* message) const
         if (!items.at(row).isHeader &&
                 !items.at(row).isBottomSpace &&
                 !items.at(row).isNewMessageDivider &&
+                !items.at(row).isLoadingPlaceholder &&
                 items.at(row).message.get() == message) {
             return index(row, 0);
         }
@@ -366,6 +391,78 @@ void ChatListModel::clearNewMessageDivider()
     newMessageDividerBefore = nullptr;
     rebuildItems();
     endResetModel();
+}
+
+void ChatListModel::showLoadingPlaceholderAtTop()
+{
+    if (!items.isEmpty() && items.first().isLoadingPlaceholder) {
+        return;
+    }
+
+    clearSelection();
+    beginInsertRows(QModelIndex(), 0, 0);
+    ListItem placeholderItem;
+    placeholderItem.isLoadingPlaceholder = true;
+    placeholderItem.loadingPlaceholder = QSharedPointer<LoadingPlaceholder>::create();
+    placeholderItem.loadingPlaceholder->shimmerStartedAtMs = QDateTime::currentMSecsSinceEpoch();
+    items.insert(0, std::move(placeholderItem));
+    endInsertRows();
+}
+
+void ChatListModel::showInitialLoadingPlaceholders(int targetHeight)
+{
+    constexpr int kLoadingPlaceholderEstimatedHeight = 66;
+    static constexpr bool kInitialLoadingPlaceholderDirections[] = {
+        false,
+        true,
+        false,
+        false,
+        true,
+    };
+    constexpr int patternCount = static_cast<int>(
+            sizeof(kInitialLoadingPlaceholderDirections) /
+            sizeof(kInitialLoadingPlaceholderDirections[0]));
+    const int placeholderCount = qMax(
+            1,
+            (qMax(0, targetHeight) + kLoadingPlaceholderEstimatedHeight - 1)
+                    / kLoadingPlaceholderEstimatedHeight);
+
+    beginResetModel();
+    const qint64 shimmerStartedAtMs = QDateTime::currentMSecsSinceEpoch();
+    items.clear();
+    messages.clear();
+    selectedMessageIndex = -1;
+    newMessageDividerBefore = nullptr;
+    items.reserve(placeholderCount + 1);
+    for (int i = 0; i < placeholderCount; ++i) {
+        ListItem placeholderItem;
+        placeholderItem.isLoadingPlaceholder = true;
+        placeholderItem.loadingPlaceholder = QSharedPointer<LoadingPlaceholder>::create();
+        placeholderItem.loadingPlaceholder->isFromMe =
+                kInitialLoadingPlaceholderDirections[i % patternCount];
+        placeholderItem.loadingPlaceholder->shimmerStartedAtMs = shimmerStartedAtMs;
+        items.push_back(std::move(placeholderItem));
+    }
+
+    ListItem bottomSpace;
+    bottomSpace.isBottomSpace = true;
+    bottomSpace.bottomSpaceHeight = bottomSpaceHeight;
+    items.push_back(std::move(bottomSpace));
+    endResetModel();
+}
+
+void ChatListModel::removeLoadingPlaceholder()
+{
+    for (int row = 0; row < items.size(); ++row) {
+        if (!items.at(row).isLoadingPlaceholder) {
+            continue;
+        }
+
+        beginRemoveRows(QModelIndex(), row, row);
+        items.removeAt(row);
+        endRemoveRows();
+        return;
+    }
 }
 
 void ChatListModel::clear() {
@@ -432,7 +529,8 @@ int ChatListModel::messageIndexForRow(int row) const
             row >= items.size() ||
             items.at(row).isHeader ||
             items.at(row).isBottomSpace ||
-            items.at(row).isNewMessageDivider) {
+            items.at(row).isNewMessageDivider ||
+            items.at(row).isLoadingPlaceholder) {
         return -1;
     }
 

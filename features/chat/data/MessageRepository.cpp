@@ -1,7 +1,11 @@
 #include "MessageRepository.h"
 
+#include <QMetaObject>
+#include <QRunnable>
 #include <QSet>
+#include <QThreadPool>
 #include <QTime>
+#include <QUuid>
 
 #include <algorithm>
 #include <random>
@@ -113,6 +117,10 @@ QString buildPreviewText(const QSharedPointer<ChatMessage>& message,
     }
 
     if (message->getType() == MessageType::Recall) {
+        return message->getContent();
+    }
+
+    if (message->getType() == MessageType::GroupMemberJoined) {
         return message->getContent();
     }
 
@@ -703,6 +711,25 @@ ConversationThreadData MessageRepository::requestConversationThread(const Conver
         thread.unreadCount = m_conversationStates.value(query.conversationId).unreadCount;
     }
     return thread;
+}
+
+QString MessageRepository::requestConversationThreadAsync(const ConversationThreadRequest& query)
+{
+    const QString requestId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    int unreadCountAtRequest = 0;
+    {
+        QMutexLocker locker(&m_mutex);
+        unreadCountAtRequest = m_conversationStates.value(query.conversationId).unreadCount;
+    }
+
+    QThreadPool::globalInstance()->start(QRunnable::create([this, requestId, query, unreadCountAtRequest]() {
+        ConversationThreadData thread = requestConversationThread(query);
+        thread.unreadCount = unreadCountAtRequest;
+        QMetaObject::invokeMethod(this, [this, requestId, thread]() {
+            emit conversationThreadReady(requestId, thread);
+        }, Qt::QueuedConnection);
+    }));
+    return requestId;
 }
 
 void MessageRepository::touchConversation(const QString& conversationId,

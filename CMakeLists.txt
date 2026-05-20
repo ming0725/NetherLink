@@ -13,8 +13,8 @@ set(CMAKE_AUTORCC ON)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Core Widgets OpenGL Concurrent Xml)
-find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Core Widgets OpenGL Concurrent Xml)
+find_package(QT NAMES Qt6 Qt5 REQUIRED COMPONENTS Core Widgets OpenGL Concurrent Svg Xml)
+find_package(Qt${QT_VERSION_MAJOR} REQUIRED COMPONENTS Core Widgets OpenGL Concurrent Svg Xml)
 find_package(Threads REQUIRED)
 
 set(JKQtPlotter_BUILD_LIB_JKQTMATHTEXT ON CACHE BOOL "" FORCE)
@@ -54,6 +54,7 @@ endif()
 set(PROJECT_SOURCES
     main.cpp
     resources.qrc
+    resources/audio/portal2.wav
     third_party/miniaudio/miniaudio.cpp
     ${APP_SOURCES}
     ${FEATURE_SOURCES}
@@ -98,6 +99,7 @@ target_link_libraries(NetherLink-static PRIVATE
     Qt${QT_VERSION_MAJOR}::Widgets
     Qt${QT_VERSION_MAJOR}::OpenGL
     Qt${QT_VERSION_MAJOR}::Concurrent
+    Qt${QT_VERSION_MAJOR}::Svg
     Qt${QT_VERSION_MAJOR}::Xml
     JKQTPlotter${QT_VERSION_MAJOR}::JKQTMathText${QT_VERSION_MAJOR}
     Threads::Threads

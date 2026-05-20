@@ -28,7 +28,9 @@ public:
         PostTitleTextRole,
         PostBodyTextRole,
         PostBodyDateTextRole,
-        PostBodyRevisionRole
+        PostBodyRevisionRole,
+        IsLoadingPlaceholderRole,
+        LoadingStartedAtRole
     };
 
     explicit PostDetailListModel(QObject* parent = nullptr);
@@ -39,6 +41,8 @@ public:
 
     void resetForPost(const QString& postId);
     void setPostBody(QString title, QString text, QString dateText);
+    void showLoadingPreview(QString postId, QString title, int commentPlaceholderCount);
+    bool hasLoadingPreview() const;
     void setComments(QVector<PostComment> comments, bool hasMore);
     void appendComments(const QVector<PostComment>& comments, bool hasMore);
     bool hasMoreComments() const;
@@ -92,4 +96,7 @@ private:
     QString m_postBodyDateText;
     int m_postBodyRevision = 0;
     bool m_hasMoreComments = false;
+    bool m_loadingPreview = false;
+    int m_loadingCommentPlaceholderCount = 0;
+    qint64 m_loadingPreviewStartedAtMs = 0;
 };

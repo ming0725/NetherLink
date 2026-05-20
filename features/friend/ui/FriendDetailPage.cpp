@@ -9,6 +9,7 @@
 #include <QMap>
 #include <QMenu>
 #include <QMessageBox>
+#include <QMouseEvent>
 #include <QPainter>
 #include <QPaintEvent>
 #include <QResizeEvent>
@@ -21,6 +22,7 @@
 
 #include "features/friend/ui/FriendSessionController.h"
 #include "shared/services/ImageService.h"
+#include "shared/ui/ImageViewer.h"
 #include "shared/ui/InlineEditableText.h"
 #include "shared/ui/PaintedLabel.h"
 #include "shared/ui/StatefulPushButton.h"
@@ -319,9 +321,43 @@ FriendDetailPage::~FriendDetailPage()
     qApp->removeEventFilter(this);
 }
 
+QRect FriendDetailPage::avatarRect() const
+{
+    if (!m_contentWidget || !m_nameLabel) {
+        return {};
+    }
+
+    const QPoint nameTopLeft = m_nameLabel->mapTo(const_cast<FriendDetailPage*>(this), QPoint(0, 0));
+    const int avatarX = nameTopLeft.x() - kHeaderSpacing - kAvatarSize;
+    const int avatarY = nameTopLeft.y() - kIdentityTopInset;
+    return QRect(avatarX, avatarY, kAvatarSize, kAvatarSize);
+}
+
 void FriendDetailPage::setController(FriendSessionController* controller)
 {
+    if (m_controller) {
+        disconnect(m_controller, nullptr, this, nullptr);
+    }
+
     m_controller = controller;
+    if (!m_controller) {
+        return;
+    }
+
+    connect(m_controller, &FriendSessionController::userAvatarImageReady,
+            this, [this](const QString& requestId, const QString& userId, const QImage& image) {
+        if (requestId != m_avatarImageRequestId || !m_avatarViewer || userId != m_user.id) {
+            return;
+        }
+        m_avatarImageRequestId.clear();
+        m_avatarViewer->replaceImage(image, m_avatarSource);
+    });
+    connect(m_controller, &FriendSessionController::userAvatarImageFailed,
+            this, [this](const QString& requestId, const QString&) {
+        if (requestId == m_avatarImageRequestId) {
+            m_avatarImageRequestId.clear();
+        }
+    });
 }
 
 void FriendDetailPage::setUserId(const QString& userId)
@@ -338,6 +374,7 @@ void FriendDetailPage::clear()
     m_user = {};
     m_hasUser = false;
     m_avatarSource.clear();
+    m_avatarImageRequestId.clear();
     m_nameLabel->clear();
     m_idLabel->clear();
     m_regionLabel->clear();
@@ -362,10 +399,7 @@ void FriendDetailPage::paintEvent(QPaintEvent* event)
         return;
     }
 
-    const QPoint nameTopLeft = m_nameLabel->mapTo(this, QPoint(0, 0));
-    const int avatarX = nameTopLeft.x() - kHeaderSpacing - kAvatarSize;
-    const int avatarY = nameTopLeft.y() - kIdentityTopInset;
-    const QRect avatarRect(avatarX, avatarY, kAvatarSize, kAvatarSize);
+    const QRect avatarRect = this->avatarRect();
 
     if (avatarRect.intersects(event->rect()) && !m_avatarSource.isEmpty()) {
         const QPixmap avatar = ImageService::instance().circularAvatar(m_avatarSource,
@@ -374,11 +408,22 @@ void FriendDetailPage::paintEvent(QPaintEvent* event)
         painter.drawPixmap(avatarRect, avatar);
     }
 
-    const int separatorY = avatarY + kAvatarSize + kSeparatorTopSpacing;
+    const int separatorY = avatarRect.top() + kAvatarSize + kSeparatorTopSpacing;
     const QRect separatorRect(m_contentWidget->x(), separatorY, m_contentWidget->width(), 1);
     if (separatorRect.intersects(event->rect())) {
         painter.fillRect(separatorRect, ThemeManager::instance().color(ThemeColor::Divider));
     }
+}
+
+void FriendDetailPage::mousePressEvent(QMouseEvent* event)
+{
+    if (event->button() == Qt::LeftButton && avatarRect().contains(event->pos())) {
+        openAvatarViewer();
+        event->accept();
+        return;
+    }
+
+    QWidget::mousePressEvent(event);
 }
 
 bool FriendDetailPage::eventFilter(QObject* watched, QEvent* event)
@@ -414,6 +459,30 @@ void FriendDetailPage::setUser(const User& user)
     updateGroupButtonText();
     updateSignatureText();
     QTimer::singleShot(0, this, &FriendDetailPage::updateSignatureText);
+}
+
+void FriendDetailPage::openAvatarViewer()
+{
+    if (!m_hasUser || m_avatarSource.isEmpty()) {
+        return;
+    }
+
+    QPixmap preview = ImageService::instance().circularAvatar(m_avatarSource, kAvatarSize, 1.0);
+    if (preview.isNull()) {
+        preview = ImageService::instance().pixmap(m_avatarSource);
+    }
+    if (preview.isNull()) {
+        return;
+    }
+
+    auto* viewer = new ImageViewer(preview, m_avatarSource, window());
+    m_avatarViewer = viewer;
+    if (m_controller) {
+        m_avatarImageRequestId = m_controller->requestUserAvatarImage(m_user.id);
+    }
+    viewer->show();
+    viewer->raise();
+    viewer->activateWindow();
 }
 
 void FriendDetailPage::updateAvatar()

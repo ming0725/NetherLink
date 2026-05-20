@@ -15,6 +15,8 @@ public:
 
     QVector<AiChatListEntry> loadConversations(const AiChatListRequest& query = {}) const;
     QVector<AiChatMessage> loadMessages(const QString& conversationId) const;
+    int loadConversationsAsync(const AiChatListRequest& query = {});
+    int loadMessagesAsync(const QString& conversationId);
     QString createConversation(const QString& title);
     AiChatMessage submitUserMessage(const QString& conversationId, const QString& text);
     bool regenerateAiReply(const QString& conversationId, const QString& messageId);
@@ -30,6 +32,12 @@ public slots:
 
 signals:
     void conversationsChanged();
+    void conversationsLoaded(int requestId,
+                             const AiChatListRequest& query,
+                             const QVector<AiChatListEntry>& entries);
+    void messagesLoaded(int requestId,
+                        const QString& conversationId,
+                        const QVector<AiChatMessage>& messages);
     void aiReplyStarted(const QString& conversationId);
     void aiReplyMessageAdded(const AiChatMessage& message);
     void aiReplyMessageUpdated(const QString& conversationId,
@@ -48,6 +56,7 @@ private:
     void resetActiveAiReplyStream();
 
     AiChatStreamClient* m_streamClient = nullptr;
+    int m_nextAsyncRequestId = 1;
     QString m_streamConversationId;
     QString m_streamMessageId;
     QString m_streamVisibleText;

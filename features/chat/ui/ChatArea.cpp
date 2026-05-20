@@ -50,6 +50,9 @@ static constexpr int kInfoPanelMaxWidth = 340;
 static constexpr int kInfoPanelAnimationDuration = 220;
 static constexpr int kChatInfoRightMargin = 18;
 static constexpr int kHistoryUnreadScrollDelayMs = 16;
+static constexpr int kHistoryUnreadNotifierLoadDelayMs = 120;
+
+static constexpr int kMessageLoadingSkeletonFrameMs = 40;
 static constexpr int kNewMessageNotifierMinBottomDistance = 220;
 static constexpr int kNewMessageNotifierViewportDistanceDivisor = 2;
 
@@ -286,6 +289,11 @@ ChatArea::ChatArea(QWidget *parent)
     // 创建未读提示组件
     historyUnreadNotifier = new HistoryUnreadNotifier(this);
     historyUnreadNotifier->hide();
+    historyUnreadNotifierLoadTimer = new QTimer(this);
+    historyUnreadNotifierLoadTimer->setSingleShot(true);
+    historyUnreadNotifierLoadTimer->setInterval(kHistoryUnreadNotifierLoadDelayMs);
+    messageLoadingAnimationTimer = new QTimer(this);
+    messageLoadingAnimationTimer->setInterval(kMessageLoadingSkeletonFrameMs);
 
     newMessageNotifier = new NewMessageNotifier(this);
     newMessageNotifier->hide();
@@ -386,6 +394,13 @@ ChatArea::ChatArea(QWidget *parent)
     });
     connect(historyUnreadNotifier, &HistoryUnreadNotifier::clicked,
             this, &ChatArea::scrollToFirstHistoryUnread);
+    connect(historyUnreadNotifierLoadTimer, &QTimer::timeout,
+            this, &ChatArea::showHistoryUnreadNotifier);
+    connect(messageLoadingAnimationTimer, &QTimer::timeout, this, [this]() {
+        if (chatView && chatView->viewport()) {
+            chatView->viewport()->update();
+        }
+    });
     connect(newMessageNotifier, &NewMessageNotifier::clicked,
             this, &ChatArea::onNewMessageNotifierClicked);
     connect(inputBar, &FloatingInputBar::sendImage,
@@ -411,6 +426,8 @@ ChatArea::ChatArea(QWidget *parent)
             this, [this](const ConversationMeta& meta, const User&, const Group&) {
                 onSessionChanged(meta);
             });
+    connect(&MessageRepository::instance(), &MessageRepository::lastMessageChanged,
+            this, &ChatArea::appendRepositoryMessage);
     connect(sessionController, &ChatSessionController::directPanelDataLoaded,
             this, &ChatArea::onDirectPanelDataLoaded);
     connect(sessionController, &ChatSessionController::groupPanelDataLoaded,
@@ -459,6 +476,54 @@ void ChatArea::addMessage(QSharedPointer<ChatMessage> message)
     }
 
     // 如果需要滚动到底部，使用延时确保布局更新完成
+    if (shouldFollowIncomingMessage) {
+        QTimer::singleShot(0, this, [this, isOwnMessage, message]() {
+            if (chatView->scrollToBottomIfLocked(isOwnMessage)) {
+                scheduleVisibleUnreadCheck();
+            } else if (!isOwnMessage) {
+                if (registerNewUnreadCandidate(message)) {
+                    ++m_state.newUnreadMessageCount;
+                }
+                rebuildUnreadMessageIndexes();
+                updateNewMessageNotifier();
+            }
+        });
+    }
+}
+
+void ChatArea::appendRepositoryMessage(const QString& changedConversationId,
+                                       const ChatMessagePtr& message)
+{
+    if (changedConversationId.isEmpty() ||
+            changedConversationId != conversationId() ||
+            m_state.loadingInitialMessages ||
+            !message ||
+            !chatModel ||
+            chatModel->indexForMessage(message.get()).isValid()) {
+        return;
+    }
+
+    const bool isOwnMessage = message->isFromMe();
+    const bool shouldFollowIncomingMessage = chatView->isBottomLocked();
+    chatModel->addMessage(message);
+    ++m_state.loadedMessageCount;
+    adjustBottomSpace();
+    rebuildUnreadMessageIndexes();
+
+    if (!isOwnMessage && !shouldFollowIncomingMessage) {
+        registerNewUnreadCandidate(message);
+        ++m_state.newUnreadMessageCount;
+        rebuildUnreadMessageIndexes();
+        updateNewMessageNotifier();
+    }
+
+    if (isOwnMessage) {
+        QTimer::singleShot(0, this, [this]() {
+            scrollToBottom(true);
+        });
+        return;
+    }
+
     if (shouldFollowIncomingMessage) {
         QTimer::singleShot(0, this, [this, isOwnMessage, message]() {
             if (chatView->scrollToBottomIfLocked(isOwnMessage)) {
@@ -627,6 +692,7 @@ void ChatArea::updateVisibleUnreadMessages()
             (m_state.historyUnreadMessageCount <= 0 && m_state.newUnreadMessageCount <= 0) ||
             (m_state.pendingHistoryUnreadMessages.isEmpty() &&
              m_state.pendingNewUnreadMessages.isEmpty()) ||
+            m_state.loadingInitialMessages ||
             m_state.loadingOlderMessages) {
         return;
     }
@@ -802,14 +868,49 @@ void ChatArea::updateHistoryUnreadNotifier()
     }
 
     if (m_state.historyUnreadMessageCount > 0) {
-        historyUnreadNotifier->setUnreadCount(m_state.historyUnreadMessageCount);
-        historyUnreadNotifier->show();
-        historyUnreadNotifier->raise();
-        updateHistoryUnreadNotifierPosition();
+        if (historyUnreadNotifier->isVisible()) {
+            showHistoryUnreadNotifier();
+        } else if (!historyUnreadNotifierLoadTimer ||
+                   !historyUnreadNotifierLoadTimer->isActive()) {
+            if (historyUnreadNotifierLoadTimer) {
+                historyUnreadNotifierLoadTimer->start();
+            } else {
+                showHistoryUnreadNotifier();
+            }
+        }
         return;
     }
 
-    historyUnreadNotifier->hide();
+    hideHistoryUnreadNotifier();
+}
+
+void ChatArea::showHistoryUnreadNotifier()
+{
+    if (historyUnreadNotifierLoadTimer) {
+        historyUnreadNotifierLoadTimer->stop();
+    }
+    if (!historyUnreadNotifier) {
+        return;
+    }
+    if (conversationId().isEmpty() || m_state.historyUnreadMessageCount <= 0) {
+        historyUnreadNotifier->hide();
+        return;
+    }
+
+    historyUnreadNotifier->setUnreadCount(m_state.historyUnreadMessageCount);
+    historyUnreadNotifier->show();
+    historyUnreadNotifier->raise();
+    updateHistoryUnreadNotifierPosition();
+}
+
+void ChatArea::hideHistoryUnreadNotifier()
+{
+    if (historyUnreadNotifierLoadTimer) {
+        historyUnreadNotifierLoadTimer->stop();
+    }
+    if (historyUnreadNotifier) {
+        historyUnreadNotifier->hide();
+    }
 }
 
 void ChatArea::updateHistoryUnreadNotifierPosition()
@@ -1306,7 +1407,11 @@ void ChatArea::onSessionMessagesCleared()
     m_state.pendingNewUnreadIndexes.clear();
     m_state.hasMoreBefore = false;
     m_state.loadingOlderMessages = false;
-    historyUnreadNotifier->hide();
+    m_state.loadingInitialMessages = false;
+    if (messageLoadingAnimationTimer) {
+        messageLoadingAnimationTimer->stop();
+    }
+    hideHistoryUnreadNotifier();
     newMessageNotifier->hide();
     adjustBottomSpace();
 }
@@ -1364,7 +1469,7 @@ void ChatArea::updateInputBarPosition() {
         if (conversationId().isEmpty()) {
             inputBar->hide();
             if (historyUnreadNotifier) {
-                historyUnreadNotifier->hide();
+                hideHistoryUnreadNotifier();
             }
             if (bottomGapGradientOverlay) {
                 bottomGapGradientOverlay->hide();
@@ -1757,6 +1862,9 @@ void ChatArea::clearConversation(bool closeInfoPanel)
     chatModel->clear();
     chatModel->clearSelection();
     chatView->clearTextSelection();
+    if (messageLoadingAnimationTimer) {
+        messageLoadingAnimationTimer->stop();
+    }
     m_state = {};
     nameLabel->clear();
     statusIcon->hide();
@@ -1766,7 +1874,7 @@ void ChatArea::clearConversation(bool closeInfoPanel)
     if (bottomGapGradientOverlay) {
         bottomGapGradientOverlay->hide();
     }
-    historyUnreadNotifier->hide();
+    hideHistoryUnreadNotifier();
     newMessageNotifier->hide();
     updateGroupInfoPanelState();
     updateDirectInfoPanelState(false);
@@ -1780,20 +1888,30 @@ void ChatArea::closeConversation()
 
 void ChatArea::loadOlderMessages()
 {
-    if (conversationId().isEmpty() || !m_state.hasMoreBefore || m_state.loadingOlderMessages) {
+    if (conversationId().isEmpty() ||
+            !m_state.hasMoreBefore ||
+            m_state.loadingOlderMessages ||
+            !chatModel ||
+            !chatView) {
         return;
     }
 
     m_state.loadingOlderMessages = true;
+    const QString loadingConversationId = conversationId();
     QScrollBar* scrollBar = chatView->verticalScrollBar();
     const int previousValue = scrollBar->value();
     const int previousMaximum = scrollBar->maximum();
 
     const ConversationThreadData olderPage = MessageRepository::instance().requestConversationThread({
-            conversationId(),
+            loadingConversationId,
             m_state.loadedMessageCount,
             kOlderMessagePageSize
     });
+
+    if (!chatModel || !chatView || conversationId() != loadingConversationId) {
+        m_state.loadingOlderMessages = false;
+        return;
+    }
 
     if (olderPage.messages.isEmpty()) {
         m_state.hasMoreBefore = false;
@@ -1804,11 +1922,12 @@ void ChatArea::loadOlderMessages()
     }
 
     chatModel->prependMessages(olderPage.messages);
-    const int loadedUnread = registerHistoryUnreadCandidates(olderPage.messages,
-                                                             m_state.historyUnloadedUnreadMessageCount);
-    m_state.historyUnloadedUnreadMessageCount = qMax(0,
-                                                     m_state.historyUnloadedUnreadMessageCount -
-                                                             loadedUnread);
+    const int loadedUnread = registerHistoryUnreadCandidates(
+            olderPage.messages,
+            m_state.historyUnloadedUnreadMessageCount);
+    m_state.historyUnloadedUnreadMessageCount = qMax(
+            0,
+            m_state.historyUnloadedUnreadMessageCount - loadedUnread);
     m_state.loadedMessageCount = olderPage.loadedMessageCount;
     m_state.hasMoreBefore = olderPage.hasMoreBefore;
     rebuildUnreadMessageIndexes();
@@ -1882,6 +2001,44 @@ bool ChatArea::isGroupMode() const
     return m_state.meta.isGroup;
 }
 
+void ChatArea::showConversationLoading(const ConversationMeta& meta)
+{
+    if (infoPanelOpen) {
+        hideInfoPanel(true);
+    }
+    clearConversation(false);
+
+    if (sessionController) {
+        sessionController->open(meta);
+    }
+    m_state.meta = meta;
+    m_state.loadingInitialMessages = true;
+    m_state.allowOlderMessageFetch = false;
+    applyConversationMeta();
+
+    const int targetLoadingHeight = chatView && chatView->viewport()
+            ? chatView->viewport()->height() / 2
+            : height() / 2;
+    if (chatModel) {
+        chatModel->showInitialLoadingPlaceholders(targetLoadingHeight);
+    }
+    if (messageLoadingAnimationTimer) {
+        messageLoadingAnimationTimer->start();
+    }
+
+    if (inputBar && !m_systemFloatingBarsSuppressed) {
+        inputBar->show();
+        inputBar->refreshPlatformAppearance();
+        inputBar->raise();
+    }
+    hideHistoryUnreadNotifier();
+    if (newMessageNotifier) {
+        newMessageNotifier->hide();
+    }
+    updateInputBarPosition();
+    adjustBottomSpace();
+}
+
 void ChatArea::openConversation(const ConversationThreadData& conversation)
 {
     if (infoPanelOpen) {
@@ -1898,6 +2055,7 @@ void ChatArea::openConversation(const ConversationThreadData& conversation)
     m_state.historyUnloadedUnreadMessageCount = m_state.historyUnreadMessageCount;
     m_state.newUnreadMessageCount = 0;
     m_state.newMessageNotifierRevealedByDownScroll = false;
+    m_state.loadingInitialMessages = false;
     const int loadedUnread = registerHistoryUnreadCandidates(
             conversation.messages,
             m_state.historyUnloadedUnreadMessageCount);

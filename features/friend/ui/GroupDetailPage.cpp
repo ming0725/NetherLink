@@ -9,6 +9,7 @@
 #include <QMenu>
 #include <QMap>
 #include <QMessageBox>
+#include <QMouseEvent>
 #include <QPainter>
 #include <QPaintEvent>
 #include <QResizeEvent>
@@ -20,6 +21,7 @@
 
 #include "features/friend/ui/FriendSessionController.h"
 #include "shared/services/ImageService.h"
+#include "shared/ui/ImageViewer.h"
 #include "shared/ui/InlineEditableText.h"
 #include "shared/ui/PaintedLabel.h"
 #include "shared/ui/StatefulPushButton.h"
@@ -338,9 +340,43 @@ GroupDetailPage::~GroupDetailPage()
     qApp->removeEventFilter(this);
 }
 
+QRect GroupDetailPage::avatarRect() const
+{
+    if (!m_contentWidget || !m_nameLabel) {
+        return {};
+    }
+
+    const QPoint nameTopLeft = m_nameLabel->mapTo(const_cast<GroupDetailPage*>(this), QPoint(0, 0));
+    const int avatarX = nameTopLeft.x() - kHeaderSpacing - kAvatarSize;
+    const int avatarY = nameTopLeft.y() - kIdentityTopInset;
+    return QRect(avatarX, avatarY, kAvatarSize, kAvatarSize);
+}
+
 void GroupDetailPage::setController(FriendSessionController* controller)
 {
+    if (m_controller) {
+        disconnect(m_controller, nullptr, this, nullptr);
+    }
+
     m_controller = controller;
+    if (!m_controller) {
+        return;
+    }
+
+    connect(m_controller, &FriendSessionController::groupAvatarImageReady,
+            this, [this](const QString& requestId, const QString& groupId, const QImage& image) {
+        if (requestId != m_avatarImageRequestId || !m_avatarViewer || groupId != m_group.groupId) {
+            return;
+        }
+        m_avatarImageRequestId.clear();
+        m_avatarViewer->replaceImage(image, m_avatarSource);
+    });
+    connect(m_controller, &FriendSessionController::groupAvatarImageFailed,
+            this, [this](const QString& requestId, const QString&) {
+        if (requestId == m_avatarImageRequestId) {
+            m_avatarImageRequestId.clear();
+        }
+    });
 }
 
 void GroupDetailPage::setGroupId(const QString& groupId)
@@ -357,6 +393,7 @@ void GroupDetailPage::clear()
     m_group = {};
     m_hasGroup = false;
     m_avatarSource.clear();
+    m_avatarImageRequestId.clear();
     m_nameLabel->clear();
     m_idLabel->clear();
     m_introLabel->clear();
@@ -382,10 +419,7 @@ void GroupDetailPage::paintEvent(QPaintEvent* event)
         return;
     }
 
-    const QPoint nameTopLeft = m_nameLabel->mapTo(this, QPoint(0, 0));
-    const int avatarX = nameTopLeft.x() - kHeaderSpacing - kAvatarSize;
-    const int avatarY = nameTopLeft.y() - kIdentityTopInset;
-    const QRect avatarRect(avatarX, avatarY, kAvatarSize, kAvatarSize);
+    const QRect avatarRect = this->avatarRect();
 
     if (avatarRect.intersects(event->rect()) && !m_avatarSource.isEmpty()) {
         const QPixmap avatar = ImageService::instance().circularAvatar(m_avatarSource,
@@ -394,11 +428,22 @@ void GroupDetailPage::paintEvent(QPaintEvent* event)
         painter.drawPixmap(avatarRect, avatar);
     }
 
-    const int separatorY = avatarY + kAvatarSize + kSeparatorTopSpacing;
+    const int separatorY = avatarRect.top() + kAvatarSize + kSeparatorTopSpacing;
     const QRect separatorRect(m_contentWidget->x(), separatorY, m_contentWidget->width(), 1);
     if (separatorRect.intersects(event->rect())) {
         painter.fillRect(separatorRect, ThemeManager::instance().color(ThemeColor::Divider));
     }
+}
+
+void GroupDetailPage::mousePressEvent(QMouseEvent* event)
+{
+    if (event->button() == Qt::LeftButton && avatarRect().contains(event->pos())) {
+        openAvatarViewer();
+        event->accept();
+        return;
+    }
+
+    QWidget::mousePressEvent(event);
 }
 
 bool GroupDetailPage::eventFilter(QObject* watched, QEvent* event)
@@ -435,6 +480,30 @@ void GroupDetailPage::setGroup(const Group& group)
     updateExitButtonState();
     QTimer::singleShot(0, this, &GroupDetailPage::updateIntroText);
     QTimer::singleShot(0, this, &GroupDetailPage::updateAnnouncementText);
+}
+
+void GroupDetailPage::openAvatarViewer()
+{
+    if (!m_hasGroup || m_avatarSource.isEmpty()) {
+        return;
+    }
+
+    QPixmap preview = ImageService::instance().circularAvatar(m_avatarSource, kAvatarSize, 1.0);
+    if (preview.isNull()) {
+        preview = ImageService::instance().pixmap(m_avatarSource);
+    }
+    if (preview.isNull()) {
+        return;
+    }
+
+    auto* viewer = new ImageViewer(preview, m_avatarSource, window());
+    m_avatarViewer = viewer;
+    if (m_controller) {
+        m_avatarImageRequestId = m_controller->requestGroupAvatarImage(m_group.groupId);
+    }
+    viewer->show();
+    viewer->raise();
+    viewer->activateWindow();
 }
 
 void GroupDetailPage::updateAvatar()

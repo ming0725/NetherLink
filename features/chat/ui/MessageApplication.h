@@ -43,10 +43,14 @@ private:
     };
 
     void ensureChatArea();
+    void applyLoadedConversation(int token, const ConversationThreadData& conversation);
     LeftPane*            m_leftPane;
     QSplitter*          m_splitter;
     QStackedWidget*     m_rightStack;
     DefaultPage*        m_defaultPage;
     ChatArea*           m_chatArea = nullptr;
     bool m_systemFloatingBarsSuppressed = false;
+    int m_openConversationLoadToken = 0;
+    bool m_openConversationLoadPending = false;
+    QString m_openConversationRequestId;
 };

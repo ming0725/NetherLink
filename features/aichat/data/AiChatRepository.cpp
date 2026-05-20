@@ -312,7 +312,6 @@ AiChatRepository::AiChatRepository(QObject* parent)
                 now.addDays(-offsetDays).addSecs(-offsetMinutes * 60)
         };
         m_entries.push_back(entry);
-        appendInitialMessages(entry, i);
     }
 }
 
@@ -342,6 +341,15 @@ QVector<AiChatListEntry> AiChatRepository::requestAiChatList(const AiChatListReq
 QVector<AiChatMessage> AiChatRepository::requestAiChatMessages(const QString& conversationId) const
 {
     QMutexLocker locker(&m_mutex);
+    if (!m_seededMessageConversationIds.contains(conversationId)) {
+        for (int index = 0; index < m_entries.size(); ++index) {
+            if (m_entries.at(index).conversationId == conversationId) {
+                appendInitialMessages(m_entries.at(index), index);
+                m_seededMessageConversationIds.insert(conversationId);
+                break;
+            }
+        }
+    }
     return m_messages.value(conversationId);
 }
 
@@ -365,6 +373,7 @@ QString AiChatRepository::createAiChatConversation(const QString& title, const Q
                     time
             }
     });
+    m_seededMessageConversationIds.insert(conversationId);
     return conversationId;
 }
 
@@ -500,10 +509,11 @@ bool AiChatRepository::removeAiChatConversation(const QString& conversationId)
 
     m_entries.erase(it);
     m_messages.remove(conversationId);
+    m_seededMessageConversationIds.remove(conversationId);
     return true;
 }
 
-void AiChatRepository::appendInitialMessages(const AiChatListEntry& entry, int sampleIndex)
+void AiChatRepository::appendInitialMessages(const AiChatListEntry& entry, int sampleIndex) const
 {
     const QStringList prompts = {
         QStringLiteral("帮我把这段需求拆成可执行的实现步骤。"),

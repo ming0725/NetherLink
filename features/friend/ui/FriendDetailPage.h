@@ -1,5 +1,7 @@
 #pragma once
 
+#include <QRect>
+#include <QPointer>
 #include <QWidget>
 
 #include "shared/types/User.h"
@@ -8,6 +10,8 @@ class QLabel;
 class PaintedLabel;
 class InlineEditableText;
 class FriendSessionController;
+class ImageViewer;
+class QMouseEvent;
 class StatefulPushButton;
 class StyledActionMenu;
 class QToolButton;
@@ -33,10 +37,13 @@ signals:
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
+    void mousePressEvent(QMouseEvent* event) override;
     void paintEvent(QPaintEvent* event) override;
     void resizeEvent(QResizeEvent* event) override;
 
 private:
+    QRect avatarRect() const;
+    void openAvatarViewer();
     void setUser(const User& user);
     void updateAvatar();
     void applyTheme();
@@ -52,6 +59,8 @@ private:
     User m_user;
     bool m_hasUser = false;
     FriendSessionController* m_controller = nullptr;
+    QPointer<ImageViewer> m_avatarViewer;
+    QString m_avatarImageRequestId;
 
     QString m_avatarSource;
     QWidget* m_contentWidget;

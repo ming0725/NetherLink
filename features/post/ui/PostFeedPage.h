@@ -8,6 +8,7 @@
 class PostCardDelegate;
 class PostFeedModel;
 class PostSessionController;
+class QTimer;
 
 class PostFeedPage : public PostMasonryView
 {
@@ -31,9 +32,14 @@ private slots:
 
 private:
     void scheduleLoadMore();
+    void loadMore(qint64 loadingStartedAt);
+    void showInitialLoadingPlaceholders();
+    int loadingPlaceholderCountForViewport() const;
+    void stopLoadingAnimation();
 
     PostFeedModel* m_model;
     PostCardDelegate* m_delegate;
+    QTimer* m_loadingAnimationTimer;
     PostSessionController* m_controller = nullptr;
     QMetaObject::Connection m_postUpdatedConnection;
     int m_nextOffset = 0;
@@ -41,6 +47,4 @@ private:
     bool m_initialized = false;
     bool m_loading = false;
     bool m_loadMoreScheduled = false;
-
-    static constexpr int kPageSize = 12;
 };
