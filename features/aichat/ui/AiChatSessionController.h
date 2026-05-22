@@ -15,8 +15,10 @@ public:
 
     QVector<AiChatListEntry> loadConversations(const AiChatListRequest& query = {}) const;
     QVector<AiChatMessage> loadMessages(const QString& conversationId) const;
+    AiChatContextUsage loadContextUsage(const AiChatContextUsageRequest& request) const;
     int loadConversationsAsync(const AiChatListRequest& query = {});
     int loadMessagesAsync(const QString& conversationId);
+    int loadContextUsageAsync(const AiChatContextUsageRequest& request);
     QString createConversation(const QString& title);
     AiChatMessage submitUserMessage(const QString& conversationId, const QString& text);
     bool regenerateAiReply(const QString& conversationId, const QString& messageId);
@@ -38,6 +40,9 @@ signals:
     void messagesLoaded(int requestId,
                         const QString& conversationId,
                         const QVector<AiChatMessage>& messages);
+    void contextUsageLoaded(int requestId,
+                            const AiChatContextUsageRequest& request,
+                            const AiChatContextUsage& usage);
     void aiReplyStarted(const QString& conversationId);
     void aiReplyMessageAdded(const AiChatMessage& message);
     void aiReplyMessageUpdated(const QString& conversationId,

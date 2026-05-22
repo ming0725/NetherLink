@@ -183,6 +183,17 @@ struct AiChatMessage {
     QDateTime time;
 };
 
+struct AiChatContextUsageRequest {
+    QString conversationId;
+};
+
+struct AiChatContextUsage {
+    QString conversationId;
+    int usedTokens = 0;
+    int maxTokens = 0;
+    bool available = false;
+};
+
 struct PostSummary {
     QString postId;
     QString title;

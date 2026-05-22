@@ -21,7 +21,11 @@ public:
 
 public slots:
     void openConversation(const AiChatListEntry& entry);
+    void showStartPage();
     void closeConversation();
+
+signals:
+    void conversationCreatedFromStartPage(const QString& conversationId);
 
 protected:
     void paintEvent(QPaintEvent* event) override;
@@ -42,6 +46,9 @@ private slots:
     void onConversationMessagesLoaded(int requestId,
                                       const QString& conversationId,
                                       const QVector<AiChatMessage>& messages);
+    void onContextUsageLoaded(int requestId,
+                              const AiChatContextUsageRequest& request,
+                              const AiChatContextUsage& usage);
 
 private:
     void updateLayout();
@@ -49,8 +56,12 @@ private:
     void updateHeader();
     void updateNewMessageNotifier();
     void updateNewMessageNotifierPosition();
+    void requestContextUsage();
+    void saveStartPageDraft();
+    QString titleForPrompt(const QString& text) const;
     bool shouldShowNewMessageNotifier() const;
     bool isMessageViewAtBottom() const;
+    bool isStartPage() const;
     void cancelActiveAiReplyStream();
     bool hasActiveAiReplyStream() const;
 
@@ -66,7 +77,10 @@ private:
     AiChatListEntry m_currentConversation;
     int m_pendingMessagesRequestId = 0;
     QString m_pendingMessagesConversationId;
+    int m_pendingContextUsageRequestId = 0;
+    QString m_pendingContextUsageConversationId;
     int m_unreadAiReplyCount = 0;
+    QString m_startPageDraft;
     bool m_newMessageNotifierRevealedByDownScroll = false;
     bool m_streamingNotifierHeld = false;
 
@@ -75,9 +89,12 @@ private:
     static constexpr int kHeaderTitleLeft = 20;
     static constexpr int kHeaderTitleRight = 18;
     static constexpr int kHeaderTitleBottomMargin = 10;
-    static constexpr int kInputBarHeight = 195;
-    static constexpr int kInputBarSideMargin = 20;
+    static constexpr int kInputBarHeight = 104;
+    static constexpr int kInputBarSideMargin = 24;
     static constexpr int kInputBarBottomMargin = 18;
+    static constexpr int kStartPageTitleHeight = 48;
+    static constexpr int kStartPageTitleInputGap = 28;
+    static constexpr int kStartPageMaxInputWidth = 880;
     static constexpr int kListBottomPadding = 10;
     static constexpr int kNewMessageNotifierInputGap = 10;
     static constexpr int kNewMessageNotifierMinBottomDistance = 220;

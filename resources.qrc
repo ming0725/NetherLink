@@ -2,6 +2,7 @@
     <qresource prefix="/">
         <file>resources/icon/hovered_close.png</file>
         <file>resources/icon/aichat.png</file>
+        <file>resources/icon/arrow.png</file>
         <file>resources/icon/blazer.png</file>
         <file>resources/icon/book_and_pen.png</file>
         <file>resources/icon/bookmark.png</file>
@@ -57,6 +58,7 @@
         <file>resources/icon/oak_planks.png</file>
         <file>resources/icon/oak_planks_palette_tile.png</file>
         <file>resources/icon/painting.png</file>
+        <file>resources/icon/power.png</file>
         <file>resources/icon/redstone_lamp.png</file>
         <file>resources/icon/redstone_lamp_on.png</file>
         <file>resources/icon/refresh.svg</file>

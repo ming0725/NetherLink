@@ -15,6 +15,8 @@ CustomTooltip::CustomTooltip(QWidget *parent)
     layout->setContentsMargins(PADDING, PADDING, PADDING, PADDING);
 
     m_label = new QLabel(this);
+    m_label->setWordWrap(true);
+    m_label->setMaximumWidth(320);
     QFont labelFont = m_label->font();
     labelFont.setPixelSize(12);
     m_label->setFont(labelFont);
@@ -28,6 +30,17 @@ void CustomTooltip::setText(const QString &text)
 {
     m_label->setText(text);
     adjustSize();
+}
+
+void CustomTooltip::setBackgroundOpacity(qreal opacity)
+{
+    const qreal boundedOpacity = qBound(0.0, opacity, 1.0);
+    if (qFuzzyCompare(m_backgroundOpacity, boundedOpacity)) {
+        return;
+    }
+
+    m_backgroundOpacity = boundedOpacity;
+    update();
 }
 
 void CustomTooltip::showTooltip(const QPoint &pos)
@@ -46,7 +59,10 @@ void CustomTooltip::paintEvent(QPaintEvent *event)
     QPainterPath path;
     path.addRoundedRect(rect(), CORNER_RADIUS, CORNER_RADIUS);
 
-    // 半透明白色背景
-    painter.fillPath(path, ThemeManager::instance().color(ThemeColor::TooltipBackground));
+    QColor background = ThemeManager::instance().color(ThemeColor::TooltipBackground);
+    if (m_backgroundOpacity >= 0.0) {
+        background.setAlphaF(m_backgroundOpacity);
+    }
+    painter.fillPath(path, background);
     
 } 

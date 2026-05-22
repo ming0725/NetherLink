@@ -61,6 +61,30 @@ void OverlayScrollListView::setScrollBarInsets(int topBottomInset, int rightInse
     updateOverlayScrollBarGeometry();
 }
 
+#ifdef Q_OS_WIN
+void OverlayScrollListView::stopAnimatedWheelScroll()
+{
+    QScrollBar* scrollBar = verticalScrollBar();
+    const int currentValue = scrollBar ? scrollBar->value() : 0;
+
+    m_scrollAnimation->stop();
+    m_animatedScrollValue = currentValue;
+    updateOverlayScrollBar();
+}
+
+void OverlayScrollListView::setOverlayScrollBarUpdatesPaused(bool paused)
+{
+    if (m_overlayScrollBarUpdatesPaused == paused) {
+        return;
+    }
+
+    m_overlayScrollBarUpdatesPaused = paused;
+    if (!m_overlayScrollBarUpdatesPaused) {
+        updateOverlayScrollBar();
+    }
+}
+#endif
+
 void OverlayScrollListView::resizeEvent(QResizeEvent* event)
 {
     QListView::resizeEvent(event);
@@ -162,6 +186,12 @@ void OverlayScrollListView::showOverlayScrollBar()
 
 void OverlayScrollListView::updateOverlayScrollBar()
 {
+#ifdef Q_OS_WIN
+    if (m_overlayScrollBarUpdatesPaused) {
+        return;
+    }
+#endif
+
     QScrollBar* scrollBar = verticalScrollBar();
     m_overlayScrollBar->setRange(scrollBar->minimum(), scrollBar->maximum());
     m_overlayScrollBar->setPageStep(scrollBar->pageStep());

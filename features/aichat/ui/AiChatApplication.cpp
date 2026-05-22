@@ -31,7 +31,9 @@ AiChatApplication::AiChatApplication(QWidget* parent)
     connect(m_leftPane->aiChatList(), &AiChatListWidget::conversationActivated,
             m_conversationWidget, &AiChatConversationWidget::openConversation);
     connect(m_leftPane->aiChatList(), &AiChatListWidget::conversationCleared,
-            m_conversationWidget, &AiChatConversationWidget::closeConversation);
+            m_conversationWidget, &AiChatConversationWidget::showStartPage);
+    connect(m_conversationWidget, &AiChatConversationWidget::conversationCreatedFromStartPage,
+            m_leftPane, &LeftPane::selectConversation);
 }
 
 void AiChatApplication::resizeEvent(QResizeEvent *event) {

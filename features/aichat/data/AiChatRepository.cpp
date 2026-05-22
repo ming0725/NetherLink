@@ -2,6 +2,7 @@
 
 #include <QRandomGenerator>
 #include <QStringList>
+#include <QtMath>
 
 #include <algorithm>
 
@@ -353,6 +354,32 @@ QVector<AiChatMessage> AiChatRepository::requestAiChatMessages(const QString& co
     return m_messages.value(conversationId);
 }
 
+AiChatContextUsage AiChatRepository::requestAiChatContextUsage(const AiChatContextUsageRequest& request) const
+{
+    QMutexLocker locker(&m_mutex);
+    if (request.conversationId.isEmpty()) {
+        return {};
+    }
+
+    if (!m_seededMessageConversationIds.contains(request.conversationId)) {
+        for (int index = 0; index < m_entries.size(); ++index) {
+            if (m_entries.at(index).conversationId == request.conversationId) {
+                appendInitialMessages(m_entries.at(index), index);
+                m_seededMessageConversationIds.insert(request.conversationId);
+                break;
+            }
+        }
+    }
+
+    const AiChatContextUsage usage = buildContextUsageLocked(request.conversationId);
+    if (usage.available) {
+        m_contextUsages.insert(request.conversationId, usage);
+    } else {
+        m_contextUsages.remove(request.conversationId);
+    }
+    return usage;
+}
+
 QString AiChatRepository::createAiChatConversation(const QString& title, const QDateTime& time)
 {
     const QString trimmedTitle = title.trimmed();
@@ -364,15 +391,7 @@ QString AiChatRepository::createAiChatConversation(const QString& title, const Q
     const QString conversationId = QStringLiteral("ai-chat-%1").arg(m_nextConversationId++);
     const AiChatListEntry entry {conversationId, trimmedTitle, time};
     m_entries.push_back(entry);
-    m_messages.insert(conversationId, {
-            {
-                    QStringLiteral("ai-message-%1").arg(m_nextMessageId++),
-                    conversationId,
-                    QStringLiteral("### 你好，我是 AI 助手\n\n可以直接在下方输入内容开始对话。这里的 AI 气泡会按 Markdown 渲染，因此回复可以包含 **重点结论**、`行内代码`、公式和代码块。\n\n示例公式：$latency = t_{firstToken} - t_{request}$。\n\n```text\nuser prompt -> stream client -> markdown blocks -> message bubble\n```\n\n当你发送新消息时，后续回复会以流式 chunk 的形式逐步追加。"),
-                    false,
-                    time
-            }
-    });
+    m_messages.insert(conversationId, {});
     m_seededMessageConversationIds.insert(conversationId);
     return conversationId;
 }
@@ -403,6 +422,7 @@ AiChatMessage AiChatRepository::addAiChatMessage(const QString& conversationId,
             time
     };
     m_messages[conversationId].push_back(message);
+    m_contextUsages.remove(conversationId);
     entryIt->time = time;
     if (isFromUser) {
         entryIt->title = messageText.simplified().left(28);
@@ -430,6 +450,7 @@ bool AiChatRepository::updateAiChatMessageText(const QString& conversationId,
         if (message.messageId == messageId) {
             message.text = messageText;
             message.time = time;
+            m_contextUsages.remove(conversationId);
             for (AiChatListEntry& entry : m_entries) {
                 if (entry.conversationId == conversationId) {
                     entry.time = time;
@@ -462,6 +483,7 @@ bool AiChatRepository::removeAiChatMessage(const QString& conversationId, const 
         }
 
         messages.removeAt(row);
+        m_contextUsages.remove(conversationId);
         for (AiChatListEntry& entry : m_entries) {
             if (entry.conversationId == conversationId) {
                 entry.time = messages.isEmpty()
@@ -510,7 +532,34 @@ bool AiChatRepository::removeAiChatConversation(const QString& conversationId)
     m_entries.erase(it);
     m_messages.remove(conversationId);
     m_seededMessageConversationIds.remove(conversationId);
+    m_contextUsages.remove(conversationId);
     return true;
+}
+
+AiChatContextUsage AiChatRepository::buildContextUsageLocked(const QString& conversationId) const
+{
+    const QVector<AiChatMessage> messages = m_messages.value(conversationId);
+    if (messages.isEmpty()) {
+        return {conversationId, 0, 128000, false};
+    }
+
+    int characterCount = 0;
+    int userMessageCount = 0;
+    int assistantMessageCount = 0;
+    for (const AiChatMessage& message : messages) {
+        characterCount += message.text.size();
+        if (message.isFromUser) {
+            ++userMessageCount;
+        } else {
+            ++assistantMessageCount;
+        }
+    }
+
+    const int maxTokens = 128000;
+    const int structuralTokens = 900 + messages.size() * 96 + userMessageCount * 34 + assistantMessageCount * 56;
+    const int simulatedContentTokens = qCeil(static_cast<qreal>(characterCount) / 2.8);
+    const int usedTokens = qBound(1, structuralTokens + simulatedContentTokens, maxTokens);
+    return {conversationId, usedTokens, maxTokens, true};
 }
 
 void AiChatRepository::appendInitialMessages(const AiChatListEntry& entry, int sampleIndex) const

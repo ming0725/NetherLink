@@ -44,6 +44,7 @@ private:
             });
         }
         AiChatListWidget* aiChatList() const { return m_aiChatList; }
+        void selectConversation(const QString& conversationId) { m_aiChatList->selectConversation(conversationId); }
         void setController(AiChatSessionController* controller) { m_aiChatList->setController(controller); }
     protected:
         void paintEvent(QPaintEvent* event) override {

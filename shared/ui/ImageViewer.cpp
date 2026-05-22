@@ -10,7 +10,6 @@
 #include <QIcon>
 #include <QLabel>
 #include <QMouseEvent>
-#include <QNativeGestureEvent>
 #include <QPalette>
 #include <QPainter>
 #include <QPainterPath>
@@ -23,6 +22,10 @@
 #include <QVBoxLayout>
 #include <QWheelEvent>
 #include <QWindow>
+
+#ifdef Q_OS_MACOS
+#include <QNativeGestureEvent>
+#endif
 
 #include "shared/services/AppFonts.h"
 #include "shared/services/ImageService.h"
@@ -40,6 +43,7 @@ constexpr int kScrollBarThickness = 8;
 constexpr int kZoomAnimationDurationMs = 180;
 constexpr int kRotationAnimationDurationMs = 260;
 constexpr int kZoomIndicatorDurationMs = 900;
+constexpr qreal kAngleWheelPanStep = 80.0;
 constexpr int kMinViewerWidth = 360;
 constexpr int kMinCanvasHeight = 260;
 constexpr int kPrimaryInitialPadding = 96;
@@ -51,6 +55,29 @@ qreal zoomStep(int wheelDelta)
 {
     const qreal steps = qreal(wheelDelta) / 120.0;
     return std::pow(1.12, steps);
+}
+
+bool hasZoomModifier(const QWheelEvent* event)
+{
+    const Qt::KeyboardModifiers modifiers = event->modifiers();
+    return modifiers.testFlag(Qt::ControlModifier) || modifiers.testFlag(Qt::MetaModifier);
+}
+
+bool isTouchPadScrollWheel(const QWheelEvent* event)
+{
+    return event->phase() != Qt::NoScrollPhase;
+}
+
+QPointF scrollDeltaForPan(const QWheelEvent* event)
+{
+    const QPoint pixelDelta = event->pixelDelta();
+    if (!pixelDelta.isNull()) {
+        return QPointF(-pixelDelta.x(), -pixelDelta.y());
+    }
+
+    const QPoint angleDelta = event->angleDelta();
+    return QPointF(-angleDelta.x() / 120.0 * kAngleWheelPanStep,
+                   -angleDelta.y() / 120.0 * kAngleWheelPanStep);
 }
 
 qreal normalizedRotation(qreal rotation)
@@ -363,6 +390,7 @@ void ImageCanvas::fitToView()
 
 bool ImageCanvas::event(QEvent* event)
 {
+#ifdef Q_OS_MACOS
     if (event->type() == QEvent::NativeGesture) {
         auto* gesture = static_cast<QNativeGestureEvent*>(event);
         if (gesture->gestureType() == Qt::ZoomNativeGesture) {
@@ -374,6 +402,7 @@ bool ImageCanvas::event(QEvent* event)
             return true;
         }
     }
+#endif
     return QWidget::event(event);
 }
 
@@ -434,6 +463,16 @@ void ImageCanvas::resizeEvent(QResizeEvent* event)
 
 void ImageCanvas::wheelEvent(QWheelEvent* event)
 {
+    if (isTouchPadScrollWheel(event) && !hasZoomModifier(event)) {
+        const QPointF scrollDelta = scrollDeltaForPan(event);
+        if (!scrollDelta.isNull()) {
+            setScrollPosition(m_scrollPosition + scrollDelta);
+            showScrollBars();
+        }
+        event->accept();
+        return;
+    }
+
     const int delta = event->pixelDelta().isNull()
                           ? event->angleDelta().y()
                           : event->pixelDelta().y();

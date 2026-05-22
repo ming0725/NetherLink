@@ -2,6 +2,7 @@
 #include "shared/services/AppFonts.h"
 
 #include <QLinearGradient>
+#include <QDateTime>
 #include <QLoggingCategory>
 #include <QModelIndex>
 #include <QPainter>
@@ -90,7 +91,7 @@ AiChatConversationWidget::AiChatConversationWidget(QWidget* parent)
     , m_headerDivider(new ThemeDivider(this))
     , m_bottomGapGradientOverlay(new BottomGapGradientOverlay(this))
     , m_newMessageNotifier(new NewMessageNotifier(this))
-    , m_emptyLabel(new PaintedLabel(QStringLiteral("选择或新建一个 AI 对话"), this))
+    , m_emptyLabel(new PaintedLabel(QStringLiteral("今天需要做什么？"), this))
 {
     m_messageView->setModel(m_messageModel);
     m_newMessageNotifier->setDisplayMode(NewMessageNotifier::DisplayMode::IconOnly);
@@ -104,7 +105,7 @@ AiChatConversationWidget::AiChatConversationWidget(QWidget* parent)
     m_titleLabel->setFont(titleFont);
 
     QFont emptyFont = m_emptyLabel->font();
-    emptyFont.setPixelSize(15);
+    emptyFont.setPixelSize(30);
     m_emptyLabel->setFont(emptyFont);
 
     connect(m_inputBar, &AiChatFloatingInputBar::sendText,
@@ -113,6 +114,8 @@ AiChatConversationWidget::AiChatConversationWidget(QWidget* parent)
             this, &AiChatConversationWidget::onStopStreamingRequested);
     connect(m_inputBar, &AiChatFloatingInputBar::inputFocused,
             m_messageView, &AiChatMessageListView::clearTextSelection);
+    connect(m_inputBar, &AiChatFloatingInputBar::preferredHeightChanged,
+            this, [this]() { updateLayout(); });
     connect(m_messageView, &AiChatMessageListView::regenerateAiReplyRequested,
             this, &AiChatConversationWidget::onRegenerateAiReplyRequested);
     connect(m_messageView->verticalScrollBar(), &QScrollBar::valueChanged,
@@ -161,7 +164,7 @@ AiChatConversationWidget::AiChatConversationWidget(QWidget* parent)
         m_messageView->viewport()->update();
     });
 
-    closeConversation();
+    showStartPage();
 }
 
 void AiChatConversationWidget::setController(AiChatSessionController* controller)
@@ -194,13 +197,20 @@ void AiChatConversationWidget::setController(AiChatSessionController* controller
             this, &AiChatConversationWidget::onAiReplyCanceled);
     connect(m_controller, &AiChatSessionController::messagesLoaded,
             this, &AiChatConversationWidget::onConversationMessagesLoaded);
+    connect(m_controller, &AiChatSessionController::contextUsageLoaded,
+            this, &AiChatConversationWidget::onContextUsageLoaded);
 }
 
 void AiChatConversationWidget::openConversation(const AiChatListEntry& entry)
 {
     if (entry.conversationId.isEmpty()) {
-        closeConversation();
+        showStartPage();
         return;
+    }
+
+    if (isStartPage()) {
+        saveStartPageDraft();
+        m_inputBar->clearText();
     }
 
     if (m_currentConversation.conversationId == entry.conversationId) {
@@ -213,6 +223,8 @@ void AiChatConversationWidget::openConversation(const AiChatListEntry& entry)
     cancelActiveAiReplyStream();
     m_currentConversation = entry;
     m_pendingMessagesConversationId = entry.conversationId;
+    m_pendingContextUsageRequestId = 0;
+    m_pendingContextUsageConversationId.clear();
     m_pendingMessagesRequestId = 0;
     m_messageView->messageDelegate()->setStreamingMessageId(QString());
     m_messageModel->clear();
@@ -220,14 +232,18 @@ void AiChatConversationWidget::openConversation(const AiChatListEntry& entry)
     m_messageView->show();
     m_inputBar->show();
     m_emptyLabel->hide();
+    m_titleLabel->show();
+    m_headerDivider->show();
     m_unreadAiReplyCount = 0;
     m_newMessageNotifierRevealedByDownScroll = false;
     m_streamingNotifierHeld = false;
     m_newMessageNotifier->hide();
+    m_inputBar->setContextUsageVisible(false);
     updateHeader();
     updateLayout();
     if (m_controller) {
         m_pendingMessagesRequestId = m_controller->loadMessagesAsync(entry.conversationId);
+        requestContextUsage();
     }
     QTimer::singleShot(0, m_inputBar, [this]() {
         if (m_inputBar->isVisible() && !m_currentConversation.conversationId.isEmpty()) {
@@ -238,22 +254,41 @@ void AiChatConversationWidget::openConversation(const AiChatListEntry& entry)
 
 void AiChatConversationWidget::closeConversation()
 {
+    showStartPage();
+}
+
+void AiChatConversationWidget::showStartPage()
+{
     cancelActiveAiReplyStream();
+    if (isStartPage()) {
+        saveStartPageDraft();
+    }
     m_currentConversation = {};
     m_pendingMessagesRequestId = 0;
     m_pendingMessagesConversationId.clear();
+    m_pendingContextUsageRequestId = 0;
+    m_pendingContextUsageConversationId.clear();
     m_messageView->messageDelegate()->setStreamingMessageId(QString());
     m_messageModel->clear();
     m_messageView->clearTextSelection();
     m_messageView->hide();
-    m_inputBar->hide();
+    m_inputBar->setText(m_startPageDraft);
+    m_inputBar->show();
+    m_titleLabel->hide();
+    m_headerDivider->hide();
     m_unreadAiReplyCount = 0;
     m_newMessageNotifierRevealedByDownScroll = false;
     m_streamingNotifierHeld = false;
     m_newMessageNotifier->hide();
+    m_inputBar->setContextUsageVisible(false);
     m_emptyLabel->show();
     updateHeader();
     updateLayout();
+    QTimer::singleShot(0, m_inputBar, [this]() {
+        if (isStartPage() && m_inputBar->isVisible()) {
+            m_inputBar->focusInput();
+        }
+    });
 }
 
 void AiChatConversationWidget::paintEvent(QPaintEvent* event)
@@ -270,12 +305,34 @@ void AiChatConversationWidget::resizeEvent(QResizeEvent* event)
 
 void AiChatConversationWidget::onSendText(const QString& text)
 {
-    if (!m_controller || m_currentConversation.conversationId.isEmpty() || hasActiveAiReplyStream()) {
+    if (!m_controller || hasActiveAiReplyStream()) {
         return;
+    }
+
+    if (m_currentConversation.conversationId.isEmpty()) {
+        const QString title = titleForPrompt(text);
+        const QString conversationId = m_controller->createConversation(title);
+        if (conversationId.isEmpty()) {
+            m_inputBar->setText(text);
+            return;
+        }
+
+        m_startPageDraft.clear();
+        m_currentConversation = {conversationId, title, QDateTime::currentDateTime()};
+        m_messageModel->clear();
+        m_messageView->clearTextSelection();
+        m_messageView->show();
+        m_emptyLabel->hide();
+        m_titleLabel->show();
+        m_headerDivider->show();
+        emit conversationCreatedFromStartPage(conversationId);
+        updateHeader();
+        updateLayout();
     }
 
     const AiChatMessage message = m_controller->submitUserMessage(m_currentConversation.conversationId, text);
     if (message.messageId.isEmpty()) {
+        m_inputBar->setText(text);
         return;
     }
 
@@ -285,6 +342,7 @@ void AiChatConversationWidget::onSendText(const QString& text)
     m_unreadAiReplyCount = 0;
     m_newMessageNotifierRevealedByDownScroll = false;
     m_streamingNotifierHeld = false;
+    requestContextUsage();
     updateNewMessageNotifier();
 }
 
@@ -309,6 +367,29 @@ void AiChatConversationWidget::onRegenerateAiReplyRequested(const QString& conve
 
 void AiChatConversationWidget::updateLayout()
 {
+    if (isStartPage()) {
+        m_titleLabel->setGeometry(0, 0, 0, 0);
+        m_headerDivider->setGeometry(0, 0, 0, 0);
+        m_messageView->setGeometry(0, 0, width(), height());
+
+        const int inputWidth = qMin(kStartPageMaxInputWidth,
+                                    qMax(0, width() - kInputBarSideMargin * 2));
+        const int inputHeight = m_inputBar->preferredHeightForWidth(inputWidth);
+        const int inputX = (width() - inputWidth) / 2;
+        const int blockHeight = kStartPageTitleHeight + kStartPageTitleInputGap + kInputBarHeight;
+        const int blockTop = qMax(24, (height() - blockHeight) / 2 - 12);
+        m_emptyLabel->setGeometry(0, blockTop, width(), kStartPageTitleHeight);
+        m_inputBar->setGeometry(inputX,
+                                blockTop + kStartPageTitleHeight + kStartPageTitleInputGap,
+                                inputWidth,
+                                inputHeight);
+        m_bottomGapGradientOverlay->hide();
+        m_newMessageNotifier->hide();
+        m_inputBar->raise();
+        m_emptyLabel->raise();
+        return;
+    }
+
     const int titleY = kHeaderHeight - kHeaderTitleBottomMargin - kHeaderTitleHeight;
     m_titleLabel->setGeometry(kHeaderTitleLeft,
                               titleY,
@@ -319,12 +400,13 @@ void AiChatConversationWidget::updateLayout()
     m_emptyLabel->setGeometry(0, kHeaderHeight + 1, width(), qMax(0, height() - kHeaderHeight - 1));
 
     const int inputWidth = qMax(0, width() - kInputBarSideMargin * 2);
+    const int inputHeight = m_inputBar->preferredHeightForWidth(inputWidth);
     const int inputX = kInputBarSideMargin;
-    const int inputY = height() - kInputBarBottomMargin - kInputBarHeight;
+    const int inputY = height() - kInputBarBottomMargin - inputHeight;
     m_inputBar->setGeometry(inputX,
                             qMax(kHeaderHeight + 1, inputY),
                             inputWidth,
-                            kInputBarHeight);
+                            inputHeight);
 
     updateBottomSpace();
     m_inputBar->raise();
@@ -349,12 +431,47 @@ void AiChatConversationWidget::updateBottomSpace()
     updateNewMessageNotifierPosition();
 }
 
+void AiChatConversationWidget::requestContextUsage()
+{
+    if (!m_controller || m_currentConversation.conversationId.isEmpty()) {
+        if (m_inputBar) {
+            m_inputBar->setContextUsageVisible(false);
+        }
+        return;
+    }
+
+    const AiChatContextUsageRequest request {m_currentConversation.conversationId};
+    m_pendingContextUsageConversationId = request.conversationId;
+    m_pendingContextUsageRequestId = m_controller->loadContextUsageAsync(request);
+}
+
 void AiChatConversationWidget::updateHeader()
 {
     const bool hasConversation = !m_currentConversation.conversationId.isEmpty();
     m_titleLabel->setText(hasConversation ? m_currentConversation.title : QStringLiteral("AI 对话"));
     m_titleLabel->setTextColor(ThemeManager::instance().color(ThemeColor::PrimaryText));
-    m_emptyLabel->setTextColor(ThemeManager::instance().color(ThemeColor::SecondaryText));
+    m_emptyLabel->setText(QStringLiteral("今天需要做什么？"));
+    m_emptyLabel->setTextColor(ThemeManager::instance().color(ThemeColor::PrimaryText));
+}
+
+void AiChatConversationWidget::saveStartPageDraft()
+{
+    if (m_inputBar && isStartPage()) {
+        m_startPageDraft = m_inputBar->text();
+    }
+}
+
+QString AiChatConversationWidget::titleForPrompt(const QString& text) const
+{
+    QString title = text.simplified();
+    const int lineBreak = title.indexOf(QLatin1Char('\n'));
+    if (lineBreak >= 0) {
+        title = title.left(lineBreak).trimmed();
+    }
+    if (title.size() > 24) {
+        title = title.left(24).trimmed() + QStringLiteral("...");
+    }
+    return title.isEmpty() ? QStringLiteral("新对话") : title;
 }
 
 void AiChatConversationWidget::updateNewMessageNotifier()
@@ -457,6 +574,11 @@ bool AiChatConversationWidget::isMessageViewAtBottom() const
     return !scrollBar || scrollBar->maximum() - scrollBar->value() <= 2;
 }
 
+bool AiChatConversationWidget::isStartPage() const
+{
+    return m_currentConversation.conversationId.isEmpty();
+}
+
 void AiChatConversationWidget::onAiReplyStarted(const QString& conversationId)
 {
     if (m_currentConversation.conversationId == conversationId) {
@@ -514,6 +636,7 @@ void AiChatConversationWidget::onAiReplyMessageRemoved(const QString& conversati
         m_messageModel->removeMessage(messageId);
         m_messageView->clearTextSelection();
         m_messageView->scrollToBottomIfLocked();
+        requestContextUsage();
         updateNewMessageNotifier();
     }
 }
@@ -530,6 +653,7 @@ void AiChatConversationWidget::onAiReplyFinished(const QString& conversationId, 
             m_newMessageNotifierRevealedByDownScroll = true;
         }
         m_streamingNotifierHeld = false;
+        requestContextUsage();
         updateNewMessageNotifier();
     }
 }
@@ -563,11 +687,27 @@ void AiChatConversationWidget::onConversationMessagesLoaded(int requestId,
     m_pendingMessagesRequestId = 0;
     m_pendingMessagesConversationId.clear();
     m_messageModel->setMessages(messages);
+    requestContextUsage();
     QTimer::singleShot(0, this, [this, conversationId]() {
         if (conversationId == m_currentConversation.conversationId) {
             m_messageView->jumpToBottom();
         }
     });
+}
+
+void AiChatConversationWidget::onContextUsageLoaded(int requestId,
+                                                    const AiChatContextUsageRequest& request,
+                                                    const AiChatContextUsage& usage)
+{
+    if (requestId != m_pendingContextUsageRequestId ||
+            request.conversationId != m_pendingContextUsageConversationId ||
+            request.conversationId != m_currentConversation.conversationId) {
+        return;
+    }
+
+    m_pendingContextUsageRequestId = 0;
+    m_pendingContextUsageConversationId.clear();
+    m_inputBar->setContextUsage(usage);
 }
 
 void AiChatConversationWidget::cancelActiveAiReplyStream()

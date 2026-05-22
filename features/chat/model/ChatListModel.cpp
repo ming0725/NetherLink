@@ -340,6 +340,26 @@ QModelIndex ChatListModel::indexForMessage(const ChatMessage* message) const
     return {};
 }
 
+int ChatListModel::nearestPeerMessageRowAtOrAfter(int row) const
+{
+    if (items.isEmpty()) {
+        return -1;
+    }
+
+    const int boundedRow = qBound(0, row, items.size() - 1);
+    return items.at(boundedRow).nearestPeerRowAfter;
+}
+
+int ChatListModel::nearestPeerMessageRowAtOrBefore(int row) const
+{
+    if (items.isEmpty()) {
+        return -1;
+    }
+
+    const int boundedRow = qBound(0, row, items.size() - 1);
+    return items.at(boundedRow).nearestPeerRowBefore;
+}
+
 void ChatListModel::ensureBottomSpace()
 {
     // 如果没有底部空白，添加一个
@@ -349,6 +369,7 @@ void ChatListModel::ensureBottomSpace()
         bottomSpace.isBottomSpace = true;
         bottomSpace.bottomSpaceHeight = bottomSpaceHeight;
         items.push_back(std::move(bottomSpace));
+        refreshPeerMessageRows();
         endInsertRows();
     }
 }
@@ -406,6 +427,7 @@ void ChatListModel::showLoadingPlaceholderAtTop()
     placeholderItem.loadingPlaceholder = QSharedPointer<LoadingPlaceholder>::create();
     placeholderItem.loadingPlaceholder->shimmerStartedAtMs = QDateTime::currentMSecsSinceEpoch();
     items.insert(0, std::move(placeholderItem));
+    refreshPeerMessageRows();
     endInsertRows();
 }
 
@@ -448,6 +470,7 @@ void ChatListModel::showInitialLoadingPlaceholders(int targetHeight)
     bottomSpace.isBottomSpace = true;
     bottomSpace.bottomSpaceHeight = bottomSpaceHeight;
     items.push_back(std::move(bottomSpace));
+    refreshPeerMessageRows();
     endResetModel();
 }
 
@@ -460,6 +483,7 @@ void ChatListModel::removeLoadingPlaceholder()
 
         beginRemoveRows(QModelIndex(), row, row);
         items.removeAt(row);
+        refreshPeerMessageRows();
         endRemoveRows();
         return;
     }
@@ -520,6 +544,37 @@ void ChatListModel::rebuildItems()
 
     if (newMessageDividerBefore && !dividerInserted) {
         newMessageDividerBefore = nullptr;
+    }
+
+    refreshPeerMessageRows();
+}
+
+void ChatListModel::refreshPeerMessageRows()
+{
+    int previousPeerRow = -1;
+    for (int row = 0; row < items.size(); ++row) {
+        if (!items.at(row).isHeader &&
+                !items.at(row).isBottomSpace &&
+                !items.at(row).isNewMessageDivider &&
+                !items.at(row).isLoadingPlaceholder &&
+                items.at(row).message &&
+                !items.at(row).message->isFromMe()) {
+            previousPeerRow = row;
+        }
+        items[row].nearestPeerRowBefore = previousPeerRow;
+    }
+
+    int nextPeerRow = -1;
+    for (int row = items.size() - 1; row >= 0; --row) {
+        if (!items.at(row).isHeader &&
+                !items.at(row).isBottomSpace &&
+                !items.at(row).isNewMessageDivider &&
+                !items.at(row).isLoadingPlaceholder &&
+                items.at(row).message &&
+                !items.at(row).message->isFromMe()) {
+            nextPeerRow = row;
+        }
+        items[row].nearestPeerRowAfter = nextPeerRow;
     }
 }
 

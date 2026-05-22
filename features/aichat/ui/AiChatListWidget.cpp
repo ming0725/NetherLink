@@ -120,11 +120,18 @@ void AiChatListWidget::ensureInitialized()
 
 void AiChatListWidget::createNewConversation()
 {
-    if (!m_controller) {
-        return;
+    m_initialized = true;
+    clearSelection();
+    if (selectionModel()) {
+        selectionModel()->clearCurrentIndex();
     }
+    setCurrentIndex(QModelIndex());
+    updateStickyHeader();
+    emit conversationCleared();
+}
 
-    const QString conversationId = m_controller->createConversation(QStringLiteral("新对话"));
+void AiChatListWidget::selectConversation(const QString& conversationId)
+{
     if (conversationId.isEmpty()) {
         return;
     }
@@ -139,7 +146,7 @@ void AiChatListWidget::reloadEntries(const QString& selectedConversationId)
     m_nextOffset = 0;
     m_hasMore = true;
     m_loadingEntries = false;
-    m_selectFirstAfterLoad = selectedConversationId.isEmpty();
+    m_selectFirstAfterLoad = false;
     m_pendingSelectedConversationId = selectedConversationId;
     loadMoreEntries();
 }

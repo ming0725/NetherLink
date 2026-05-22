@@ -26,6 +26,11 @@ QVector<AiChatMessage> AiChatSessionController::loadMessages(const QString& conv
     return AiChatRepository::instance().requestAiChatMessages(conversationId);
 }
 
+AiChatContextUsage AiChatSessionController::loadContextUsage(const AiChatContextUsageRequest& request) const
+{
+    return AiChatRepository::instance().requestAiChatContextUsage(request);
+}
+
 int AiChatSessionController::loadConversationsAsync(const AiChatListRequest& query)
 {
     const int requestId = m_nextAsyncRequestId++;
@@ -52,6 +57,21 @@ int AiChatSessionController::loadMessagesAsync(const QString& conversationId)
     });
     watcher->setFuture(QtConcurrent::run([conversationId]() {
         return AiChatRepository::instance().requestAiChatMessages(conversationId);
+    }));
+    return requestId;
+}
+
+int AiChatSessionController::loadContextUsageAsync(const AiChatContextUsageRequest& request)
+{
+    const int requestId = m_nextAsyncRequestId++;
+    auto* watcher = new QFutureWatcher<AiChatContextUsage>(this);
+    connect(watcher, &QFutureWatcher<AiChatContextUsage>::finished, this, [this, watcher, requestId, request]() {
+        const AiChatContextUsage usage = watcher->result();
+        watcher->deleteLater();
+        emit contextUsageLoaded(requestId, request, usage);
+    });
+    watcher->setFuture(QtConcurrent::run([request]() {
+        return AiChatRepository::instance().requestAiChatContextUsage(request);
     }));
     return requestId;
 }

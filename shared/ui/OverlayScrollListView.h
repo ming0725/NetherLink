@@ -17,6 +17,10 @@ public:
 
     void setWheelStepPixels(int pixels);
     void setScrollBarInsets(int topBottomInset, int rightInset);
+#ifdef Q_OS_WIN
+    void stopAnimatedWheelScroll();
+    void setOverlayScrollBarUpdatesPaused(bool paused);
+#endif
 
 protected:
     void paintEvent(QPaintEvent* event) override;
@@ -56,6 +60,9 @@ private:
     qint64 m_lastWheelEventMs = 0;
     int m_wheelStreak = 0;
     int m_lastWheelDirection = 0;
+#ifdef Q_OS_WIN
+    bool m_overlayScrollBarUpdatesPaused = false;
+#endif
     bool m_hovered = false;
     ThemeColor m_themeBackgroundRole = ThemeColor::PanelBackground;
 };

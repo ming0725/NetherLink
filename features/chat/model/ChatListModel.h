@@ -74,6 +74,8 @@ public:
     bool isLoadingPlaceholder(int index) const;
     QModelIndex newMessageDividerIndex() const;
     QModelIndex indexForMessage(const ChatMessage* message) const;
+    int nearestPeerMessageRowAtOrAfter(int row) const;
+    int nearestPeerMessageRowAtOrBefore(int row) const;
 
     void ensureBottomSpace();
     bool setBottomSpaceHeight(int height);
@@ -96,6 +98,8 @@ private:
         bool isNewMessageDivider = false;
         bool isLoadingPlaceholder = false;
         int bottomSpaceHeight = BottomSpace::DEFAULT_HEIGHT;  // 使用默认高度
+        int nearestPeerRowBefore = -1;
+        int nearestPeerRowAfter = -1;
     };
     QVector<ListItem> items;
     QVector<QSharedPointer<ChatMessage>> messages;
@@ -104,6 +108,7 @@ private:
     const ChatMessage* newMessageDividerBefore = nullptr;
 
     void rebuildItems();
+    void refreshPeerMessageRows();
     int messageIndexForRow(int row) const;
     QString formatTimeHeader(const QDateTime& timestamp) const;
     TimeHeaderType getTimeHeaderType(const QDateTime& timestamp) const;

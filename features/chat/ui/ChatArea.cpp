@@ -41,6 +41,9 @@ static constexpr int kInputBarBottomGradientFadeHeight = 32;
 static constexpr int kInputBarBottomGradientSolidAlpha = 192;
 static constexpr int kOlderMessagePageSize = 24;
 static constexpr int kFetchOlderTopThreshold = 8;
+#ifdef Q_OS_WIN
+static constexpr int kOlderMessageTriggerCooldownMs = 160;
+#endif
 static constexpr int kMessageRecallReeditSeconds = 120;
 static constexpr int kInfoButtonSize = 28;
 static constexpr int kInfoPanelDividerHeight = 1;
@@ -452,19 +455,16 @@ void ChatArea::addMessage(QSharedPointer<ChatMessage> message)
     const bool shouldFollowIncomingMessage = chatView->isBottomLocked();
     // 添加消息
     chatModel->addMessage(message);
+    assignAppendedPeerMessageOrdinal(message);
     MessageRepository::instance().addMessage(conversationId(), message);
     ++m_state.loadedMessageCount;
 
     // 调整底部空白
     adjustBottomSpace();
-    
-    rebuildUnreadMessageIndexes();
 
     // 根据情况处理滚动和未读计数
     if (!isOwnMessage && !shouldFollowIncomingMessage) {
         registerNewUnreadCandidate(message);
-        ++m_state.newUnreadMessageCount;
-        rebuildUnreadMessageIndexes();
         updateNewMessageNotifier();
     }
 
@@ -481,10 +481,7 @@ void ChatArea::addMessage(QSharedPointer<ChatMessage> message)
             if (chatView->scrollToBottomIfLocked(isOwnMessage)) {
                 scheduleVisibleUnreadCheck();
             } else if (!isOwnMessage) {
-                if (registerNewUnreadCandidate(message)) {
-                    ++m_state.newUnreadMessageCount;
-                }
-                rebuildUnreadMessageIndexes();
+                registerNewUnreadCandidate(message);
                 updateNewMessageNotifier();
             }
         });
@@ -506,14 +503,12 @@ void ChatArea::appendRepositoryMessage(const QString& changedConversationId,
     const bool isOwnMessage = message->isFromMe();
     const bool shouldFollowIncomingMessage = chatView->isBottomLocked();
     chatModel->addMessage(message);
+    assignAppendedPeerMessageOrdinal(message);
     ++m_state.loadedMessageCount;
     adjustBottomSpace();
-    rebuildUnreadMessageIndexes();
 
     if (!isOwnMessage && !shouldFollowIncomingMessage) {
         registerNewUnreadCandidate(message);
-        ++m_state.newUnreadMessageCount;
-        rebuildUnreadMessageIndexes();
         updateNewMessageNotifier();
     }
 
@@ -529,10 +524,7 @@ void ChatArea::appendRepositoryMessage(const QString& changedConversationId,
             if (chatView->scrollToBottomIfLocked(isOwnMessage)) {
                 scheduleVisibleUnreadCheck();
             } else if (!isOwnMessage) {
-                if (registerNewUnreadCandidate(message)) {
-                    ++m_state.newUnreadMessageCount;
-                }
-                rebuildUnreadMessageIndexes();
+                registerNewUnreadCandidate(message);
                 updateNewMessageNotifier();
             }
         });
@@ -557,10 +549,23 @@ void ChatArea::onScrollValueChanged(int)
     }
     m_state.isAtBottom = isScrollAtBottom();
 
+#ifdef Q_OS_WIN
+    const qint64 nowMs = QDateTime::currentMSecsSinceEpoch();
+    const bool olderMessageTriggerInCooldown =
+            nowMs < m_state.olderMessageTriggerCooldownUntilMs;
+#endif
     if (m_state.allowOlderMessageFetch &&
         m_state.hasMoreBefore &&
         !m_state.loadingOlderMessages &&
+#ifdef Q_OS_WIN
+        !olderMessageTriggerInCooldown &&
+#endif
         chatView->verticalScrollBar()->value() <= kFetchOlderTopThreshold) {
+#ifdef Q_OS_WIN
+        chatView->stopAnimatedWheelScroll();
+        m_state.olderMessageTriggerCooldownUntilMs =
+                nowMs + kOlderMessageTriggerCooldownMs;
+#endif
         loadOlderMessages();
     }
 
@@ -576,34 +581,6 @@ bool ChatArea::isScrollAtBottom() const
     return scrollBar->value() >= scrollBar->maximum() - 5;
 }
 
-bool ChatArea::isMessageVisibleInViewport(const QModelIndex& index) const
-{
-    if (!index.isValid() || !chatView || !chatView->viewport()) {
-        return false;
-    }
-
-    const QRect messageRect = chatView->visualRect(index);
-    if (!messageRect.isValid() || messageRect.isEmpty()) {
-        return false;
-    }
-
-    QRect effectiveViewport = chatView->viewport()->rect();
-    if (inputBar && inputBar->isVisible()) {
-        const int inputTopInViewport = chatView->viewport()->mapFrom(this, inputBar->pos()).y();
-        if (inputTopInViewport > 0) {
-            effectiveViewport.setBottom(qMin(effectiveViewport.bottom(), inputTopInViewport - 6));
-        }
-    }
-
-    const QRect visibleRect = messageRect.intersected(effectiveViewport);
-    if (visibleRect.isEmpty()) {
-        return false;
-    }
-
-    const int requiredVisibleHeight = qMin(messageRect.height(), 24);
-    return visibleRect.height() >= requiredVisibleHeight;
-}
-
 int ChatArea::registerHistoryUnreadCandidates(const ChatMessageList& messages, int maxCount)
 {
     if (maxCount <= 0) {
@@ -611,27 +588,34 @@ int ChatArea::registerHistoryUnreadCandidates(const ChatMessageList& messages, i
     }
 
     int registeredCount = 0;
+    int firstOrdinal = 0;
+    int lastOrdinal = -1;
     for (auto it = messages.crbegin(); it != messages.crend() && registeredCount < maxCount; ++it) {
-        if (registerHistoryUnreadCandidate(*it)) {
-            ++registeredCount;
+        const ChatMessagePtr& message = *it;
+        if (!message || message->isFromMe()) {
+            continue;
         }
+
+        const auto ordinalIt = m_state.peerMessageOrdinals.constFind(message.get());
+        if (ordinalIt == m_state.peerMessageOrdinals.cend()) {
+            continue;
+        }
+
+        const int ordinal = ordinalIt.value();
+        if (lastOrdinal < firstOrdinal) {
+            firstOrdinal = ordinal;
+            lastOrdinal = ordinal;
+        } else {
+            firstOrdinal = qMin(firstOrdinal, ordinal);
+            lastOrdinal = qMax(lastOrdinal, ordinal);
+        }
+        ++registeredCount;
+    }
+
+    if (registeredCount > 0) {
+        extendHistoryUnreadRange(firstOrdinal, lastOrdinal);
     }
     return registeredCount;
-}
-
-bool ChatArea::registerHistoryUnreadCandidate(const ChatMessagePtr& message)
-{
-    if (!message || message->isFromMe()) {
-        return false;
-    }
-
-    const ChatMessage* rawMessage = message.get();
-    if (m_state.pendingHistoryUnreadMessages.contains(rawMessage)) {
-        return false;
-    }
-
-    m_state.pendingHistoryUnreadMessages.insert(rawMessage);
-    return true;
 }
 
 bool ChatArea::registerNewUnreadCandidate(const ChatMessagePtr& message)
@@ -640,37 +624,23 @@ bool ChatArea::registerNewUnreadCandidate(const ChatMessagePtr& message)
         return false;
     }
 
-    const ChatMessage* rawMessage = message.get();
-    if (m_state.pendingNewUnreadMessages.contains(rawMessage)) {
+    const auto ordinalIt = m_state.peerMessageOrdinals.constFind(message.get());
+    if (ordinalIt == m_state.peerMessageOrdinals.cend()) {
         return false;
     }
 
-    m_state.pendingNewUnreadMessages.insert(rawMessage);
+    const int ordinal = ordinalIt.value();
+    if (!m_state.hasNewUnreadOrdinalRange) {
+        m_state.hasNewUnreadOrdinalRange = true;
+        m_state.newUnreadFirstOrdinal = ordinal;
+        m_state.newUnreadLastOrdinal = ordinal;
+        m_state.newReadMaxOrdinal = ordinal - 1;
+    } else {
+        m_state.newUnreadFirstOrdinal = qMin(m_state.newUnreadFirstOrdinal, ordinal);
+        m_state.newUnreadLastOrdinal = qMax(m_state.newUnreadLastOrdinal, ordinal);
+    }
+    recalculateNewUnreadCount();
     return true;
-}
-
-void ChatArea::rebuildUnreadMessageIndexes()
-{
-    m_state.pendingHistoryUnreadIndexes.clear();
-    m_state.pendingNewUnreadIndexes.clear();
-    if (!chatModel ||
-            (m_state.pendingHistoryUnreadMessages.isEmpty() &&
-             m_state.pendingNewUnreadMessages.isEmpty())) {
-        return;
-    }
-
-    for (int row = 0; row < chatModel->rowCount(); ++row) {
-        const ChatMessage* message = chatModel->messageAt(row);
-        if (!message) {
-            continue;
-        }
-        if (m_state.pendingHistoryUnreadMessages.contains(message)) {
-            m_state.pendingHistoryUnreadIndexes.insert(message, QPersistentModelIndex(chatModel->index(row, 0)));
-        }
-        if (m_state.pendingNewUnreadMessages.contains(message)) {
-            m_state.pendingNewUnreadIndexes.insert(message, QPersistentModelIndex(chatModel->index(row, 0)));
-        }
-    }
 }
 
 void ChatArea::scheduleVisibleUnreadCheck()
@@ -690,79 +660,255 @@ void ChatArea::updateVisibleUnreadMessages()
 {
     if (conversationId().isEmpty() ||
             (m_state.historyUnreadMessageCount <= 0 && m_state.newUnreadMessageCount <= 0) ||
-            (m_state.pendingHistoryUnreadMessages.isEmpty() &&
-             m_state.pendingNewUnreadMessages.isEmpty()) ||
             m_state.loadingInitialMessages ||
             m_state.loadingOlderMessages) {
         return;
     }
 
-    if (m_state.pendingHistoryUnreadIndexes.size() != m_state.pendingHistoryUnreadMessages.size() ||
-            m_state.pendingNewUnreadIndexes.size() != m_state.pendingNewUnreadMessages.size()) {
-        rebuildUnreadMessageIndexes();
+    const std::optional<int> firstVisibleOrdinal = firstVisiblePeerOrdinal();
+    if (m_state.hasHistoryUnreadOrdinalRange &&
+            firstVisibleOrdinal.has_value() &&
+            firstVisibleOrdinal.value() <= m_state.historyUnreadLastOrdinal &&
+            firstVisibleOrdinal.value() < m_state.historyReadMinOrdinal) {
+        m_state.historyReadMinOrdinal = qMax(m_state.historyUnreadFirstOrdinal,
+                                             firstVisibleOrdinal.value());
+        recalculateHistoryUnreadCount();
     }
 
-    QVector<const ChatMessage*> visibleHistoryMessages;
-    visibleHistoryMessages.reserve(m_state.pendingHistoryUnreadIndexes.size());
-    for (auto it = m_state.pendingHistoryUnreadIndexes.cbegin();
-         it != m_state.pendingHistoryUnreadIndexes.cend();
-         ++it) {
-        if (it.value().isValid() && isMessageVisibleInViewport(it.value())) {
-            visibleHistoryMessages.push_back(it.key());
-        }
-    }
-
-    QVector<const ChatMessage*> visibleNewMessages;
-    visibleNewMessages.reserve(m_state.pendingNewUnreadIndexes.size());
-    for (auto it = m_state.pendingNewUnreadIndexes.cbegin();
-         it != m_state.pendingNewUnreadIndexes.cend();
-         ++it) {
-        if (it.value().isValid() && isMessageVisibleInViewport(it.value())) {
-            visibleNewMessages.push_back(it.key());
-        }
-    }
-
-    if (visibleHistoryMessages.isEmpty() && visibleNewMessages.isEmpty()) {
-        return;
-    }
-
-    for (const ChatMessage* message : visibleHistoryMessages) {
-        markPendingHistoryUnreadVisible(message);
-    }
-    for (const ChatMessage* message : visibleNewMessages) {
-        markPendingNewUnreadVisible(message);
+    const std::optional<int> lastVisibleOrdinal = lastVisiblePeerOrdinal();
+    if (m_state.hasNewUnreadOrdinalRange &&
+            lastVisibleOrdinal.has_value() &&
+            lastVisibleOrdinal.value() >= m_state.newUnreadFirstOrdinal &&
+            lastVisibleOrdinal.value() > m_state.newReadMaxOrdinal) {
+        m_state.newReadMaxOrdinal = qMin(m_state.newUnreadLastOrdinal,
+                                         lastVisibleOrdinal.value());
+        recalculateNewUnreadCount();
     }
 
     updateHistoryUnreadNotifier();
     updateNewMessageNotifier();
 }
 
-void ChatArea::markPendingHistoryUnreadVisible(const ChatMessage* message)
+QRect ChatArea::effectiveMessageViewportRect() const
 {
-    if (!message || !m_state.pendingHistoryUnreadMessages.remove(message)) {
+    if (!chatView || !chatView->viewport()) {
+        return {};
+    }
+
+    QRect effectiveViewport = chatView->viewport()->rect();
+    if (inputBar && inputBar->isVisible()) {
+        const int inputTopInViewport = chatView->viewport()->mapFrom(this, inputBar->pos()).y();
+        if (inputTopInViewport > 0) {
+            effectiveViewport.setBottom(qMin(effectiveViewport.bottom(), inputTopInViewport - 6));
+        }
+    }
+    return effectiveViewport;
+}
+
+std::optional<int> ChatArea::firstVisiblePeerOrdinal() const
+{
+    if (!chatModel || !chatView || !chatView->viewport()) {
+        return std::nullopt;
+    }
+
+    const QRect viewportRect = effectiveMessageViewportRect();
+    if (viewportRect.isEmpty()) {
+        return std::nullopt;
+    }
+
+    QModelIndex index = chatView->indexAt(QPoint(viewportRect.center().x(), viewportRect.top() + 1));
+    if (!index.isValid()) {
+        index = chatView->indexAt(QPoint(viewportRect.left() + 1, viewportRect.top() + 1));
+    }
+    if (!index.isValid()) {
+        return std::nullopt;
+    }
+
+    return peerOrdinalForRow(chatModel->nearestPeerMessageRowAtOrAfter(index.row()));
+}
+
+std::optional<int> ChatArea::lastVisiblePeerOrdinal() const
+{
+    if (!chatModel || !chatView || !chatView->viewport()) {
+        return std::nullopt;
+    }
+
+    const QRect viewportRect = effectiveMessageViewportRect();
+    if (viewportRect.isEmpty()) {
+        return std::nullopt;
+    }
+
+    QModelIndex index = chatView->indexAt(QPoint(viewportRect.center().x(), viewportRect.bottom() - 1));
+    if (!index.isValid()) {
+        index = chatView->indexAt(QPoint(viewportRect.left() + 1, viewportRect.bottom() - 1));
+    }
+    if (!index.isValid()) {
+        return std::nullopt;
+    }
+
+    return peerOrdinalForRow(chatModel->nearestPeerMessageRowAtOrBefore(index.row()));
+}
+
+std::optional<int> ChatArea::peerOrdinalForRow(int row) const
+{
+    if (!chatModel || row < 0) {
+        return std::nullopt;
+    }
+
+    const ChatMessage* message = chatModel->messageAt(row);
+    const auto it = m_state.peerMessageOrdinals.constFind(message);
+    return it == m_state.peerMessageOrdinals.cend()
+            ? std::nullopt
+            : std::optional<int>(it.value());
+}
+
+int ChatArea::historyUnreadJumpRow(int unreadCount) const
+{
+    if (!chatModel || unreadCount <= 0) {
+        return -1;
+    }
+
+    if (m_state.hasHistoryUnreadOrdinalRange) {
+        for (int row = 0; row < chatModel->rowCount(); ++row) {
+            const std::optional<int> ordinal = peerOrdinalForRow(row);
+            if (ordinal.has_value() &&
+                    ordinal.value() >= m_state.historyUnreadFirstOrdinal &&
+                    ordinal.value() <= m_state.historyUnreadLastOrdinal &&
+                    ordinal.value() < m_state.historyReadMinOrdinal) {
+                return row;
+            }
+        }
+    }
+
+    if (m_state.historyUnloadedUnreadMessageCount > 0) {
+        return -1;
+    }
+
+    int remainingUnread = unreadCount;
+    int oldestAvailablePeerRow = -1;
+    for (int row = chatModel->rowCount() - 1; row >= 0; --row) {
+        const ChatMessage* message = chatModel->messageAt(row);
+        if (!message || message->isFromMe()) {
+            continue;
+        }
+
+        oldestAvailablePeerRow = row;
+        --remainingUnread;
+        if (remainingUnread <= 0) {
+            return row;
+        }
+    }
+
+    return oldestAvailablePeerRow;
+}
+
+void ChatArea::assignInitialPeerMessageOrdinals(const ChatMessageList& messages)
+{
+    m_state.peerMessageOrdinals.clear();
+    int ordinal = 0;
+    for (const ChatMessagePtr& message : messages) {
+        if (!message || message->isFromMe()) {
+            continue;
+        }
+        m_state.peerMessageOrdinals.insert(message.get(), ordinal++);
+    }
+    m_state.minPeerMessageOrdinal = 0;
+    m_state.maxPeerMessageOrdinal = ordinal - 1;
+}
+
+void ChatArea::assignPrependedPeerMessageOrdinals(const ChatMessageList& messages)
+{
+    int peerCount = 0;
+    for (const ChatMessagePtr& message : messages) {
+        if (message && !message->isFromMe()) {
+            ++peerCount;
+        }
+    }
+    if (peerCount <= 0) {
         return;
     }
 
-    m_state.pendingHistoryUnreadIndexes.remove(message);
-    m_state.historyUnreadMessageCount = qMax(0, m_state.historyUnreadMessageCount - 1);
-    if (m_state.historyUnreadMessageCount == 0) {
-        m_state.historyUnloadedUnreadMessageCount = 0;
-        m_state.pendingHistoryUnreadMessages.clear();
-        m_state.pendingHistoryUnreadIndexes.clear();
+    int ordinal = m_state.peerMessageOrdinals.isEmpty()
+            ? 0
+            : m_state.minPeerMessageOrdinal - peerCount;
+    for (const ChatMessagePtr& message : messages) {
+        if (!message || message->isFromMe()) {
+            continue;
+        }
+        m_state.peerMessageOrdinals.insert(message.get(), ordinal++);
+    }
+    m_state.minPeerMessageOrdinal = m_state.peerMessageOrdinals.isEmpty()
+            ? 0
+            : ordinal - peerCount;
+    if (m_state.maxPeerMessageOrdinal < m_state.minPeerMessageOrdinal) {
+        m_state.maxPeerMessageOrdinal = ordinal - 1;
     }
 }
 
-void ChatArea::markPendingNewUnreadVisible(const ChatMessage* message)
+void ChatArea::assignAppendedPeerMessageOrdinal(const ChatMessagePtr& message)
 {
-    if (!message || !m_state.pendingNewUnreadMessages.remove(message)) {
+    if (!message || message->isFromMe()) {
         return;
     }
 
-    m_state.pendingNewUnreadIndexes.remove(message);
-    m_state.newUnreadMessageCount = qMax(0, m_state.newUnreadMessageCount - 1);
+    const int ordinal = m_state.peerMessageOrdinals.isEmpty()
+            ? 0
+            : m_state.maxPeerMessageOrdinal + 1;
+    m_state.peerMessageOrdinals.insert(message.get(), ordinal);
+    if (m_state.peerMessageOrdinals.size() == 1) {
+        m_state.minPeerMessageOrdinal = ordinal;
+    }
+    m_state.maxPeerMessageOrdinal = ordinal;
+}
+
+void ChatArea::extendHistoryUnreadRange(int firstOrdinal, int lastOrdinal)
+{
+    if (lastOrdinal < firstOrdinal) {
+        return;
+    }
+
+    if (!m_state.hasHistoryUnreadOrdinalRange) {
+        m_state.hasHistoryUnreadOrdinalRange = true;
+        m_state.historyUnreadFirstOrdinal = firstOrdinal;
+        m_state.historyUnreadLastOrdinal = lastOrdinal;
+        m_state.historyReadMinOrdinal = lastOrdinal + 1;
+    } else {
+        m_state.historyUnreadFirstOrdinal = qMin(m_state.historyUnreadFirstOrdinal, firstOrdinal);
+        m_state.historyUnreadLastOrdinal = qMax(m_state.historyUnreadLastOrdinal, lastOrdinal);
+        m_state.historyReadMinOrdinal = qMax(m_state.historyReadMinOrdinal,
+                                             m_state.historyUnreadFirstOrdinal);
+    }
+    recalculateHistoryUnreadCount();
+}
+
+void ChatArea::recalculateHistoryUnreadCount()
+{
+    int loadedUnreadCount = 0;
+    if (m_state.hasHistoryUnreadOrdinalRange) {
+        const int unreadLastOrdinal = qMin(m_state.historyUnreadLastOrdinal,
+                                           m_state.historyReadMinOrdinal - 1);
+        loadedUnreadCount = qMax(0, unreadLastOrdinal - m_state.historyUnreadFirstOrdinal + 1);
+    }
+    m_state.historyUnreadMessageCount = loadedUnreadCount +
+            qMax(0, m_state.historyUnloadedUnreadMessageCount);
+    if (m_state.historyUnreadMessageCount == 0) {
+        m_state.hasHistoryUnreadOrdinalRange = false;
+        m_state.historyUnloadedUnreadMessageCount = 0;
+    }
+}
+
+void ChatArea::recalculateNewUnreadCount()
+{
+    if (!m_state.hasNewUnreadOrdinalRange) {
+        m_state.newUnreadMessageCount = 0;
+        return;
+    }
+
+    const int firstUnreadOrdinal = qMax(m_state.newUnreadFirstOrdinal,
+                                        m_state.newReadMaxOrdinal + 1);
+    m_state.newUnreadMessageCount = qMax(0, m_state.newUnreadLastOrdinal - firstUnreadOrdinal + 1);
     if (m_state.newUnreadMessageCount == 0) {
-        m_state.pendingNewUnreadMessages.clear();
-        m_state.pendingNewUnreadIndexes.clear();
+        m_state.hasNewUnreadOrdinalRange = false;
     }
 }
 
@@ -773,8 +919,7 @@ void ChatArea::reconcileHistoryUnreadAfterHistoryExhausted()
     }
 
     m_state.historyUnloadedUnreadMessageCount = 0;
-    m_state.historyUnreadMessageCount = qMin(m_state.historyUnreadMessageCount,
-                                             m_state.pendingHistoryUnreadMessages.size());
+    recalculateHistoryUnreadCount();
 }
 
 void ChatArea::onNewMessageNotifierClicked()
@@ -953,36 +1098,29 @@ void ChatArea::scrollToFirstHistoryUnread()
     }
 
     const int clickedUnreadCount = m_state.historyUnreadMessageCount;
-    loadHistoryUnreadMessages(clickedUnreadCount);
-    rebuildUnreadMessageIndexes();
-
-    QPersistentModelIndex firstUnreadIndex;
-    const ChatMessage* firstUnreadMessage = nullptr;
-    for (auto it = m_state.pendingHistoryUnreadIndexes.cbegin();
-         it != m_state.pendingHistoryUnreadIndexes.cend();
-         ++it) {
-        if (!it.value().isValid()) {
-            continue;
-        }
-        if (!firstUnreadIndex.isValid() || it.value().row() < firstUnreadIndex.row()) {
-            firstUnreadIndex = it.value();
-            firstUnreadMessage = it.key();
-        }
-    }
-
-    m_state.historyUnreadMessageCount = 0;
-    m_state.historyUnloadedUnreadMessageCount = 0;
-    m_state.pendingHistoryUnreadMessages.clear();
-    m_state.pendingHistoryUnreadIndexes.clear();
-    updateHistoryUnreadNotifier();
-
-    if (!firstUnreadMessage) {
+    if (m_state.loadingOlderMessages) {
+        m_state.pendingHistoryUnreadScroll = true;
         return;
     }
 
-    chatModel->setNewMessageDividerBefore(firstUnreadMessage);
+    while (m_state.historyUnloadedUnreadMessageCount > 0) {
+        if (!loadHistoryUnreadMessages(clickedUnreadCount)) {
+            break;
+        }
+    }
+
+    const int unreadJumpRow = historyUnreadJumpRow(clickedUnreadCount);
+    const ChatMessage* unreadJumpMessage = chatModel && unreadJumpRow >= 0
+            ? chatModel->messageAt(unreadJumpRow)
+            : nullptr;
+    if (!unreadJumpMessage) {
+        updateHistoryUnreadNotifier();
+        return;
+    }
+
+    chatModel->setNewMessageDividerBefore(unreadJumpMessage);
     const QModelIndex dividerIndex = chatModel->newMessageDividerIndex();
-    const QModelIndex messageIndex = chatModel->indexForMessage(firstUnreadMessage);
+    const QModelIndex messageIndex = chatModel->indexForMessage(unreadJumpMessage);
     const QPersistentModelIndex targetIndex(dividerIndex.isValid() ? dividerIndex : messageIndex);
 
     QTimer::singleShot(kHistoryUnreadScrollDelayMs, this, [this, targetIndex]() {
@@ -1401,10 +1539,12 @@ void ChatArea::onSessionMessagesCleared()
     m_state.historyUnloadedUnreadMessageCount = 0;
     m_state.newUnreadMessageCount = 0;
     m_state.newMessageNotifierRevealedByDownScroll = false;
-    m_state.pendingHistoryUnreadMessages.clear();
-    m_state.pendingHistoryUnreadIndexes.clear();
-    m_state.pendingNewUnreadMessages.clear();
-    m_state.pendingNewUnreadIndexes.clear();
+    m_state.pendingHistoryUnreadScroll = false;
+    m_state.hasHistoryUnreadOrdinalRange = false;
+    m_state.hasNewUnreadOrdinalRange = false;
+    m_state.peerMessageOrdinals.clear();
+    m_state.minPeerMessageOrdinal = 0;
+    m_state.maxPeerMessageOrdinal = -1;
     m_state.hasMoreBefore = false;
     m_state.loadingOlderMessages = false;
     m_state.loadingInitialMessages = false;
@@ -1676,13 +1816,25 @@ void ChatArea::removeUnreadCandidate(const ChatMessage* message)
         return;
     }
 
-    if (m_state.pendingHistoryUnreadMessages.remove(message)) {
-        m_state.pendingHistoryUnreadIndexes.remove(message);
-        m_state.historyUnreadMessageCount = qMax(0, m_state.historyUnreadMessageCount - 1);
+    const auto ordinalIt = m_state.peerMessageOrdinals.constFind(message);
+    if (ordinalIt == m_state.peerMessageOrdinals.cend()) {
+        return;
     }
-    if (m_state.pendingNewUnreadMessages.remove(message)) {
-        m_state.pendingNewUnreadIndexes.remove(message);
-        m_state.newUnreadMessageCount = qMax(0, m_state.newUnreadMessageCount - 1);
+
+    const int ordinal = ordinalIt.value();
+    if (m_state.hasHistoryUnreadOrdinalRange &&
+            ordinal >= m_state.historyUnreadFirstOrdinal &&
+            ordinal <= m_state.historyUnreadLastOrdinal &&
+            ordinal < m_state.historyReadMinOrdinal) {
+        m_state.historyReadMinOrdinal = qMax(m_state.historyUnreadFirstOrdinal, ordinal);
+        recalculateHistoryUnreadCount();
+    }
+    if (m_state.hasNewUnreadOrdinalRange &&
+            ordinal >= m_state.newUnreadFirstOrdinal &&
+            ordinal <= m_state.newUnreadLastOrdinal &&
+            ordinal > m_state.newReadMaxOrdinal) {
+        m_state.newReadMaxOrdinal = ordinal;
+        recalculateNewUnreadCount();
     }
 }
 
@@ -1755,9 +1907,12 @@ void ChatArea::recallMessageAtRow(int row,
         return;
     }
 
+    const auto ordinalIt = m_state.peerMessageOrdinals.constFind(message.get());
+    if (ordinalIt != m_state.peerMessageOrdinals.cend() && !recallMessage->isFromMe()) {
+        m_state.peerMessageOrdinals.insert(recallMessage.get(), ordinalIt.value());
+    }
     removeUnreadCandidate(message.get());
     chatModel->replaceMessage(row, recallMessage);
-    rebuildUnreadMessageIndexes();
     updateHistoryUnreadNotifier();
     updateNewMessageNotifier();
     scheduleReeditExpiry(recallMessage);
@@ -1827,27 +1982,12 @@ void ChatArea::onDeleteMessageRequested(int row)
         return;
     }
 
-    const bool removedHistoryUnread = m_state.pendingHistoryUnreadMessages.remove(message.get());
-    if (removedHistoryUnread) {
-        m_state.pendingHistoryUnreadIndexes.remove(message.get());
-        m_state.historyUnreadMessageCount = qMax(0, m_state.historyUnreadMessageCount - 1);
-    }
-    const bool removedNewUnread = m_state.pendingNewUnreadMessages.remove(message.get());
-    if (removedNewUnread) {
-        m_state.pendingNewUnreadIndexes.remove(message.get());
-        m_state.newUnreadMessageCount = qMax(0, m_state.newUnreadMessageCount - 1);
-    }
-
+    removeUnreadCandidate(message.get());
     if (chatModel->removeMessage(row) && m_state.loadedMessageCount > 0) {
         --m_state.loadedMessageCount;
     }
-    rebuildUnreadMessageIndexes();
-    if (removedHistoryUnread) {
-        updateHistoryUnreadNotifier();
-    }
-    if (removedNewUnread) {
-        updateNewMessageNotifier();
-    }
+    updateHistoryUnreadNotifier();
+    updateNewMessageNotifier();
     adjustBottomSpace();
 }
 
@@ -1897,6 +2037,11 @@ void ChatArea::loadOlderMessages()
     }
 
     m_state.loadingOlderMessages = true;
+#ifdef Q_OS_WIN
+    m_state.olderMessageTriggerCooldownUntilMs =
+            QDateTime::currentMSecsSinceEpoch() + kOlderMessageTriggerCooldownMs;
+    chatView->stopAnimatedWheelScroll();
+#endif
     const QString loadingConversationId = conversationId();
     QScrollBar* scrollBar = chatView->verticalScrollBar();
     const int previousValue = scrollBar->value();
@@ -1918,9 +2063,17 @@ void ChatArea::loadOlderMessages()
         reconcileHistoryUnreadAfterHistoryExhausted();
         updateHistoryUnreadNotifier();
         m_state.loadingOlderMessages = false;
+        if (m_state.pendingHistoryUnreadScroll) {
+            m_state.pendingHistoryUnreadScroll = false;
+            scrollToFirstHistoryUnread();
+        }
         return;
     }
 
+    assignPrependedPeerMessageOrdinals(olderPage.messages);
+#ifdef Q_OS_WIN
+    chatView->setOverlayScrollBarUpdatesPaused(true);
+#endif
     chatModel->prependMessages(olderPage.messages);
     const int loadedUnread = registerHistoryUnreadCandidates(
             olderPage.messages,
@@ -1928,29 +2081,43 @@ void ChatArea::loadOlderMessages()
     m_state.historyUnloadedUnreadMessageCount = qMax(
             0,
             m_state.historyUnloadedUnreadMessageCount - loadedUnread);
+    recalculateHistoryUnreadCount();
     m_state.loadedMessageCount = olderPage.loadedMessageCount;
     m_state.hasMoreBefore = olderPage.hasMoreBefore;
-    rebuildUnreadMessageIndexes();
     reconcileHistoryUnreadAfterHistoryExhausted();
     updateHistoryUnreadNotifier();
     adjustBottomSpace();
     chatView->preserveScrollPositionAfterPrepend(previousValue, previousMaximum);
     QTimer::singleShot(0, this, [this]() {
+#ifdef Q_OS_WIN
+        if (chatView) {
+            chatView->stopAnimatedWheelScroll();
+            chatView->setOverlayScrollBarUpdatesPaused(false);
+        }
+        m_state.olderMessageTriggerCooldownUntilMs =
+                QDateTime::currentMSecsSinceEpoch() + kOlderMessageTriggerCooldownMs;
+#endif
         m_state.loadingOlderMessages = false;
+        if (m_state.pendingHistoryUnreadScroll) {
+            m_state.pendingHistoryUnreadScroll = false;
+            scrollToFirstHistoryUnread();
+            return;
+        }
         scheduleVisibleUnreadCheck();
     });
 }
 
-void ChatArea::loadHistoryUnreadMessages(int requestedMessageCount)
+bool ChatArea::loadHistoryUnreadMessages(int requestedMessageCount)
 {
     if (conversationId().isEmpty() ||
             m_state.historyUnreadMessageCount <= 0 ||
             m_state.historyUnloadedUnreadMessageCount <= 0 ||
             m_state.loadingOlderMessages) {
-        return;
+        return false;
     }
 
     m_state.loadingOlderMessages = true;
+    const int previousLoadedMessageCount = m_state.loadedMessageCount;
     const int requestLimit = qMax(kOlderMessagePageSize,
                                   qMax(requestedMessageCount,
                                        m_state.historyUnloadedUnreadMessageCount));
@@ -1969,9 +2136,10 @@ void ChatArea::loadHistoryUnreadMessages(int requestedMessageCount)
         updateHistoryUnreadNotifier();
         adjustBottomSpace();
         m_state.loadingOlderMessages = false;
-        return;
+        return false;
     }
 
+    assignPrependedPeerMessageOrdinals(olderPage.messages);
     chatModel->prependMessages(olderPage.messages);
     const int loadedUnread = registerHistoryUnreadCandidates(
             olderPage.messages,
@@ -1979,9 +2147,9 @@ void ChatArea::loadHistoryUnreadMessages(int requestedMessageCount)
     m_state.historyUnloadedUnreadMessageCount = qMax(
             0,
             m_state.historyUnloadedUnreadMessageCount - loadedUnread);
+    recalculateHistoryUnreadCount();
     m_state.loadedMessageCount = olderPage.loadedMessageCount;
     m_state.hasMoreBefore = olderPage.hasMoreBefore;
-    rebuildUnreadMessageIndexes();
     reconcileHistoryUnreadAfterHistoryExhausted();
     updateHistoryUnreadNotifier();
     adjustBottomSpace();
@@ -1989,6 +2157,7 @@ void ChatArea::loadHistoryUnreadMessages(int requestedMessageCount)
         chatView->preserveScrollPositionAfterPrepend(previousValue, previousMaximum);
     }
     m_state.loadingOlderMessages = false;
+    return m_state.loadedMessageCount > previousLoadedMessageCount;
 }
 
 QString ChatArea::conversationId() const
@@ -2056,16 +2225,17 @@ void ChatArea::openConversation(const ConversationThreadData& conversation)
     m_state.newUnreadMessageCount = 0;
     m_state.newMessageNotifierRevealedByDownScroll = false;
     m_state.loadingInitialMessages = false;
+    m_state.hasMoreBefore = conversation.hasMoreBefore;
+    m_state.allowOlderMessageFetch = false;
+    assignInitialPeerMessageOrdinals(conversation.messages);
     const int loadedUnread = registerHistoryUnreadCandidates(
             conversation.messages,
             m_state.historyUnloadedUnreadMessageCount);
     m_state.historyUnloadedUnreadMessageCount = qMax(
             0,
             m_state.historyUnloadedUnreadMessageCount - loadedUnread);
-    m_state.hasMoreBefore = conversation.hasMoreBefore;
-    m_state.allowOlderMessageFetch = false;
+    recalculateHistoryUnreadCount();
     chatModel->setMessages(conversation.messages);
-    rebuildUnreadMessageIndexes();
     reconcileHistoryUnreadAfterHistoryExhausted();
     if (inputBar && !m_systemFloatingBarsSuppressed) {
         inputBar->show();

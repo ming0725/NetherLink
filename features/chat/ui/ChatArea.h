@@ -6,7 +6,7 @@
 #include <QDateTime>
 #include <QHash>
 #include <QPersistentModelIndex>
-#include <QSet>
+#include <optional>
 #include "ChatListView.h"
 #include "features/chat/model/ChatListModel.h"
 #include "ChatItemDelegate.h"
@@ -75,12 +75,23 @@ private:
         bool loadingOlderMessages = false;
         bool loadingInitialMessages = false;
         bool allowOlderMessageFetch = false;
+#ifdef Q_OS_WIN
+        qint64 olderMessageTriggerCooldownUntilMs = 0;
+#endif
         bool visibleUnreadCheckScheduled = false;
+        bool pendingHistoryUnreadScroll = false;
         bool newMessageNotifierRevealedByDownScroll = false;
-        QSet<const ChatMessage*> pendingHistoryUnreadMessages;
-        QHash<const ChatMessage*, QPersistentModelIndex> pendingHistoryUnreadIndexes;
-        QSet<const ChatMessage*> pendingNewUnreadMessages;
-        QHash<const ChatMessage*, QPersistentModelIndex> pendingNewUnreadIndexes;
+        bool hasHistoryUnreadOrdinalRange = false;
+        int historyUnreadFirstOrdinal = 0;
+        int historyUnreadLastOrdinal = -1;
+        int historyReadMinOrdinal = 0;
+        bool hasNewUnreadOrdinalRange = false;
+        int newUnreadFirstOrdinal = 0;
+        int newUnreadLastOrdinal = -1;
+        int newReadMaxOrdinal = -1;
+        QHash<const ChatMessage*, int> peerMessageOrdinals;
+        int minPeerMessageOrdinal = 0;
+        int maxPeerMessageOrdinal = -1;
     };
 
     ChatListView* chatView;
@@ -114,15 +125,21 @@ private:
     void scrollToBottom(bool accelerateFarDistance = false);
     void scrollToFirstHistoryUnread();
     bool isScrollAtBottom() const;
-    bool isMessageVisibleInViewport(const QModelIndex& index) const;
     int registerHistoryUnreadCandidates(const ChatMessageList& messages, int maxCount);
-    bool registerHistoryUnreadCandidate(const ChatMessagePtr& message);
     bool registerNewUnreadCandidate(const ChatMessagePtr& message);
-    void rebuildUnreadMessageIndexes();
     void scheduleVisibleUnreadCheck();
     void updateVisibleUnreadMessages();
-    void markPendingHistoryUnreadVisible(const ChatMessage* message);
-    void markPendingNewUnreadVisible(const ChatMessage* message);
+    QRect effectiveMessageViewportRect() const;
+    std::optional<int> firstVisiblePeerOrdinal() const;
+    std::optional<int> lastVisiblePeerOrdinal() const;
+    std::optional<int> peerOrdinalForRow(int row) const;
+    int historyUnreadJumpRow(int unreadCount) const;
+    void assignInitialPeerMessageOrdinals(const ChatMessageList& messages);
+    void assignPrependedPeerMessageOrdinals(const ChatMessageList& messages);
+    void assignAppendedPeerMessageOrdinal(const ChatMessagePtr& message);
+    void extendHistoryUnreadRange(int firstOrdinal, int lastOrdinal);
+    void recalculateHistoryUnreadCount();
+    void recalculateNewUnreadCount();
     void appendRepositoryMessage(const QString& changedConversationId,
                                  const ChatMessagePtr& message);
     void reconcileHistoryUnreadAfterHistoryExhausted();
@@ -131,7 +148,7 @@ private:
     void applyConversationMeta();
     void clearConversation(bool closeInfoPanel = true);
     void loadOlderMessages();
-    void loadHistoryUnreadMessages(int requestedMessageCount);
+    bool loadHistoryUnreadMessages(int requestedMessageCount);
     QString conversationId() const;
     bool isGroupMode() const;
     QWidget* activeInfoPanel() const;

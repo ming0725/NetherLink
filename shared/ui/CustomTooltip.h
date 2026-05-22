@@ -10,6 +10,7 @@ class CustomTooltip : public QWidget
 public:
     explicit CustomTooltip(QWidget *parent = nullptr);
     void setText(const QString &text);
+    void setBackgroundOpacity(qreal opacity);
     void showTooltip(const QPoint &pos);
 
 protected:
@@ -17,6 +18,7 @@ protected:
 
 private:
     QLabel *m_label;
+    qreal m_backgroundOpacity = -1.0;
     static const int CORNER_RADIUS = 8;
     static const int PADDING = 8;
 };

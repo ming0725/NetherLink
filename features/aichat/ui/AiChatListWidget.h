@@ -22,6 +22,7 @@ public:
     void setController(AiChatSessionController* controller);
     void ensureInitialized();
     void createNewConversation();
+    void selectConversation(const QString& conversationId);
 
 signals:
     void conversationActivated(const AiChatListEntry& entry);

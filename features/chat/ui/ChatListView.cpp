@@ -182,6 +182,9 @@ void ChatListView::jumpToBottom()
 void ChatListView::preserveScrollPositionAfterPrepend(int previousValue, int previousMaximum)
 {
     m_scrollAnimation->stop();
+#ifdef Q_OS_WIN
+    stopAnimatedWheelScroll();
+#endif
     QTimer::singleShot(0, this, [this, previousValue, previousMaximum]() {
         doItemsLayout();
         updateGeometries();
@@ -193,6 +196,9 @@ void ChatListView::preserveScrollPositionAfterPrepend(int previousValue, int pre
                                    scrollBar->maximum()));
         m_programmaticScrollChange = false;
         m_lastScrollValue = scrollBar->value();
+#ifdef Q_OS_WIN
+        stopAnimatedWheelScroll();
+#endif
         updateOverlayScrollBar();
     });
 }
