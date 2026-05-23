@@ -78,21 +78,93 @@ void appendUniqueMember(QVector<QString>& members, QSet<QString>& seen, const QS
     seen.insert(userId);
 }
 
-void assignSampleMembers(Group& group, const QVector<QString>& userIds, int ordinal)
+QVector<QString> sampleNonFriendMemberIds()
+{
+    const QStringList candidateIds = {
+            QStringLiteral("u101"),
+            QStringLiteral("u102"),
+            QStringLiteral("u103"),
+            QStringLiteral("u104"),
+            QStringLiteral("u105"),
+            QStringLiteral("u106"),
+            QStringLiteral("u107"),
+            QStringLiteral("u108"),
+            QStringLiteral("u109"),
+            QStringLiteral("u110"),
+            QStringLiteral("u111"),
+            QStringLiteral("u112"),
+            QStringLiteral("u113"),
+            QStringLiteral("u114"),
+            QStringLiteral("u115"),
+            QStringLiteral("u116"),
+            QStringLiteral("u117"),
+            QStringLiteral("u118"),
+            QStringLiteral("u119"),
+            QStringLiteral("u120"),
+            QStringLiteral("u121"),
+            QStringLiteral("u122"),
+            QStringLiteral("u123"),
+            QStringLiteral("u124"),
+            QStringLiteral("u125"),
+            QStringLiteral("u126"),
+            QStringLiteral("u127"),
+            QStringLiteral("u128"),
+            QStringLiteral("u129"),
+            QStringLiteral("u130"),
+            QStringLiteral("u131"),
+            QStringLiteral("u132"),
+            QStringLiteral("u133"),
+            QStringLiteral("u134"),
+            QStringLiteral("u135")
+    };
+
+    QVector<QString> userIds;
+    userIds.reserve(candidateIds.size());
+    for (const QString& userId : candidateIds) {
+        const User user = UserRepository::instance().requestUserDetail({userId});
+        if (!user.id.isEmpty() && !user.isFriend) {
+            userIds.push_back(user.id);
+        }
+    }
+    return userIds;
+}
+
+void appendRotatingMember(QVector<QString>& members,
+                          QSet<QString>& seen,
+                          const QVector<QString>& userIds,
+                          int start,
+                          int index)
+{
+    if (userIds.isEmpty()) {
+        return;
+    }
+    appendUniqueMember(members, seen, userIds.at((start + index) % userIds.size()));
+}
+
+void assignSampleMembers(Group& group,
+                         const QVector<QString>& friendUserIds,
+                         const QVector<QString>& nonFriendUserIds,
+                         int ordinal)
 {
     QVector<QString> members;
     QSet<QString> seen;
-    members.reserve(qMin(group.memberNum, userIds.size()));
+    members.reserve(group.memberNum);
 
     appendUniqueMember(members, seen, group.ownerId);
     for (const QString& adminId : group.adminsID) {
         appendUniqueMember(members, seen, adminId);
     }
 
-    if (!userIds.isEmpty()) {
-        const int start = (ordinal * 11) % userIds.size();
-        for (int index = 0; members.size() < group.memberNum && index < userIds.size(); ++index) {
-            appendUniqueMember(members, seen, userIds.at((start + index) % userIds.size()));
+    const int friendStart = friendUserIds.isEmpty() ? 0 : (ordinal * 11) % friendUserIds.size();
+    const int nonFriendStart = nonFriendUserIds.isEmpty() ? 0 : (ordinal * 5) % nonFriendUserIds.size();
+    appendRotatingMember(members, seen, nonFriendUserIds, nonFriendStart, 0);
+
+    const int totalCandidateCount = friendUserIds.size() + nonFriendUserIds.size();
+    for (int index = 0; members.size() < group.memberNum && index < totalCandidateCount * 2; ++index) {
+        if (index % 4 == 2 && !nonFriendUserIds.isEmpty()) {
+            appendRotatingMember(members, seen, nonFriendUserIds, nonFriendStart, index / 4 + 1);
+        } else {
+            appendRotatingMember(members, seen, friendUserIds, friendStart, index);
         }
     }
 
@@ -427,16 +499,17 @@ GroupRepository::GroupRepository(QObject* parent)
     addPerformanceGroup(kPerformanceCategoryId, kPerformanceCategoryName, 128, 2000);
     addPerformanceGroup(kPerformanceCategoryId, kPerformanceCategoryName, 560, 3000);
 
-    QVector<QString> userIds;
+    QVector<QString> friendUserIds;
     const QVector<FriendSummary> friends = UserRepository::instance().requestFriendList();
-    userIds.reserve(friends.size());
+    friendUserIds.reserve(friends.size());
     for (const FriendSummary& friendSummary : friends) {
-        userIds.push_back(friendSummary.userId);
+        friendUserIds.push_back(friendSummary.userId);
     }
+    const QVector<QString> nonFriendUserIds = sampleNonFriendMemberIds();
 
     int ordinal = 0;
     for (Group& group : groupMap) {
-        assignSampleMembers(group, userIds, ordinal++);
+        assignSampleMembers(group, friendUserIds, nonFriendUserIds, ordinal++);
     }
 }
 

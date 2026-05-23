@@ -56,6 +56,7 @@ signals:
     void clearChatHistoryRequested();
     void exitGroupRequested();
     void groupMembersPageRequested(const QString& keyword, int offset, int limit);
+    void memberProfileRequested(const QString& userId, const QPoint& globalPos);
 
 private:
     InlineEditableText* m_groupNameText = nullptr;

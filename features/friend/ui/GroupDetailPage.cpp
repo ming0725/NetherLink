@@ -8,7 +8,6 @@
 #include <QLabel>
 #include <QMenu>
 #include <QMap>
-#include <QMessageBox>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPaintEvent>
@@ -22,6 +21,7 @@
 #include "features/friend/ui/FriendSessionController.h"
 #include "shared/services/ImageService.h"
 #include "shared/ui/ImageViewer.h"
+#include "shared/ui/InWindowPopupOverlay.h"
 #include "shared/ui/InlineEditableText.h"
 #include "shared/ui/PaintedLabel.h"
 #include "shared/ui/StatefulPushButton.h"
@@ -186,15 +186,15 @@ protected:
         }
 
         const int centerX = width() - 19;
-        const int centerY = height() / 2 + 1;
+        const int centerY = height() / 2;
         QPen arrowPen(ThemeManager::instance().color(ThemeColor::TertiaryText),
-                      1.8,
+                      1.6,
                       Qt::SolidLine,
                       Qt::RoundCap,
                       Qt::RoundJoin);
         painter.setPen(arrowPen);
-        painter.drawLine(QPointF(centerX - 6.0, centerY - 3.0), QPointF(centerX, centerY + 4.0));
-        painter.drawLine(QPointF(centerX, centerY + 4.0), QPointF(centerX + 6.0, centerY - 3.0));
+        painter.drawLine(QPointF(centerX - 4.5, centerY - 2.0), QPointF(centerX, centerY + 2.5));
+        painter.drawLine(QPointF(centerX, centerY + 2.5), QPointF(centerX + 4.5, centerY - 2.0));
     }
 
 private:
@@ -684,12 +684,10 @@ void GroupDetailPage::confirmExitGroup()
         return;
     }
 
-    const int result = QMessageBox::question(this,
-                                             QStringLiteral("退出群聊"),
-                                             QStringLiteral("确认退出该群聊吗？"),
-                                             QMessageBox::Yes | QMessageBox::No,
-                                             QMessageBox::No);
-    if (result != QMessageBox::Yes) {
+    const InWindowPopup::Button result = InWindowPopup::question(this,
+                                                                 QStringLiteral("退出群聊"),
+                                                                 QStringLiteral("确认退出该群聊吗？"));
+    if (result != InWindowPopup::Button::Yes) {
         return;
     }
 

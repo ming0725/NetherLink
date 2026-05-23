@@ -16,6 +16,7 @@
 namespace {
 
 constexpr auto kSystemFloatingBarsSuppressedProperty = "systemFloatingBarsSuppressed";
+constexpr auto kUsesSystemFloatingBarBridgeProperty = "usesSystemFloatingBarBridge";
 constexpr qreal kPostBarCornerRadius = 15.0;
 
 } // namespace
@@ -32,6 +33,7 @@ PostApplicationBar::PostApplicationBar(QWidget* parent)
 
 #ifdef Q_OS_MACOS
     m_usesNativeBar = MacPostBarBridge::appearance() != MacPostBarBridge::Appearance::Unsupported;
+    setProperty(kUsesSystemFloatingBarBridgeProperty, m_usesNativeBar);
 #endif
 
     updatePanelShadow();
@@ -199,6 +201,7 @@ void PostApplicationBar::refreshPlatformAppearance()
     const bool shouldUseNative = MacPostBarBridge::appearance()
             != MacPostBarBridge::Appearance::Unsupported;
     const bool systemSuppressed = property(kSystemFloatingBarsSuppressedProperty).toBool();
+    setProperty(kUsesSystemFloatingBarBridgeProperty, shouldUseNative);
 
     if (m_usesNativeBar && !shouldUseNative) {
         MacPostBarBridge::clearBar(this);

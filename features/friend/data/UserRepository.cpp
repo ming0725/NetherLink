@@ -262,7 +262,7 @@ UserRepository::UserRepository(QObject* parent)
             {"u101", "创意服向导", "", ":/resources/avatar/10.jpg", Online, "验证来自创意建筑服", false, false, "default", "默认分组", "上海"},
             {"u102", "红石课堂同学", "", ":/resources/avatar/3.jpg", Mining, "一起调过隐藏门", false, false, "default", "默认分组", "北京"},
             {"u103", "方块花园旅人", "", ":/resources/avatar/5.jpg", Online, "朋友推荐我来参观你的工坊", false, false, "default", "默认分组", "杭州"},
-            {"u104", "坐标寻路员", "", ":/resources/avatar/2.jpg", Offline, "通过建筑坐标搜索找到你", false, false, "default", "默认分组", ""},
+            {"u104", "坐标寻路员", "", ":/resources/avatar/2.jpg", Offline, "通过建筑坐标搜索找到你", false, false, "default", "默认分组", "西安"},
             {"u105", "设计稿交换员", "", ":/resources/avatar/8.jpg", Flying, "来自作品集名片", false, false, "default", "默认分组", "深圳"},
     };
 
@@ -285,6 +285,18 @@ UserRepository::UserRepository(QObject* parent)
             QStringLiteral("樱花塔楼摄影师")
     };
     const QVector<UserStatus> requestStatuses = {Online, Mining, Offline, Flying};
+    const QStringList requestRegions = {
+            QStringLiteral("上海"),
+            QStringLiteral("北京"),
+            QStringLiteral("杭州"),
+            QStringLiteral("广州"),
+            QStringLiteral("深圳"),
+            QStringLiteral("成都"),
+            QStringLiteral("武汉"),
+            QStringLiteral("南京"),
+            QStringLiteral("重庆"),
+            QStringLiteral("西安")
+    };
     for (int index = 5; index < 36; ++index) {
         const int serial = 101 + index;
         User user;
@@ -294,6 +306,7 @@ UserRepository::UserRepository(QObject* parent)
         user.status = requestStatuses.at(index % requestStatuses.size());
         user.signature = QStringLiteral("正在准备击败 %1 次凋零").arg(index + 1);
         user.isFriend = false;
+        user.region = requestRegions.at(index % requestRegions.size());
         userMap.insert(user.id, user);
     }
 

@@ -411,6 +411,26 @@ QString ChatItemDelegate::imageSourceAt(const QStyleOptionViewItem& option,
     return static_cast<const ImageMessage*>(message)->getImageSource();
 }
 
+bool ChatItemDelegate::avatarHitTest(const QStyleOptionViewItem& option,
+                                     const QModelIndex& index,
+                                     const QPoint& viewportPos) const
+{
+    return avatarRectForIndex(option, index).contains(viewportPos);
+}
+
+QRect ChatItemDelegate::avatarRectForIndex(const QStyleOptionViewItem& option,
+                                           const QModelIndex& index) const
+{
+    const ChatMessage* message = index.data(Qt::UserRole).value<ChatMessage*>();
+    if (!message ||
+            message->getType() == MessageType::Recall ||
+            message->getType() == MessageType::GroupMemberJoined) {
+        return {};
+    }
+
+    return calculateAvatarRect(option.rect, message->isFromMe());
+}
+
 bool ChatItemDelegate::selectWordAt(const QStyleOptionViewItem& option,
                                     const QModelIndex& index,
                                     const QPoint& viewportPos)

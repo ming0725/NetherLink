@@ -242,5 +242,7 @@ void MessageApplication::ensureChatArea()
     m_rightStack->addWidget(m_chatArea);
     connect(m_chatArea, &ChatArea::currentConversationRemoved,
             this, &MessageApplication::onCurrentConversationDeleted);
+    connect(m_chatArea, &ChatArea::requestOpenConversation,
+            this, &MessageApplication::openConversationFromContact);
     m_chatArea->setSystemFloatingBarsSuppressed(m_systemFloatingBarsSuppressed);
 }

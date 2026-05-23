@@ -361,6 +361,7 @@ void PostApplication::onPostClickedWithGeometry(const PostSummary& summary, cons
     clearDetailView();
 
     m_overlay->setGeometry(rect());
+    m_overlay->captureBlurredBackground(this);
     m_overlay->lower();
     m_overlay->show();
     fadeOverlay(m_overlay ? m_overlay->overlayOpacity() : 0.0, 1.0, false);
@@ -570,6 +571,7 @@ void PostApplication::fadeOverlay(qreal startOpacity, qreal endOpacity, bool hid
             if (m_overlay) {
                 m_overlay->hide();
                 m_overlay->setOverlayOpacity(0.0);
+                m_overlay->clearBlurredBackground();
             }
         });
     }
@@ -983,6 +985,7 @@ void PostApplication::startCloseAnimation()
         if (m_overlay) {
             m_overlay->hide();
             m_overlay->setOverlayOpacity(0.0);
+            m_overlay->clearBlurredBackground();
         }
         updateLayerOrder();
         group->deleteLater();

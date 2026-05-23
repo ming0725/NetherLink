@@ -7,7 +7,6 @@
 #include <QCursor>
 #include <QItemSelectionModel>
 #include <QMap>
-#include <QMessageBox>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QScrollBar>
@@ -19,6 +18,7 @@
 #include "features/friend/ui/GroupListDelegate.h"
 #include "features/friend/ui/FriendSessionController.h"
 #include "shared/services/ImageService.h"
+#include "shared/ui/InWindowPopupOverlay.h"
 #include "shared/ui/StyledActionMenu.h"
 #include "shared/theme/ThemeManager.h"
 
@@ -606,12 +606,10 @@ void GroupListWidget::exitGroupFromMenu(const QString& groupId)
         return;
     }
 
-    const int result = QMessageBox::question(this,
-                                             QStringLiteral("退出群聊"),
-                                             QStringLiteral("确认退出该群聊吗？"),
-                                             QMessageBox::Yes | QMessageBox::No,
-                                             QMessageBox::No);
-    if (result != QMessageBox::Yes) {
+    const InWindowPopup::Button result = InWindowPopup::question(this,
+                                                                 QStringLiteral("退出群聊"),
+                                                                 QStringLiteral("确认退出该群聊吗？"));
+    if (result != InWindowPopup::Button::Yes) {
         return;
     }
 

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QColor>
+#include <QLineEdit>
 #include <QWidget>
 
 class QLineEdit;
@@ -33,6 +34,12 @@ public:
     void setBorderWidth(int width);
     void setRadius(int radius);
     void setHorizontalPadding(int padding);
+    void setEchoMode(QLineEdit::EchoMode echoMode);
+    QLineEdit::EchoMode echoMode() const;
+    void setSelectionBackgroundColor(const QColor& color);
+    void setSelectedTextColor(const QColor& color);
+    void setTrimTextOnCommit(bool trim);
+    bool trimsTextOnCommit() const;
 
     bool isEditing() const;
     void startEditing();
@@ -40,6 +47,7 @@ public:
 
 signals:
     void editingFinished();
+    void returnPressed();
 
 protected:
     void resizeEvent(QResizeEvent* event) override;
@@ -69,10 +77,13 @@ private:
     QColor m_focusBackgroundColor;
     QColor m_normalBorderColor;
     QColor m_focusBorderColor;
+    QColor m_selectionBackgroundColor;
+    QColor m_selectedTextColor;
     int m_borderWidth = 0;
     int m_radius = 0;
     int m_horizontalPadding = 0;
     bool m_hovered = false;
     bool m_committing = false;
     bool m_updatingPalette = false;
+    bool m_trimTextOnCommit = true;
 };

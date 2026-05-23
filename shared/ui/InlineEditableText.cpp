@@ -21,6 +21,8 @@ InlineEditableText::InlineEditableText(QWidget* parent)
     , m_focusBackgroundColor(Qt::transparent)
     , m_normalBorderColor(Qt::transparent)
     , m_focusBorderColor(Qt::transparent)
+    , m_selectionBackgroundColor(palette().color(QPalette::Highlight))
+    , m_selectedTextColor(palette().color(QPalette::HighlightedText))
 {
     setCursor(Qt::PointingHandCursor);
     setFocusPolicy(Qt::ClickFocus);
@@ -38,6 +40,7 @@ InlineEditableText::InlineEditableText(QWidget* parent)
     m_edit->hide();
 
     connect(m_edit, &QLineEdit::editingFinished, this, &InlineEditableText::finishEditing);
+    connect(m_edit, &QLineEdit::returnPressed, this, &InlineEditableText::returnPressed);
 
     if (qApp) {
         qApp->installEventFilter(this);
@@ -61,7 +64,7 @@ QString InlineEditableText::text() const
 
 void InlineEditableText::setText(const QString& text)
 {
-    const QString nextText = text.trimmed();
+    const QString nextText = m_trimTextOnCommit ? text.trimmed() : text;
     if (m_text == nextText && !isEditing()) {
         return;
     }
@@ -162,6 +165,47 @@ void InlineEditableText::setHorizontalPadding(int padding)
     update();
 }
 
+void InlineEditableText::setEchoMode(QLineEdit::EchoMode echoMode)
+{
+    m_edit->setEchoMode(echoMode);
+}
+
+QLineEdit::EchoMode InlineEditableText::echoMode() const
+{
+    return m_edit->echoMode();
+}
+
+void InlineEditableText::setSelectionBackgroundColor(const QColor& color)
+{
+    m_selectionBackgroundColor = color;
+    updatePalettes();
+}
+
+void InlineEditableText::setSelectedTextColor(const QColor& color)
+{
+    m_selectedTextColor = color;
+    updatePalettes();
+}
+
+void InlineEditableText::setTrimTextOnCommit(bool trim)
+{
+    if (m_trimTextOnCommit == trim) {
+        return;
+    }
+
+    m_trimTextOnCommit = trim;
+    if (!isEditing()) {
+        m_text = m_trimTextOnCommit ? m_text.trimmed() : m_text;
+        m_edit->setText(m_text);
+        updateLabelText();
+    }
+}
+
+bool InlineEditableText::trimsTextOnCommit() const
+{
+    return m_trimTextOnCommit;
+}
+
 bool InlineEditableText::isEditing() const
 {
     return m_edit->isVisible();
@@ -188,7 +232,7 @@ void InlineEditableText::finishEditing()
     }
 
     m_committing = true;
-    m_text = m_edit->text().trimmed();
+    m_text = m_trimTextOnCommit ? m_edit->text().trimmed() : m_edit->text();
     m_edit->setText(m_text);
     m_edit->hide();
     m_label->show();
@@ -312,6 +356,8 @@ void InlineEditableText::updatePalettes()
     editPalette.setColor(QPalette::Base, Qt::transparent);
     editPalette.setColor(QPalette::Text, m_textColor);
     editPalette.setColor(QPalette::PlaceholderText, m_placeholderTextColor);
+    editPalette.setColor(QPalette::Highlight, m_selectionBackgroundColor);
+    editPalette.setColor(QPalette::HighlightedText, m_selectedTextColor);
     m_edit->setPalette(editPalette);
 
     m_updatingPalette = false;

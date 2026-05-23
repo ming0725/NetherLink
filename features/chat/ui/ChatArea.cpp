@@ -5,15 +5,22 @@
 #include "features/chat/data/MessageRepository.h"
 #include "features/chat/ui/ConversationInfoPanel.h"
 #include "features/chat/ui/ChatSessionController.h"
+#include "features/friend/ui/FriendProfilePopup.h"
+#include "features/friend/ui/FriendSessionController.h"
 #include "app/state/CurrentUser.h"
 #include "shared/services/AudioService.h"
 #include "shared/services/ImageService.h"
 #include "shared/theme/ThemeManager.h"
+#include "shared/ui/InWindowPopupOverlay.h"
+#include "shared/ui/PaintedLabel.h"
 #include "shared/ui/QtFallbackLiquidGlass.h"
+#include "shared/ui/StyledActionMenu.h"
 #ifdef Q_OS_MACOS
 #include "platform/macos/MacFloatingInputBarBridge_p.h"
 #endif
+#include <QAction>
 #include <QPainter>
+#include <QPalette>
 #include <QLinearGradient>
 #include <QHBoxLayout>
 #include <QScrollBar>
@@ -25,7 +32,6 @@
 #include <QPropertyAnimation>
 #include <QPushButton>
 #include <QLabel>
-#include <QMessageBox>
 #include <QVBoxLayout>
 
 namespace {
@@ -138,45 +144,18 @@ protected:
     }
 };
 
-class ThemeFillWidget : public QWidget
+void applyThemedFill(QWidget* widget, ThemeColor role)
 {
-public:
-    explicit ThemeFillWidget(ThemeColor role, QWidget* parent = nullptr)
-        : QWidget(parent)
-        , m_role(role)
-    {
-    }
+    QPalette palette = widget->palette();
+    palette.setColor(QPalette::Window, ThemeManager::instance().color(role));
+    widget->setAutoFillBackground(true);
+    widget->setPalette(palette);
+}
 
-protected:
-    void paintEvent(QPaintEvent* event) override
-    {
-        QPainter painter(this);
-        painter.fillRect(event->rect(), ThemeManager::instance().color(m_role));
-    }
-
-private:
-    ThemeColor m_role;
-};
-
-class ThemeTextLabel : public QLabel
+void applyPrimaryText(PaintedLabel* label)
 {
-public:
-    explicit ThemeTextLabel(QWidget* parent = nullptr)
-        : QLabel(parent)
-    {
-    }
-
-protected:
-    void paintEvent(QPaintEvent* event) override
-    {
-        Q_UNUSED(event);
-        QPainter painter(this);
-        AppFonts::configurePainterForText(painter);
-        painter.setFont(font());
-        painter.setPen(ThemeManager::instance().color(ThemeColor::PrimaryText));
-        painter.drawText(rect(), alignment() | Qt::TextSingleLine, text());
-    }
-};
+    label->setTextColor(ThemeManager::instance().color(ThemeColor::PrimaryText));
+}
 
 GroupRole groupRoleForUser(const Group& group, const QString& userId)
 {
@@ -303,6 +282,9 @@ ChatArea::ChatArea(QWidget *parent)
 
     bottomGapGradientOverlay = new BottomGapGradientOverlay(this);
     sessionController = new ChatSessionController(this);
+    friendProfileController = new FriendSessionController(this);
+    friendProfilePopup = new FriendProfilePopup(this);
+    friendProfilePopup->setController(friendProfileController);
 
     infoPanelAnimation = new QPropertyAnimation(this);
     infoPanelAnimation->setPropertyName("geometry");
@@ -328,9 +310,9 @@ ChatArea::ChatArea(QWidget *parent)
     inputBar->setLiquidGlassSourceWidget(chatView->viewport());
     inputBar->hide();
 
-    QWidget* chatInfo = new ThemeFillWidget(ThemeColor::PageBackground, this);
+    QWidget* chatInfo = new QWidget(this);
     chatInfo->setFixedHeight(kChatInfoHeight);
-    QWidget* chatInfoDivider = new ThemeFillWidget(ThemeColor::Divider, this);
+    QWidget* chatInfoDivider = new QWidget(this);
     chatInfoDivider->setFixedHeight(1);
 
     // 外层垂直布局：用于将内容推到底部
@@ -347,14 +329,14 @@ ChatArea::ChatArea(QWidget *parent)
     statusIcon = new QLabel(chatInfo);
 
     // 名字 Label
-    nameLabel = new ThemeTextLabel(chatInfo);
+    nameLabel = new PaintedLabel(chatInfo);
     QFont nameFont = nameLabel->font();
     nameFont.setPixelSize(17);
     nameLabel->setFont(nameFont);
     auto applyHeaderTheme = [this, chatInfo, chatInfoDivider]() {
-        nameLabel->update();
-        chatInfo->update();
-        chatInfoDivider->update();
+        applyPrimaryText(nameLabel);
+        applyThemedFill(chatInfo, ThemeColor::PageBackground);
+        applyThemedFill(chatInfoDivider, ThemeColor::Divider);
         if (chatView) {
             chatView->viewport()->update();
         }
@@ -406,6 +388,12 @@ ChatArea::ChatArea(QWidget *parent)
     });
     connect(newMessageNotifier, &NewMessageNotifier::clicked,
             this, &ChatArea::onNewMessageNotifierClicked);
+    connect(chatView, &ChatListView::avatarClicked,
+            this, &ChatArea::showFriendProfilePopup);
+    connect(chatView, &ChatListView::avatarContextMenuRequested,
+            this, &ChatArea::showAvatarContextMenu);
+    connect(friendProfilePopup, &FriendProfilePopup::requestMessage,
+            this, &ChatArea::requestOpenConversation);
     connect(inputBar, &FloatingInputBar::sendImage,
             this, &ChatArea::onSendImage);
     connect(inputBar, &FloatingInputBar::sendText,
@@ -1065,7 +1053,7 @@ void ChatArea::updateHistoryUnreadNotifierPosition()
     }
 
     const QRect chatViewRect = chatView->geometry();
-    const int rightEdge = width() - visibleInfoPanelWidth() - kChatInfoRightMargin;
+    const int rightEdge = chatViewRect.right() + 1 - visibleInfoPanelWidth();
     const int x = qMax(chatViewRect.left() + 12, rightEdge - historyUnreadNotifier->width());
     const int y = chatViewRect.top() + 12;
     historyUnreadNotifier->move(x, y);
@@ -1257,6 +1245,8 @@ void ChatArea::connectGroupInfoPanel(GroupConversationInfoPanel* panel)
             this, &ChatArea::confirmExitGroup);
     connect(panel, &GroupConversationInfoPanel::groupMembersPageRequested,
             sessionController, &ChatSessionController::loadGroupMembersPage);
+    connect(panel, &GroupConversationInfoPanel::memberProfileRequested,
+            this, &ChatArea::showFriendProfilePopup);
 }
 
 void ChatArea::connectDirectInfoPanel(DirectConversationInfoPanel* panel)
@@ -1294,6 +1284,50 @@ void ChatArea::releaseInfoPanels()
         directInfoPanel->deleteLater();
         directInfoPanel = nullptr;
     }
+}
+
+void ChatArea::showFriendProfilePopup(const QString& userId, const QPoint& globalPos)
+{
+    if (userId.isEmpty() || !friendProfilePopup) {
+        return;
+    }
+
+    friendProfilePopup->popupAt(globalPos, userId);
+}
+
+void ChatArea::showAvatarContextMenu(const QString& userId, const QPoint& globalPos)
+{
+    if (userId.isEmpty()) {
+        return;
+    }
+
+    auto* menu = new StyledActionMenu(this);
+    menu->setItemHoverColor(ThemeManager::instance().color(ThemeColor::ContextMenuHover));
+
+    const bool isCurrentUser = CurrentUser::instance().isCurrentUserId(userId);
+    const bool isFriend = !isCurrentUser && UserRepository::instance().isFriend(userId);
+    if (!isCurrentUser) {
+        QAction* primaryAction = menu->addAction(isFriend
+                                                 ? QStringLiteral("发消息")
+                                                 : QStringLiteral("添加好友"));
+        if (isFriend) {
+            connect(primaryAction, &QAction::triggered, this, [this, userId]() {
+                emit requestOpenConversation(userId);
+            });
+        } else {
+            connect(primaryAction, &QAction::triggered, this, []() {});
+        }
+    }
+
+    QAction* profileAction = menu->addAction(QStringLiteral("查看资料"));
+    connect(profileAction, &QAction::triggered, this, [this, userId, globalPos]() {
+        showFriendProfilePopup(userId, globalPos);
+    });
+
+    connect(menu, &QMenu::aboutToHide, menu, [menu]() {
+        menu->deleteLater();
+    });
+    menu->popupWhenMouseReleased(globalPos);
 }
 
 void ChatArea::requestInfoPanelData(bool resetTransientState)
@@ -1517,12 +1551,10 @@ void ChatArea::confirmClearChatHistory()
         return;
     }
 
-    const int result = QMessageBox::question(this,
-                                             QStringLiteral("删除聊天记录"),
-                                             QStringLiteral("确认删除当前聊天记录吗？"),
-                                             QMessageBox::Yes | QMessageBox::No,
-                                             QMessageBox::No);
-    if (result != QMessageBox::Yes) {
+    const InWindowPopup::Button result = InWindowPopup::question(this,
+                                                                 QStringLiteral("删除聊天记录"),
+                                                                 QStringLiteral("确认删除当前聊天记录吗？"));
+    if (result != InWindowPopup::Button::Yes) {
         return;
     }
 
@@ -1566,12 +1598,10 @@ void ChatArea::confirmExitGroup()
         return;
     }
 
-    const int result = QMessageBox::question(this,
-                                             QStringLiteral("退出群聊"),
-                                             QStringLiteral("确认退出该群聊吗？"),
-                                             QMessageBox::Yes | QMessageBox::No,
-                                             QMessageBox::No);
-    if (result != QMessageBox::Yes) {
+    const InWindowPopup::Button result = InWindowPopup::question(this,
+                                                                 QStringLiteral("退出群聊"),
+                                                                 QStringLiteral("确认退出该群聊吗？"));
+    if (result != InWindowPopup::Button::Yes) {
         return;
     }
 
@@ -1584,12 +1614,10 @@ void ChatArea::confirmDeleteFriend()
         return;
     }
 
-    const int result = QMessageBox::question(this,
-                                             QStringLiteral("删除好友"),
-                                             QStringLiteral("确认删除该好友吗？"),
-                                             QMessageBox::Yes | QMessageBox::No,
-                                             QMessageBox::No);
-    if (result != QMessageBox::Yes) {
+    const InWindowPopup::Button result = InWindowPopup::question(this,
+                                                                 QStringLiteral("删除好友"),
+                                                                 QStringLiteral("确认删除该好友吗？"));
+    if (result != InWindowPopup::Button::Yes) {
         return;
     }
 
@@ -1998,6 +2026,10 @@ void ChatArea::clearConversation(bool closeInfoPanel)
     }
     if (sessionController) {
         sessionController->close();
+    }
+    if (friendProfilePopup) {
+        friendProfilePopup->hide();
+        friendProfilePopup->clear();
     }
     chatModel->clear();
     chatModel->clearSelection();

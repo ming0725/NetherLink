@@ -35,6 +35,8 @@ private:
         FriendListWidget* friendList() const { return m_content; }
         GroupListWidget* groupList() const { return m_groupList; }
         IconLineEdit* searchInput() const { return m_searchInput; }
+        void setFriendModeBadgeCount(int count);
+        void setGroupModeBadgeCount(int count);
 
     protected:
         void resizeEvent(QResizeEvent* ev) override;

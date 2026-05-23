@@ -65,6 +65,8 @@ void StatefulPushButton::initializeButton()
     setMouseTracking(true);
     setCursor(Qt::PointingHandCursor);
     setAttribute(Qt::WA_Hover);
+    setAttribute(Qt::WA_StyledBackground, false);
+    setAutoFillBackground(false);
     setAttribute(Qt::WA_MacShowFocusRect, false);
     setFocusPolicy(Qt::NoFocus);
     setAutoDefault(false);
@@ -264,14 +266,23 @@ void StatefulPushButton::paintEvent(QPaintEvent* e)
     QPainter p(this);
     p.setRenderHint(QPainter::Antialiasing, true);
     AppFonts::configurePainterForText(p);
+
+    const qreal borderWidth = qMax(0, m_borderWidth);
+    const qreal edgeInset = borderWidth > 0 ? borderWidth / 2.0 : 0.5;
+    const QRectF buttonRect = QRectF(rect()).adjusted(edgeInset,
+                                                      edgeInset,
+                                                      -edgeInset,
+                                                      -edgeInset);
     QPainterPath path;
-    path.addRoundedRect(rect(), m_radius, m_radius);
+    path.addRoundedRect(buttonRect, m_radius, m_radius);
 
-    if (!m_isFlat)
+    p.setPen(Qt::NoPen);
+    if (!m_isFlat) {
         p.fillPath(path, m_currentColor);
+    }
 
-    if (m_borderWidth > 0) {
-        p.setPen(QPen(m_borderColor, m_borderWidth));
+    if (borderWidth > 0) {
+        p.setPen(QPen(m_borderColor, borderWidth));
         p.drawPath(path);
     }
 

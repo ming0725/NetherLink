@@ -2,9 +2,12 @@
 #include <QWidget>
 #include <QPropertyAnimation>
 #include <QPoint>
+#include <QPointer>
+#include <QRect>
 #include <QString>
 
 class ApplicationBarItem;
+class FriendProfilePopup;
 class QEvent;
 class QMouseEvent;
 class ApplicationBar : public QWidget {
@@ -34,13 +37,23 @@ signals:
     void appearanceSettingsRequested();
 private:
     void layoutItems();
+    void refreshChatBadge();
+    void refreshFriendBadge();
+    QRect avatarRect() const;
+    QRect avatarStatusRect() const;
+    QRect avatarCutoutRect() const;
+    QRect avatarStatusIconRect() const;
     ApplicationBarItem* itemAtPosition(const QPoint& pos) const;
     void setHoveredItem(ApplicationBarItem* item);
+    void showCurrentUserProfilePopup();
     void showMoreOptionsMenu();
 
     ApplicationBarItem* selectedItem = nullptr;
     ApplicationBarItem* hoveredItem = nullptr;
+    ApplicationBarItem* messageItem = nullptr;
+    ApplicationBarItem* friendItem = nullptr;
     ApplicationBarItem* moreOptionsItem = nullptr;
+    QPointer<FriendProfilePopup> currentUserProfilePopup;
     QString avatarSource;
     QVector<ApplicationBarItem*> topItems;
     QVector<ApplicationBarItem*> bottomItems;

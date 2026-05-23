@@ -23,7 +23,10 @@ class QLabel;
 class QTimer;
 class ChatSessionController;
 class DirectConversationInfoPanel;
+class FriendProfilePopup;
+class FriendSessionController;
 class GroupConversationInfoPanel;
+class PaintedLabel;
 
 class ChatArea : public QWidget
 {
@@ -45,6 +48,7 @@ public:
 
 signals:
     void currentConversationRemoved();
+    void requestOpenConversation(const QString& conversationId);
 
 protected:
     void resizeEvent(QResizeEvent *event) override;
@@ -104,11 +108,13 @@ private:
     QWidget* bottomGapGradientOverlay;
     FloatingInputBar* inputBar;
     QLabel* statusIcon;
-    QLabel* nameLabel;
+    PaintedLabel* nameLabel;
     QPushButton* infoButton;
     GroupConversationInfoPanel* groupInfoPanel = nullptr;
     DirectConversationInfoPanel* directInfoPanel = nullptr;
     ChatSessionController* sessionController;
+    FriendSessionController* friendProfileController = nullptr;
+    FriendProfilePopup* friendProfilePopup = nullptr;
     QPropertyAnimation* infoPanelAnimation;
     bool infoPanelOpen = false;
     bool m_systemFloatingBarsSuppressed = false;
@@ -157,6 +163,8 @@ private:
     void connectGroupInfoPanel(GroupConversationInfoPanel* panel);
     void connectDirectInfoPanel(DirectConversationInfoPanel* panel);
     void releaseInfoPanels();
+    void showFriendProfilePopup(const QString& userId, const QPoint& globalPos);
+    void showAvatarContextMenu(const QString& userId, const QPoint& globalPos);
     void requestInfoPanelData(bool resetTransientState);
     int visibleInfoPanelWidth() const;
     void showInfoPanel(bool animated);

@@ -40,6 +40,11 @@ public:
     QString imageSourceAt(const QStyleOptionViewItem& option,
                           const QModelIndex& index,
                           const QPoint& viewportPos) const;
+    bool avatarHitTest(const QStyleOptionViewItem& option,
+                       const QModelIndex& index,
+                       const QPoint& viewportPos) const;
+    QRect avatarRectForIndex(const QStyleOptionViewItem& option,
+                             const QModelIndex& index) const;
 
     bool selectWordAt(const QStyleOptionViewItem& option,
                       const QModelIndex& index,

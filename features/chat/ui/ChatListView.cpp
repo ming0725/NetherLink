@@ -32,6 +32,8 @@ QPoint mouseGlobalPosition(QMouseEvent* event)
 #endif
 }
 
+constexpr int kAvatarProfilePopupGap = 10;
+
 int scrollAnimationDuration(int distance, int viewportHeight, bool accelerateFarDistance)
 {
     if (distance <= 0) {
@@ -284,6 +286,19 @@ void ChatListView::mousePressEvent(QMouseEvent* event)
         const QModelIndex index = indexAt(event->pos());
         if (index.isValid()) {
             const QStyleOptionViewItem option = viewOptionForIndex(index);
+            if (delegate->avatarHitTest(option, index, event->pos())) {
+                const ChatMessage* message = index.data(Qt::UserRole).value<ChatMessage*>();
+                if (message && !message->getSenderId().isEmpty()) {
+                    if (model()) {
+                        static_cast<ChatListModel*>(model())->clearSelection();
+                    }
+                    clearTextSelection();
+                    emit avatarContextMenuRequested(message->getSenderId(), mouseGlobalPosition(event));
+                    event->accept();
+                    return;
+                }
+            }
+
             const QString url = delegate->urlAt(option, index, event->pos());
             if (!url.isEmpty()) {
                 showUrlMenu(mouseGlobalPosition(event), url);
@@ -309,6 +324,23 @@ void ChatListView::mousePressEvent(QMouseEvent* event)
         const QModelIndex index = indexAt(event->pos());
         if (index.isValid()) {
             const QStyleOptionViewItem option = viewOptionForIndex(index);
+            if (delegate->avatarHitTest(option, index, event->pos())) {
+                const ChatMessage* message = index.data(Qt::UserRole).value<ChatMessage*>();
+                if (message && !message->getSenderId().isEmpty()) {
+                    if (model()) {
+                        static_cast<ChatListModel*>(model())->clearSelection();
+                    }
+                    clearTextSelection();
+                    const QRect avatarRect = delegate->avatarRectForIndex(option, index);
+                    const QPoint anchor = message->isFromMe()
+                            ? viewport()->mapToGlobal(avatarRect.topLeft() - QPoint(kAvatarProfilePopupGap, 0))
+                            : viewport()->mapToGlobal(avatarRect.topRight() + QPoint(kAvatarProfilePopupGap + 1, 0));
+                    emit avatarClicked(message->getSenderId(), anchor);
+                    event->accept();
+                    return;
+                }
+            }
+
             const bool hitBubble = delegate->bubbleHitTest(option, index, event->pos());
             if (delegate->triggerReeditIfHit(option, index, event->pos())) {
                 clearTextSelection();

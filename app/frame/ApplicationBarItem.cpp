@@ -1,6 +1,7 @@
 #include "ApplicationBarItem.h"
 #include "shared/services/ImageService.h"
 #include "shared/theme/ThemeManager.h"
+#include "shared/ui/BadgeRenderer.h"
 #include <QPainter>
 #include <QPainterPath>
 #include <QPixmapCache>
@@ -48,6 +49,16 @@ QPixmap invertedPixmap(const QString& key, const QPixmap& pixmap)
     return inverted;
 }
 
+void forceUnreadBadgeColors(BadgeLayout& layout)
+{
+    if (!layout.size.isValid() || layout.drawIcon) {
+        return;
+    }
+
+    layout.backgroundColor = QColor(255, 59, 48);
+    layout.textColor = Qt::white;
+}
+
 }
 
 ApplicationBarItem::ApplicationBarItem(const QString& normalSource,
@@ -89,6 +100,17 @@ void ApplicationBarItem::setDarkModeInversionEnabled(bool enabled)
     }
 
     darkModeInversionEnabled = enabled;
+    emit updateRequested();
+}
+
+void ApplicationBarItem::setBadgeCount(int count)
+{
+    const int clampedCount = qMax(0, count);
+    if (badgeCount == clampedCount) {
+        return;
+    }
+
+    badgeCount = clampedCount;
     emit updateRequested();
 }
 
@@ -223,6 +245,22 @@ void ApplicationBarItem::paint(QPainter& painter) const
                                  selectedLogicalSize.height()),
                            selScaled);
         painter.restore();
+    }
+
+    const BadgeLayout badgeLayout = BadgeRenderer::layoutForUnreadCount(
+            badgeCount, false, selected, ThemeManager::instance().isDark());
+    BadgeLayout appBarBadgeLayout = badgeLayout;
+    forceUnreadBadgeColors(appBarBadgeLayout);
+    if (appBarBadgeLayout.size.isValid()) {
+        const int badgeX = itemRect.right() - appBarBadgeLayout.size.width() + 2;
+        const int badgeY = itemRect.top() - 2;
+        BadgeRenderer::drawBadge(&painter,
+                                  QRect(badgeX,
+                                        badgeY,
+                                        appBarBadgeLayout.size.width(),
+                                        appBarBadgeLayout.size.height()),
+                                  appBarBadgeLayout,
+                                  selected);
     }
 }
 

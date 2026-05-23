@@ -65,6 +65,19 @@ QString qStringFromNSString(NSString* string)
     return utf8 ? QString::fromUtf8(utf8) : QString();
 }
 
+template<typename Callback>
+void performWithoutImplicitAnimations(Callback callback)
+{
+    [NSAnimationContext beginGrouping];
+    [[NSAnimationContext currentContext] setDuration:0.0];
+    [[NSAnimationContext currentContext] setAllowsImplicitAnimation:NO];
+    [CATransaction begin];
+    [CATransaction setDisableActions:YES];
+    callback();
+    [CATransaction commit];
+    [NSAnimationContext endGrouping];
+}
+
 NSPanel* sharedTooltipPanel()
 {
     static NSPanel* panel = nil;
@@ -1861,37 +1874,39 @@ void clearInputBar(QWidget* widget)
 {
     NSView* hostView = topLevelQtViewForWidget(widget, false);
     if (hostView) {
-        hideNativeTooltip();
-        clearInputField(hostView);
-        clearButtons(hostView);
-        clearInactiveGlassChrome(hostView);
+        performWithoutImplicitAnimations([hostView]() {
+            hideNativeTooltip();
+            clearInputField(hostView);
+            clearButtons(hostView);
+            clearInactiveGlassChrome(hostView);
 
-        NLFloatingInputBarTarget* target = targetForView(hostView);
-        if (target) {
-            target.owner = nullptr;
-            target.hostView = nil;
-        }
+            NLFloatingInputBarTarget* target = targetForView(hostView);
+            if (target) {
+                target.owner = nullptr;
+                target.hostView = nil;
+            }
 
-        NSView* container = containerForView(hostView);
-        NSView* shadowHost = shadowHostForView(hostView);
-        if (shadowHost) {
-            [shadowHost removeFromSuperview];
-        }
+            NSView* container = containerForView(hostView);
+            NSView* shadowHost = shadowHostForView(hostView);
+            if (shadowHost) {
+                [shadowHost removeFromSuperview];
+            }
 
-        NSView* contentView = contentForView(hostView);
-        if (contentView && contentView != container) {
-            [contentView removeFromSuperview];
-        }
+            NSView* contentView = contentForView(hostView);
+            if (contentView && contentView != container) {
+                [contentView removeFromSuperview];
+            }
 
-        if (container) {
-            [container removeFromSuperview];
-        }
+            if (container) {
+                [container removeFromSuperview];
+            }
 
-        objc_setAssociatedObject(hostView, kContentAssociationKey, nil, OBJC_ASSOCIATION_ASSIGN);
-        objc_setAssociatedObject(hostView, kShadowHostAssociationKey, nil, OBJC_ASSOCIATION_ASSIGN);
-        objc_setAssociatedObject(hostView, kTargetAssociationKey, nil, OBJC_ASSOCIATION_ASSIGN);
-        objc_setAssociatedObject(hostView, kContainerAssociationKey, nil, OBJC_ASSOCIATION_ASSIGN);
-        objc_setAssociatedObject(hostView, kVisualOpacityAssociationKey, nil, OBJC_ASSOCIATION_ASSIGN);
+            objc_setAssociatedObject(hostView, kContentAssociationKey, nil, OBJC_ASSOCIATION_ASSIGN);
+            objc_setAssociatedObject(hostView, kShadowHostAssociationKey, nil, OBJC_ASSOCIATION_ASSIGN);
+            objc_setAssociatedObject(hostView, kTargetAssociationKey, nil, OBJC_ASSOCIATION_ASSIGN);
+            objc_setAssociatedObject(hostView, kContainerAssociationKey, nil, OBJC_ASSOCIATION_ASSIGN);
+            objc_setAssociatedObject(hostView, kVisualOpacityAssociationKey, nil, OBJC_ASSOCIATION_ASSIGN);
+        });
     }
 }
 

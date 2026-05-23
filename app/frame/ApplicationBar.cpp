@@ -1,5 +1,9 @@
 #include "ApplicationBarItem.h"
 #include "ApplicationBar.h"
+#include "features/chat/data/MessageRepository.h"
+#include "features/friend/data/FriendNotificationRepository.h"
+#include "features/friend/data/GroupNotificationRepository.h"
+#include "features/friend/ui/FriendProfilePopup.h"
 #include "shared/services/ImageService.h"
 #include "shared/ui/StyledActionMenu.h"
 #include "shared/theme/ThemeManager.h"
@@ -7,6 +11,15 @@
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
+
+namespace {
+
+constexpr int kAvatarStatusCutoutSize = 18;
+constexpr int kAvatarStatusIconSize = 11;
+constexpr int kAvatarStatusPopupGap = 8;
+constexpr int kAvatarStatusCenterOffset = -1;
+
+} // namespace
 
 ApplicationBar::ApplicationBar(QWidget* parent)
     : QWidget(parent)
@@ -23,11 +36,11 @@ ApplicationBar::ApplicationBar(QWidget* parent)
         update();
     });
 
-    auto msgItem = new ApplicationBarItem(
+    messageItem = new ApplicationBarItem(
             ":/resources/icon/unselected_message.png",
             ":/resources/icon/selected_message.png");
-    addItem(msgItem);
-    auto friendItem = new ApplicationBarItem(
+    addItem(messageItem);
+    friendItem = new ApplicationBarItem(
             ":/resources/icon/friend_unselected.png",
             ":/resources/icon/friend_selected.png");
     friendItem->setPixmapScale(0.62);
@@ -68,6 +81,15 @@ ApplicationBar::ApplicationBar(QWidget* parent)
         highlightPosY = value.toInt();
         update();
     });
+
+    connect(&MessageRepository::instance(), &MessageRepository::conversationListChanged,
+            this, [this](const QString&) { refreshChatBadge(); });
+    connect(&FriendNotificationRepository::instance(), &FriendNotificationRepository::notificationListChanged,
+            this, [this]() { refreshFriendBadge(); });
+    connect(&GroupNotificationRepository::instance(), &GroupNotificationRepository::notificationListChanged,
+            this, [this]() { refreshFriendBadge(); });
+    refreshChatBadge();
+    refreshFriendBadge();
 }
 
 void ApplicationBar::resizeEvent(QResizeEvent*) {
@@ -94,14 +116,33 @@ void ApplicationBar::paintEvent(QPaintEvent*) {
         painter.restore();
     }
 
+    const QRect avatar = avatarRect();
     if (!avatarSource.isEmpty()) {
         painter.save();
-        int x = (w - avatarSize) / 2;
-        int y = topInset + marginTop + spacing;
+        const qreal dpr = painter.device()->devicePixelRatioF();
         const QPixmap avatarPixmap = ImageService::instance().circularAvatar(avatarSource,
                                                                              avatarSize,
-                                                                             painter.device()->devicePixelRatioF());
-        painter.drawPixmap(x, y, avatarSize, avatarSize, avatarPixmap);
+                                                                             dpr);
+        QPainterPath avatarPath;
+        avatarPath.addEllipse(avatar);
+        QPainterPath statusCutoutPath;
+        statusCutoutPath.addEllipse(avatarCutoutRect());
+        painter.setClipPath(avatarPath.subtracted(statusCutoutPath));
+        painter.drawPixmap(avatar, avatarPixmap);
+        painter.restore();
+
+        painter.save();
+        const QRect status = avatarStatusIconRect();
+        QPainterPath statusPath;
+        statusPath.addEllipse(status);
+        painter.setClipPath(statusPath);
+        const QPixmap statusPixmap = ImageService::instance().scaled(statusIconPath(CurrentUser::instance().getStatus()),
+                                                                     status.size(),
+                                                                     Qt::KeepAspectRatio,
+                                                                     painter.device()->devicePixelRatioF());
+        if (!statusPixmap.isNull()) {
+            painter.drawPixmap(status, statusPixmap);
+        }
         painter.restore();
     }
 
@@ -178,6 +219,69 @@ void ApplicationBar::layoutItems() {
     }
 }
 
+void ApplicationBar::refreshChatBadge()
+{
+    if (!messageItem) {
+        return;
+    }
+
+    int totalPromptUnreadCount = 0;
+    const QVector<ConversationSummary> conversations =
+            MessageRepository::instance().requestConversationList();
+    for (const ConversationSummary& conversation : conversations) {
+        if (conversation.isDoNotDisturb) {
+            continue;
+        }
+
+        totalPromptUnreadCount += qMax(0, conversation.unreadCount);
+    }
+    messageItem->setBadgeCount(totalPromptUnreadCount);
+}
+
+void ApplicationBar::refreshFriendBadge()
+{
+    if (!friendItem) {
+        return;
+    }
+
+    const int totalUnreadCount =
+            qMax(0, FriendNotificationRepository::instance().unreadCount()) +
+            qMax(0, GroupNotificationRepository::instance().unreadCount());
+    friendItem->setBadgeCount(totalUnreadCount);
+}
+
+QRect ApplicationBar::avatarRect() const
+{
+    const int x = (width() - avatarSize) / 2;
+    const int y = topInset + marginTop + spacing;
+    return QRect(x, y, avatarSize, avatarSize);
+}
+
+QRect ApplicationBar::avatarStatusRect() const
+{
+    const QRect avatar = avatarRect();
+    const QPoint center(avatar.right() + kAvatarStatusCenterOffset,
+                        avatar.bottom() + kAvatarStatusCenterOffset);
+    return QRect(center.x() - kAvatarStatusCutoutSize / 2,
+                 center.y() - kAvatarStatusCutoutSize / 2,
+                 kAvatarStatusCutoutSize,
+                 kAvatarStatusCutoutSize);
+}
+
+QRect ApplicationBar::avatarCutoutRect() const
+{
+    return avatarStatusRect();
+}
+
+QRect ApplicationBar::avatarStatusIconRect() const
+{
+    const QPoint center = avatarStatusRect().center();
+    return QRect(center.x() - kAvatarStatusIconSize / 2,
+                 center.y() - kAvatarStatusIconSize / 2,
+                 kAvatarStatusIconSize,
+                 kAvatarStatusIconSize);
+}
+
 void ApplicationBar::onItemClicked(ApplicationBarItem* item)
 {
     if (!item || !topItems.contains(item) || selectedItem == item)
@@ -218,6 +322,18 @@ void ApplicationBar::mouseMoveEvent(QMouseEvent* event)
 void ApplicationBar::mousePressEvent(QMouseEvent* event)
 {
     if (event->button() == Qt::LeftButton) {
+        if (!avatarSource.isEmpty()) {
+            if (avatarStatusRect().contains(event->pos())) {
+                event->accept();
+                return;
+            }
+            if (avatarRect().contains(event->pos())) {
+                showCurrentUserProfilePopup();
+                event->accept();
+                return;
+            }
+        }
+
         ApplicationBarItem* item = itemAtPosition(event->pos());
         if (item == moreOptionsItem) {
             showMoreOptionsMenu();
@@ -250,6 +366,25 @@ ApplicationBarItem* ApplicationBar::itemAtPosition(const QPoint& pos) const
         }
     }
     return nullptr;
+}
+
+void ApplicationBar::showCurrentUserProfilePopup()
+{
+    const QString userId = CurrentUser::instance().getUserId();
+    if (userId.isEmpty()) {
+        return;
+    }
+
+    if (!currentUserProfilePopup) {
+        currentUserProfilePopup = new FriendProfilePopup(this);
+    }
+
+    const QRect avatar = avatarRect();
+    const QPoint popupAnchor = mapToGlobal(QPoint(avatar.right()
+                                                  + currentUserProfilePopup->width()
+                                                  + kAvatarStatusPopupGap,
+                                                  avatar.top()));
+    currentUserProfilePopup->popupAt(popupAnchor, userId);
 }
 
 void ApplicationBar::setHoveredItem(ApplicationBarItem* item)

@@ -73,6 +73,17 @@ void appendGroupParticipant(QVector<SampleParticipant>& participants,
     seen.insert(userId);
 }
 
+bool isKnownNonFriendUser(const QString& userId)
+{
+    const CurrentUser& currentUser = CurrentUser::instance();
+    if (currentUser.isCurrentUserId(userId)) {
+        return false;
+    }
+
+    const User user = UserRepository::instance().requestUserDetail({userId});
+    return !user.id.isEmpty() && !user.isFriend;
+}
+
 QVector<SampleParticipant> sampleParticipantsForGroup(const Group& group, int ordinal)
 {
     QVector<SampleParticipant> candidates;
@@ -101,8 +112,25 @@ QVector<SampleParticipant> sampleParticipantsForGroup(const Group& group, int or
     activeParticipants.push_back(currentUserParticipant);
 
     const int targetCount = qMin(candidates.size() + 1, qBound(3, 3 + (ordinal % 5), 7));
+    QSet<QString> activeUserIds;
+    activeUserIds.insert(currentUserParticipant.userId);
+    for (const SampleParticipant& candidate : candidates) {
+        if (activeParticipants.size() >= targetCount) {
+            break;
+        }
+        if (!isKnownNonFriendUser(candidate.userId)) {
+            continue;
+        }
+        activeParticipants.push_back(candidate);
+        activeUserIds.insert(candidate.userId);
+        break;
+    }
     for (int index = 0; index < candidates.size() && activeParticipants.size() < targetCount; ++index) {
+        if (activeUserIds.contains(candidates.at(index).userId)) {
+            continue;
+        }
         activeParticipants.push_back(candidates.at(index));
+        activeUserIds.insert(candidates.at(index).userId);
     }
 
     std::shuffle(activeParticipants.begin(), activeParticipants.end(), generator);
@@ -160,12 +188,21 @@ int sampleUnreadCount(int ordinal, int messageCount)
     }
 }
 
-QDateTime unreadMessageTimeAfter(const QVector<QDateTime>& timeline, int unreadIndex)
+QDateTime unreadMessageTimeAfter(const QVector<QDateTime>& timeline,
+                                 int unreadIndex,
+                                 int unreadCount)
 {
+    const QDateTime latestAllowedTime = QDateTime::currentDateTime().addSecs(-30);
     const QDateTime baseTime = timeline.isEmpty()
-            ? QDateTime::currentDateTime()
+            ? latestAllowedTime.addSecs(-qMax(60, unreadCount * 60))
             : timeline.last();
-    return baseTime.addSecs((unreadIndex + 1) * 60);
+    const qint64 availableSecs = qMax<qint64>(1, baseTime.secsTo(latestAllowedTime));
+    const qint64 offsetSecs = qBound<qint64>(
+            1,
+            ((unreadIndex + 1) * availableSecs) / qMax(1, unreadCount + 1),
+            availableSecs);
+    const QDateTime timestamp = baseTime.addSecs(offsetSecs);
+    return timestamp > latestAllowedTime ? latestAllowedTime : timestamp;
 }
 
 void appendSyntheticUnreadMessage(QVector<QSharedPointer<ChatMessage>>& messages,
@@ -200,7 +237,7 @@ void appendSyntheticDirectUnreadMessages(QVector<QSharedPointer<ChatMessage>>& m
     for (int index = 0; index < unreadCount; ++index) {
         appendSyntheticUnreadMessage(messages,
                                      QStringLiteral("未读消息%1").arg(index + 1),
-                                     unreadMessageTimeAfter(timeline, index),
+                                     unreadMessageTimeAfter(timeline, index, unreadCount),
                                      peerId,
                                      peerName,
                                      false,
@@ -211,6 +248,12 @@ void appendSyntheticDirectUnreadMessages(QVector<QSharedPointer<ChatMessage>>& m
 SampleParticipant syntheticUnreadSenderForGroup(const QVector<SampleParticipant>& participants)
 {
     const CurrentUser& currentUser = CurrentUser::instance();
+    for (const SampleParticipant& participant : participants) {
+        if (!currentUser.isCurrentUserId(participant.userId) &&
+            isKnownNonFriendUser(participant.userId)) {
+            return participant;
+        }
+    }
     for (const SampleParticipant& participant : participants) {
         if (!currentUser.isCurrentUserId(participant.userId)) {
             return participant;
@@ -232,7 +275,7 @@ void appendSyntheticGroupUnreadMessages(QVector<QSharedPointer<ChatMessage>>& me
     for (int index = 0; index < unreadCount; ++index) {
         appendSyntheticUnreadMessage(messages,
                                      QStringLiteral("未读消息%1").arg(index + 1),
-                                     unreadMessageTimeAfter(timeline, index),
+                                     unreadMessageTimeAfter(timeline, index, unreadCount),
                                      sender.userId,
                                      sender.displayName,
                                      true,
@@ -754,12 +797,17 @@ void MessageRepository::markConversationRead(const QString& conversationId)
         return;
     }
 
+    bool changed = false;
     {
         QMutexLocker locker(&m_mutex);
         ConversationSyncState& state = m_conversationStates[conversationId];
         state.conversationId = conversationId;
+        changed = state.unreadCount != 0;
         state.unreadCount = 0;
         state.lastReadAt = QDateTime::currentDateTime();
+    }
+    if (changed) {
+        emit conversationListChanged(conversationId);
     }
 }
 

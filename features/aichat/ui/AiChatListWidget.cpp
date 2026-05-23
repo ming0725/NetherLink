@@ -4,7 +4,6 @@
 #include <QApplication>
 #include <QAction>
 #include <QCursor>
-#include <QInputDialog>
 #include <QItemSelectionModel>
 #include <QLineEdit>
 #include <QMouseEvent>
@@ -18,6 +17,7 @@
 #include "features/aichat/model/AiChatListModel.h"
 #include "features/aichat/ui/AiChatSessionController.h"
 #include "shared/theme/ThemeManager.h"
+#include "shared/ui/InWindowPopupOverlay.h"
 #include "shared/ui/StyledActionMenu.h"
 
 namespace {
@@ -426,12 +426,12 @@ void AiChatListWidget::renameItem(const QModelIndex& index)
 
     const AiChatListEntry entry = m_model->entryAt(index);
     bool ok = false;
-    const QString newTitle = QInputDialog::getText(this,
-                                                   QStringLiteral("重命名"),
-                                                   QStringLiteral("新标题："),
-                                                   QLineEdit::Normal,
-                                                   entry.title,
-                                                   &ok).trimmed();
+    const QString newTitle = InWindowPopup::getText(this,
+                                                    QStringLiteral("重命名"),
+                                                    QStringLiteral("新标题："),
+                                                    QLineEdit::Normal,
+                                                    entry.title,
+                                                    &ok).trimmed();
     if (!ok || newTitle.isEmpty()) {
         return;
     }

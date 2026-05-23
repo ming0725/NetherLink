@@ -5,6 +5,7 @@
 #include "shared/services/ImageService.h"
 #include "shared/types/ChatMessage.h"
 #include "shared/ui/IconLineEdit.h"
+#include "shared/ui/InWindowPopupOverlay.h"
 #include "shared/ui/InlineEditableText.h"
 #include "shared/ui/OverlayScrollArea.h"
 #include "shared/ui/PaintedLabel.h"
@@ -19,9 +20,7 @@
 #include <QContextMenuEvent>
 #include <QEvent>
 #include <QHBoxLayout>
-#include <QInputDialog>
 #include <QLineEdit>
-#include <QMessageBox>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
@@ -420,6 +419,11 @@ public:
         m_contextMenuCallback = std::move(callback);
     }
 
+    void setProfileRequestedCallback(std::function<void(const User&, const QPoint&)> callback)
+    {
+        m_profileRequestedCallback = std::move(callback);
+    }
+
 protected:
     bool event(QEvent* event) override
     {
@@ -507,10 +511,25 @@ protected:
         QWidget::contextMenuEvent(event);
     }
 
+    void mouseReleaseEvent(QMouseEvent* event) override
+    {
+        if (event->button() == Qt::LeftButton &&
+            rect().contains(event->pos()) &&
+            m_profileRequestedCallback &&
+            !m_user.id.isEmpty()) {
+            m_profileRequestedCallback(m_user, event->globalPosition().toPoint());
+            event->accept();
+            return;
+        }
+
+        QWidget::mouseReleaseEvent(event);
+    }
+
 private:
     Group m_group;
     User m_user;
     std::function<void(const User&, const QPoint&)> m_contextMenuCallback;
+    std::function<void(const User&, const QPoint&)> m_profileRequestedCallback;
     bool m_hovered = false;
 };
 
@@ -817,6 +836,9 @@ void GroupConversationInfoPanel::rebuildMemberPreview()
     const int visibleCount = qMin(kMemberPreviewLimit, members.size());
     for (int index = 0; index < visibleCount; ++index) {
         auto* row = new GroupMemberRow(m_group, members.at(index), m_memberSummaryCard);
+        row->setProfileRequestedCallback([this](const User& user, const QPoint& globalPos) {
+            emit memberProfileRequested(user.id, globalPos);
+        });
         row->setContextMenuCallback([this](const User& user, const QPoint& globalPos) {
             showMemberContextMenu(user, globalPos);
         });
@@ -892,6 +914,9 @@ void GroupConversationInfoPanel::appendGroupMembersPage(const GroupMembersPage& 
 
     for (const User& member : page.members) {
         auto* row = new GroupMemberRow(m_group, member, m_memberListPage);
+        row->setProfileRequestedCallback([this](const User& user, const QPoint& globalPos) {
+            emit memberProfileRequested(user.id, globalPos);
+        });
         row->setContextMenuCallback([this](const User& user, const QPoint& globalPos) {
             showMemberContextMenu(user, globalPos);
         });
@@ -913,7 +938,10 @@ void GroupConversationInfoPanel::showMemberContextMenu(const User& user, const Q
     }
 
     auto* menu = new StyledActionMenu(this);
-    menu->addAction(QStringLiteral("查看资料"));
+    QAction* profileAction = menu->addAction(QStringLiteral("查看资料"));
+    connect(profileAction, &QAction::triggered, this, [this, user, globalPos]() {
+        emit memberProfileRequested(user.id, globalPos);
+    });
 
     if (canEditMemberNickname(user)) {
         QAction* nicknameAction = menu->addAction(QStringLiteral("修改群昵称"));
@@ -963,12 +991,12 @@ void GroupConversationInfoPanel::promptMemberNicknameChange(const User& user)
     const QString userNick = currentUser.isCurrentUserId(user.id) ? currentUser.getUserName() : user.nick;
     const QString fallbackName = userNick.trimmed().isEmpty() ? user.id : userNick.trimmed();
     const QString initialText = currentNickname.isEmpty() ? fallbackName : currentNickname;
-    const QString nextNickname = QInputDialog::getText(this,
-                                                       QStringLiteral("修改群昵称"),
-                                                       QStringLiteral("群昵称"),
-                                                       QLineEdit::Normal,
-                                                       initialText,
-                                                       &accepted).trimmed();
+    const QString nextNickname = InWindowPopup::getText(this,
+                                                        QStringLiteral("修改群昵称"),
+                                                        QStringLiteral("群昵称"),
+                                                        QLineEdit::Normal,
+                                                        initialText,
+                                                        &accepted).trimmed();
     if (!accepted) {
         return;
     }
@@ -983,12 +1011,11 @@ void GroupConversationInfoPanel::confirmMemberRemoval(const User& user)
     }
 
     const QString displayName = memberDisplayName(m_group, user);
-    const int result = QMessageBox::question(this,
-                                             QStringLiteral("移出本群"),
-                                             QStringLiteral("确认将“%1”移出本群吗？").arg(displayName),
-                                             QMessageBox::Yes | QMessageBox::No,
-                                             QMessageBox::No);
-    if (result != QMessageBox::Yes) {
+    const InWindowPopup::Button result = InWindowPopup::question(
+            this,
+            QStringLiteral("移出本群"),
+            QStringLiteral("确认将“%1”移出本群吗？").arg(displayName));
+    if (result != InWindowPopup::Button::Yes) {
         return;
     }
 

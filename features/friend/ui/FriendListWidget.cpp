@@ -8,7 +8,6 @@
 #include <QCursor>
 #include <QItemSelectionModel>
 #include <QMap>
-#include <QMessageBox>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QScrollBar>
@@ -19,6 +18,7 @@
 #include "features/friend/model/FriendListModel.h"
 #include "features/friend/ui/FriendSessionController.h"
 #include "shared/services/ImageService.h"
+#include "shared/ui/InWindowPopupOverlay.h"
 #include "shared/ui/StyledActionMenu.h"
 #include "shared/theme/ThemeManager.h"
 
@@ -618,12 +618,10 @@ void FriendListWidget::deleteFriendFromMenu(const QString& userId)
         return;
     }
 
-    const int result = QMessageBox::question(this,
-                                             QStringLiteral("删除好友"),
-                                             QStringLiteral("确认删除该好友吗？"),
-                                             QMessageBox::Yes | QMessageBox::No,
-                                             QMessageBox::No);
-    if (result != QMessageBox::Yes) {
+    const InWindowPopup::Button result = InWindowPopup::question(this,
+                                                                 QStringLiteral("删除好友"),
+                                                                 QStringLiteral("确认删除该好友吗？"));
+    if (result != InWindowPopup::Button::Yes) {
         return;
     }
 

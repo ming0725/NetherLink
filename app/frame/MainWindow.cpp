@@ -6,6 +6,7 @@
 #include "SettingsWindow.h"
 #include "shared/ui/IconLineEdit.h"
 #include "shared/ui/FloatingInputBar.h"
+#include "shared/ui/InWindowPopupOverlay.h"
 #include "shared/theme/ThemeManager.h"
 #include <QCloseEvent>
 #include <QHBoxLayout>
@@ -39,6 +40,18 @@ QWidget* focusedInnerLineEdit()
     }
     if (auto* textEdit = qobject_cast<QTextEdit*>(QApplication::focusWidget())) {
         return textEdit;
+    }
+    return nullptr;
+}
+
+InWindowPopupOverlay* popupOverlayForWidget(QWidget* widget)
+{
+    QWidget* current = widget;
+    while (current) {
+        if (auto* overlay = qobject_cast<InWindowPopupOverlay*>(current)) {
+            return overlay;
+        }
+        current = current->parentWidget();
     }
     return nullptr;
 }
@@ -442,6 +455,9 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *ev) {
     if (ev->type() == QEvent::MouseButtonPress || ev->type() == QEvent::MouseButtonRelease) {
         if (auto* watchedWidget = qobject_cast<QWidget*>(watched)) {
             if (watchedWidget->window() != this) {
+                return SystemWindow::eventFilter(watched, ev);
+            }
+            if (popupOverlayForWidget(watchedWidget)) {
                 return SystemWindow::eventFilter(watched, ev);
             }
             auto* mouseEvent = static_cast<QMouseEvent*>(ev);

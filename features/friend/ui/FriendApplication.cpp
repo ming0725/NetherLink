@@ -1,5 +1,6 @@
 #include "FriendApplication.h"
 #include "shared/services/AppFonts.h"
+#include "shared/ui/BadgeRenderer.h"
 #include "shared/ui/StyledActionMenu.h"
 #include "shared/ui/TransparentSplitter.h"
 #include "shared/theme/ThemeManager.h"
@@ -18,6 +19,16 @@
 namespace {
 
 constexpr int kLeftPaneWidth = 200;
+
+void forceUnreadBadgeColors(BadgeLayout& layout)
+{
+    if (!layout.size.isValid() || layout.drawIcon) {
+        return;
+    }
+
+    layout.backgroundColor = QColor(255, 59, 48);
+    layout.textColor = Qt::white;
+}
 
 class ModeSwitchBar : public QWidget
 {
@@ -111,6 +122,17 @@ public:
         setFlat(true);
     }
 
+    void setBadgeCount(int count)
+    {
+        const int clampedCount = qMax(0, count);
+        if (m_badgeCount == clampedCount) {
+            return;
+        }
+
+        m_badgeCount = clampedCount;
+        update();
+    }
+
 protected:
     bool event(QEvent* event) override
     {
@@ -149,7 +171,30 @@ protected:
         }
         painter.setPen(textColor);
         painter.drawText(rect(), Qt::AlignCenter, text());
+
+        if (isChecked()) {
+            return;
+        }
+
+        BadgeLayout badgeLayout = BadgeRenderer::layoutForUnreadCount(
+                m_badgeCount, false, false, ThemeManager::instance().isDark());
+        forceUnreadBadgeColors(badgeLayout);
+        if (badgeLayout.size.isValid()) {
+            const int textWidth = painter.fontMetrics().horizontalAdvance(text());
+            const int badgeX = rect().center().x() + textWidth / 2 - 2;
+            const int badgeY = rect().top() - 1;
+            BadgeRenderer::drawBadge(&painter,
+                                      QRect(badgeX,
+                                            badgeY,
+                                            badgeLayout.size.width(),
+                                            badgeLayout.size.height()),
+                                      badgeLayout,
+                                      isChecked());
+        }
     }
+
+private:
+    int m_badgeCount = 0;
 };
 
 } // namespace
@@ -206,6 +251,16 @@ FriendApplication::LeftPane::LeftPane(QWidget* parent)
 
     connect(m_friendModeButton, &QPushButton::clicked, this, [this]() { updateContentMode(true); });
     connect(m_groupModeButton, &QPushButton::clicked, this, [this]() { updateContentMode(true); });
+}
+
+void FriendApplication::LeftPane::setFriendModeBadgeCount(int count)
+{
+    static_cast<ModeSegmentButton*>(m_friendModeButton)->setBadgeCount(count);
+}
+
+void FriendApplication::LeftPane::setGroupModeBadgeCount(int count)
+{
+    static_cast<ModeSegmentButton*>(m_groupModeButton)->setBadgeCount(count);
 }
 
 void FriendApplication::LeftPane::applyTheme()
@@ -351,18 +406,29 @@ FriendApplication::FriendApplication(QWidget* parent)
             this, &FriendApplication::requestOpenConversation);
     connect(m_friendController, &FriendSessionController::friendNotificationListChanged,
             this, [this]() {
-                m_leftPane->friendList()->setNoticeUnreadCount(m_friendController->friendUnreadCount());
+                const int unreadCount = m_friendController->friendUnreadCount();
+                m_leftPane->friendList()->setNoticeUnreadCount(unreadCount);
+                m_leftPane->setFriendModeBadgeCount(unreadCount);
                 if (m_notificationPage && m_rightStack->currentWidget() == m_notificationPage) {
                     m_notificationPage->refreshLoadedNotifications();
                 }
             });
     connect(m_friendController, &FriendSessionController::groupNotificationListChanged,
             this, [this]() {
-                m_leftPane->groupList()->setNoticeUnreadCount(m_friendController->groupUnreadCount());
+                const int unreadCount = m_friendController->groupUnreadCount();
+                m_leftPane->groupList()->setNoticeUnreadCount(unreadCount);
+                m_leftPane->setGroupModeBadgeCount(unreadCount);
                 if (m_groupNotificationPage && m_rightStack->currentWidget() == m_groupNotificationPage) {
                     m_groupNotificationPage->refreshLoadedNotifications();
                 }
             });
+
+    const int friendUnreadCount = m_friendController->friendUnreadCount();
+    const int groupUnreadCount = m_friendController->groupUnreadCount();
+    m_leftPane->friendList()->setNoticeUnreadCount(friendUnreadCount);
+    m_leftPane->groupList()->setNoticeUnreadCount(groupUnreadCount);
+    m_leftPane->setFriendModeBadgeCount(friendUnreadCount);
+    m_leftPane->setGroupModeBadgeCount(groupUnreadCount);
 }
 
 void FriendApplication::showNotificationPage()
@@ -372,6 +438,7 @@ void FriendApplication::showNotificationPage()
     m_leftPane->friendList()->setNoticeSelected(true);
     m_friendController->markFriendNotificationsRead();
     m_leftPane->friendList()->setNoticeUnreadCount(0);
+    m_leftPane->setFriendModeBadgeCount(0);
     populateNotificationData();
     m_rightStack->setCurrentWidget(notificationPage);
 }
@@ -396,6 +463,7 @@ void FriendApplication::showGroupNotificationPage()
     m_leftPane->groupList()->setNoticeSelected(true);
     m_friendController->markGroupNotificationsRead();
     m_leftPane->groupList()->setNoticeUnreadCount(0);
+    m_leftPane->setGroupModeBadgeCount(0);
     populateGroupNotificationData();
     m_rightStack->setCurrentWidget(notificationPage);
 }
