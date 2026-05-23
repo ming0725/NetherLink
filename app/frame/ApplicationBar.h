@@ -8,6 +8,7 @@
 
 class ApplicationBarItem;
 class FriendProfilePopup;
+class InWindowPopupOverlay;
 class QEvent;
 class QMouseEvent;
 class ApplicationBar : public QWidget {
@@ -46,6 +47,11 @@ private:
     ApplicationBarItem* itemAtPosition(const QPoint& pos) const;
     void setHoveredItem(ApplicationBarItem* item);
     void showCurrentUserProfilePopup();
+    void showCurrentUserEditProfilePopup();
+    void showCurrentUserStatusPopup();
+    QString avatarStatusIconSource() const;
+    int avatarStatusChoiceIndex() const;
+    void setAvatarStatusChoiceIndex(int index);
     void showMoreOptionsMenu();
 
     ApplicationBarItem* selectedItem = nullptr;
@@ -54,7 +60,10 @@ private:
     ApplicationBarItem* friendItem = nullptr;
     ApplicationBarItem* moreOptionsItem = nullptr;
     QPointer<FriendProfilePopup> currentUserProfilePopup;
+    QPointer<InWindowPopupOverlay> currentUserStatusPopup;
+    QPointer<InWindowPopupOverlay> currentUserEditProfilePopup;
     QString avatarSource;
+    bool privateInvisibleStatus = false;
     QVector<ApplicationBarItem*> topItems;
     QVector<ApplicationBarItem*> bottomItems;
     const int marginTop     = 20;

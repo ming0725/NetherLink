@@ -30,6 +30,7 @@
         <file>resources/icon/hovered_shears.png</file>
         <file>resources/icon/hovered_skull.png</file>
         <file>resources/icon/icon.png</file>
+        <file>resources/icon/invisible.png</file>
         <file>resources/icon/image_viewer_rotate.svg</file>
         <file>resources/icon/image_viewer_save_as.svg</file>
         <file>resources/icon/image_viewer_zoom_in.svg</file>

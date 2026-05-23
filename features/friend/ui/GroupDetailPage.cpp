@@ -34,6 +34,7 @@ constexpr int kAvatarSize = 88;
 constexpr int kInfoTitleWidth = 96;
 constexpr int kInfoColumnSpacing = 24;
 constexpr int kHeaderSpacing = 30;
+constexpr int kHeaderContentLeftInset = 64;
 constexpr int kIdentityTopInset = 6;
 constexpr int kSeparatorTopSpacing = 32;
 
@@ -228,7 +229,7 @@ GroupDetailPage::GroupDetailPage(QWidget* parent)
     root->addStretch(1);
 
     auto* header = new QHBoxLayout;
-    header->setContentsMargins(0, 0, 0, 0);
+    header->setContentsMargins(kHeaderContentLeftInset, 0, 0, 0);
     header->setSpacing(kHeaderSpacing);
     header->addSpacing(kAvatarSize);
 
