@@ -6,6 +6,7 @@
 #include "features/chat/ui/ConversationInfoPanel.h"
 #include "features/chat/ui/ChatSessionController.h"
 #include "features/friend/ui/FriendProfilePopup.h"
+#include "features/friend/ui/AddContactSearchWindow.h"
 #include "features/friend/ui/FriendSessionController.h"
 #include "app/state/CurrentUser.h"
 #include "shared/services/AudioService.h"
@@ -394,6 +395,10 @@ ChatArea::ChatArea(QWidget *parent)
             this, &ChatArea::showAvatarContextMenu);
     connect(friendProfilePopup, &FriendProfilePopup::requestMessage,
             this, &ChatArea::requestOpenConversation);
+    connect(friendProfilePopup, &FriendProfilePopup::requestAddFriend,
+            this, [this](const QString& userId) {
+                AddContactSearchWindow::openUserRequest(userId, this);
+            });
     connect(inputBar, &FloatingInputBar::sendImage,
             this, &ChatArea::onSendImage);
     connect(inputBar, &FloatingInputBar::sendText,
@@ -1247,6 +1252,12 @@ void ChatArea::connectGroupInfoPanel(GroupConversationInfoPanel* panel)
             sessionController, &ChatSessionController::loadGroupMembersPage);
     connect(panel, &GroupConversationInfoPanel::memberProfileRequested,
             this, &ChatArea::showFriendProfilePopup);
+    connect(panel, &GroupConversationInfoPanel::memberMessageRequested,
+            this, &ChatArea::requestOpenConversation);
+    connect(panel, &GroupConversationInfoPanel::memberAddFriendRequested,
+            this, [this](const QString& userId) {
+                AddContactSearchWindow::openUserRequest(userId, this);
+            });
 }
 
 void ChatArea::connectDirectInfoPanel(DirectConversationInfoPanel* panel)
@@ -1315,7 +1326,9 @@ void ChatArea::showAvatarContextMenu(const QString& userId, const QPoint& global
                 emit requestOpenConversation(userId);
             });
         } else {
-            connect(primaryAction, &QAction::triggered, this, []() {});
+            connect(primaryAction, &QAction::triggered, this, [this, userId]() {
+                AddContactSearchWindow::openUserRequest(userId, this);
+            });
         }
     }
 

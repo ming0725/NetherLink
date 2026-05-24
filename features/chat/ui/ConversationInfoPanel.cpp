@@ -2,6 +2,7 @@
 #include "shared/services/AppFonts.h"
 
 #include "app/state/CurrentUser.h"
+#include "features/friend/data/UserRepository.h"
 #include "shared/services/ImageService.h"
 #include "shared/types/ChatMessage.h"
 #include "shared/ui/IconLineEdit.h"
@@ -938,6 +939,23 @@ void GroupConversationInfoPanel::showMemberContextMenu(const User& user, const Q
     }
 
     auto* menu = new StyledActionMenu(this);
+    const bool isCurrentUser = CurrentUser::instance().isCurrentUserId(user.id);
+    const bool isFriend = !isCurrentUser && UserRepository::instance().isFriend(user.id);
+    if (!isCurrentUser) {
+        QAction* primaryAction = menu->addAction(isFriend
+                                                 ? QStringLiteral("发消息")
+                                                 : QStringLiteral("添加好友"));
+        if (isFriend) {
+            connect(primaryAction, &QAction::triggered, this, [this, user]() {
+                emit memberMessageRequested(user.id);
+            });
+        } else {
+            connect(primaryAction, &QAction::triggered, this, [this, user]() {
+                emit memberAddFriendRequested(user.id);
+            });
+        }
+    }
+
     QAction* profileAction = menu->addAction(QStringLiteral("查看资料"));
     connect(profileAction, &QAction::triggered, this, [this, user, globalPos]() {
         emit memberProfileRequested(user.id, globalPos);

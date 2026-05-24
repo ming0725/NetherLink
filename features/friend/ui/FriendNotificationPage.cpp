@@ -7,6 +7,7 @@
 
 #include "features/friend/ui/FriendNotificationListWidget.h"
 #include "features/friend/ui/FriendSessionController.h"
+#include "features/friend/ui/AddContactSearchWindow.h"
 #include "shared/theme/ThemeManager.h"
 
 namespace {
@@ -34,7 +35,7 @@ FriendNotificationPage::FriendNotificationPage(QWidget* parent)
             this, [this]() { applyTheme(); });
 
     connect(m_listWidget, &FriendNotificationListWidget::acceptRequest,
-            this, &FriendNotificationPage::acceptRequest);
+            this, &FriendNotificationPage::handleAcceptRequest);
     connect(m_listWidget, &FriendNotificationListWidget::rejectRequest,
             this, &FriendNotificationPage::rejectRequest);
     connect(m_listWidget, &FriendNotificationListWidget::loadMoreRequested,
@@ -83,6 +84,34 @@ void FriendNotificationPage::loadMoreNotifications()
             m_loadedCount < m_controller->friendNotificationCount();
     m_listWidget->appendNotifications(std::move(notifications));
     m_loading = false;
+}
+
+void FriendNotificationPage::handleAcceptRequest(const QString& notificationId)
+{
+    if (!m_controller) {
+        return;
+    }
+
+    const QVector<FriendNotification> notifications =
+            m_controller->loadFriendNotifications(0, m_controller->friendNotificationCount());
+    for (const FriendNotification& notification : notifications) {
+        if (notification.id != notificationId ||
+            notification.status != NotificationStatus::Pending) {
+            continue;
+        }
+
+        QString remark;
+        QString groupId;
+        QString groupName;
+        if (AddContactSearchWindow::openFriendApproval(notification.fromUserId,
+                                                       this,
+                                                       &remark,
+                                                       &groupId,
+                                                       &groupName)) {
+            emit acceptRequest(notificationId, remark, groupId, groupName);
+        }
+        return;
+    }
 }
 
 void FriendNotificationPage::applyTheme()

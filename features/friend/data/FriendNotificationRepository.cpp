@@ -196,7 +196,10 @@ void FriendNotificationRepository::markAllRead()
     emit notificationListChanged();
 }
 
-bool FriendNotificationRepository::acceptRequest(const QString& notificationId)
+bool FriendNotificationRepository::acceptRequest(const QString& notificationId,
+                                                 const QString& remark,
+                                                 const QString& groupId,
+                                                 const QString& groupName)
 {
     ensureLoaded();
     for (FriendNotification& notification : m_notifications) {
@@ -207,7 +210,14 @@ bool FriendNotificationRepository::acceptRequest(const QString& notificationId)
 
         const QDateTime acceptedAt = QDateTime::currentDateTime();
         notification.status = NotificationStatus::Accepted;
-        UserRepository::instance().addFriend(notification.fromUserId);
+        User user = UserRepository::instance().requestUserDetail({notification.fromUserId});
+        if (!user.id.isEmpty()) {
+            user.isFriend = true;
+            user.remark = remark;
+            user.friendGroupId = groupId.isEmpty() ? QStringLiteral("default") : groupId;
+            user.friendGroupName = groupName.isEmpty() ? QStringLiteral("默认分组") : groupName;
+            UserRepository::instance().saveUser(user);
+        }
 
         auto message = QSharedPointer<ChatMessage>(new TextMessage(
             QStringLiteral("我们已经是好友了，现在可以开始聊天了"),

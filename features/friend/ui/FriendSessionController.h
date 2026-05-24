@@ -56,14 +56,20 @@ public:
     int friendNotificationCount() const;
     int friendUnreadCount() const;
     void markFriendNotificationsRead();
-    bool acceptFriendRequest(const QString& notificationId);
+    bool acceptFriendRequest(const QString& notificationId,
+                             const QString& remark = QString(),
+                             const QString& groupId = QStringLiteral("default"),
+                             const QString& groupName = QStringLiteral("默认分组"));
     bool rejectFriendRequest(const QString& notificationId);
 
     QVector<GroupNotification> loadGroupNotifications(int offset, int limit) const;
     int groupNotificationCount() const;
     int groupUnreadCount() const;
     void markGroupNotificationsRead();
-    bool acceptGroupJoinRequest(const QString& notificationId);
+    bool acceptGroupJoinRequest(const QString& notificationId,
+                                const QString& remark = QString(),
+                                const QString& categoryId = QStringLiteral("gg_joined"),
+                                const QString& categoryName = QStringLiteral("我加入的群聊"));
     bool rejectGroupJoinRequest(const QString& notificationId);
 
 signals:

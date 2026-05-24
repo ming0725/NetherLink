@@ -57,6 +57,8 @@ signals:
     void exitGroupRequested();
     void groupMembersPageRequested(const QString& keyword, int offset, int limit);
     void memberProfileRequested(const QString& userId, const QPoint& globalPos);
+    void memberMessageRequested(const QString& userId);
+    void memberAddFriendRequested(const QString& userId);
 
 private:
     InlineEditableText* m_groupNameText = nullptr;

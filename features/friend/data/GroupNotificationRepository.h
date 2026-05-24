@@ -21,7 +21,10 @@ public:
     int unreadCount() const;
     int notificationCount() const;
     void markAllRead();
-    bool acceptJoinRequest(const QString& notificationId);
+    bool acceptJoinRequest(const QString& notificationId,
+                           const QString& remark = QString(),
+                           const QString& categoryId = QStringLiteral("gg_joined"),
+                           const QString& categoryName = QStringLiteral("我加入的群聊"));
     bool rejectJoinRequest(const QString& notificationId);
 
 signals:

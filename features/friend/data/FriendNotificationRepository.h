@@ -23,7 +23,10 @@ public:
     int unreadCount() const;
     int notificationCount() const;
     void markAllRead();
-    bool acceptRequest(const QString& notificationId);
+    bool acceptRequest(const QString& notificationId,
+                       const QString& remark = QString(),
+                       const QString& groupId = QStringLiteral("default"),
+                       const QString& groupName = QStringLiteral("默认分组"));
     bool rejectRequest(const QString& notificationId);
 
 signals:

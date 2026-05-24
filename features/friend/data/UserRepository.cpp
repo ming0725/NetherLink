@@ -67,6 +67,17 @@ bool matchesFriendKeyword(const User& user, const QString& keyword)
            normalizedFriendGroupName(user).contains(keyword, Qt::CaseInsensitive);
 }
 
+bool matchesUserSearchKeyword(const User& user, const QString& keyword)
+{
+    if (keyword.isEmpty()) {
+        return false;
+    }
+
+    return user.id.contains(keyword, Qt::CaseInsensitive) ||
+           user.nick.contains(keyword, Qt::CaseInsensitive) ||
+           user.remark.contains(keyword, Qt::CaseInsensitive);
+}
+
 FriendSummary makeFriendSummary(const User& user)
 {
     const QString displayName = user.remark.isEmpty() ? user.nick : user.remark;
@@ -378,6 +389,42 @@ QVector<FriendSummary> UserRepository::requestFriendsInGroup(const FriendGroupIt
 {
     QMutexLocker locker(&mutex);
     return FriendGroupItemsRequestOperation(QVector<User>::fromList(userMap.values())).request(query);
+}
+
+QVector<User> UserRepository::requestUserSearch(const QString& keyword, int limit) const
+{
+    const QString trimmedKeyword = keyword.trimmed();
+    QMutexLocker locker(&mutex);
+
+    QVector<User> result;
+    result.reserve(qMin(qMax(0, limit), userMap.size()));
+    for (const User& user : userMap) {
+        if (!matchesUserSearchKeyword(user, trimmedKeyword)) {
+            continue;
+        }
+        result.push_back(user);
+    }
+
+    locker.unlock();
+
+    std::sort(result.begin(), result.end(), [](const User& lhs, const User& rhs) {
+        if (lhs.isFriend != rhs.isFriend) {
+            return lhs.isFriend && !rhs.isFriend;
+        }
+
+        static QCollator collator(QLocale::Chinese);
+        collator.setNumericMode(true);
+        const int nameOrder = collator.compare(lhs.nick, rhs.nick);
+        if (nameOrder != 0) {
+            return nameOrder < 0;
+        }
+        return lhs.id < rhs.id;
+    });
+
+    if (limit >= 0 && result.size() > limit) {
+        result.resize(limit);
+    }
+    return result;
 }
 
 User UserRepository::requestUserDetail(const UserDetailRequest& query) const

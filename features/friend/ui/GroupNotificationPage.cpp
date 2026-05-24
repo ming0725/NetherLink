@@ -7,6 +7,7 @@
 
 #include "features/friend/ui/GroupNotificationListWidget.h"
 #include "features/friend/ui/FriendSessionController.h"
+#include "features/friend/ui/AddContactSearchWindow.h"
 #include "shared/theme/ThemeManager.h"
 
 namespace {
@@ -32,7 +33,7 @@ GroupNotificationPage::GroupNotificationPage(QWidget* parent)
     connect(&ThemeManager::instance(), &ThemeManager::themeChanged,
             this, [this]() { applyTheme(); });
     connect(m_listWidget, &GroupNotificationListWidget::acceptRequest,
-            this, &GroupNotificationPage::acceptRequest);
+            this, &GroupNotificationPage::handleAcceptRequest);
     connect(m_listWidget, &GroupNotificationListWidget::rejectRequest,
             this, &GroupNotificationPage::rejectRequest);
     connect(m_listWidget, &GroupNotificationListWidget::loadMoreRequested,
@@ -80,6 +81,35 @@ void GroupNotificationPage::loadMoreNotifications()
             m_loadedCount < m_controller->groupNotificationCount();
     m_listWidget->appendNotifications(std::move(notifications));
     m_loading = false;
+}
+
+void GroupNotificationPage::handleAcceptRequest(const QString& notificationId)
+{
+    if (!m_controller) {
+        return;
+    }
+
+    const auto notifications =
+            m_controller->loadGroupNotifications(0, m_controller->groupNotificationCount());
+    for (const GroupNotification& notification : notifications) {
+        if (notification.id != notificationId ||
+            notification.type != GroupNotificationType::JoinRequest ||
+            notification.status != GroupNotificationStatus::Pending) {
+            continue;
+        }
+
+        QString remark;
+        QString categoryId;
+        QString categoryName;
+        if (AddContactSearchWindow::openGroupApproval(notification.groupId,
+                                                      this,
+                                                      &remark,
+                                                      &categoryId,
+                                                      &categoryName)) {
+            emit acceptRequest(notificationId, remark, categoryId, categoryName);
+        }
+        return;
+    }
 }
 
 void GroupNotificationPage::applyTheme()

@@ -15,6 +15,7 @@ public:
     QVector<Group> requestGroupList(const GroupListRequest& query = {}) const;
     QVector<GroupCategorySummary> requestGroupCategorySummaries(const GroupCategoryListRequest& query = {}) const;
     QVector<Group> requestGroupsInCategory(const GroupCategoryItemsRequest& query) const;
+    QVector<Group> requestGroupSearch(const QString& keyword, int limit = 80) const;
     Group requestGroupDetail(const GroupDetailRequest& query) const;
     QString requestGroupAvatarPath(const QString& groupId) const;
     QString requestGroupAvatarImageAsync(const QString& groupId, int delayMs = 120);

@@ -17,7 +17,10 @@ public:
     void refreshLoadedNotifications();
 
 signals:
-    void acceptRequest(const QString& notificationId);
+    void acceptRequest(const QString& notificationId,
+                       const QString& remark,
+                       const QString& categoryId,
+                       const QString& categoryName);
     void rejectRequest(const QString& notificationId);
 
 protected:
@@ -27,6 +30,7 @@ protected:
 private:
     void applyTheme();
     void loadMoreNotifications();
+    void handleAcceptRequest(const QString& notificationId);
 
     GroupNotificationListWidget* m_listWidget;
     FriendSessionController* m_controller = nullptr;

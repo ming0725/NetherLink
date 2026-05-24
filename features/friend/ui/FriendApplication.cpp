@@ -5,11 +5,13 @@
 #include "shared/ui/TransparentSplitter.h"
 #include "shared/theme/ThemeManager.h"
 #include "features/friend/ui/FriendSessionController.h"
+#include "features/friend/ui/AddContactSearchWindow.h"
 #include "features/friend/ui/FriendDetailPage.h"
 #include "features/friend/ui/FriendNotificationPage.h"
 #include "features/friend/ui/GroupDetailPage.h"
 #include "features/friend/ui/GroupNotificationPage.h"
 #include "shared/types/FriendNotification.h"
+#include <QAction>
 #include <QPainter>
 #include <QPaintEvent>
 #include <QPushButton>
@@ -232,10 +234,17 @@ FriendApplication::LeftPane::LeftPane(QWidget* parent)
     connect(m_addButton, &StatefulPushButton::clicked, this, [this]() {
         auto* menu = new StyledActionMenu(this);
         menu->setItemHoverColor(ThemeManager::instance().color(ThemeColor::ContextMenuHover));
-        menu->addAction(QStringLiteral("添加好友"));
-        menu->addAction(QStringLiteral("添加群聊"));
+        QAction* addFriendAction = menu->addAction(QStringLiteral("添加好友"));
+        QAction* addGroupAction = menu->addAction(QStringLiteral("添加群聊"));
         menu->addSeparator();
         menu->addAction(QStringLiteral("创建群聊"));
+
+        connect(addFriendAction, &QAction::triggered, this, [this]() {
+            AddContactSearchWindow::open(AddContactSearchWindow::InitialMode::Users, m_addButton);
+        });
+        connect(addGroupAction, &QAction::triggered, this, [this]() {
+            AddContactSearchWindow::open(AddContactSearchWindow::InitialMode::Groups, m_addButton);
+        });
 
         connect(menu, &QMenu::aboutToHide, this, [this, menu]() {
             m_addButton->setPressedVisual(false);
@@ -527,8 +536,11 @@ FriendNotificationPage* FriendApplication::ensureFriendNotificationPage()
     m_notificationPage->setController(m_friendController);
     m_rightStack->addWidget(m_notificationPage);
     connect(m_notificationPage, &FriendNotificationPage::acceptRequest,
-            this, [this](const QString& notificationId) {
-                m_friendController->acceptFriendRequest(notificationId);
+            this, [this](const QString& notificationId,
+                         const QString& remark,
+                         const QString& groupId,
+                         const QString& groupName) {
+                m_friendController->acceptFriendRequest(notificationId, remark, groupId, groupName);
             });
     connect(m_notificationPage, &FriendNotificationPage::rejectRequest,
             this, [this](const QString& notificationId) {
@@ -547,8 +559,14 @@ GroupNotificationPage* FriendApplication::ensureGroupNotificationPage()
     m_groupNotificationPage->setController(m_friendController);
     m_rightStack->addWidget(m_groupNotificationPage);
     connect(m_groupNotificationPage, &GroupNotificationPage::acceptRequest,
-            this, [this](const QString& notificationId) {
-                m_friendController->acceptGroupJoinRequest(notificationId);
+            this, [this](const QString& notificationId,
+                         const QString& remark,
+                         const QString& categoryId,
+                         const QString& categoryName) {
+                m_friendController->acceptGroupJoinRequest(notificationId,
+                                                           remark,
+                                                           categoryId,
+                                                           categoryName);
             });
     connect(m_groupNotificationPage, &GroupNotificationPage::rejectRequest,
             this, [this](const QString& notificationId) {

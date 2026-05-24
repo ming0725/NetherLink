@@ -304,10 +304,16 @@ void FriendSessionController::markFriendNotificationsRead()
     FriendNotificationRepository::instance().markAllRead();
 }
 
-bool FriendSessionController::acceptFriendRequest(const QString& notificationId)
+bool FriendSessionController::acceptFriendRequest(const QString& notificationId,
+                                                  const QString& remark,
+                                                  const QString& groupId,
+                                                  const QString& groupName)
 {
     ensureFriendNotificationRepositoryConnections();
-    return FriendNotificationRepository::instance().acceptRequest(notificationId);
+    return FriendNotificationRepository::instance().acceptRequest(notificationId,
+                                                                  remark,
+                                                                  groupId,
+                                                                  groupName);
 }
 
 bool FriendSessionController::rejectFriendRequest(const QString& notificationId)
@@ -340,10 +346,16 @@ void FriendSessionController::markGroupNotificationsRead()
     GroupNotificationRepository::instance().markAllRead();
 }
 
-bool FriendSessionController::acceptGroupJoinRequest(const QString& notificationId)
+bool FriendSessionController::acceptGroupJoinRequest(const QString& notificationId,
+                                                     const QString& remark,
+                                                     const QString& categoryId,
+                                                     const QString& categoryName)
 {
     ensureGroupNotificationRepositoryConnections();
-    return GroupNotificationRepository::instance().acceptJoinRequest(notificationId);
+    return GroupNotificationRepository::instance().acceptJoinRequest(notificationId,
+                                                                    remark,
+                                                                    categoryId,
+                                                                    categoryName);
 }
 
 bool FriendSessionController::rejectGroupJoinRequest(const QString& notificationId)

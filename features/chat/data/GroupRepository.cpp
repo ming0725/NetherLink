@@ -230,6 +230,18 @@ QString groupVisibleSubtitle(const Group& group)
     return QStringLiteral("%1人").arg(group.memberNum);
 }
 
+bool matchesGroupSearchKeyword(const Group& group, const QString& keyword)
+{
+    if (keyword.isEmpty()) {
+        return false;
+    }
+
+    return group.groupId.contains(keyword, Qt::CaseInsensitive) ||
+           group.groupName.contains(keyword, Qt::CaseInsensitive) ||
+           group.remark.contains(keyword, Qt::CaseInsensitive) ||
+           group.introduction.contains(keyword, Qt::CaseInsensitive);
+}
+
 void sortGroupList(QVector<Group>& result)
 {
     std::sort(result.begin(), result.end(), [](const Group& lhs, const Group& rhs) {
@@ -535,6 +547,29 @@ QVector<Group> GroupRepository::requestGroupsInCategory(const GroupCategoryItems
 {
     QMutexLocker locker(&mutex);
     return GroupCategoryItemsRequestOperation(QVector<Group>::fromList(groupMap.values())).request(query);
+}
+
+QVector<Group> GroupRepository::requestGroupSearch(const QString& keyword, int limit) const
+{
+    const QString trimmedKeyword = keyword.trimmed();
+    QMutexLocker locker(&mutex);
+
+    QVector<Group> result;
+    result.reserve(qMin(qMax(0, limit), groupMap.size()));
+    for (const Group& group : groupMap) {
+        if (!matchesGroupSearchKeyword(group, trimmedKeyword)) {
+            continue;
+        }
+        result.push_back(group);
+    }
+
+    locker.unlock();
+    sortGroupList(result);
+
+    if (limit >= 0 && result.size() > limit) {
+        result.resize(limit);
+    }
+    return result;
 }
 
 Group GroupRepository::requestGroupDetail(const GroupDetailRequest& query) const

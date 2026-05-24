@@ -305,7 +305,10 @@ void GroupNotificationRepository::markAllRead()
     emit notificationListChanged();
 }
 
-bool GroupNotificationRepository::acceptJoinRequest(const QString& notificationId)
+bool GroupNotificationRepository::acceptJoinRequest(const QString& notificationId,
+                                                    const QString& remark,
+                                                    const QString& categoryId,
+                                                    const QString& categoryName)
 {
     ensureLoaded();
     for (GroupNotification& notification : m_notifications) {
@@ -319,6 +322,13 @@ bool GroupNotificationRepository::acceptJoinRequest(const QString& notificationI
         notification.status = GroupNotificationStatus::Accepted;
         notification.operatorUserId = CurrentUser::instance().getUserId();
         GroupRepository::instance().addMember(notification.groupId, notification.actorUserId);
+        Group group = GroupRepository::instance().requestGroupDetail({notification.groupId});
+        if (!group.groupId.isEmpty()) {
+            group.remark = remark;
+            group.listGroupId = categoryId.isEmpty() ? QStringLiteral("gg_joined") : categoryId;
+            group.listGroupName = categoryName.isEmpty() ? QStringLiteral("我加入的群聊") : categoryName;
+            GroupRepository::instance().saveGroup(group);
+        }
 
         auto message = QSharedPointer<ChatMessage>(new GroupMemberJoinedMessage(
             notification.actorUserId,

@@ -1,10 +1,12 @@
 // MessageApplication.cpp
 #include "MessageApplication.h"
 #include "features/chat/data/MessageRepository.h"
+#include "features/friend/ui/AddContactSearchWindow.h"
 #include "shared/ui/StyledActionMenu.h"
 #include "shared/ui/TransparentSplitter.h"
 #include "shared/theme/ThemeManager.h"
 
+#include <QAction>
 #include <QPainter>
 #include <QPointer>
 #include <QResizeEvent>
@@ -42,10 +44,17 @@ MessageApplication::LeftPane::LeftPane(QWidget* parent)
     connect(m_addButton, &StatefulPushButton::clicked, this, [this]() {
         auto* menu = new StyledActionMenu(this);
         menu->setItemHoverColor(ThemeManager::instance().color(ThemeColor::ContextMenuHover));
-        menu->addAction(QStringLiteral("添加好友"));
-        menu->addAction(QStringLiteral("添加群聊"));
+        QAction* addFriendAction = menu->addAction(QStringLiteral("添加好友"));
+        QAction* addGroupAction = menu->addAction(QStringLiteral("添加群聊"));
         menu->addSeparator();
         menu->addAction(QStringLiteral("创建群聊"));
+
+        connect(addFriendAction, &QAction::triggered, this, [this]() {
+            AddContactSearchWindow::open(AddContactSearchWindow::InitialMode::Users, m_addButton);
+        });
+        connect(addGroupAction, &QAction::triggered, this, [this]() {
+            AddContactSearchWindow::open(AddContactSearchWindow::InitialMode::Groups, m_addButton);
+        });
 
         connect(menu, &QMenu::aboutToHide, this, [this, menu]() {
             m_addButton->setPressedVisual(false);
