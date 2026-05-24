@@ -129,13 +129,6 @@ private:
     QVector<MarkdownBlockSelection> m_selections;
 };
 
-QColor userBubbleColor(bool dark)
-{
-    return dark
-            ? ThemeManager::instance().color(ThemeColor::AccentBubble)
-            : ThemeManager::instance().color(ThemeColor::Accent);
-}
-
 QColor linkTextColor(bool dark, bool isFromUser, const QColor& textColor)
 {
     if (isFromUser) {
@@ -447,7 +440,7 @@ void AiChatMessageDelegate::paint(QPainter* painter,
     const bool isFromUser = index.data(AiChatMessageListModel::IsFromUserRole).toBool();
     const bool dark = ThemeManager::instance().isDark();
     const QColor bubbleColor = isFromUser
-            ? userBubbleColor(dark)
+            ? ThemeManager::instance().color(ThemeColor::AccentBubble)
             : ThemeManager::instance().color(ThemeColor::MessageBubblePeer);
     const bool bubbleSelected = m_bubbleSelectionIndex == index;
     const QColor effectiveBubbleColor = bubbleSelected
@@ -661,7 +654,7 @@ int AiChatMessageDelegate::characterIndexAt(const QStyleOptionViewItem& option,
 
     const bool dark = ThemeManager::instance().isDark();
     const QColor textColor = isFromUser
-            ? ThemeManager::textColorOn(userBubbleColor(dark))
+            ? ThemeManager::textColorOn(ThemeManager::instance().color(ThemeColor::AccentBubble))
             : ThemeManager::instance().color(ThemeColor::PrimaryText);
     const QTextDocument& textDocument = cachedTextDocument(text,
                                                            messageFont(),
@@ -806,7 +799,7 @@ QString AiChatMessageDelegate::urlAt(const QStyleOptionViewItem& option,
 
     const bool dark = ThemeManager::instance().isDark();
     const QColor textColor = isFromUser
-            ? ThemeManager::textColorOn(userBubbleColor(dark))
+            ? ThemeManager::textColorOn(ThemeManager::instance().color(ThemeColor::AccentBubble))
             : ThemeManager::instance().color(ThemeColor::PrimaryText);
     const QTextDocument& textDocument = cachedTextDocument(text,
                                                            messageFont(),

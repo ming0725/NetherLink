@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QObject>
+#include <QStringList>
 
 #include "shared/types/Group.h"
 #include "shared/types/RepositoryTypes.h"
@@ -35,7 +36,9 @@ public slots:
     void saveGroupMemberNickname(const QString& userId, const QString& nickname);
     void promoteGroupMemberToAdmin(const QString& userId);
     void cancelGroupMemberAdmin(const QString& userId);
+    void inviteGroupMembers(const QStringList& userIds);
     void removeGroupMember(const QString& userId);
+    void removeGroupMembers(const QStringList& userIds);
     void saveGroupRemark(const QString& remark);
     void saveDirectRemark(const QString& remark);
     void setPinned(bool pinned);

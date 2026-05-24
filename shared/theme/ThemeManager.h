@@ -40,9 +40,16 @@ enum class ThemeColor {
     ListPinned,
     ChatInfoPanelOverlay,
     ChatInfoPanelFallbackBackground,
+    ChatInfoPanelText,
     ChatInfoPanelCardBackground,
     ChatInfoPanelCardHover,
     ChatInfoPanelCardPressed,
+    CreateGroupPopupBackground,
+    CreateGroupPopupDivider,
+    CreateGroupPopupHover,
+    CreateGroupPopupPrimaryText,
+    CreateGroupPopupSecondaryText,
+    CreateGroupPopupTertiaryText,
     SettingsOverlay,
     SettingsFallbackBackground,
     ChatInfoMemberListBackground,
@@ -99,6 +106,7 @@ enum class ThemeColor {
     WindowBackdropTint,
     WindowCloseHover,
     OverlayStroke,
+    InWindowPopupStroke,
     TooltipBackground,
     TooltipText,
     MediaOverlayStart,
@@ -134,6 +142,7 @@ public:
     void setMode(Mode mode);
     bool isDark() const;
     QColor color(ThemeColor role) const;
+    QColor postBarItemSelectedBackgroundColor() const;
     QColor themeColor() const;
     void setThemeColor(const QColor& color);
     QtFallbackInputBarEffect qtFallbackInputBarEffect() const;
@@ -145,6 +154,7 @@ public:
     bool postBarQtFallbackLiquidGlassEnabled() const;
     void setPostBarQtFallbackLiquidGlassEnabled(bool enabled);
     static QColor textColorOn(const QColor& background, int alpha = 255);
+    static QColor colorCompositedOver(const QColor& foreground, const QColor& background);
 
     QPalette applicationPalette() const;
     void applyToApplication(QApplication& application);

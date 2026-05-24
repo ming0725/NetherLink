@@ -2,6 +2,7 @@
 #include <QWidget>
 #include <QSplitter>
 #include <QStackedWidget>
+#include <functional>
 #include "shared/ui/IconLineEdit.h"
 #include "shared/ui/StatefulPushButton.h"
 #include "features/chat/ui/MessageListWidget.h"
@@ -30,6 +31,7 @@ private:
         explicit LeftPane(QWidget* parent = nullptr);
         MessageListWidget* messageList() const { return m_msgList; }
         IconLineEdit* searchInput() const { return m_searchInput; }
+        void setCreatedGroupCallback(std::function<void(const QString&)> callback);
 
     protected:
         void resizeEvent(QResizeEvent* event) override;
@@ -40,6 +42,7 @@ private:
         IconLineEdit* m_searchInput;
         StatefulPushButton* m_addButton;
         MessageListWidget* m_msgList;
+        std::function<void(const QString&)> m_createdGroupCallback;
     };
 
     void ensureChatArea();

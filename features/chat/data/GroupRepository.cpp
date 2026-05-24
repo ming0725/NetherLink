@@ -549,7 +549,7 @@ QVector<Group> GroupRepository::requestGroupsInCategory(const GroupCategoryItems
     return GroupCategoryItemsRequestOperation(QVector<Group>::fromList(groupMap.values())).request(query);
 }
 
-QVector<Group> GroupRepository::requestGroupSearch(const QString& keyword, int limit) const
+QVector<Group> GroupRepository::requestGroupSearch(const QString& keyword, int limit, int offset) const
 {
     const QString trimmedKeyword = keyword.trimmed();
     QMutexLocker locker(&mutex);
@@ -566,10 +566,9 @@ QVector<Group> GroupRepository::requestGroupSearch(const QString& keyword, int l
     locker.unlock();
     sortGroupList(result);
 
-    if (limit >= 0 && result.size() > limit) {
-        result.resize(limit);
-    }
-    return result;
+    const int boundedOffset = qBound(0, offset, result.size());
+    const int boundedLimit = limit < 0 ? result.size() - boundedOffset : qMax(0, limit);
+    return result.mid(boundedOffset, boundedLimit);
 }
 
 Group GroupRepository::requestGroupDetail(const GroupDetailRequest& query) const

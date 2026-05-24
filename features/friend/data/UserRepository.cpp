@@ -4,6 +4,7 @@
 #include <QImageReader>
 #include <QMetaObject>
 #include <QRunnable>
+#include <QSet>
 #include <QStringList>
 #include <QThread>
 #include <QThreadPool>
@@ -391,7 +392,7 @@ QVector<FriendSummary> UserRepository::requestFriendsInGroup(const FriendGroupIt
     return FriendGroupItemsRequestOperation(QVector<User>::fromList(userMap.values())).request(query);
 }
 
-QVector<User> UserRepository::requestUserSearch(const QString& keyword, int limit) const
+QVector<User> UserRepository::requestUserSearch(const QString& keyword, int limit, int offset) const
 {
     const QString trimmedKeyword = keyword.trimmed();
     QMutexLocker locker(&mutex);
@@ -421,16 +422,35 @@ QVector<User> UserRepository::requestUserSearch(const QString& keyword, int limi
         return lhs.id < rhs.id;
     });
 
-    if (limit >= 0 && result.size() > limit) {
-        result.resize(limit);
-    }
-    return result;
+    const int boundedOffset = qBound(0, offset, result.size());
+    const int boundedLimit = limit < 0 ? result.size() - boundedOffset : qMax(0, limit);
+    return result.mid(boundedOffset, boundedLimit);
 }
 
 User UserRepository::requestUserDetail(const UserDetailRequest& query) const
 {
     QMutexLocker locker(&mutex);
-    return UserDetailRequestOperation(userMap).request(query);
+    return userMap.value(query.userId, User{});
+}
+
+QVector<User> UserRepository::requestUserDetails(const QStringList& userIds) const
+{
+    QMutexLocker locker(&mutex);
+
+    QVector<User> result;
+    result.reserve(userIds.size());
+    QSet<QString> seen;
+    for (const QString& userId : userIds) {
+        if (userId.isEmpty() || seen.contains(userId)) {
+            continue;
+        }
+        seen.insert(userId);
+        const User user = userMap.value(userId, User{});
+        if (!user.id.isEmpty()) {
+            result.push_back(user);
+        }
+    }
+    return result;
 }
 
 QString UserRepository::requestUserName(const QString& userId) const

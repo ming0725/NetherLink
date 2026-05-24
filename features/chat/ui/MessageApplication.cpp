@@ -1,5 +1,6 @@
 // MessageApplication.cpp
 #include "MessageApplication.h"
+#include "features/chat/ui/CreateGroupChatPopup.h"
 #include "features/chat/data/MessageRepository.h"
 #include "features/friend/ui/AddContactSearchWindow.h"
 #include "shared/ui/StyledActionMenu.h"
@@ -11,6 +12,8 @@
 #include <QPointer>
 #include <QResizeEvent>
 #include <QTimer>
+
+#include <utility>
 
 namespace {
 
@@ -47,13 +50,19 @@ MessageApplication::LeftPane::LeftPane(QWidget* parent)
         QAction* addFriendAction = menu->addAction(QStringLiteral("添加好友"));
         QAction* addGroupAction = menu->addAction(QStringLiteral("添加群聊"));
         menu->addSeparator();
-        menu->addAction(QStringLiteral("创建群聊"));
+        QAction* createGroupAction = menu->addAction(QStringLiteral("创建群聊"));
 
         connect(addFriendAction, &QAction::triggered, this, [this]() {
             AddContactSearchWindow::open(AddContactSearchWindow::InitialMode::Users, m_addButton);
         });
         connect(addGroupAction, &QAction::triggered, this, [this]() {
             AddContactSearchWindow::open(AddContactSearchWindow::InitialMode::Groups, m_addButton);
+        });
+        connect(createGroupAction, &QAction::triggered, this, [this]() {
+            const QString groupId = CreateGroupChatPopup::open(m_addButton);
+            if (!groupId.isEmpty() && m_createdGroupCallback) {
+                m_createdGroupCallback(groupId);
+            }
         });
 
         connect(menu, &QMenu::aboutToHide, this, [this, menu]() {
@@ -67,6 +76,11 @@ MessageApplication::LeftPane::LeftPane(QWidget* parent)
                 QPoint(0, m_addButton->height() + popupGap));
         menu->popup(popupPos);
     });
+}
+
+void MessageApplication::LeftPane::setCreatedGroupCallback(std::function<void(const QString&)> callback)
+{
+    m_createdGroupCallback = std::move(callback);
 }
 
 void MessageApplication::LeftPane::applyTheme()
@@ -104,6 +118,9 @@ MessageApplication::MessageApplication(QWidget* parent)
         : QWidget(parent)
 {
     m_leftPane = new LeftPane(this);
+    m_leftPane->setCreatedGroupCallback([this](const QString& groupId) {
+        openConversationFromContact(groupId);
+    });
     connect(m_leftPane->searchInput()->getLineEdit(), &QLineEdit::textChanged,
             m_leftPane->messageList(), &MessageListWidget::setKeyword);
     connect(m_leftPane->messageList(), &MessageListWidget::conversationActivated,

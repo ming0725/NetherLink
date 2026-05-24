@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QPoint>
+#include <QStringList>
 #include <QWidget>
 
 #include "shared/types/Group.h"
@@ -50,6 +51,8 @@ signals:
     void groupMemberAdminPromotionRequested(const QString& userId);
     void groupMemberAdminCancellationRequested(const QString& userId);
     void groupMemberRemovalRequested(const QString& userId);
+    void groupMemberInvitationRequested(const QStringList& userIds);
+    void groupMembersBatchRemovalRequested(const QStringList& userIds);
     void groupRemarkChanged(const QString& remark);
     void pinChanged(bool pinned);
     void doNotDisturbChanged(bool enabled);
@@ -73,6 +76,8 @@ private:
     QWidget* m_groupInfoCard = nullptr;
     QWidget* m_memberSummaryCard = nullptr;
     QWidget* m_memberSummaryHeader = nullptr;
+    QWidget* m_inviteMemberAction = nullptr;
+    QWidget* m_removeMemberAction = nullptr;
     QWidget* m_memberListPage = nullptr;
     QWidget* m_memberListHeader = nullptr;
     OverlayScrollArea* m_mainScrollArea = nullptr;

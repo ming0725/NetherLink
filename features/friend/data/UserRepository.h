@@ -3,6 +3,7 @@
 #include <QObject>
 #include <QImage>
 #include <QMap>
+#include <QStringList>
 #include <QVector>
 #include <QMutex>
 #include "shared/types/RepositoryTypes.h"
@@ -16,8 +17,9 @@ public:
     QVector<FriendSummary> requestFriendList(const FriendListRequest& query = {}) const;
     QVector<FriendGroupSummary> requestFriendGroupSummaries(const FriendGroupListRequest& query = {}) const;
     QVector<FriendSummary> requestFriendsInGroup(const FriendGroupItemsRequest& query) const;
-    QVector<User> requestUserSearch(const QString& keyword, int limit = 80) const;
+    QVector<User> requestUserSearch(const QString& keyword, int limit = 80, int offset = 0) const;
     User requestUserDetail(const UserDetailRequest& query) const;
+    QVector<User> requestUserDetails(const QStringList& userIds) const;
     QMap<QString, QString> requestFriendGroups() const;
     QString requestUserName(const QString& userId) const;
     QString requestUserAvatarPath(const QString& userId) const;

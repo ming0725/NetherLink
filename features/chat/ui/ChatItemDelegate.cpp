@@ -44,13 +44,6 @@ void showCopyNotification(QObject* owner)
     GlobalNotification::showSuccess(widget, QStringLiteral("复制成功"));
 }
 
-QColor ownBubbleColor(bool dark)
-{
-    return dark
-            ? ThemeManager::instance().color(ThemeColor::AccentBubble)
-            : ThemeManager::instance().color(ThemeColor::Accent);
-}
-
 QColor linkTextColor(bool dark, bool isFromMe, const QColor& textColor)
 {
     if (isFromMe) {
@@ -329,7 +322,7 @@ int ChatItemDelegate::characterIndexAt(const QStyleOptionViewItem& option,
 
     const bool dark = ThemeManager::instance().isDark();
     const QColor textColor = message->isFromMe()
-            ? ThemeManager::textColorOn(ownBubbleColor(dark))
+            ? ThemeManager::textColorOn(ThemeManager::instance().color(ThemeColor::AccentBubble))
             : ThemeManager::instance().color(ThemeColor::PrimaryText);
     const QTextDocument& textDocument = cachedTextDocument(text,
                                                            messageFont(),
@@ -549,7 +542,7 @@ void ChatItemDelegate::drawBubble(QPainter* painter, const QRect& rect,
     QColor bubbleColor;
     const bool dark = ThemeManager::instance().isDark();
     if (isFromMe) {
-        const QColor baseBubbleColor = ownBubbleColor(dark);
+        const QColor baseBubbleColor = ThemeManager::instance().color(ThemeColor::AccentBubble);
         bubbleColor = isSelected ? baseBubbleColor.darker(118)
                                  : baseBubbleColor;
     } else if (dark) {

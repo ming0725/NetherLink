@@ -6,11 +6,13 @@
 #include "app/state/CurrentUser.h"
 
 #include <QCollator>
+#include <QHash>
 #include <QPointer>
 #include <QSet>
 #include <QThread>
 
 #include <algorithm>
+#include <utility>
 
 namespace {
 constexpr int kPanelMemberPreviewLimit = 5;
@@ -442,6 +444,55 @@ void ChatSessionController::cancelGroupMemberAdmin(const QString& userId)
     GroupRepository::instance().saveGroup(group);
 }
 
+void ChatSessionController::inviteGroupMembers(const QStringList& userIds)
+{
+    if (m_meta.conversationId.isEmpty() || !m_meta.isGroup || userIds.isEmpty()) {
+        return;
+    }
+
+    Group group = GroupRepository::instance().requestGroupDetail({m_meta.conversationId});
+    if (group.groupId.isEmpty() || !canEditGroupInfo(group)) {
+        return;
+    }
+
+    QSet<QString> existingMemberIds;
+    existingMemberIds.reserve(group.membersID.size());
+    for (const QString& memberId : std::as_const(group.membersID)) {
+        if (!memberId.isEmpty()) {
+            existingMemberIds.insert(memberId);
+        }
+    }
+
+    QStringList newUserIds;
+    QSet<QString> pendingUserIds;
+    for (const QString& userId : userIds) {
+        if (userId.isEmpty() || existingMemberIds.contains(userId) || pendingUserIds.contains(userId)) {
+            continue;
+        }
+        pendingUserIds.insert(userId);
+        newUserIds.push_back(userId);
+    }
+
+    if (newUserIds.isEmpty()) {
+        return;
+    }
+
+    QHash<QString, User> usersById;
+    for (const User& user : UserRepository::instance().requestUserDetails(newUserIds)) {
+        usersById.insert(user.id, user);
+    }
+
+    for (const QString& userId : std::as_const(newUserIds)) {
+        group.membersID.push_back(userId);
+        const User user = usersById.value(userId);
+        const QString displayName = user.nick.trimmed().isEmpty() ? userId : user.nick.trimmed();
+        group.memberNicknames.insert(userId, displayName);
+    }
+
+    group.memberNum = group.membersID.size();
+    GroupRepository::instance().saveGroup(group);
+}
+
 void ChatSessionController::removeGroupMember(const QString& userId)
 {
     if (m_meta.conversationId.isEmpty() || !m_meta.isGroup || userId.isEmpty()) {
@@ -460,6 +511,55 @@ void ChatSessionController::removeGroupMember(const QString& userId)
         return;
     }
 
+    group.memberNum = group.membersID.size();
+    GroupRepository::instance().saveGroup(group);
+}
+
+void ChatSessionController::removeGroupMembers(const QStringList& userIds)
+{
+    if (m_meta.conversationId.isEmpty() || !m_meta.isGroup || userIds.isEmpty()) {
+        return;
+    }
+
+    Group group = GroupRepository::instance().requestGroupDetail({m_meta.conversationId});
+    if (group.groupId.isEmpty()) {
+        return;
+    }
+
+    QSet<QString> removableIds;
+    for (const QString& userId : userIds) {
+        if (userId.isEmpty() || removableIds.contains(userId) || !canRemoveMember(group, userId)) {
+            continue;
+        }
+        removableIds.insert(userId);
+    }
+
+    if (removableIds.isEmpty()) {
+        return;
+    }
+
+    QVector<QString> nextMembers;
+    nextMembers.reserve(group.membersID.size());
+    for (const QString& memberId : std::as_const(group.membersID)) {
+        if (!removableIds.contains(memberId)) {
+            nextMembers.push_back(memberId);
+        }
+    }
+
+    QVector<QString> nextAdmins;
+    nextAdmins.reserve(group.adminsID.size());
+    for (const QString& adminId : std::as_const(group.adminsID)) {
+        if (!removableIds.contains(adminId)) {
+            nextAdmins.push_back(adminId);
+        }
+    }
+
+    for (const QString& userId : std::as_const(removableIds)) {
+        group.memberNicknames.remove(userId);
+    }
+
+    group.membersID = nextMembers;
+    group.adminsID = nextAdmins;
     group.memberNum = group.membersID.size();
     GroupRepository::instance().saveGroup(group);
 }

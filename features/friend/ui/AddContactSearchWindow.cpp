@@ -581,15 +581,6 @@ bool applyGroupRequest(const Group& group, const ContactRequestData& request)
     return true;
 }
 
-QColor selectedColor()
-{
-    QColor color = ThemeManager::instance().color(ThemeColor::PostBarItemSelectedBackground);
-    if (ThemeManager::instance().postBarQtFallbackLiquidGlassEnabled()) {
-        color.setAlpha(ThemeManager::instance().isDark() ? 230 : 42);
-    }
-    return color;
-}
-
 QString searchPlaceholderForMode(AddContactModeBar::Mode mode)
 {
     return mode == AddContactModeBar::Mode::Users
@@ -1077,7 +1068,7 @@ void AddContactModeBar::paintEvent(QPaintEvent*)
     }
 
     if (!m_selectedRect.isEmpty()) {
-        painter.setBrush(selectedColor());
+        painter.setBrush(ThemeManager::instance().postBarItemSelectedBackgroundColor());
         painter.drawRoundedRect(m_selectedRect, 10, 10);
     }
 
@@ -1705,7 +1696,7 @@ void AddContactSearchWindow::performSearch()
 QVector<AddContactSearchItem> AddContactSearchWindow::searchUsers(const QString& keyword) const
 {
     QVector<AddContactSearchItem> items;
-    const QVector<User> users = UserRepository::instance().requestUserSearch(keyword, -1);
+    const QVector<User> users = UserRepository::instance().requestUserSearch(keyword, kSearchResultLimit);
     items.reserve(qMin(users.size(), kSearchResultLimit));
     for (const User& user : users) {
         if (user.isFriend || CurrentUser::instance().isCurrentUserId(user.id)) {
@@ -1725,7 +1716,7 @@ QVector<AddContactSearchItem> AddContactSearchWindow::searchUsers(const QString&
 QVector<AddContactSearchItem> AddContactSearchWindow::searchGroups(const QString& keyword) const
 {
     QVector<AddContactSearchItem> items;
-    const QVector<Group> groups = GroupRepository::instance().requestGroupSearch(keyword, -1);
+    const QVector<Group> groups = GroupRepository::instance().requestGroupSearch(keyword, kSearchResultLimit);
     items.reserve(qMin(groups.size(), kSearchResultLimit));
     int visibleGroupIndex = 0;
     for (const Group& group : groups) {

@@ -66,8 +66,10 @@ protected:
 
 private:
     void captureBlurredSnapshot();
+    void discardBlurredSnapshot();
     void startOpenAnimation();
     void setOpenProgress(qreal progress);
+    void syncToHostGeometry();
     void updatePopupGeometry();
     void suppressSystemFloatingBars();
     void updateSuppressedSystemFloatingBars(qreal openProgress);
@@ -102,4 +104,5 @@ private:
     bool m_closing = false;
     bool m_blurInFlight = false;
     bool m_openAnimationStarted = false;
+    int m_snapshotGeneration = 0;
 };

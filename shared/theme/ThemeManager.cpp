@@ -178,6 +178,16 @@ QColor ThemeManager::textColorOn(const QColor& background, int alpha)
     return textColor;
 }
 
+QColor ThemeManager::colorCompositedOver(const QColor& foreground, const QColor& background)
+{
+    const QColor fg = foreground.toRgb();
+    const QColor bg = background.toRgb();
+    const qreal alpha = fg.alphaF();
+    return QColor(qRound(fg.red() * alpha + bg.red() * (1.0 - alpha)),
+                  qRound(fg.green() * alpha + bg.green() * (1.0 - alpha)),
+                  qRound(fg.blue() * alpha + bg.blue() * (1.0 - alpha)));
+}
+
 bool ThemeManager::isAccentColorRole(ThemeColor role)
 {
     switch (role) {
@@ -263,6 +273,15 @@ QColor ThemeManager::color(ThemeColor role) const
     return isAccentColorRole(role) ? accentColor(role, dark) : fixedColor(role, dark);
 }
 
+QColor ThemeManager::postBarItemSelectedBackgroundColor() const
+{
+    QColor selected = color(ThemeColor::PostBarItemSelectedBackground);
+    if (postBarQtFallbackLiquidGlassEnabled()) {
+        selected.setAlpha(isDark() ? 230 : 42);
+    }
+    return selected;
+}
+
 QColor ThemeManager::fixedColor(ThemeColor role, bool dark) const
 {
     if (!dark) {
@@ -295,12 +314,26 @@ QColor ThemeManager::fixedColor(ThemeColor role, bool dark) const
             return QColor(0, 0, 0, 88);
         case ThemeColor::ChatInfoPanelFallbackBackground:
             return QColor(0xef, 0xef, 0xef);
+        case ThemeColor::ChatInfoPanelText:
+            return QColor(Qt::white);
         case ThemeColor::ChatInfoPanelCardBackground:
             return QColor(0, 0, 0, 150);
         case ThemeColor::ChatInfoPanelCardHover:
             return QColor(0, 0, 0, 170);
         case ThemeColor::ChatInfoPanelCardPressed:
             return QColor(0, 0, 0, 190);
+        case ThemeColor::CreateGroupPopupBackground:
+            return QColor(Qt::white);
+        case ThemeColor::CreateGroupPopupDivider:
+            return QColor(0xe2, 0xe5, 0xea);
+        case ThemeColor::CreateGroupPopupHover:
+            return QColor(0xf5, 0xf7, 0xfa);
+        case ThemeColor::CreateGroupPopupPrimaryText:
+            return QColor(0x1f, 0x23, 0x2a);
+        case ThemeColor::CreateGroupPopupSecondaryText:
+            return QColor(0x5f, 0x66, 0x73);
+        case ThemeColor::CreateGroupPopupTertiaryText:
+            return QColor(0x8a, 0x91, 0x9e);
         case ThemeColor::SettingsOverlay:
             return QColor(0, 0, 0, 168);
         case ThemeColor::SettingsFallbackBackground:
@@ -413,6 +446,8 @@ QColor ThemeManager::fixedColor(ThemeColor role, bool dark) const
             return QColor(0xc4, 0x2b, 0x1c);
         case ThemeColor::OverlayStroke:
             return QColor(0, 0, 0, 150);
+        case ThemeColor::InWindowPopupStroke:
+            return QColor(0x88, 0x88, 0x88, 170);
         case ThemeColor::TooltipBackground:
             return QColor(255, 255, 255, 120);
         case ThemeColor::TooltipText:
@@ -461,12 +496,26 @@ QColor ThemeManager::fixedColor(ThemeColor role, bool dark) const
         return QColor(0, 0, 0, 132);
     case ThemeColor::ChatInfoPanelFallbackBackground:
         return QColor(0x20, 0x21, 0x26);
+    case ThemeColor::ChatInfoPanelText:
+        return QColor(Qt::white);
     case ThemeColor::ChatInfoPanelCardBackground:
         return QColor(0, 0, 0, 150);
     case ThemeColor::ChatInfoPanelCardHover:
         return QColor(0, 0, 0, 170);
     case ThemeColor::ChatInfoPanelCardPressed:
         return QColor(0, 0, 0, 190);
+    case ThemeColor::CreateGroupPopupBackground:
+        return QColor(Qt::white);
+    case ThemeColor::CreateGroupPopupDivider:
+        return QColor(0xe2, 0xe5, 0xea);
+    case ThemeColor::CreateGroupPopupHover:
+        return QColor(0xf5, 0xf7, 0xfa);
+    case ThemeColor::CreateGroupPopupPrimaryText:
+        return QColor(0x1f, 0x23, 0x2a);
+    case ThemeColor::CreateGroupPopupSecondaryText:
+        return QColor(0x5f, 0x66, 0x73);
+    case ThemeColor::CreateGroupPopupTertiaryText:
+        return QColor(0x8a, 0x91, 0x9e);
     case ThemeColor::SettingsOverlay:
         return QColor(0, 0, 0, 168);
     case ThemeColor::SettingsFallbackBackground:
@@ -579,6 +628,8 @@ QColor ThemeManager::fixedColor(ThemeColor role, bool dark) const
         return QColor(0xc4, 0x2b, 0x1c);
     case ThemeColor::OverlayStroke:
         return QColor(0, 0, 0, 150);
+    case ThemeColor::InWindowPopupStroke:
+        return QColor(0x88, 0x88, 0x88, 190);
     case ThemeColor::TooltipBackground:
         return QColor(0x20, 0x21, 0x26, 220);
     case ThemeColor::TooltipText:

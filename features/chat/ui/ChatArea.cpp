@@ -1236,8 +1236,12 @@ void ChatArea::connectGroupInfoPanel(GroupConversationInfoPanel* panel)
             sessionController, &ChatSessionController::promoteGroupMemberToAdmin);
     connect(panel, &GroupConversationInfoPanel::groupMemberAdminCancellationRequested,
             sessionController, &ChatSessionController::cancelGroupMemberAdmin);
+    connect(panel, &GroupConversationInfoPanel::groupMemberInvitationRequested,
+            sessionController, &ChatSessionController::inviteGroupMembers);
     connect(panel, &GroupConversationInfoPanel::groupMemberRemovalRequested,
             sessionController, &ChatSessionController::removeGroupMember);
+    connect(panel, &GroupConversationInfoPanel::groupMembersBatchRemovalRequested,
+            sessionController, &ChatSessionController::removeGroupMembers);
     connect(panel, &GroupConversationInfoPanel::groupRemarkChanged,
             sessionController, &ChatSessionController::saveGroupRemark);
     connect(panel, &GroupConversationInfoPanel::pinChanged,

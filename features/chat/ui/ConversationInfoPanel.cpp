@@ -2,6 +2,7 @@
 #include "shared/services/AppFonts.h"
 
 #include "app/state/CurrentUser.h"
+#include "features/chat/ui/CreateGroupChatPopup.h"
 #include "features/friend/data/UserRepository.h"
 #include "shared/services/ImageService.h"
 #include "shared/types/ChatMessage.h"
@@ -45,61 +46,17 @@ constexpr int kSectionSpacing = 18;
 constexpr int kPanelScrollBottomPadding = 30;
 constexpr int kMemberHeaderHeight = 38;
 constexpr int kMemberRowHeight = 42;
+constexpr int kMemberActionHeight = 40;
 constexpr int kMemberAvatarSize = 28;
 constexpr int kMemberPreviewLimit = 5;
 constexpr int kMemberFullPageSize = 40;
 constexpr int kMemberFetchBottomThreshold = 80;
 const QString kPanelBackgroundSource(QStringLiteral(":/resources/icon/options_background.png"));
 
-QColor panelTextColor()
-{
-    return QColor(Qt::white);
-}
-
-QColor cardBackgroundColor()
-{
-    return ThemeManager::instance().color(ThemeColor::ChatInfoPanelCardBackground);
-}
-
-QColor cardHoverColor()
-{
-    return ThemeManager::instance().color(ThemeColor::ChatInfoPanelCardHover);
-}
-
-QColor cardPressedColor()
-{
-    return ThemeManager::instance().color(ThemeColor::ChatInfoPanelCardPressed);
-}
-
 QColor opaqueColor(QColor color)
 {
     color.setAlpha(255);
     return color;
-}
-
-QColor memberListBackgroundColor()
-{
-    return opaqueColor(ThemeManager::instance().color(ThemeColor::ChatInfoMemberListBackground));
-}
-
-QColor memberListHoverColor()
-{
-    return opaqueColor(ThemeManager::instance().color(ThemeColor::ChatInfoMemberListHover));
-}
-
-QColor memberListPrimaryTextColor()
-{
-    return ThemeManager::instance().color(ThemeColor::ChatInfoMemberListPrimaryText);
-}
-
-QColor memberListSecondaryTextColor()
-{
-    return ThemeManager::instance().color(ThemeColor::ChatInfoMemberListSecondaryText);
-}
-
-QColor dangerTextColor()
-{
-    return ThemeManager::instance().color(ThemeColor::DangerText);
 }
 
 void setOpaqueWidgetBackground(QWidget* widget, const QColor& color)
@@ -146,7 +103,7 @@ protected:
 
         QPainter painter(this);
         painter.setPen(Qt::NoPen);
-        painter.setBrush(cardBackgroundColor());
+        painter.setBrush(ThemeManager::instance().color(ThemeColor::ChatInfoPanelCardBackground));
         painter.drawRect(rect());
     }
 };
@@ -167,7 +124,7 @@ protected:
 
         QPainter painter(this);
         painter.setPen(Qt::NoPen);
-        painter.setBrush(memberListBackgroundColor());
+        painter.setBrush(ThemeManager::instance().color(ThemeColor::ChatInfoMemberListBackground));
         painter.drawRect(rect());
     }
 };
@@ -202,7 +159,7 @@ protected:
         QFont titleFont = QApplication::font();
         titleFont.setPixelSize(14);
         painter.setFont(titleFont);
-        painter.setPen(memberListPrimaryTextColor());
+        painter.setPen(ThemeManager::instance().color(ThemeColor::ChatInfoMemberListPrimaryText));
         painter.drawText(rect().adjusted(16, 0, -16, 0),
                          Qt::AlignLeft | Qt::AlignVCenter,
                          QStringLiteral("群聊成员"));
@@ -210,7 +167,7 @@ protected:
         QFont actionFont = QApplication::font();
         actionFont.setPixelSize(12);
         painter.setFont(actionFont);
-        painter.setPen(memberListSecondaryTextColor());
+        painter.setPen(ThemeManager::instance().color(ThemeColor::ChatInfoMemberListSecondaryText));
         painter.drawText(rect().adjusted(16, 0, -16, 0),
                          Qt::AlignRight | Qt::AlignVCenter,
                          QStringLiteral("查看%1名成员").arg(m_count));
@@ -447,7 +404,7 @@ protected:
         AppFonts::configurePainterForText(painter);
         painter.setRenderHint(QPainter::SmoothPixmapTransform);
         painter.setPen(Qt::NoPen);
-        painter.setBrush(m_hovered ? memberListHoverColor() : memberListBackgroundColor());
+        painter.setBrush(m_hovered ? ThemeManager::instance().color(ThemeColor::ChatInfoMemberListHover) : ThemeManager::instance().color(ThemeColor::ChatInfoMemberListBackground));
         painter.drawRect(rect());
 
         const QRect avatarRect(16, (height() - kMemberAvatarSize) / 2, kMemberAvatarSize, kMemberAvatarSize);
@@ -490,7 +447,7 @@ protected:
         QFont nameFont = QApplication::font();
         nameFont.setPixelSize(13);
         painter.setFont(nameFont);
-        painter.setPen(memberListPrimaryTextColor());
+        painter.setPen(ThemeManager::instance().color(ThemeColor::ChatInfoMemberListPrimaryText));
         const QFontMetrics nameMetrics(nameFont);
         const int nameLeft = avatarRect.right() + 10;
         const QString name = nameMetrics.elidedText(memberDisplayName(m_group, m_user),
@@ -534,6 +491,93 @@ private:
     bool m_hovered = false;
 };
 
+class MemberActionBox : public QWidget
+{
+public:
+    enum class Kind {
+        Invite,
+        Remove
+    };
+
+    MemberActionBox(Kind kind, const QString& text, QWidget* parent = nullptr)
+        : QWidget(parent)
+        , m_kind(kind)
+        , m_text(text)
+    {
+        setFixedHeight(kMemberActionHeight);
+        setCursor(Qt::PointingHandCursor);
+        setMouseTracking(true);
+        setAttribute(Qt::WA_Hover);
+    }
+
+    std::function<void()> clicked;
+
+protected:
+    bool event(QEvent* event) override
+    {
+        if (event->type() == QEvent::Enter) {
+            m_hovered = true;
+            update();
+        } else if (event->type() == QEvent::Leave) {
+            m_hovered = false;
+            update();
+        }
+        return QWidget::event(event);
+    }
+
+    void paintEvent(QPaintEvent* event) override
+    {
+        QWidget::paintEvent(event);
+
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing, true);
+        AppFonts::configurePainterForText(painter);
+
+        painter.setPen(Qt::NoPen);
+        painter.setBrush(m_hovered ? ThemeManager::instance().color(ThemeColor::ChatInfoMemberListHover) : ThemeManager::instance().color(ThemeColor::ChatInfoMemberListBackground));
+        painter.drawRect(rect());
+
+        const QRect avatarRect(16, (height() - kMemberAvatarSize) / 2, kMemberAvatarSize, kMemberAvatarSize);
+        painter.setBrush(Qt::NoBrush);
+        QPen border(ThemeManager::instance().color(ThemeColor::ChatInfoMemberListSecondaryText), 1.2, Qt::DashLine, Qt::RoundCap, Qt::RoundJoin);
+        painter.setPen(border);
+        painter.drawRoundedRect(QRectF(avatarRect).adjusted(0.5, 0.5, -0.5, -0.5), 4, 4);
+
+        const QColor symbolColor = m_kind == Kind::Remove ? ThemeManager::instance().color(ThemeColor::DangerText) : ThemeManager::instance().color(ThemeColor::ChatInfoMemberListPrimaryText);
+        const QPointF center = QRectF(avatarRect).center();
+        painter.setPen(QPen(symbolColor, 1.8, Qt::SolidLine, Qt::RoundCap));
+        painter.drawLine(QPointF(center.x() - 5, center.y()), QPointF(center.x() + 5, center.y()));
+        if (m_kind == Kind::Invite) {
+            painter.drawLine(QPointF(center.x(), center.y() - 5), QPointF(center.x(), center.y() + 5));
+        }
+
+        QFont font = QApplication::font();
+        font.setPixelSize(13);
+        painter.setFont(font);
+        painter.setPen(m_kind == Kind::Remove ? ThemeManager::instance().color(ThemeColor::DangerText) : ThemeManager::instance().color(ThemeColor::ChatInfoMemberListPrimaryText));
+        const int nameLeft = avatarRect.right() + 10;
+        const QRect textRect(nameLeft, 0, qMax(0, width() - 16 - nameLeft), height());
+        painter.drawText(textRect,
+                         Qt::AlignLeft | Qt::AlignVCenter,
+                         QFontMetrics(font).elidedText(m_text, Qt::ElideRight, textRect.width()));
+    }
+
+    void mouseReleaseEvent(QMouseEvent* event) override
+    {
+        if (event->button() == Qt::LeftButton && rect().contains(event->pos()) && clicked) {
+            clicked();
+            event->accept();
+            return;
+        }
+        QWidget::mouseReleaseEvent(event);
+    }
+
+private:
+    Kind m_kind = Kind::Invite;
+    QString m_text;
+    bool m_hovered = false;
+};
+
 QWidget* createOptionLabel(const QString& text, QWidget* parent)
 {
     auto* label = new PaintedLabel(text, parent);
@@ -541,7 +585,7 @@ QWidget* createOptionLabel(const QString& text, QWidget* parent)
     labelFont.setPixelSize(14);
     label->setFont(labelFont);
     label->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
-    label->setTextColor(panelTextColor());
+    label->setTextColor(ThemeManager::instance().color(ThemeColor::ChatInfoPanelText));
     return label;
 }
 
@@ -551,7 +595,7 @@ void configurePanelEditableText(InlineEditableText* text,
     text->setFixedHeight(kRemarkRowHeight);
     text->setPlaceholderText(placeholder);
     text->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    text->setTextColor(panelTextColor());
+    text->setTextColor(ThemeManager::instance().color(ThemeColor::ChatInfoPanelText));
     text->setPlaceholderTextColor(ThemeManager::instance().color(ThemeColor::PlaceholderText));
     text->setNormalBackgroundColor(Qt::transparent);
     text->setHoverBackgroundColor(Qt::transparent);
@@ -598,9 +642,9 @@ void applyPanelActionButtonStyle(StatefulPushButton* button,
                                  Qt::Alignment alignment)
 {
     button->setRadius(0);
-    button->setNormalColor(cardBackgroundColor());
-    button->setHoverColor(cardHoverColor());
-    button->setPressColor(cardPressedColor());
+    button->setNormalColor(ThemeManager::instance().color(ThemeColor::ChatInfoPanelCardBackground));
+    button->setHoverColor(ThemeManager::instance().color(ThemeColor::ChatInfoPanelCardHover));
+    button->setPressColor(ThemeManager::instance().color(ThemeColor::ChatInfoPanelCardPressed));
     button->setTextColor(textColor);
     button->setBorderWidth(0);
     button->setTextAlignment(alignment);
@@ -702,11 +746,46 @@ GroupConversationInfoPanel::GroupConversationInfoPanel(QWidget* parent)
     m_memberPreviewLayout->setContentsMargins(0, 0, 0, 0);
     m_memberPreviewLayout->setSpacing(0);
     summaryLayout->addLayout(m_memberPreviewLayout);
+    auto* inviteBox = new MemberActionBox(MemberActionBox::Kind::Invite,
+                                          QStringLiteral("邀请新成员"),
+                                          m_memberSummaryCard);
+    inviteBox->clicked = [this]() {
+        const QString currentUserId = CurrentUser::instance().getUserId();
+        const GroupRole currentRole = memberRole(m_group, currentUserId);
+        const bool canManageMembers = currentRole == GroupRole::Owner || currentRole == GroupRole::Admin;
+        const QStringList userIds = canManageMembers
+                ? CreateGroupChatPopup::openInviteMembers(this, m_group)
+                : CreateGroupChatPopup::openPreviewInviteMembers(this, m_group);
+        if (canManageMembers && !userIds.isEmpty()) {
+            emit groupMemberInvitationRequested(userIds);
+        }
+    };
+    m_inviteMemberAction = inviteBox;
+    summaryLayout->addWidget(m_inviteMemberAction);
+
+    auto* removeBox = new MemberActionBox(MemberActionBox::Kind::Remove,
+                                          QStringLiteral("移除成员"),
+                                          m_memberSummaryCard);
+    removeBox->clicked = [this]() {
+        const QStringList userIds = CreateGroupChatPopup::openRemoveMembers(this, m_group);
+        if (userIds.isEmpty()) {
+            return;
+        }
+        const InWindowPopup::Button result = InWindowPopup::question(
+                this,
+                QStringLiteral("移除成员"),
+                QStringLiteral("确认将已选择的%1名成员移出本群吗？").arg(userIds.size()));
+        if (result == InWindowPopup::Button::Yes) {
+            emit groupMembersBatchRemovalRequested(userIds);
+        }
+    };
+    m_removeMemberAction = removeBox;
+    summaryLayout->addWidget(m_removeMemberAction);
     layout->addWidget(m_memberSummaryCard);
     layout->addSpacing(kSectionSpacing);
 
-    applyPanelActionButtonStyle(m_clearHistoryButton, panelTextColor(), Qt::AlignLeft | Qt::AlignVCenter);
-    applyPanelActionButtonStyle(m_exitGroupButton, dangerTextColor(), Qt::AlignCenter);
+    applyPanelActionButtonStyle(m_clearHistoryButton, ThemeManager::instance().color(ThemeColor::ChatInfoPanelText), Qt::AlignLeft | Qt::AlignVCenter);
+    applyPanelActionButtonStyle(m_exitGroupButton, ThemeManager::instance().color(ThemeColor::DangerText), Qt::AlignCenter);
     layout->addWidget(m_clearHistoryButton);
     layout->addSpacing(kSectionSpacing);
     layout->addWidget(m_exitGroupButton);
@@ -845,6 +924,17 @@ void GroupConversationInfoPanel::rebuildMemberPreview()
         });
         m_memberPreviewLayout->addWidget(row);
     }
+
+    const QString currentUserId = CurrentUser::instance().getUserId();
+    const GroupRole currentRole = memberRole(m_group, currentUserId);
+    const bool hasGroup = !m_group.groupId.isEmpty();
+    const bool canManageMembers = currentRole == GroupRole::Owner || currentRole == GroupRole::Admin;
+    if (m_inviteMemberAction) {
+        m_inviteMemberAction->setVisible(hasGroup);
+    }
+    if (m_removeMemberAction) {
+        m_removeMemberAction->setVisible(hasGroup && canManageMembers);
+    }
     m_mainScrollArea->relayoutContent();
 }
 
@@ -870,7 +960,7 @@ void GroupConversationInfoPanel::clearMemberFullList()
 
 void GroupConversationInfoPanel::applyMemberListTheme()
 {
-    const QColor background = memberListBackgroundColor();
+    const QColor background = ThemeManager::instance().color(ThemeColor::ChatInfoMemberListBackground);
     if (m_memberListScrollArea) {
         m_memberListScrollArea->setViewportBackgroundColor(background);
         setOpaqueWidgetBackground(m_memberListScrollArea->getContentWidget(), background);
@@ -985,9 +1075,9 @@ void GroupConversationInfoPanel::showMemberContextMenu(const User& user, const Q
     if (canRemoveMember(user)) {
         QAction* removeAction = menu->addAction(QStringLiteral("移出本群"));
         StyledActionMenu::setActionColors(removeAction,
-                                          dangerTextColor(),
-                                          ThemeManager::textColorOn(dangerTextColor()),
-                                          dangerTextColor());
+                                          ThemeManager::instance().color(ThemeColor::DangerText),
+                                          ThemeManager::textColorOn(ThemeManager::instance().color(ThemeColor::DangerText)),
+                                          ThemeManager::instance().color(ThemeColor::DangerText));
         connect(removeAction, &QAction::triggered, this, [this, user]() {
             confirmMemberRemoval(user);
         });
@@ -1186,7 +1276,7 @@ DirectConversationInfoPanel::DirectConversationInfoPanel(QWidget* parent)
     m_remarkText->setFixedHeight(kRemarkRowHeight);
     m_remarkText->setPlaceholderText(QStringLiteral("设置备注"));
     m_remarkText->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
-    m_remarkText->setTextColor(panelTextColor());
+    m_remarkText->setTextColor(ThemeManager::instance().color(ThemeColor::ChatInfoPanelText));
     m_remarkText->setPlaceholderTextColor(ThemeManager::instance().color(ThemeColor::PlaceholderText));
     m_remarkText->setNormalBackgroundColor(Qt::transparent);
     m_remarkText->setHoverBackgroundColor(Qt::transparent);
@@ -1201,8 +1291,8 @@ DirectConversationInfoPanel::DirectConversationInfoPanel(QWidget* parent)
     layout->addWidget(switchCard);
     layout->addSpacing(kSectionSpacing);
 
-    applyPanelActionButtonStyle(m_clearHistoryButton, panelTextColor(), Qt::AlignLeft | Qt::AlignVCenter);
-    applyPanelActionButtonStyle(m_deleteFriendButton, dangerTextColor(), Qt::AlignCenter);
+    applyPanelActionButtonStyle(m_clearHistoryButton, ThemeManager::instance().color(ThemeColor::ChatInfoPanelText), Qt::AlignLeft | Qt::AlignVCenter);
+    applyPanelActionButtonStyle(m_deleteFriendButton, ThemeManager::instance().color(ThemeColor::DangerText), Qt::AlignCenter);
 
     layout->addWidget(m_clearHistoryButton);
     layout->addSpacing(kSectionSpacing);

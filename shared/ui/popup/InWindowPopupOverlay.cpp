@@ -2,6 +2,7 @@
 
 #include "shared/theme/ThemeManager.h"
 #include "shared/ui/FastGaussianBlur.h"
+#include "shared/ui/popup/widgets/InWindowPopupFrame.h"
 
 #ifdef Q_OS_MACOS
 #include "shared/ui/FloatingInputBar.h"
@@ -10,13 +11,11 @@
 
 #include <QApplication>
 #include <QEvent>
-#include <QFrame>
 #include <QGraphicsDropShadowEffect>
 #include <QGraphicsOpacityEffect>
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QPainter>
-#include <QPainterPath>
 #include <QPixmap>
 #include <QResizeEvent>
 #include <QScreen>
@@ -27,20 +26,12 @@
 
 namespace {
 
-constexpr int kPopupRadius = 12;
 constexpr int kBlurAnimationDurationMs = 180;
 constexpr int kPopupShadowMargin = 34;
 constexpr qreal kPopupInitialScale = 0.985;
 constexpr auto kSystemFloatingBarsSuppressedProperty = "systemFloatingBarsSuppressed";
 constexpr auto kSystemFloatingBarsSuppressedOpacityProperty = "systemFloatingBarsSuppressedOpacity";
 constexpr auto kUsesSystemFloatingBarBridgeProperty = "usesSystemFloatingBarBridge";
-
-QColor popupStrokeColor()
-{
-    return ThemeManager::instance().isDark()
-            ? QColor(0x88, 0x88, 0x88, 190)
-            : QColor(0x88, 0x88, 0x88, 170);
-}
 
 QWidget* popupHostFor(QWidget* parent)
 {
@@ -64,35 +55,6 @@ QImage renderBlurredSnapshot(QImage scaledSource, qreal blurRadius, qreal device
     return blurred;
 }
 
-class PopupFrame : public QFrame
-{
-public:
-    explicit PopupFrame(QWidget* parent = nullptr)
-        : QFrame(parent)
-    {
-        setAttribute(Qt::WA_StyledBackground, false);
-        setAutoFillBackground(false);
-    }
-
-protected:
-    void paintEvent(QPaintEvent* event) override
-    {
-        Q_UNUSED(event);
-
-        QPainter painter(this);
-        painter.setRenderHint(QPainter::Antialiasing, true);
-
-        const QRectF frameRect = QRectF(rect()).adjusted(0.5, 0.5, -0.5, -0.5);
-        painter.setPen(Qt::NoPen);
-        painter.setBrush(ThemeManager::instance().color(ThemeColor::PanelRaisedBackground));
-        painter.drawRoundedRect(frameRect, kPopupRadius, kPopupRadius);
-
-        painter.setBrush(Qt::NoBrush);
-        painter.setPen(QPen(popupStrokeColor(), 1));
-        painter.drawRoundedRect(frameRect, kPopupRadius, kPopupRadius);
-    }
-};
-
 } // namespace
 
 InWindowPopupOverlay::Options::Options()
@@ -114,7 +76,7 @@ InWindowPopupOverlay::InWindowPopupOverlay(QWidget* host, QWidget* content, cons
     , m_previousFocus(QApplication::focusWidget())
     , m_content(content)
     , m_popupContainer(new QWidget(this))
-    , m_popupFrame(new PopupFrame(m_popupContainer))
+    , m_popupFrame(new InWindowPopupFrame(m_popupContainer))
 {
     setObjectName(QStringLiteral("inWindowPopupOverlay"));
     setAttribute(Qt::WA_StyledBackground, false);
@@ -153,9 +115,7 @@ InWindowPopupOverlay::InWindowPopupOverlay(QWidget* host, QWidget* content, cons
         layout->addWidget(m_content);
     }
 
-    if (m_host) {
-        setGeometry(m_host->rect());
-    }
+    syncToHostGeometry();
     updatePopupGeometry();
 
     qApp->installEventFilter(this);
@@ -222,6 +182,21 @@ bool InWindowPopupOverlay::eventFilter(QObject* watched, QEvent* event)
 {
     if (m_closing) {
         return QWidget::eventFilter(watched, event);
+    }
+
+    if (watched == m_host.data()) {
+        switch (event->type()) {
+        case QEvent::Resize:
+        case QEvent::Show:
+            syncToHostGeometry();
+            if (event->type() == QEvent::Resize) {
+                discardBlurredSnapshot();
+            }
+            raise();
+            break;
+        default:
+            break;
+        }
     }
 
     auto* watchedWidget = qobject_cast<QWidget*>(watched);
@@ -338,6 +313,7 @@ void InWindowPopupOverlay::captureBlurredSnapshot()
     source = opaqueSource;
     source.setDevicePixelRatio(devicePixelRatio);
     m_snapshot = source;
+    const int generation = ++m_snapshotGeneration;
 
     const qreal scale = qBound<qreal>(0.2, m_options.blurRenderScale, 1.0);
     const QSize scaledSize(qMax(1, qRound(source.width() * scale)),
@@ -347,20 +323,21 @@ void InWindowPopupOverlay::captureBlurredSnapshot()
 
     m_blurWatcher = new QFutureWatcher<QImage>(this);
     m_blurInFlight = true;
-    connect(m_blurWatcher, &QFutureWatcher<QImage>::finished, this, [this]() {
+    connect(m_blurWatcher, &QFutureWatcher<QImage>::finished, this, [this, generation]() {
         auto* watcher = m_blurWatcher;
         if (!watcher) {
             return;
         }
 
-        m_blurredSnapshot = watcher->result();
+        const QImage blurredSnapshot = watcher->result();
         m_blurInFlight = false;
         m_blurWatcher = nullptr;
         watcher->deleteLater();
 
-        if (m_closing) {
+        if (m_closing || generation != m_snapshotGeneration) {
             return;
         }
+        m_blurredSnapshot = blurredSnapshot;
         if (m_blurredSnapshot.isNull()) {
             setOpenProgress(1.0);
             return;
@@ -377,6 +354,19 @@ void InWindowPopupOverlay::captureBlurredSnapshot()
                                                scaledSource,
                                                blurRadius,
                                                blurredDevicePixelRatio));
+}
+
+void InWindowPopupOverlay::discardBlurredSnapshot()
+{
+    if (m_snapshot.isNull() && m_blurredSnapshot.isNull()) {
+        return;
+    }
+
+    ++m_snapshotGeneration;
+    m_snapshot = QImage();
+    m_blurredSnapshot = QImage();
+    m_blurProgress = 1.0;
+    update();
 }
 
 void InWindowPopupOverlay::startOpenAnimation()
@@ -426,6 +416,18 @@ void InWindowPopupOverlay::setOpenProgress(qreal progress)
     }
     updatePopupGeometry();
     update();
+}
+
+void InWindowPopupOverlay::syncToHostGeometry()
+{
+    if (!m_host) {
+        return;
+    }
+
+    const QRect hostRect = m_host->rect();
+    if (geometry() != hostRect) {
+        setGeometry(hostRect);
+    }
 }
 
 void InWindowPopupOverlay::suppressSystemFloatingBars()

@@ -41,11 +41,6 @@ QString submittedText(QString text)
     return text.trimmed();
 }
 
-QColor toolbarTextColor()
-{
-    return ThemeManager::instance().color(ThemeColor::SecondaryText);
-}
-
 QPoint menuPopupPos(QWidget* anchor, StyledActionMenu* menu)
 {
     menu->ensurePolished();
@@ -90,7 +85,7 @@ protected:
 
         QPainter painter(this);
         painter.setRenderHint(QPainter::Antialiasing, true);
-        const QColor color = toolbarTextColor();
+        const QColor color = ThemeManager::instance().color(ThemeColor::SecondaryText);
         painter.setPen(QPen(color, 1.45, Qt::SolidLine, Qt::RoundCap));
         const QPointF center = rect().center();
         const qreal arm = 7.0;
@@ -213,7 +208,7 @@ protected:
         chevron.moveTo(cx - 4, cy - 2);
         chevron.lineTo(cx, cy + 2);
         chevron.lineTo(cx + 4, cy - 2);
-        painter.setPen(QPen(toolbarTextColor(), 1.55, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+        painter.setPen(QPen(ThemeManager::instance().color(ThemeColor::SecondaryText), 1.55, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
         painter.drawPath(chevron);
     }
 
@@ -261,7 +256,7 @@ private:
             return;
         }
 
-        const QColor primaryColor = toolbarTextColor();
+        const QColor primaryColor = ThemeManager::instance().color(ThemeColor::SecondaryText);
         if (m_secondaryText.isEmpty()) {
             painter.setPen(primaryColor);
             painter.drawText(textRect,
