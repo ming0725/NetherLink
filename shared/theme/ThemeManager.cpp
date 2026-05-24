@@ -505,17 +505,17 @@ QColor ThemeManager::fixedColor(ThemeColor role, bool dark) const
     case ThemeColor::ChatInfoPanelCardPressed:
         return QColor(0, 0, 0, 190);
     case ThemeColor::CreateGroupPopupBackground:
-        return QColor(Qt::white);
+        return QColor(0x1f, 0x21, 0x27);
     case ThemeColor::CreateGroupPopupDivider:
-        return QColor(0xe2, 0xe5, 0xea);
+        return QColor(0x39, 0x3c, 0x45);
     case ThemeColor::CreateGroupPopupHover:
-        return QColor(0xf5, 0xf7, 0xfa);
+        return QColor(0x2b, 0x2e, 0x36);
     case ThemeColor::CreateGroupPopupPrimaryText:
-        return QColor(0x1f, 0x23, 0x2a);
+        return QColor(0xf0, 0xf2, 0xf6);
     case ThemeColor::CreateGroupPopupSecondaryText:
-        return QColor(0x5f, 0x66, 0x73);
+        return QColor(0xc1, 0xc6, 0xd0);
     case ThemeColor::CreateGroupPopupTertiaryText:
-        return QColor(0x8a, 0x91, 0x9e);
+        return QColor(0x8f, 0x96, 0xa5);
     case ThemeColor::SettingsOverlay:
         return QColor(0, 0, 0, 168);
     case ThemeColor::SettingsFallbackBackground:

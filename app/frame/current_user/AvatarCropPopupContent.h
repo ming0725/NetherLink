@@ -6,7 +6,7 @@
 #include <functional>
 
 class AvatarCropCanvas;
-class QSlider;
+class AvatarCropZoomSlider;
 class StatefulPushButton;
 
 class AvatarCropPopupContent final : public QWidget
@@ -19,7 +19,8 @@ public:
 
 private:
     AvatarCropCanvas* m_canvas = nullptr;
-    QSlider* m_zoomSlider = nullptr;
+    AvatarCropZoomSlider* m_zoomSlider = nullptr;
     StatefulPushButton* m_cancelButton = nullptr;
     StatefulPushButton* m_confirmButton = nullptr;
+    bool m_syncingZoom = false;
 };

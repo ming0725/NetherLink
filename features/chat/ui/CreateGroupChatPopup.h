@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QAbstractListModel>
+#include <QColor>
 #include <QHash>
 #include <QPointer>
 #include <QSet>
@@ -97,6 +98,8 @@ private:
     ContactGroup* groupForId(const QString& groupId);
     const ContactGroup* groupForId(const QString& groupId) const;
     void rebuildRows();
+    int rowForGroup(const QString& groupId) const;
+    int lastRowForGroup(const QString& groupId) const;
 
     QVector<ContactGroup> m_groups;
     QVector<RowEntry> m_rows;
@@ -116,6 +119,32 @@ public:
                const QModelIndex& index) const override;
     QSize sizeHint(const QStyleOptionViewItem& option,
                    const QModelIndex& index) const override;
+    void clearPaintCache();
+    void invalidatePaintCache(const QModelIndex& topLeft,
+                              const QModelIndex& bottomRight,
+                              const QVector<int>& roles);
+
+private:
+    struct ThemePaintCache {
+        bool valid = false;
+        bool dark = false;
+        QColor popupHover;
+        QColor primaryText;
+        QColor secondaryText;
+        QColor tertiaryText;
+    };
+
+    struct ContactPaintCache {
+        QString userId;
+        QString displayName;
+        QString avatarPath;
+    };
+
+    const ThemePaintCache& themePaintCache() const;
+    ContactPaintCache contactPaintCache(const QModelIndex& index) const;
+
+    mutable ThemePaintCache m_themePaintCache;
+    mutable QHash<QString, ContactPaintCache> m_contactPaintCache;
 };
 
 class CreateGroupChatContactListView final : public OverlayScrollListView

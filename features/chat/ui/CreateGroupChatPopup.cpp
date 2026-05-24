@@ -151,8 +151,11 @@ protected:
                              (height() - iconSize.height()) / 2,
                              iconSize.width(),
                              iconSize.height());
+        const QString searchIcon = ThemeManager::instance().isDark()
+                ? QStringLiteral(":/resources/icon/search_darkmode.png")
+                : QStringLiteral(":/resources/icon/search.png");
         foregroundPainter.drawPixmap(iconRect,
-                                      ImageService::instance().scaled(QStringLiteral(":/resources/icon/search.png"),
+                                      ImageService::instance().scaled(searchIcon,
                                                                       iconSize,
                                                                       Qt::IgnoreAspectRatio,
                                                                       foregroundPainter.device()->devicePixelRatioF()));
@@ -167,8 +170,11 @@ protected:
                                       clearButtonRect.y() + (clearButtonRect.height() - clearIconSize.height()) / 2,
                                       clearIconSize.width(),
                                       clearIconSize.height());
+            const QString closeIcon = ThemeManager::instance().isDark()
+                    ? QStringLiteral(":/resources/icon/hovered_close.png")
+                    : QStringLiteral(":/resources/icon/close.png");
             foregroundPainter.drawPixmap(clearIconRect,
-                                          ImageService::instance().scaled(QStringLiteral(":/resources/icon/close.png"),
+                                          ImageService::instance().scaled(closeIcon,
                                                                           clearIconSize,
                                                                           Qt::IgnoreAspectRatio,
                                                                           foregroundPainter.device()->devicePixelRatioF()));
@@ -562,9 +568,25 @@ void CreateGroupChatContactModel::reloadContacts(const QString& keyword,
 
 void CreateGroupChatContactModel::setSelectedUserIds(const QSet<QString>& selectedUserIds)
 {
+    if (m_selectedUserIds == selectedUserIds) {
+        return;
+    }
+    const QSet<QString> previousSelectedUserIds = m_selectedUserIds;
     m_selectedUserIds = selectedUserIds;
-    if (!m_rows.isEmpty()) {
-        emit dataChanged(index(0, 0), index(m_rows.size() - 1, 0), {SelectedRole});
+    for (int rowIndex = 0; rowIndex < m_rows.size(); ++rowIndex) {
+        const RowEntry& row = m_rows.at(rowIndex);
+        if (row.isGroup || row.groupIndex < 0 || row.groupIndex >= m_groups.size()) {
+            continue;
+        }
+        const ContactGroup& group = m_groups.at(row.groupIndex);
+        if (row.friendIndex < 0 || row.friendIndex >= group.friends.size()) {
+            continue;
+        }
+        const QString& userId = group.friends.at(row.friendIndex).userId;
+        if (previousSelectedUserIds.contains(userId) != m_selectedUserIds.contains(userId)) {
+            const QModelIndex changed = index(rowIndex, 0);
+            emit dataChanged(changed, changed, {SelectedRole});
+        }
     }
 }
 
@@ -587,9 +609,15 @@ void CreateGroupChatContactModel::setGroupProgress(const QString& groupId, qreal
     if (!group) {
         return;
     }
-    group->progress = qBound<qreal>(0.0, progress, 1.0);
-    if (!m_rows.isEmpty()) {
-        emit dataChanged(index(0, 0), index(m_rows.size() - 1, 0),
+    const qreal boundedProgress = qBound<qreal>(0.0, progress, 1.0);
+    if (qFuzzyCompare(group->progress, boundedProgress)) {
+        return;
+    }
+    group->progress = boundedProgress;
+    const int firstRow = rowForGroup(groupId);
+    const int lastRow = lastRowForGroup(groupId);
+    if (firstRow >= 0 && lastRow >= firstRow) {
+        emit dataChanged(index(firstRow, 0), index(lastRow, 0),
                          {GroupProgressRole, Qt::SizeHintRole});
     }
 }
@@ -718,9 +746,39 @@ void CreateGroupChatContactModel::rebuildRows()
     }
 }
 
+int CreateGroupChatContactModel::rowForGroup(const QString& groupId) const
+{
+    for (int row = 0; row < m_rows.size(); ++row) {
+        const RowEntry& entry = m_rows.at(row);
+        if (entry.isGroup && entry.groupIndex >= 0 && entry.groupIndex < m_groups.size() &&
+            m_groups.at(entry.groupIndex).groupId == groupId) {
+            return row;
+        }
+    }
+    return -1;
+}
+
+int CreateGroupChatContactModel::lastRowForGroup(const QString& groupId) const
+{
+    const int groupRow = rowForGroup(groupId);
+    if (groupRow < 0) {
+        return -1;
+    }
+
+    for (int row = groupRow + 1; row < m_rows.size(); ++row) {
+        if (m_rows.at(row).isGroup) {
+            return row - 1;
+        }
+    }
+    return m_rows.size() - 1;
+}
+
 CreateGroupChatContactDelegate::CreateGroupChatContactDelegate(QObject* parent)
     : QStyledItemDelegate(parent)
 {
+    connect(&ThemeManager::instance(), &ThemeManager::themeChanged, this, [this]() {
+        m_themePaintCache.valid = false;
+    });
 }
 
 void CreateGroupChatContactDelegate::paint(QPainter* painter,
@@ -731,12 +789,13 @@ void CreateGroupChatContactDelegate::paint(QPainter* painter,
     painter->setClipRect(option.rect);
     AppFonts::configurePainterForText(*painter);
 
+    const ThemePaintCache& theme = themePaintCache();
     const bool isGroup = index.data(CreateGroupChatContactModel::IsGroupRole).toBool();
 
     if (option.state & QStyle::State_MouseOver) {
         painter->setRenderHint(QPainter::Antialiasing, true);
         painter->setPen(Qt::NoPen);
-        painter->setBrush(ThemeManager::instance().color(ThemeColor::CreateGroupPopupHover));
+        painter->setBrush(theme.popupHover);
         painter->drawRoundedRect(option.rect.adjusted(6, 3, -6, -3), 6, 6);
     }
 
@@ -762,12 +821,12 @@ void CreateGroupChatContactDelegate::paint(QPainter* painter,
                               countWidth,
                               option.rect.height());
         painter->setFont(textFont(12, QFont::Medium));
-        painter->setPen(ThemeManager::instance().color(ThemeColor::CreateGroupPopupSecondaryText));
+        painter->setPen(theme.secondaryText);
         painter->drawText(titleRect,
                           Qt::AlignLeft | Qt::AlignVCenter,
                           textMetrics(12, QFont::Medium).elidedText(title, Qt::ElideRight, titleRect.width()));
         painter->setFont(textFont(11, QFont::Medium));
-        painter->setPen(ThemeManager::instance().color(ThemeColor::CreateGroupPopupTertiaryText));
+        painter->setPen(theme.tertiaryText);
         painter->drawText(countRect, Qt::AlignRight | Qt::AlignVCenter, count);
         painter->restore();
         return;
@@ -784,6 +843,7 @@ void CreateGroupChatContactDelegate::paint(QPainter* painter,
     if (disabled) {
         painter->setOpacity(painter->opacity() * 0.42);
     }
+    const ContactPaintCache contact = contactPaintCache(index);
     const int contentTop = option.rect.top() - qRound((1.0 - progress) * 10.0);
     const QRect circleRect(option.rect.left() + kLeftListCircleLeft,
                            contentTop + (kContactItemHeight - kSelectCircleSize) / 2,
@@ -797,18 +857,17 @@ void CreateGroupChatContactDelegate::paint(QPainter* painter,
                            contentTop + (kContactItemHeight - kAvatarSize) / 2,
                            kAvatarSize,
                            kAvatarSize);
-    drawAvatar(painter, index.data(CreateGroupChatContactModel::AvatarPathRole).toString(), avatarRect);
+    drawAvatar(painter, contact.avatarPath, avatarRect);
 
     const int textLeft = avatarRect.right() + 9;
     const int textRight = option.rect.right() - 16;
     const QRect nameRect(textLeft, contentTop, qMax(0, textRight - textLeft), kContactItemHeight);
 
-    const QString name = index.data(CreateGroupChatContactModel::DisplayNameRole).toString();
     painter->setFont(textFont(14));
-    painter->setPen(ThemeManager::instance().color(ThemeColor::CreateGroupPopupPrimaryText));
+    painter->setPen(theme.primaryText);
     painter->drawText(nameRect,
                       Qt::AlignLeft | Qt::AlignVCenter,
-                      textMetrics(14).elidedText(name, Qt::ElideRight, nameRect.width()));
+                      textMetrics(14).elidedText(contact.displayName, Qt::ElideRight, nameRect.width()));
 
     painter->restore();
 }
@@ -820,6 +879,89 @@ QSize CreateGroupChatContactDelegate::sizeHint(const QStyleOptionViewItem& optio
     return index.data(CreateGroupChatContactModel::IsGroupRole).toBool()
             ? QSize(0, kGroupHeaderHeight)
             : QSize(0, index.data(Qt::SizeHintRole).toSize().height());
+}
+
+void CreateGroupChatContactDelegate::clearPaintCache()
+{
+    m_contactPaintCache.clear();
+    m_themePaintCache.valid = false;
+}
+
+void CreateGroupChatContactDelegate::invalidatePaintCache(const QModelIndex& topLeft,
+                                                          const QModelIndex& bottomRight,
+                                                          const QVector<int>& roles)
+{
+    if (!topLeft.isValid() || !bottomRight.isValid() || topLeft.model() != bottomRight.model()) {
+        return;
+    }
+
+    if (!roles.isEmpty()) {
+        bool affectsContactPaint = false;
+        for (const int role : roles) {
+            switch (role) {
+            case Qt::DisplayRole:
+            case CreateGroupChatContactModel::DisplayNameRole:
+            case CreateGroupChatContactModel::AvatarPathRole:
+                affectsContactPaint = true;
+                break;
+            default:
+                break;
+            }
+            if (affectsContactPaint) {
+                break;
+            }
+        }
+        if (!affectsContactPaint) {
+            return;
+        }
+    }
+
+    for (int row = topLeft.row(); row <= bottomRight.row(); ++row) {
+        const QModelIndex modelIndex = topLeft.sibling(row, topLeft.column());
+        const QString userId = modelIndex.data(CreateGroupChatContactModel::UserIdRole).toString();
+        if (!userId.isEmpty()) {
+            m_contactPaintCache.remove(userId);
+        }
+    }
+}
+
+const CreateGroupChatContactDelegate::ThemePaintCache&
+CreateGroupChatContactDelegate::themePaintCache() const
+{
+    const bool dark = ThemeManager::instance().isDark();
+    if (m_themePaintCache.valid && m_themePaintCache.dark == dark) {
+        return m_themePaintCache;
+    }
+
+    m_themePaintCache.valid = true;
+    m_themePaintCache.dark = dark;
+    m_themePaintCache.popupHover = ThemeManager::instance().color(ThemeColor::CreateGroupPopupHover);
+    m_themePaintCache.primaryText = ThemeManager::instance().color(ThemeColor::CreateGroupPopupPrimaryText);
+    m_themePaintCache.secondaryText = ThemeManager::instance().color(ThemeColor::CreateGroupPopupSecondaryText);
+    m_themePaintCache.tertiaryText = ThemeManager::instance().color(ThemeColor::CreateGroupPopupTertiaryText);
+    return m_themePaintCache;
+}
+
+CreateGroupChatContactDelegate::ContactPaintCache
+CreateGroupChatContactDelegate::contactPaintCache(const QModelIndex& index) const
+{
+    const QString userId = index.data(CreateGroupChatContactModel::UserIdRole).toString();
+    if (!userId.isEmpty()) {
+        const auto cached = m_contactPaintCache.constFind(userId);
+        if (cached != m_contactPaintCache.cend()) {
+            return cached.value();
+        }
+    }
+
+    ContactPaintCache data;
+    data.userId = userId;
+    data.displayName = index.data(CreateGroupChatContactModel::DisplayNameRole).toString();
+    data.avatarPath = index.data(CreateGroupChatContactModel::AvatarPathRole).toString();
+
+    if (!data.userId.isEmpty()) {
+        m_contactPaintCache.insert(data.userId, data);
+    }
+    return data;
 }
 
 CreateGroupChatContactListView::CreateGroupChatContactListView(QWidget* parent)
@@ -834,21 +976,30 @@ CreateGroupChatContactListView::CreateGroupChatContactListView(QWidget* parent)
     setSpacing(0);
     setEditTriggers(QAbstractItemView::NoEditTriggers);
     makeListViewTransparent(this);
+    setThemeBackgroundRole(ThemeColor::CreateGroupPopupBackground);
     refreshTheme();
     setWheelStepPixels(64);
     setScrollBarInsets(8, 4);
 
+    connect(&ImageService::instance(), &ImageService::previewReady,
+            viewport(), QOverload<>::of(&QWidget::update));
     connect(verticalScrollBar(), &QScrollBar::valueChanged, this, &CreateGroupChatContactListView::updateStickyHeader);
-    connect(m_model, &QAbstractItemModel::modelReset, this, &CreateGroupChatContactListView::updateStickyHeader);
+    connect(m_model, &QAbstractItemModel::modelReset, this, [this]() {
+        m_delegate->clearPaintCache();
+        updateStickyHeader();
+    });
     connect(m_model, &QAbstractItemModel::rowsInserted, this, [this](const QModelIndex&, int, int) {
+        m_delegate->clearPaintCache();
         updateStickyHeader();
     });
     connect(m_model, &QAbstractItemModel::rowsRemoved, this, [this](const QModelIndex&, int, int) {
+        m_delegate->clearPaintCache();
         updateStickyHeader();
     });
-    connect(m_model, &QAbstractItemModel::dataChanged, this, [this](const QModelIndex&,
-                                                                    const QModelIndex&,
-                                                                    const QVector<int>&) {
+    connect(m_model, &QAbstractItemModel::dataChanged, this, [this](const QModelIndex& topLeft,
+                                                                    const QModelIndex& bottomRight,
+                                                                    const QVector<int>& roles) {
+        m_delegate->invalidatePaintCache(topLeft, bottomRight, roles);
         updateStickyHeader();
     });
 }
@@ -1265,9 +1416,12 @@ CreateGroupChatSelectedListView::CreateGroupChatSelectedListView(QWidget* parent
     setSpacing(0);
     setEditTriggers(QAbstractItemView::NoEditTriggers);
     makeListViewTransparent(this);
+    setThemeBackgroundRole(ThemeColor::CreateGroupPopupBackground);
     refreshTheme();
     setWheelStepPixels(64);
     setScrollBarInsets(8, 4);
+    connect(&ImageService::instance(), &ImageService::previewReady,
+            viewport(), QOverload<>::of(&QWidget::update));
 }
 
 void CreateGroupChatSelectedListView::setContacts(QVector<FriendSummary> contacts)

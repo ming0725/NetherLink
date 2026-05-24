@@ -6,25 +6,49 @@
 #include "shared/theme/ThemeManager.h"
 
 #include <QDir>
+#include <QEasingCurve>
+#include <QEvent>
 #include <QFileDialog>
 #include <QImageReader>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QStandardPaths>
+#include <QVariantAnimation>
 
 using namespace CurrentUserPopupStyle;
 
 ProfileAvatarPreview::ProfileAvatarPreview(QWidget* parent)
     : QWidget(parent)
+    , m_hoverAnimation(new QVariantAnimation(this))
 {
     setFixedSize(kProfileEditAvatarSize, kProfileEditAvatarSize);
     setCursor(Qt::PointingHandCursor);
+    setMouseTracking(true);
+    m_hoverAnimation->setDuration(160);
+    m_hoverAnimation->setEasingCurve(QEasingCurve::OutCubic);
+    connect(m_hoverAnimation, &QVariantAnimation::valueChanged, this, [this](const QVariant& value) {
+        m_hoverProgress = value.toReal();
+        update();
+    });
 }
 
 void ProfileAvatarPreview::setAvatarSource(const QString& source)
 {
+    if (m_avatarSource == source) {
+        return;
+    }
     m_avatarSource = source;
     update();
+}
+
+bool ProfileAvatarPreview::event(QEvent* event)
+{
+    if (event->type() == QEvent::Enter) {
+        animateHover(1.0);
+    } else if (event->type() == QEvent::Leave) {
+        animateHover(0.0);
+    }
+    return QWidget::event(event);
 }
 
 void ProfileAvatarPreview::paintEvent(QPaintEvent*)
@@ -36,15 +60,35 @@ void ProfileAvatarPreview::paintEvent(QPaintEvent*)
                                                                    kProfileEditAvatarSize,
                                                                    devicePixelRatioF());
     painter.setPen(Qt::NoPen);
+    painter.setBrush(QColor(0, 0, 0));
+    painter.drawEllipse(avatarRect);
+
     if (!avatar.isNull()) {
+        painter.save();
+        painter.setOpacity(1.0 - m_hoverProgress * 0.48);
         painter.drawPixmap(avatarRect, avatar);
+        painter.restore();
     } else {
         painter.setBrush(ThemeManager::instance().color(ThemeColor::ImagePlaceholder));
         painter.drawEllipse(avatarRect);
     }
-    if (underMouse()) {
-        painter.setBrush(QColor(0, 0, 0, 80));
-        painter.drawEllipse(avatarRect);
+
+    if (m_hoverProgress > 0.01) {
+        painter.save();
+        painter.setOpacity(m_hoverProgress);
+        const int iconSize = 30;
+        const QRect iconRect(avatarRect.center().x() - iconSize / 2,
+                             avatarRect.center().y() - iconSize / 2,
+                             iconSize,
+                             iconSize);
+        const QPixmap icon = ImageService::instance().scaled(QStringLiteral(":/resources/icon/painting.png"),
+                                                             iconRect.size(),
+                                                             Qt::KeepAspectRatio,
+                                                             devicePixelRatioF());
+        if (!icon.isNull()) {
+            painter.drawPixmap(iconRect, icon);
+        }
+        painter.restore();
     }
 }
 
@@ -73,4 +117,15 @@ void ProfileAvatarPreview::mouseReleaseEvent(QMouseEvent* event)
         return;
     }
     QWidget::mouseReleaseEvent(event);
+}
+
+void ProfileAvatarPreview::animateHover(qreal target)
+{
+    if (qFuzzyCompare(m_hoverProgress, target)) {
+        return;
+    }
+    m_hoverAnimation->stop();
+    m_hoverAnimation->setStartValue(m_hoverProgress);
+    m_hoverAnimation->setEndValue(target);
+    m_hoverAnimation->start();
 }

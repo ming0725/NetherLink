@@ -13,6 +13,8 @@ namespace {
 constexpr int kLineSpacing = 1;
 constexpr int kUnifiedFontSize = 12;
 constexpr qreal kButtonBorderWidth = 1.5;
+constexpr int kPendingDotSize = 4;
+constexpr int kPendingDotGap = 5;
 
 QFont nickFont()
 {
@@ -143,6 +145,21 @@ static int textRightBeforeAction(const QRect& line, const QRect& card, const QRe
     return qMin(line.right(), actionRect(card, content).left() - FriendNotificationDelegate::kButtonGap);
 }
 
+void drawPendingDots(QPainter* painter, const QRect& rect)
+{
+    const int totalWidth = kPendingDotSize * 3 + kPendingDotGap * 2;
+    const int startX = rect.left() + (rect.width() - totalWidth) / 2;
+    const int y = rect.top() + (rect.height() - kPendingDotSize) / 2;
+    painter->setPen(Qt::NoPen);
+    painter->setBrush(ThemeManager::instance().color(ThemeColor::TertiaryText));
+    for (int i = 0; i < 3; ++i) {
+        painter->drawRect(QRect(startX + i * (kPendingDotSize + kPendingDotGap),
+                                y,
+                                kPendingDotSize,
+                                kPendingDotSize));
+    }
+}
+
 int FriendNotificationDelegate::buttonAt(const QStyleOptionViewItem& option,
                                           const QModelIndex& index,
                                           const QPoint& point) const
@@ -206,13 +223,14 @@ void FriendNotificationDelegate::paint(QPainter* painter,
     const auto status    = static_cast<NotificationStatus>(
                                index.data(FriendNotificationListModel::StatusRole).toInt());
     const int hovered = index.data(FriendNotificationListModel::HoveredButtonRole).toInt();
-    const bool pendingActionsVisible = status == NotificationStatus::Pending
+    const bool pending = status == NotificationStatus::Pending;
+    const bool pendingActionsVisible = pending
             && hovered != FriendNotificationListModel::kNoHoveredButton;
 
     // 4. Line 1:  nick(Accent) + " 请求添加为好友 " + date   — all inline, same font size
     {
         const QRect l1 = line1Rect(c);
-        const int textRight = pendingActionsVisible ? textRightBeforeAction(l1, card, c) : l1.right();
+        const int textRight = pending ? textRightBeforeAction(l1, card, c) : l1.right();
         const int textWidth = qMax(0, textRight - l1.left() + 1);
         const QString action = QStringLiteral(" 请求添加为好友 ");
         int x = l1.left();
@@ -259,7 +277,7 @@ void FriendNotificationDelegate::paint(QPainter* painter,
                           Qt::AlignLeft | Qt::AlignVCenter, label);
 
         painter->setPen(ThemeManager::instance().color(ThemeColor::SecondaryText));
-        const int msgRight = pendingActionsVisible ? textRightBeforeAction(l2, card, c) : l2.right();
+        const int msgRight = pending ? textRightBeforeAction(l2, card, c) : l2.right();
         const int msgW = qMax(0, msgRight - (l2.left() + labelW) + 1);
         painter->drawText(QRect(l2.left() + labelW, l2.top(), msgW, l2.height()),
                           Qt::AlignLeft | Qt::AlignVCenter,
@@ -277,7 +295,7 @@ void FriendNotificationDelegate::paint(QPainter* painter,
         painter->drawText(QRect(l3.left(), l3.top(), labelW, l3.height()),
                           Qt::AlignLeft | Qt::AlignVCenter, label);
 
-        const int srcRight = pendingActionsVisible ? textRightBeforeAction(l3, card, c) : l3.right();
+        const int srcRight = pending ? textRightBeforeAction(l3, card, c) : l3.right();
         const int srcW = qMax(0, srcRight - (l3.left() + labelW) + 1);
         painter->setPen(ThemeManager::instance().color(ThemeColor::SecondaryText));
         painter->drawText(QRect(l3.left() + labelW, l3.top(), srcW, l3.height()),
@@ -286,7 +304,7 @@ void FriendNotificationDelegate::paint(QPainter* painter,
     }
 
     // 7. Buttons or status text
-    if (status == NotificationStatus::Pending && pendingActionsVisible) {
+    if (pending && pendingActionsVisible) {
         const QRect accR = acceptBtnRect(card, c);
         const QRect rejR = rejectBtnRect(card, c);
 
@@ -314,6 +332,8 @@ void FriendNotificationDelegate::paint(QPainter* painter,
             painter->setPen(border);
             painter->drawText(rejR, Qt::AlignCenter, QStringLiteral("拒绝"));
         }
+    } else if (pending) {
+        drawPendingDots(painter, actionRect(card, c));
     } else if (status == NotificationStatus::Accepted) {
         painter->setFont(buttonFont());
         painter->setPen(ThemeManager::instance().color(ThemeColor::SecondaryText));

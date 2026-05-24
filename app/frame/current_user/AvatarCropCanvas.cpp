@@ -2,6 +2,7 @@
 
 #include "shared/theme/ThemeManager.h"
 
+#include <QEnterEvent>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
@@ -22,6 +23,7 @@ AvatarCropCanvas::AvatarCropCanvas(const QImage& image, QWidget* parent)
 {
     setFixedSize(kAvatarCropPreviewSize, kAvatarCropPreviewSize);
     setMouseTracking(true);
+    setFocusPolicy(Qt::StrongFocus);
     setCursor(Qt::SizeAllCursor);
     resetTransform();
 }
@@ -63,6 +65,16 @@ void AvatarCropCanvas::setZoomValue(int value)
              QRectF(rect()).center());
 }
 
+void AvatarCropCanvas::zoomIn()
+{
+    setScale(m_scale * 1.15, QRectF(rect()).center());
+}
+
+void AvatarCropCanvas::zoomOut()
+{
+    setScale(m_scale / 1.15, QRectF(rect()).center());
+}
+
 void AvatarCropCanvas::paintEvent(QPaintEvent*)
 {
     QPainter painter(this);
@@ -70,21 +82,21 @@ void AvatarCropCanvas::paintEvent(QPaintEvent*)
     painter.fillRect(rect(), ThemeManager::instance().color(ThemeColor::PageBackground));
 
     if (!m_image.isNull()) {
-        painter.drawImage(QRectF(m_offset,
-                                 QSizeF(m_image.width() * m_scale,
-                                        m_image.height() * m_scale)),
-                          m_image);
+        painter.drawImage(imageTargetRect(), m_image);
     }
 
     QPainterPath outer;
     outer.addRect(rect());
     QPainterPath cropCircle;
-    cropCircle.addEllipse(QRectF(rect()));
+    cropCircle.addEllipse(cropRect());
     painter.fillPath(outer.subtracted(cropCircle),
                      QColor(0, 0, 0, ThemeManager::instance().isDark() ? 118 : 92));
     painter.setBrush(Qt::NoBrush);
     painter.setPen(QPen(QColor(255, 255, 255, 230), 2));
-    painter.drawEllipse(rect().adjusted(1, 1, -1, -1));
+    painter.drawEllipse(cropRect().adjusted(1, 1, -1, -1));
+
+    painter.setPen(QPen(QColor(0, 0, 0, 60), 1));
+    painter.drawRect(rect().adjusted(0, 0, -1, -1));
 }
 
 void AvatarCropCanvas::wheelEvent(QWheelEvent* event)
@@ -107,6 +119,7 @@ void AvatarCropCanvas::mousePressEvent(QMouseEvent* event)
         m_dragging = true;
         m_dragStartPos = event->pos();
         m_dragStartOffset = m_offset;
+        setCursor(Qt::SizeAllCursor);
         event->accept();
         return;
     }
@@ -115,6 +128,7 @@ void AvatarCropCanvas::mousePressEvent(QMouseEvent* event)
 
 void AvatarCropCanvas::mouseMoveEvent(QMouseEvent* event)
 {
+    setCursor(Qt::SizeAllCursor);
     if (m_dragging) {
         m_offset = m_dragStartOffset + QPointF(event->pos() - m_dragStartPos);
         clampOffset();
@@ -129,10 +143,29 @@ void AvatarCropCanvas::mouseReleaseEvent(QMouseEvent* event)
 {
     if (m_dragging && event->button() == Qt::LeftButton) {
         m_dragging = false;
+        setCursor(Qt::SizeAllCursor);
         event->accept();
         return;
     }
     QWidget::mouseReleaseEvent(event);
+}
+
+void AvatarCropCanvas::enterEvent(QEnterEvent* event)
+{
+    setCursor(Qt::SizeAllCursor);
+    QWidget::enterEvent(event);
+}
+
+QRectF AvatarCropCanvas::cropRect() const
+{
+    return QRectF(rect());
+}
+
+QRectF AvatarCropCanvas::imageTargetRect() const
+{
+    return QRectF(m_offset,
+                  QSizeF(m_image.width() * m_scale,
+                         m_image.height() * m_scale));
 }
 
 void AvatarCropCanvas::resetTransform()
@@ -147,6 +180,7 @@ void AvatarCropCanvas::resetTransform()
     m_offset = QPointF((width() - m_image.width() * m_scale) / 2.0,
                        (height() - m_image.height() * m_scale) / 2.0);
     clampOffset();
+    notifyZoomChanged();
 }
 
 void AvatarCropCanvas::setScale(qreal scale, const QPointF& anchor)
@@ -162,6 +196,7 @@ void AvatarCropCanvas::setScale(qreal scale, const QPointF& anchor)
     m_scale = nextScale;
     m_offset = anchor - imageAnchor * m_scale;
     clampOffset();
+    notifyZoomChanged();
     update();
 }
 
@@ -174,4 +209,11 @@ void AvatarCropCanvas::clampOffset()
     m_offset.setY(scaledSize.height() <= height()
                   ? (height() - scaledSize.height()) / 2.0
                   : qBound(height() - scaledSize.height(), m_offset.y(), 0.0));
+}
+
+void AvatarCropCanvas::notifyZoomChanged()
+{
+    if (zoomValueChanged) {
+        zoomValueChanged(zoomValue());
+    }
 }

@@ -24,6 +24,8 @@ constexpr int kStatusSegmentGap = 0;
 constexpr int kHandledStatusMaxWidth = 220;
 constexpr int kHandledStatusTextGap = 8;
 constexpr qreal kButtonBorderWidth = 1.5;
+constexpr int kPendingDotSize = 4;
+constexpr int kPendingDotGap = 5;
 
 struct TextSegment {
     QString text;
@@ -174,6 +176,21 @@ QRect actionRect(const QRect& card, const QRect& content)
 int textRightBeforeAction(const QRect& line, const QRect& card, const QRect& content)
 {
     return qMin(line.right(), actionRect(card, content).left() - GroupNotificationDelegate::kButtonGap);
+}
+
+void drawPendingDots(QPainter* painter, const QRect& rect, const QColor& color)
+{
+    const int totalWidth = kPendingDotSize * 3 + kPendingDotGap * 2;
+    const int startX = rect.left() + (rect.width() - totalWidth) / 2;
+    const int y = rect.top() + (rect.height() - kPendingDotSize) / 2;
+    painter->setPen(Qt::NoPen);
+    painter->setBrush(color);
+    for (int i = 0; i < 3; ++i) {
+        painter->drawRect(QRect(startX + i * (kPendingDotSize + kPendingDotGap),
+                                y,
+                                kPendingDotSize,
+                                kPendingDotSize));
+    }
 }
 
 bool isHandledByCurrentUser(const QString& operatorId)
@@ -533,8 +550,9 @@ void GroupNotificationDelegate::paint(QPainter* painter,
     const auto status = static_cast<GroupNotificationStatus>(
         index.data(GroupNotificationListModel::StatusRole).toInt());
     const int hovered = index.data(GroupNotificationListModel::HoveredButtonRole).toInt();
-    const bool pendingActionsVisible = type == GroupNotificationType::JoinRequest
-            && status == GroupNotificationStatus::Pending
+    const bool pendingJoinRequest = type == GroupNotificationType::JoinRequest
+            && status == GroupNotificationStatus::Pending;
+    const bool pendingActionsVisible = pendingJoinRequest
             && hovered != GroupNotificationListModel::kNoHoveredButton;
     painter->setPen(Qt::NoPen);
     painter->setBrush(ThemeManager::instance().color(ThemeColor::PanelBackground));
@@ -560,6 +578,21 @@ void GroupNotificationDelegate::paint(QPainter* painter,
     const int lineCount = 2;
 
     QRect l1 = lineRect(content, 0, lineCount);
+    if (type == GroupNotificationType::JoinRequest) {
+        int textRight = l1.right();
+        if (status == GroupNotificationStatus::Pending) {
+            textRight = textRightBeforeAction(l1, card, content);
+        } else {
+            textRight = textRightBeforeHandledStatus(l1,
+                                                     card,
+                                                     content,
+                                                     groupId,
+                                                     operatorId,
+                                                     status,
+                                                     m_controller);
+        }
+        l1.setRight(qMax(l1.left(), textRight));
+    }
     if (type == GroupNotificationType::JoinRequest) {
         drawJoinTitle(painter,
                       l1,
@@ -590,7 +623,7 @@ void GroupNotificationDelegate::paint(QPainter* painter,
         QRect l2 = lineRect(content, 1, lineCount);
         int textRight = l2.right();
         if (status == GroupNotificationStatus::Pending) {
-            textRight = pendingActionsVisible ? textRightBeforeAction(l2, card, content) : l2.right();
+            textRight = textRightBeforeAction(l2, card, content);
         } else {
             textRight = textRightBeforeHandledStatus(l2,
                                                     card,
@@ -630,6 +663,8 @@ void GroupNotificationDelegate::paint(QPainter* painter,
                 painter->drawRoundedRect(rejR, kButtonRadius, kButtonRadius);
                 painter->setPen(rejectColor);
                 painter->drawText(rejR, Qt::AlignCenter, QStringLiteral("拒绝"));
+            } else {
+                drawPendingDots(painter, actionRect(card, content), tertiary);
             }
         } else {
             drawHandledStatus(painter,

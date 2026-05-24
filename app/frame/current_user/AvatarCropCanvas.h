@@ -5,6 +5,9 @@
 #include <QPointF>
 #include <QWidget>
 
+#include <functional>
+
+class QEnterEvent;
 class QMouseEvent;
 class QPaintEvent;
 class QWheelEvent;
@@ -17,6 +20,10 @@ public:
     QImage croppedImage() const;
     int zoomValue() const;
     void setZoomValue(int value);
+    void zoomIn();
+    void zoomOut();
+
+    std::function<void(int)> zoomValueChanged;
 
 protected:
     void paintEvent(QPaintEvent* event) override;
@@ -24,11 +31,15 @@ protected:
     void mousePressEvent(QMouseEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;
     void mouseReleaseEvent(QMouseEvent* event) override;
+    void enterEvent(QEnterEvent* event) override;
 
 private:
+    QRectF cropRect() const;
+    QRectF imageTargetRect() const;
     void resetTransform();
     void setScale(qreal scale, const QPointF& anchor);
     void clampOffset();
+    void notifyZoomChanged();
 
     QImage m_image;
     qreal m_minScale = 1.0;
