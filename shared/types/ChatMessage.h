@@ -3,6 +3,7 @@
 
 #include <QString>
 #include <QDateTime>
+#include <QUuid>
 #include <memory>
 
 enum class MessageType {
@@ -25,13 +26,21 @@ class ChatMessage {
 public:
     ChatMessage(bool isFromMe, const QString& senderId, bool isGroupChat = false, 
                const QString& senderName = QString(), GroupRole role = GroupRole::Member)
-        : fromMe(isFromMe), senderId(senderId), timestamp(QDateTime::currentDateTime()), 
+        : messageId(QUuid::createUuid().toString(QUuid::WithoutBraces)),
+          fromMe(isFromMe), senderId(senderId), timestamp(QDateTime::currentDateTime()),
           isSelected(false), isGroupChat(isGroupChat), senderName(senderName), role(role) {}
     
     virtual ~ChatMessage() = default;
     virtual QString getContent() const = 0;
     virtual MessageType getType() const = 0;
     
+    QString getMessageId() const { return messageId; }
+    void setMessageId(const QString& id)
+    {
+        if (!id.isEmpty()) {
+            messageId = id;
+        }
+    }
     bool isFromMe() const { return fromMe; }
     QString getSenderId() const { return senderId; }
     QDateTime getTimestamp() const { return timestamp; }
@@ -46,8 +55,11 @@ public:
     GroupRole getRole() const { return role; }
     void setSenderName(const QString& name) { senderName = name; }
     void setRole(GroupRole nextRole) { role = nextRole; }
+    QString getReferencedMessageId() const { return referencedMessageId; }
+    void setReferencedMessageId(const QString& id) { referencedMessageId = id; }
 
 protected:
+    QString messageId;
     bool fromMe;
     QString senderId;
     QDateTime timestamp;
@@ -57,6 +69,7 @@ protected:
     bool isGroupChat;
     QString senderName;
     GroupRole role;
+    QString referencedMessageId;
 };
 
 class TextMessage : public ChatMessage {

@@ -72,6 +72,8 @@ enum class ThemeColor {
     ControlPressed,
     MessageBubblePeer,
     MessageBubblePeerSelected,
+    MessageReferenceBackground,
+    MessageReferenceText,
     ContextMenuBackground,
     ContextMenuBorder,
     ContextMenuHover,

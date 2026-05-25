@@ -35,4 +35,6 @@ void syncBar(QWidget* widget,
              bool animateSelection = false,
              double opacity = 1.0);
 void clearBar(QWidget* widget);
+void syncActionButton(QWidget* widget, double opacity = 1.0);
+void clearActionButton(QWidget* widget);
 }

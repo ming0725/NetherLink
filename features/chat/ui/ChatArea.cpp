@@ -44,7 +44,8 @@ static constexpr int kInputBarSideMargin = 20;
 static constexpr int kInputBarBottomMargin = 18;
 static constexpr int kInputBarHeight = 195;
 static constexpr int kChatListBottomSpacePadding = 10;
-static constexpr int kNewMessageNotifierInputGap = 10;
+static constexpr int kFloatingNotifierInputGap = 4;
+static constexpr int kFloatingNotifierHorizontalGap = 4;
 static constexpr int kInputBarBottomGradientFadeHeight = 32;
 static constexpr int kInputBarBottomGradientSolidAlpha = 192;
 static constexpr int kOlderMessagePageSize = 24;
@@ -293,6 +294,14 @@ ChatArea::ChatArea(QWidget *parent)
     chatDelegate->setRecallEligibilityCallback([this](const ChatMessage* message) {
         return canRecallMessage(message);
     });
+    chatDelegate->setReferenceResolver([this](const QString& messageId) -> const ChatMessage* {
+        if (chatModel) {
+            if (const ChatMessage* message = chatModel->messageById(messageId)) {
+                return message;
+            }
+        }
+        return MessageRepository::instance().requestMessageById(conversationId(), messageId).get();
+    });
     
     // 设置模型和代理
     chatView->setModel(chatModel);
@@ -308,7 +317,10 @@ ChatArea::ChatArea(QWidget *parent)
     messageLoadingAnimationTimer->setInterval(kMessageLoadingSkeletonFrameMs);
 
     newMessageNotifier = new NewMessageNotifier(this);
+    newMessageNotifier->setDisplayMode(NewMessageNotifier::DisplayMode::IconOnly);
     newMessageNotifier->hide();
+    referenceMessageNotifier = new ReferenceMessageNotifier(this);
+    referenceMessageNotifier->hide();
 
     bottomGapGradientOverlay = new BottomGapGradientOverlay(this);
     sessionController = new ChatSessionController(this);
@@ -418,12 +430,16 @@ ChatArea::ChatArea(QWidget *parent)
     });
     connect(newMessageNotifier, &NewMessageNotifier::clicked,
             this, &ChatArea::onNewMessageNotifierClicked);
+    connect(referenceMessageNotifier, &ReferenceMessageNotifier::closeRequested,
+            this, &ChatArea::onReferenceMessageCloseRequested);
     connect(chatView, &ChatListView::avatarClicked,
             this, &ChatArea::showFriendProfilePopup);
     connect(chatView, &ChatListView::avatarContextMenuRequested,
             this, &ChatArea::showAvatarContextMenu);
     connect(chatView, &ChatListView::groupSystemEventProfileRequested,
             this, &ChatArea::showFriendProfilePopup);
+    connect(chatView, &ChatListView::referencedMessageClicked,
+            this, &ChatArea::onReferencedMessageClicked);
     connect(friendProfilePopup, &FriendProfilePopup::requestMessage,
             this, &ChatArea::requestOpenConversation);
     connect(friendProfilePopup, &FriendProfilePopup::requestAddFriend,
@@ -448,6 +464,8 @@ ChatArea::ChatArea(QWidget *parent)
             this, &ChatArea::onDeleteMessageRequested);
     connect(chatDelegate, &ChatItemDelegate::recallRequested,
             this, &ChatArea::onRecallMessageRequested);
+    connect(chatDelegate, &ChatItemDelegate::referenceRequested,
+            this, &ChatArea::onReferenceMessageRequested);
     connect(chatDelegate, &ChatItemDelegate::reeditRequested,
             this, &ChatArea::onReeditMessageRequested);
     connect(infoButton, &QPushButton::clicked,
@@ -1044,6 +1062,7 @@ void ChatArea::resizeEvent(QResizeEvent *event)
     QWidget::resizeEvent(event);
     updateInfoPanelGeometry();
     updateHistoryUnreadNotifierPosition();
+    updateReferenceMessageNotifierPosition();
     updateNewMessageNotifierPosition();
     updateInputBarPosition();
     adjustBottomSpace();
@@ -1055,6 +1074,9 @@ void ChatArea::resizeEvent(QResizeEvent *event)
     }
     if (newMessageNotifier && newMessageNotifier->isVisible()) {
         newMessageNotifier->raise();
+    }
+    if (referenceMessageNotifier && referenceMessageNotifier->isVisible()) {
+        referenceMessageNotifier->raise();
     }
     if (QWidget* panel = activeInfoPanel(); panel && panel->isVisible()) {
         panel->raise();
@@ -1070,7 +1092,9 @@ void ChatArea::updateNewMessageNotifier()
     if (isScrollAtBottom()) {
         m_state.newMessageNotifierRevealedByDownScroll = false;
         if (m_state.newUnreadMessageCount <= 0) {
+            newMessageNotifier->setDisplayMode(NewMessageNotifier::DisplayMode::IconOnly);
             newMessageNotifier->hide();
+            updateReferenceMessageNotifierPosition();
             return;
         }
     }
@@ -1081,6 +1105,8 @@ void ChatArea::updateNewMessageNotifier()
         newMessageNotifier->show();
         newMessageNotifier->raise();
         updateNewMessageNotifierPosition();
+        updateReferenceMessageNotifierPosition();
+        newMessageNotifier->raise();
         return;
     }
 
@@ -1089,10 +1115,14 @@ void ChatArea::updateNewMessageNotifier()
         newMessageNotifier->show();
         newMessageNotifier->raise();
         updateNewMessageNotifierPosition();
+        updateReferenceMessageNotifierPosition();
+        newMessageNotifier->raise();
         return;
     }
 
+    newMessageNotifier->setDisplayMode(NewMessageNotifier::DisplayMode::IconOnly);
     newMessageNotifier->hide();
+    updateReferenceMessageNotifierPosition();
 }
 
 bool ChatArea::shouldShowNewMessageNotifier() const
@@ -1188,10 +1218,65 @@ void ChatArea::updateNewMessageNotifierPosition()
     if (newMessageNotifier->isVisible() && inputBar) {
         const QRect inputBarRect = inputBar->geometry();
         const int x = inputBarRect.x() + inputBarRect.width() - newMessageNotifier->width();
-        const int y = inputBarRect.y() - newMessageNotifier->height() - kNewMessageNotifierInputGap;
-        newMessageNotifier->move(x, y);
+        const int y = inputBarRect.y() - newMessageNotifier->height() - kFloatingNotifierInputGap;
+        newMessageNotifier->setGeometry(x, y, newMessageNotifier->width(), newMessageNotifier->height());
         newMessageNotifier->raise();
     }
+}
+
+void ChatArea::updateReferenceMessageNotifierPosition()
+{
+    if (!referenceMessageNotifier || !referenceMessageNotifier->isVisible() || !inputBar) {
+        return;
+    }
+
+    const QRect inputBarRect = inputBar->geometry();
+    const int newNotifierWidth = newMessageNotifier
+            ? newMessageNotifier->sizeHint().width()
+            : 0;
+    const int referenceRight = inputBarRect.right() + 1 - newNotifierWidth - kFloatingNotifierHorizontalGap;
+    const int availableWidth = qMax(0, referenceRight - inputBarRect.x());
+    if (availableWidth <= 0) {
+        referenceMessageNotifier->hide();
+        return;
+    }
+    const int notifierHeight = newMessageNotifier
+            ? newMessageNotifier->height()
+            : referenceMessageNotifier->sizeHint().height();
+    const int y = inputBarRect.y() - notifierHeight - kFloatingNotifierInputGap;
+    referenceMessageNotifier->setGeometry(inputBarRect.x(), y, availableWidth, notifierHeight);
+    referenceMessageNotifier->raise();
+}
+
+void ChatArea::updateReferenceMessageNotifier()
+{
+    if (!referenceMessageNotifier) {
+        return;
+    }
+
+    if (m_pendingReferenceMessageId.isEmpty() ||
+            conversationId().isEmpty() ||
+            m_systemFloatingBarsSuppressed ||
+            !inputBar ||
+            inputBar->isHidden()) {
+        referenceMessageNotifier->hide();
+        updateNewMessageNotifierPosition();
+        return;
+    }
+
+    const ChatMessage* referencedMessage = chatModel
+            ? chatModel->messageById(m_pendingReferenceMessageId)
+            : nullptr;
+    if (!referencedMessage) {
+        referencedMessage = MessageRepository::instance()
+                .requestMessageById(conversationId(), m_pendingReferenceMessageId)
+                .get();
+    }
+
+    referenceMessageNotifier->setMessage(referencedMessage);
+    referenceMessageNotifier->show();
+    updateReferenceMessageNotifierPosition();
+    updateNewMessageNotifierPosition();
 }
 
 void ChatArea::scrollToBottom(bool accelerateFarDistance)
@@ -1822,6 +1907,9 @@ void ChatArea::updateInputBarPosition() {
     if (inputBar) {
         if (conversationId().isEmpty()) {
             inputBar->hide();
+            if (referenceMessageNotifier) {
+                referenceMessageNotifier->hide();
+            }
             if (historyUnreadNotifier) {
                 hideHistoryUnreadNotifier();
             }
@@ -1834,6 +1922,9 @@ void ChatArea::updateInputBarPosition() {
 
         if (m_systemFloatingBarsSuppressed) {
             inputBar->hide();
+            if (referenceMessageNotifier) {
+                referenceMessageNotifier->hide();
+            }
             if (bottomGapGradientOverlay) {
                 bottomGapGradientOverlay->hide();
             }
@@ -1880,6 +1971,7 @@ void ChatArea::updateInputBarPosition() {
         if (QWidget* panel = activeInfoPanel(); panel && panel->isVisible()) {
             panel->raise();
         }
+        updateReferenceMessageNotifier();
         updateHistoryUnreadNotifierPosition();
         updateNewMessageNotifierPosition();
     }
@@ -1902,6 +1994,7 @@ void ChatArea::onSendImage(const QString &path)
                                                isGroupMode(),
                                                senderName,
                                                role);
+        applyPendingReference(ptr);
         addMessage(ptr);
     }
 }
@@ -1923,6 +2016,7 @@ void ChatArea::onSendText(const QString &text)
                                                isGroupMode(),
                                                senderName,
                                                role);
+        applyPendingReference(ptr);
         addMessage(ptr);
     }
 }
@@ -1954,6 +2048,7 @@ void ChatArea::onSendTextAsPeer(const QString& text)
                                                    isGroupMode(),
                                                    senderName,
                                                    role);
+    applyPendingReference(ptr);
     addMessage(ptr);
 }
 
@@ -2028,6 +2123,7 @@ QSharedPointer<RecallMessage> ChatArea::createRecallMessage(const QSharedPointer
                                                                safeActorName,
                                                                actorRole,
                                                                moderatorRecall);
+    recallMessage->setMessageId(message->getMessageId());
     recallMessage->setTimestamp(message->getTimestamp());
     return recallMessage;
 }
@@ -2146,6 +2242,45 @@ void ChatArea::onRecallMessageRequested(int row)
     recallMessageAtRow(row);
 }
 
+void ChatArea::onReferenceMessageRequested(int row)
+{
+    if (!chatModel) {
+        return;
+    }
+
+    const QSharedPointer<ChatMessage> message = chatModel->sharedMessageAt(row);
+    if (message.isNull() ||
+            message->getType() == MessageType::GroupMemberJoined ||
+            message->getType() == MessageType::GroupSystemEvent) {
+        return;
+    }
+
+    m_pendingReferenceMessageId = message->getMessageId();
+    if (referenceMessageNotifier) {
+        referenceMessageNotifier->setMessage(message.data());
+        referenceMessageNotifier->show();
+        updateReferenceMessageNotifierPosition();
+        updateNewMessageNotifierPosition();
+    }
+    if (inputBar) {
+        inputBar->focusInput();
+    }
+}
+
+void ChatArea::onReferenceMessageCloseRequested()
+{
+    m_pendingReferenceMessageId.clear();
+    if (referenceMessageNotifier) {
+        referenceMessageNotifier->hide();
+    }
+    updateNewMessageNotifierPosition();
+}
+
+void ChatArea::onReferencedMessageClicked(const QString& messageId)
+{
+    scrollToMessageAndHighlight(messageId);
+}
+
 void ChatArea::onReeditMessageRequested(int row)
 {
     if (!inputBar || !chatModel) {
@@ -2204,6 +2339,10 @@ void ChatArea::onDeleteMessageRequested(int row)
         return;
     }
 
+    if (m_pendingReferenceMessageId == message->getMessageId()) {
+        onReferenceMessageCloseRequested();
+    }
+
     removeUnreadCandidate(message.get());
     if (chatModel->removeMessage(row) && m_state.loadedMessageCount > 0) {
         --m_state.loadedMessageCount;
@@ -2227,7 +2366,12 @@ void ChatArea::clearConversation(bool closeInfoPanel)
     }
     chatModel->clear();
     chatModel->clearSelection();
+    chatModel->clearRowHighlight();
     chatView->clearTextSelection();
+    m_pendingReferenceMessageId.clear();
+    if (referenceMessageNotifier) {
+        referenceMessageNotifier->hide();
+    }
     if (messageLoadingAnimationTimer) {
         messageLoadingAnimationTimer->stop();
     }
@@ -2396,6 +2540,134 @@ bool ChatArea::isGroupMode() const
     return m_state.meta.isGroup;
 }
 
+void ChatArea::applyPendingReference(const ChatMessagePtr& message)
+{
+    if (message.isNull() || m_pendingReferenceMessageId.isEmpty()) {
+        return;
+    }
+
+    if (message->getMessageId() != m_pendingReferenceMessageId) {
+        message->setReferencedMessageId(m_pendingReferenceMessageId);
+    }
+    m_pendingReferenceMessageId.clear();
+    if (referenceMessageNotifier) {
+        referenceMessageNotifier->hide();
+    }
+    updateNewMessageNotifierPosition();
+}
+
+bool ChatArea::ensureMessageLoaded(const QString& messageId)
+{
+    if (messageId.isEmpty() || !chatModel || conversationId().isEmpty()) {
+        return false;
+    }
+    if (chatModel->indexForMessageId(messageId).isValid()) {
+        return true;
+    }
+
+    if (m_state.hasMoreBefore && !m_state.loadingOlderMessages) {
+        m_state.loadingOlderMessages = true;
+        const ConversationThreadData olderPage =
+                MessageRepository::instance().requestConversationThreadUntilMessage({
+                        conversationId(),
+                        messageId,
+                        m_state.loadedMessageCount
+                });
+        m_state.loadingOlderMessages = false;
+
+        if (!olderPage.messages.isEmpty()) {
+            assignPrependedPeerMessageOrdinals(olderPage.messages);
+            chatModel->prependMessages(olderPage.messages);
+            const int loadedUnread = registerHistoryUnreadCandidates(
+                    olderPage.messages,
+                    m_state.historyUnloadedUnreadMessageCount);
+            m_state.historyUnloadedUnreadMessageCount = qMax(
+                    0,
+                    m_state.historyUnloadedUnreadMessageCount - loadedUnread);
+            recalculateHistoryUnreadCount();
+            m_state.loadedMessageCount = olderPage.loadedMessageCount;
+            m_state.hasMoreBefore = olderPage.hasMoreBefore;
+            reconcileHistoryUnreadAfterHistoryExhausted();
+            updateHistoryUnreadNotifier();
+            adjustBottomSpace();
+
+            if (chatModel->indexForMessageId(messageId).isValid()) {
+                return true;
+            }
+        }
+    }
+
+    while (m_state.hasMoreBefore && !m_state.loadingOlderMessages) {
+        m_state.loadingOlderMessages = true;
+        const ConversationThreadData olderPage = MessageRepository::instance().requestConversationThread({
+                conversationId(),
+                m_state.loadedMessageCount,
+                kOlderMessagePageSize
+        });
+        m_state.loadingOlderMessages = false;
+        if (olderPage.messages.isEmpty()) {
+            m_state.hasMoreBefore = false;
+            break;
+        }
+
+        assignPrependedPeerMessageOrdinals(olderPage.messages);
+        chatModel->prependMessages(olderPage.messages);
+        const int loadedUnread = registerHistoryUnreadCandidates(
+                olderPage.messages,
+                m_state.historyUnloadedUnreadMessageCount);
+        m_state.historyUnloadedUnreadMessageCount = qMax(
+                0,
+                m_state.historyUnloadedUnreadMessageCount - loadedUnread);
+        recalculateHistoryUnreadCount();
+        m_state.loadedMessageCount = olderPage.loadedMessageCount;
+        m_state.hasMoreBefore = olderPage.hasMoreBefore;
+        reconcileHistoryUnreadAfterHistoryExhausted();
+        adjustBottomSpace();
+
+        if (chatModel->indexForMessageId(messageId).isValid()) {
+            return true;
+        }
+    }
+    return chatModel->indexForMessageId(messageId).isValid();
+}
+
+void ChatArea::scrollToMessageAndHighlight(const QString& messageId)
+{
+    if (!ensureMessageLoaded(messageId) || !chatModel || !chatView) {
+        return;
+    }
+
+    const QModelIndex messageIndex = chatModel->indexForMessageId(messageId);
+    if (!messageIndex.isValid()) {
+        return;
+    }
+
+    chatModel->clearSelection();
+    chatModel->clearRowHighlight();
+    chatView->clearTextSelection();
+    chatView->scrollToIndexAtTopAnimated(messageIndex, true);
+
+    QPersistentModelIndex persistentIndex(messageIndex);
+    QTimer::singleShot(180, this, [this, persistentIndex]() {
+        if (!persistentIndex.isValid() || !chatModel) {
+            return;
+        }
+        chatModel->setData(persistentIndex, true, Qt::UserRole + 2);
+        if (chatView && chatView->viewport()) {
+            chatView->viewport()->update();
+        }
+    });
+    QTimer::singleShot(1100, this, [this, persistentIndex]() {
+        if (!persistentIndex.isValid() || !chatModel) {
+            return;
+        }
+        chatModel->setData(persistentIndex, false, Qt::UserRole + 2);
+        if (chatView && chatView->viewport()) {
+            chatView->viewport()->update();
+        }
+    });
+}
+
 void ChatArea::showConversationLoading(const ConversationMeta& meta)
 {
     if (infoPanelOpen) {
@@ -2411,6 +2683,14 @@ void ChatArea::showConversationLoading(const ConversationMeta& meta)
     m_state.allowOlderMessageFetch = false;
     applyConversationMeta();
 
+    if (inputBar && !m_systemFloatingBarsSuppressed) {
+        inputBar->show();
+        inputBar->refreshPlatformAppearance();
+        inputBar->raise();
+    }
+    updateInputBarPosition();
+    adjustBottomSpace();
+
     const int targetLoadingHeight = chatView && chatView->viewport()
             ? chatView->viewport()->height() / 2
             : height() / 2;
@@ -2421,17 +2701,10 @@ void ChatArea::showConversationLoading(const ConversationMeta& meta)
         messageLoadingAnimationTimer->start();
     }
 
-    if (inputBar && !m_systemFloatingBarsSuppressed) {
-        inputBar->show();
-        inputBar->refreshPlatformAppearance();
-        inputBar->raise();
-    }
     hideHistoryUnreadNotifier();
     if (newMessageNotifier) {
         newMessageNotifier->hide();
     }
-    updateInputBarPosition();
-    adjustBottomSpace();
 }
 
 void ChatArea::openConversation(const ConversationThreadData& conversation)
@@ -2460,9 +2733,6 @@ void ChatArea::openConversation(const ConversationThreadData& conversation)
     m_state.historyUnloadedUnreadMessageCount = qMax(
             0,
             m_state.historyUnloadedUnreadMessageCount - loadedUnread);
-    recalculateHistoryUnreadCount();
-    chatModel->setMessages(conversation.messages);
-    reconcileHistoryUnreadAfterHistoryExhausted();
     if (inputBar && !m_systemFloatingBarsSuppressed) {
         inputBar->show();
         inputBar->refreshPlatformAppearance();
@@ -2470,13 +2740,22 @@ void ChatArea::openConversation(const ConversationThreadData& conversation)
     }
     updateInputBarPosition();
     adjustBottomSpace();
+    recalculateHistoryUnreadCount();
+
+    const bool listUpdatesWereEnabled = chatView->updatesEnabled();
+    chatView->setUpdatesEnabled(false);
+    chatModel->setMessages(conversation.messages);
+    chatView->jumpToBottom();
+    chatView->setUpdatesEnabled(listUpdatesWereEnabled);
+    if (chatView->viewport()) {
+        chatView->viewport()->update();
+    }
+
+    reconcileHistoryUnreadAfterHistoryExhausted();
     updateHistoryUnreadNotifier();
     updateNewMessageNotifier();
-    QTimer::singleShot(0, this, [this]() {
-        chatView->jumpToBottom();
-        m_state.allowOlderMessageFetch = true;
-        scheduleVisibleUnreadCheck();
-    });
+    m_state.allowOlderMessageFetch = true;
+    scheduleVisibleUnreadCheck();
     QTimer::singleShot(0, inputBar, [this]() {
         if (inputBar && inputBar->isVisible()) {
             inputBar->focusInput();

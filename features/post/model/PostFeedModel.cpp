@@ -51,6 +51,8 @@ QVariant PostFeedModel::data(const QModelIndex& index, int role) const
         return post.commentCount;
     case IsLikedRole:
         return post.isLiked;
+    case IsFollowedAuthorRole:
+        return post.isFollowedAuthor;
     case IsLoadingPlaceholderRole:
         return loadingPlaceholder;
     case LoadingStartedAtRole:
@@ -143,6 +145,9 @@ void PostFeedModel::updatePost(const PostSummary& post)
     if (previous.isLiked != post.isLiked) {
         changedRoles.append(IsLikedRole);
     }
+    if (previous.isFollowedAuthor != post.isFollowedAuthor) {
+        changedRoles.append(IsFollowedAuthorRole);
+    }
 
     if (changedRoles.isEmpty()) {
         return;
@@ -157,6 +162,24 @@ void PostFeedModel::updatePost(const PostSummary& post)
     }
     const QModelIndex modelIndex = index(row, 0);
     emit dataChanged(modelIndex, modelIndex, changedRoles);
+}
+
+bool PostFeedModel::removePost(const QString& postId)
+{
+    if (hasLoadingPlaceholders()) {
+        return false;
+    }
+
+    const int row = indexOfPost(postId);
+    if (row < 0) {
+        return false;
+    }
+
+    beginRemoveRows(QModelIndex(), row, row);
+    m_posts.removeAt(row);
+    endRemoveRows();
+    rebuildPostIndex();
+    return true;
 }
 
 void PostFeedModel::showLoadingPlaceholders(int count)

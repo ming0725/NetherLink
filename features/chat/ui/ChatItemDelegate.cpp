@@ -13,6 +13,7 @@
 #include <QTextCharFormat>
 #include <QTextCursor>
 #include <QTextDocument>
+#include <QTextLayout>
 #include <QTextOption>
 #include <QFontMetrics>
 #include <QApplication>
@@ -43,6 +44,31 @@ void showCopyNotification(QObject* owner)
 {
     QWidget* widget = qobject_cast<QWidget*>(owner);
     GlobalNotification::showSuccess(widget, QStringLiteral("复制成功"));
+}
+
+bool copyMessageToClipboard(const ChatMessage* message)
+{
+    if (!message) {
+        return false;
+    }
+
+    if (message->getType() == MessageType::Text) {
+        const auto* textMessage = static_cast<const TextMessage*>(message);
+        QApplication::clipboard()->setText(textMessage->getText());
+        return true;
+    }
+
+    if (message->getType() == MessageType::Image) {
+        const auto* imageMessage = static_cast<const ImageMessage*>(message);
+        const QPixmap pixmap = ImageService::instance().pixmap(imageMessage->getImageSource());
+        if (pixmap.isNull()) {
+            return false;
+        }
+        QApplication::clipboard()->setPixmap(pixmap);
+        return true;
+    }
+
+    return false;
 }
 
 QColor linkTextColor(bool dark, bool isFromMe, const QColor& textColor)
@@ -116,6 +142,81 @@ bool isGroupSystemEventMessage(const ChatMessage* message)
            message->getType() == MessageType::GroupSystemEvent;
 }
 
+QString referenceSenderName(const ChatMessage* referencedMessage)
+{
+    if (!referencedMessage) {
+        return {};
+    }
+
+    QString senderName = referencedMessage->getSenderName().trimmed();
+    if (senderName.isEmpty()) {
+        senderName = referencedMessage->getSenderId();
+    }
+    return senderName;
+}
+
+QString referenceSenderLabel(const ChatMessage* referencedMessage)
+{
+    return QStringLiteral("%1：").arg(referenceSenderName(referencedMessage));
+}
+
+QString referenceDisplayText(const ChatMessage* referencedMessage)
+{
+    if (!referencedMessage || referencedMessage->getType() == MessageType::Recall) {
+        return QStringLiteral("该消息已撤回");
+    }
+
+    const QString content = referencedMessage->getType() == MessageType::Image
+            ? QStringLiteral("[图片]")
+            : referencedMessage->getContent().simplified();
+    return QStringLiteral("%1：%2").arg(referenceSenderName(referencedMessage), content);
+}
+
+void drawElidedTextLines(QPainter* painter,
+                         const QRect& rect,
+                         const QString& text,
+                         const QFont& font,
+                         int maxLines)
+{
+    if (!painter || rect.isEmpty() || text.isEmpty() || maxLines <= 0) {
+        return;
+    }
+
+    const QFontMetrics fm(font);
+    QTextLayout layout(text, font);
+    QTextOption option;
+    option.setWrapMode(QTextOption::WrapAtWordBoundaryOrAnywhere);
+    layout.setTextOption(option);
+
+    QVector<QTextLine> lines;
+    layout.beginLayout();
+    for (int i = 0; i < maxLines; ++i) {
+        QTextLine line = layout.createLine();
+        if (!line.isValid()) {
+            break;
+        }
+        line.setLineWidth(rect.width());
+        lines.push_back(line);
+    }
+    layout.endLayout();
+
+    const int lineHeight = fm.lineSpacing();
+    int y = rect.top() + qMax(0, (rect.height() - lineHeight * lines.size()) / 2);
+    for (int i = 0; i < lines.size(); ++i) {
+        const QTextLine& line = lines.at(i);
+        const bool isLastPaintedLine = i == lines.size() - 1;
+        const bool hasHiddenText = line.textStart() + line.textLength() < text.size();
+        if (isLastPaintedLine && hasHiddenText) {
+            painter->drawText(QRect(rect.left(), y, rect.width(), lineHeight),
+                              Qt::AlignLeft | Qt::AlignVCenter,
+                              fm.elidedText(text.mid(line.textStart()), Qt::ElideRight, rect.width()));
+        } else {
+            line.draw(painter, QPointF(rect.left(), y));
+        }
+        y += lineHeight;
+    }
+}
+
 struct GroupSystemEventSegment {
     QString text;
     QString userId;
@@ -182,6 +283,11 @@ void ChatItemDelegate::setRecallEligibilityCallback(std::function<bool(const Cha
     m_recallEligibilityCallback = std::move(callback);
 }
 
+void ChatItemDelegate::setReferenceResolver(std::function<const ChatMessage*(const QString&)> resolver)
+{
+    m_referenceResolver = std::move(resolver);
+}
+
 void ChatItemDelegate::paint(QPainter* painter, const QStyleOptionViewItem& option,
                            const QModelIndex& index) const
 {
@@ -219,6 +325,10 @@ void ChatItemDelegate::paint(QPainter* painter, const QStyleOptionViewItem& opti
         );
         drawTimeHeader(painter, timeHeaderRect, timeHeader->text);
     } else if (message) {
+        if (index.data(Qt::UserRole + 2).toBool()) {
+            drawRowHighlight(painter, option.rect);
+        }
+
         if (isGroupSystemEventMessage(message)) {
             drawGroupSystemEventMessage(painter, option.rect, message);
             painter->restore();
@@ -256,6 +366,14 @@ void ChatItemDelegate::paint(QPainter* painter, const QStyleOptionViewItem& opti
         }
         // 绘制气泡
         drawBubble(painter, bubbleRect, isFromMe, message, message->getIsSelected(), index);
+
+        const ChatMessage* referencedMessage = m_referenceResolver && !message->getReferencedMessageId().isEmpty()
+                ? m_referenceResolver(message->getReferencedMessageId())
+                : nullptr;
+        const QRect referenceRect = calculateReferenceRect(option.rect, message, referencedMessage);
+        if (!referenceRect.isEmpty()) {
+            drawMessageReference(painter, referenceRect, referencedMessage);
+        }
     }
     painter->restore();
 }
@@ -314,9 +432,7 @@ bool ChatItemDelegate::editorEvent(QEvent* event, QAbstractItemModel* model,
         QKeyEvent* keyEvent = static_cast<QKeyEvent*>(event);
         if (keyEvent->matches(QKeySequence::Copy)) {
             const ChatMessage* message = index.data(Qt::UserRole).value<ChatMessage*>();
-            if (message && message->getType() == MessageType::Text && message->getIsSelected()) {
-                const TextMessage* textMessage = static_cast<const TextMessage*>(message);
-                QApplication::clipboard()->setText(textMessage->getText());
+            if (message && message->getIsSelected() && copyMessageToClipboard(message)) {
                 showCopyNotification(parent());
                 return true;
             }
@@ -461,6 +577,51 @@ QString ChatItemDelegate::imageSourceAt(const QStyleOptionViewItem& option,
     }
 
     return static_cast<const ImageMessage*>(message)->getImageSource();
+}
+
+QString ChatItemDelegate::referencedImageSourceAt(const QStyleOptionViewItem& option,
+                                                  const QModelIndex& index,
+                                                  const QPoint& viewportPos) const
+{
+    const ChatMessage* message = index.data(Qt::UserRole).value<ChatMessage*>();
+    if (!message || message->getReferencedMessageId().isEmpty()) {
+        return {};
+    }
+
+    const ChatMessage* referencedMessage = m_referenceResolver
+            ? m_referenceResolver(message->getReferencedMessageId())
+            : nullptr;
+    if (!referencedMessage || referencedMessage->getType() != MessageType::Image) {
+        return {};
+    }
+
+    const QRect referenceRect = calculateReferenceRect(option.rect, message, referencedMessage);
+    if (referenceRect.isEmpty()) {
+        return {};
+    }
+
+    const QRect imageRect = calculateReferenceImageRect(referenceRect, referencedMessage);
+    if (!imageRect.contains(viewportPos)) {
+        return {};
+    }
+
+    return static_cast<const ImageMessage*>(referencedMessage)->getImageSource();
+}
+
+QString ChatItemDelegate::referencedMessageIdAt(const QStyleOptionViewItem& option,
+                                                const QModelIndex& index,
+                                                const QPoint& viewportPos) const
+{
+    const ChatMessage* message = index.data(Qt::UserRole).value<ChatMessage*>();
+    if (!message || message->getReferencedMessageId().isEmpty()) {
+        return {};
+    }
+
+    const ChatMessage* referencedMessage = m_referenceResolver
+            ? m_referenceResolver(message->getReferencedMessageId())
+            : nullptr;
+    const QRect referenceRect = calculateReferenceRect(option.rect, message, referencedMessage);
+    return referenceRect.contains(viewportPos) ? message->getReferencedMessageId() : QString();
 }
 
 QString ChatItemDelegate::groupSystemEventUserIdAt(const QStyleOptionViewItem& option,
@@ -653,6 +814,74 @@ void ChatItemDelegate::drawBubble(QPainter* painter, const QRect& rect,
     }
 }
 
+void ChatItemDelegate::drawMessageReference(QPainter* painter,
+                                            const QRect& rect,
+                                            const ChatMessage* referencedMessage) const
+{
+    if (rect.isEmpty()) {
+        return;
+    }
+
+    painter->save();
+    painter->setPen(Qt::NoPen);
+    painter->setBrush(ThemeManager::instance().color(ThemeColor::MessageReferenceBackground));
+    painter->drawRoundedRect(rect, REFERENCE_RADIUS, REFERENCE_RADIUS);
+
+    const QFont font = referenceFont();
+    painter->setFont(font);
+    painter->setPen(ThemeManager::instance().color(ThemeColor::MessageReferenceText));
+
+    if (referencedMessage && referencedMessage->getType() == MessageType::Image) {
+        const auto* imageMessage = static_cast<const ImageMessage*>(referencedMessage);
+        const QRect imageRect = calculateReferenceImageRect(rect, referencedMessage);
+        if (!imageRect.isEmpty()) {
+            const QFontMetrics fm(font);
+            const QString senderLabel = referenceSenderLabel(referencedMessage);
+            const QRect senderRect(rect.left() + REFERENCE_PADDING,
+                                   rect.top() + REFERENCE_PADDING,
+                                   rect.width() - REFERENCE_PADDING * 2,
+                                   fm.height());
+            painter->drawText(senderRect,
+                              Qt::AlignLeft | Qt::AlignVCenter,
+                              fm.elidedText(senderLabel,
+                                            Qt::ElideRight,
+                                            senderRect.width()));
+
+            const QPixmap image = ImageService::instance().centerCrop(imageMessage->getImageSource(),
+                                                                      imageRect.size(),
+                                                                      REFERENCE_IMAGE_RADIUS,
+                                                                      painter->device()->devicePixelRatioF());
+            QPainterPath clipPath;
+            clipPath.addRoundedRect(imageRect, REFERENCE_IMAGE_RADIUS, REFERENCE_IMAGE_RADIUS);
+            painter->setClipPath(clipPath);
+            painter->drawPixmap(imageRect, image);
+            painter->restore();
+            return;
+        }
+    }
+
+    const QRect textRect = rect.adjusted(REFERENCE_PADDING,
+                                         REFERENCE_PADDING,
+                                         -REFERENCE_PADDING,
+                                         -REFERENCE_PADDING);
+    drawElidedTextLines(painter, textRect, referenceDisplayText(referencedMessage), font, 2);
+    painter->restore();
+}
+
+void ChatItemDelegate::drawRowHighlight(QPainter* painter, const QRect& rect) const
+{
+    if (!painter || rect.isEmpty()) {
+        return;
+    }
+
+    painter->save();
+    QColor color = ThemeManager::instance().color(ThemeColor::Accent);
+    color.setAlpha(ThemeManager::instance().isDark() ? 58 : 44);
+    painter->setPen(Qt::NoPen);
+    painter->setBrush(color);
+    painter->drawRect(rect.adjusted(0, 1, 0, -1));
+    painter->restore();
+}
 
 void ChatItemDelegate::drawAvatar(QPainter* painter, const QRect& rect,
                                   const QString& userID) const
@@ -998,7 +1227,20 @@ QSize ChatItemDelegate::sizeHint(const QStyleOptionViewItem& option,
             }
         }
 
-        const int contentHeight = qMax(AVATAR_SIZE, groupInfoHeight + bubbleHeight);
+        int referenceHeight = 0;
+        if (!message->getReferencedMessageId().isEmpty()) {
+            const ChatMessage* referencedMessage = m_referenceResolver
+                    ? m_referenceResolver(message->getReferencedMessageId())
+                    : nullptr;
+            const QRect referenceRect = calculateReferenceRect(option.rect,
+                                                               message,
+                                                               referencedMessage);
+            if (!referenceRect.isEmpty()) {
+                referenceHeight = REFERENCE_GAP + referenceRect.height();
+            }
+        }
+
+        const int contentHeight = qMax(AVATAR_SIZE, groupInfoHeight + bubbleHeight + referenceHeight);
         const int height = contentHeight + 2 * BUBBLE_MARGIN;
         return QSize(option.rect.width(), height);
     }
@@ -1038,6 +1280,101 @@ QRect ChatItemDelegate::calculateBubbleRect(const QRect& contentRect,
 
     return QRect(x, contentRect.y() + BUBBLE_MARGIN,
                 bubbleWidth, bubbleHeight);
+}
+
+QRect ChatItemDelegate::calculatePaintedBubbleRect(const QRect& contentRect,
+                                                   const ChatMessage* message,
+                                                   int maxWidth) const
+{
+    if (!message ||
+            message->getType() == MessageType::Recall ||
+            isGroupSystemEventMessage(message)) {
+        return {};
+    }
+
+    QRect bubbleRect = calculateBubbleRect(contentRect, message, maxWidth, message->isFromMe());
+    if (message->isInGroupChat()) {
+        bubbleRect.moveTop(bubbleRect.top() + NAME_HEIGHT + GROUP_INFO_GAP);
+    }
+    return bubbleRect;
+}
+
+QRect ChatItemDelegate::calculateReferenceRect(const QRect& contentRect,
+                                               const ChatMessage* message,
+                                               const ChatMessage* referencedMessage) const
+{
+    if (!message || message->getReferencedMessageId().isEmpty()) {
+        return {};
+    }
+    if (message->getType() == MessageType::Recall || isGroupSystemEventMessage(message)) {
+        return {};
+    }
+
+    const int maxBubbleWidth = calculateMaxBubbleWidth(contentRect);
+    const QRect bubbleRect = calculatePaintedBubbleRect(contentRect, message, maxBubbleWidth);
+    if (bubbleRect.isEmpty()) {
+        return {};
+    }
+
+    const int maxContentWidth = qMax(1, maxBubbleWidth - REFERENCE_PADDING * 2);
+    QSize contentSize;
+    if (referencedMessage && referencedMessage->getType() == MessageType::Image) {
+        const auto* imageMessage = static_cast<const ImageMessage*>(referencedMessage);
+        const QSize sourceSize = ImageService::instance().sourceSize(imageMessage->getImageSource());
+        if (sourceSize.isValid()) {
+            const QFontMetrics fm(referenceFont());
+            const int imageSide = qMin(maxContentWidth,
+                                       fm.lineSpacing() * REFERENCE_IMAGE_MAX_LINES);
+            contentSize = QSize(qMax(fm.horizontalAdvance(referenceSenderLabel(referencedMessage)),
+                                      imageSide),
+                                fm.height() + REFERENCE_IMAGE_GAP + imageSide);
+        }
+    }
+    if (!contentSize.isValid()) {
+        const QSize textSize = textDocumentSize(referenceDisplayText(referencedMessage),
+                                                referenceFont(),
+                                                maxContentWidth);
+        const QFontMetrics fm(referenceFont());
+        contentSize = QSize(textSize.width(),
+                            qMin(textSize.height(), fm.lineSpacing() * 2));
+    }
+
+    const int width = qBound(1,
+                             contentSize.width() + REFERENCE_PADDING * 2,
+                             maxBubbleWidth);
+    const int height = contentSize.height() + REFERENCE_PADDING * 2;
+    const int x = message->isFromMe()
+            ? bubbleRect.right() - width + 1
+            : bubbleRect.left();
+    return QRect(x, bubbleRect.bottom() + REFERENCE_GAP + 1, width, height);
+}
+
+QRect ChatItemDelegate::calculateReferenceImageRect(const QRect& referenceRect,
+                                                    const ChatMessage* referencedMessage) const
+{
+    if (referenceRect.isEmpty() ||
+            !referencedMessage ||
+            referencedMessage->getType() != MessageType::Image) {
+        return {};
+    }
+
+    const auto* imageMessage = static_cast<const ImageMessage*>(referencedMessage);
+    const QSize sourceSize = ImageService::instance().sourceSize(imageMessage->getImageSource());
+    if (!sourceSize.isValid()) {
+        return {};
+    }
+
+    const QFontMetrics fm(referenceFont());
+    const int contentWidth = qMax(1, referenceRect.width() - REFERENCE_PADDING * 2);
+    const int imageSide = qMin(contentWidth, fm.lineSpacing() * REFERENCE_IMAGE_MAX_LINES);
+    if (imageSide <= 0) {
+        return {};
+    }
+
+    return QRect(referenceRect.left() + REFERENCE_PADDING,
+                 referenceRect.top() + REFERENCE_PADDING + fm.height() + REFERENCE_IMAGE_GAP,
+                 imageSide,
+                 imageSide);
 }
 
 QRect ChatItemDelegate::calculateAvatarRect(const QRect& contentRect,
@@ -1231,6 +1568,13 @@ QFont ChatItemDelegate::recallFont() const
     return font;
 }
 
+QFont ChatItemDelegate::referenceFont() const
+{
+    QFont font = QApplication::font();
+    font.setPixelSize(13);
+    return font;
+}
+
 QSize ChatItemDelegate::textDocumentSize(const QString& text,
                                          const QFont& font,
                                          int maxTextWidth) const
@@ -1369,16 +1713,22 @@ void ChatItemDelegate::showContextMenu(const QPoint& pos, const QModelIndex& ind
 
     // 添加复制选项
     bool hasPrimaryAction = false;
-    if (message->getType() == MessageType::Text) {
+    if (message->getType() == MessageType::Text || message->getType() == MessageType::Image) {
         QAction* copyAction = menu->addAction(QStringLiteral("复制"));
         connect(copyAction, &QAction::triggered, [this, message, index, model = const_cast<QAbstractItemModel*>(index.model())]() {
-            const TextMessage* textMessage = static_cast<const TextMessage*>(message);
-            QApplication::clipboard()->setText(textMessage->getText());
-            showCopyNotification(parent());
+            if (copyMessageToClipboard(message)) {
+                showCopyNotification(parent());
+            }
             model->setData(index, false, Qt::UserRole + 1);
         });
         hasPrimaryAction = true;
     }
+
+    QAction* referenceAction = menu->addAction(QStringLiteral("引用"));
+    connect(referenceAction, &QAction::triggered, [this, index]() {
+        emit const_cast<ChatItemDelegate*>(this)->referenceRequested(index.row());
+    });
+    hasPrimaryAction = true;
 
     const bool canRecall = message &&
             message->getType() != MessageType::Recall &&

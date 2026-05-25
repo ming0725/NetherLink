@@ -70,6 +70,12 @@ struct ConversationThreadRequest {
     int limit = 30;
 };
 
+struct ConversationThreadUntilMessageRequest {
+    QString conversationId;
+    QString messageId;
+    int offsetFromLatest = 0;
+};
+
 struct AiChatListRequest {
     int offset = 0;
     int limit = 20;
@@ -205,6 +211,7 @@ struct PostSummary {
     int likeCount = 0;
     int commentCount = 0;
     bool isLiked = false;
+    bool isFollowedAuthor = false;
     QDateTime createdAt;
 };
 
@@ -219,6 +226,7 @@ struct PostDetailData {
     int likeCount = 0;
     int commentCount = 0;
     bool isLiked = false;
+    bool isFollowedAuthor = false;
     QDateTime createdAt;
     QDateTime contentCreatedAt;
 };

@@ -35,6 +35,7 @@ signals:
     void avatarClicked(const QString& userId, const QPoint& globalPos);
     void avatarContextMenuRequested(const QString& userId, const QPoint& globalPos);
     void groupSystemEventProfileRequested(const QString& userId, const QPoint& globalPos);
+    void referencedMessageClicked(const QString& messageId);
 
 protected:
     void keyPressEvent(QKeyEvent* event) override;

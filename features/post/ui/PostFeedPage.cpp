@@ -1,6 +1,7 @@
 #include "PostFeedPage.h"
 
 #include <QDateTime>
+#include <QScrollBar>
 #include <QTimer>
 
 #include "PostCardDelegate.h"
@@ -73,21 +74,47 @@ void PostFeedPage::ensureInitialized()
     }
 
     m_initialized = true;
+    reloadCurrentFeed();
+}
+
+void PostFeedPage::switchFeedMode(bool followOnly)
+{
+    if (!m_initialized) {
+        m_followOnly = followOnly;
+        return;
+    }
+
+    if (m_followOnly == followOnly && !m_model->hasLoadingPlaceholders() && !m_loading) {
+        return;
+    }
+
+    m_followOnly = followOnly;
+    reloadCurrentFeed();
+}
+
+void PostFeedPage::reloadCurrentFeed()
+{
+    const int generation = ++m_loadGeneration;
+    clearFeedData();
     showInitialLoadingPlaceholders();
     const qint64 loadingStartedAt = QDateTime::currentMSecsSinceEpoch();
     m_loading = true;
-    QTimer::singleShot(0, this, [this, loadingStartedAt]() {
+    QTimer::singleShot(0, this, [this, loadingStartedAt, generation]() {
+        if (generation != m_loadGeneration) {
+            return;
+        }
         if (!m_model->hasLoadingPlaceholders()) {
             m_loading = false;
             return;
         }
         m_loading = false;
-        loadMore(loadingStartedAt);
+        loadMore(loadingStartedAt, generation);
     });
 }
 
 void PostFeedPage::setPosts(const QVector<PostSummary>& posts)
 {
+    ++m_loadGeneration;
     m_initialized = true;
     m_loading = false;
     m_loadMoreScheduled = false;
@@ -99,12 +126,16 @@ void PostFeedPage::setPosts(const QVector<PostSummary>& posts)
 
 void PostFeedPage::loadMore()
 {
-    loadMore(0);
+    loadMore(0, m_loadGeneration);
 }
 
-void PostFeedPage::loadMore(qint64 loadingStartedAt)
+void PostFeedPage::loadMore(qint64 loadingStartedAt, int generation)
 {
     m_loadMoreScheduled = false;
+    if (generation != m_loadGeneration) {
+        return;
+    }
+
     if (!m_controller || !m_hasMore || m_loading) {
         if (!m_controller && m_model->hasLoadingPlaceholders()) {
             stopLoadingAnimation();
@@ -114,10 +145,13 @@ void PostFeedPage::loadMore(qint64 loadingStartedAt)
     }
 
     m_loading = true;
-    const QVector<PostSummary> posts = m_controller->loadFeedPage(m_nextOffset, kPageSize);
+    const QVector<PostSummary> posts = m_controller->loadFeedPage(m_nextOffset, kPageSize, m_followOnly);
     m_loading = false;
 
-    const auto applyPosts = [this, posts]() {
+    const auto applyPosts = [this, posts, generation]() {
+        if (generation != m_loadGeneration) {
+            return;
+        }
         stopLoadingAnimation();
         if (posts.isEmpty()) {
             m_hasMore = false;
@@ -158,9 +192,24 @@ void PostFeedPage::scheduleLoadMore()
     }
 
     m_loadMoreScheduled = true;
-    QTimer::singleShot(100, this, [this]() {
-        loadMore();
+    const int generation = m_loadGeneration;
+    QTimer::singleShot(100, this, [this, generation]() {
+        loadMore(0, generation);
     });
+}
+
+void PostFeedPage::clearFeedData()
+{
+    m_loading = false;
+    m_loadMoreScheduled = false;
+    m_nextOffset = 0;
+    m_hasMore = true;
+    stopLoadingAnimation();
+    if (verticalScrollBar()) {
+        verticalScrollBar()->setValue(0);
+    }
+    m_model->setPosts({});
+    viewport()->update();
 }
 
 void PostFeedPage::showInitialLoadingPlaceholders()
@@ -210,5 +259,13 @@ void PostFeedPage::onPostLikeRequested(const QString& postId, bool liked)
 
 void PostFeedPage::onRepositoryPostUpdated(const PostSummary& summary)
 {
+    if (m_followOnly && !summary.isFollowedAuthor) {
+        if (m_model->removePost(summary.postId)) {
+            m_nextOffset = qMax(0, m_nextOffset - 1);
+            scheduleLoadMore();
+        }
+        return;
+    }
+
     m_model->updatePost(summary);
 }

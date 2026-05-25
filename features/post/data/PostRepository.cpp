@@ -13,7 +13,7 @@
 
 namespace {
 
-constexpr int kSamplePostCount = 40;
+constexpr int kSamplePostCount = 160;
 
 struct AuthorIdentity {
     QString name;
@@ -163,6 +163,44 @@ const QStringList& postContentSamples()
     return samples;
 }
 
+const QStringList& weightedPostAuthorIds()
+{
+    static const QStringList authorIds = []() {
+        QStringList ids;
+        const auto add = [&ids](const QString& userId, int count) {
+            for (int i = 0; i < count; ++i) {
+                ids.append(userId);
+            }
+        };
+
+        add(QStringLiteral("u001"), 18);
+        add(QStringLiteral("u002"), 14);
+        add(QStringLiteral("u003"), 12);
+        add(QStringLiteral("u004"), 9);
+        add(QStringLiteral("u006"), 8);
+        add(QStringLiteral("u010"), 7);
+        add(QStringLiteral("u011"), 6);
+        add(QStringLiteral("u014"), 5);
+        add(QStringLiteral("u015"), 4);
+        add(QStringLiteral("u016"), 4);
+        add(QStringLiteral("u005"), 3);
+        add(QStringLiteral("u008"), 3);
+        add(QStringLiteral("u009"), 3);
+        add(QStringLiteral("u012"), 2);
+        add(QStringLiteral("u013"), 2);
+        add(QStringLiteral("u101"), 7);
+        add(QStringLiteral("u102"), 6);
+        add(QStringLiteral("u103"), 5);
+        add(QStringLiteral("u104"), 4);
+        add(QStringLiteral("u105"), 3);
+        add(QStringLiteral("u106"), 2);
+        add(QStringLiteral("u107"), 2);
+        add(QStringLiteral("u108"), 1);
+        return ids;
+    }();
+    return authorIds;
+}
+
 QSize imageSizeForSource(const QString& source)
 {
     if (source.isEmpty()) {
@@ -191,14 +229,22 @@ QVector<PostSummary> PostRepository::requestPostFeed(const PostFeedRequest& quer
 {
     QMutexLocker locker(&mutex);
     QVector<PostSummary> result;
-    if (query.limit <= 0 || query.offset < 0 || query.offset >= kSamplePostCount) {
+    if (query.limit <= 0 || query.offset < 0) {
         return result;
     }
 
-    const int end = qMin(kSamplePostCount, query.offset + query.limit);
-    result.reserve(end - query.offset);
-    for (int index = query.offset; index < end; ++index) {
-        result.push_back(buildSummary(buildPostAt(index)));
+    result.reserve(query.limit);
+    int skipped = 0;
+    for (int index = 0; index < kSamplePostCount && result.size() < query.limit; ++index) {
+        const Post post = buildPostAt(index);
+        if (query.followOnly && !post.isFollowedAuthor) {
+            continue;
+        }
+        if (skipped < query.offset) {
+            ++skipped;
+            continue;
+        }
+        result.push_back(buildSummary(post));
     }
     return result;
 }
@@ -224,6 +270,7 @@ PostDetailData PostRepository::requestPostDetail(const PostDetailRequest& query)
             post.likes,
             post.commentCount,
             post.isLiked,
+            post.isFollowedAuthor,
             post.createdAt,
             post.contentCreatedAt
     };
@@ -296,18 +343,36 @@ bool PostRepository::adjustPostCommentCount(const QString& postId, int delta)
     return true;
 }
 
+void PostRepository::refreshAuthorFollowState(const QString& authorId)
+{
+    if (authorId.isEmpty()) {
+        return;
+    }
+
+    QVector<PostSummary> updatedPosts;
+    {
+        QMutexLocker locker(&mutex);
+        for (int index = 0; index < kSamplePostCount; ++index) {
+            const Post post = buildPostAt(index);
+            if (post.authorID == authorId) {
+                updatedPosts.push_back(buildSummary(post));
+            }
+        }
+    }
+
+    for (const PostSummary& summary : updatedPosts) {
+        emit postUpdated(summary);
+    }
+}
+
 Post PostRepository::buildPostAt(int index) const
 {
     if (index < 0 || index >= kSamplePostCount) {
         return {};
     }
 
-    const QStringList authorIDs = {
-            "u001", "u002", "u003", "u004", "u005",
-            "u006", "u007", "u008", "u009", "u010"
-    };
-
     const QDateTime baseTime = QDateTime::fromString("2024-05-21T18:00:00", Qt::ISODate);
+    const QStringList& authorIDs = weightedPostAuthorIds();
 
     Post post;
     post.postID = QString("p%1").arg(index + 1, 3, 10, QChar('0'));
@@ -315,7 +380,8 @@ Post PostRepository::buildPostAt(int index) const
     post.content = postContentSamples().at((index * 7 + 1) % postContentSamples().size());
     post.likes = (index * 137 + 211) % 1000;
     post.commentCount = (index * 29 + 17) % 200;
-    post.authorID = authorIDs.at((index * 3 + 1) % authorIDs.size());
+    post.authorID = authorIDs.at((index * 17 + index / 3) % authorIDs.size());
+    post.isFollowedAuthor = UserRepository::instance().isFriend(post.authorID);
     post.createdAt = baseTime.addSecs(-index * 1800);
     post.contentCreatedAt = post.createdAt;
     const int imageSeed = (index * 7 + 3) % 10;
@@ -364,6 +430,7 @@ PostSummary PostRepository::buildSummary(const Post& post) const
             post.likes,
             post.commentCount,
             post.isLiked,
+            post.isFollowedAuthor,
             post.createdAt
     };
 }

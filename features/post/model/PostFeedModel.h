@@ -22,6 +22,7 @@ public:
         LikeCountRole,
         CommentCountRole,
         IsLikedRole,
+        IsFollowedAuthorRole,
         IsLoadingPlaceholderRole,
         LoadingStartedAtRole
     };
@@ -35,6 +36,7 @@ public:
     void setPosts(QVector<PostSummary> posts);
     void appendPosts(const QVector<PostSummary>& posts);
     void updatePost(const PostSummary& post);
+    bool removePost(const QString& postId);
     void showLoadingPlaceholders(int count);
     bool hasLoadingPlaceholders() const;
 

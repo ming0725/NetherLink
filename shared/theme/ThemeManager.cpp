@@ -378,6 +378,10 @@ QColor ThemeManager::fixedColor(ThemeColor role, bool dark) const
             return QColor(0xff, 0xff, 0xff);
         case ThemeColor::MessageBubblePeerSelected:
             return QColor(0xea, 0xea, 0xea);
+        case ThemeColor::MessageReferenceBackground:
+            return QColor(0xe4, 0xe4, 0xe4);
+        case ThemeColor::MessageReferenceText:
+            return QColor(0x7b, 0x7b, 0x7b);
         case ThemeColor::ContextMenuBackground:
             return QColor(0xf8, 0xf8, 0xf8);
         case ThemeColor::ContextMenuBorder:
@@ -560,6 +564,10 @@ QColor ThemeManager::fixedColor(ThemeColor role, bool dark) const
         return QColor(0x2d, 0x31, 0x38);
     case ThemeColor::MessageBubblePeerSelected:
         return QColor(0x25, 0x29, 0x30);
+    case ThemeColor::MessageReferenceBackground:
+        return QColor(0x34, 0x37, 0x3f);
+    case ThemeColor::MessageReferenceText:
+        return QColor(0xc3, 0xc7, 0xce);
     case ThemeColor::ContextMenuBackground:
         return QColor(0x20, 0x21, 0x26);
     case ThemeColor::ContextMenuBorder:

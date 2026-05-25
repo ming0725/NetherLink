@@ -55,6 +55,13 @@ QVariant ChatListModel::data(const QModelIndex& index, int role) const
         } else {
             return QVariant::fromValue<ChatMessage*>(item.message.get());
         }
+    } else if (role == Qt::UserRole + 2 &&
+               !item.isHeader &&
+               !item.isBottomSpace &&
+               !item.isNewMessageDivider &&
+               !item.isLoadingPlaceholder &&
+               item.message) {
+        return item.rowHighlighted;
     } else if (role == Qt::SizeHintRole && item.isBottomSpace) {
         return QSize(0, item.bottomSpaceHeight);
     }
@@ -92,6 +99,29 @@ bool ChatListModel::setData(const QModelIndex& index, const QVariant& value, int
             }
         }
         emit dataChanged(index, index);
+        return true;
+    }
+    if (role == Qt::UserRole + 2 &&
+        !items[index.row()].isHeader &&
+        !items[index.row()].isBottomSpace &&
+        !items[index.row()].isNewMessageDivider &&
+        !items[index.row()].isLoadingPlaceholder &&
+        items[index.row()].message) {
+        const bool highlighted = value.toBool();
+        if (highlighted && highlightedRowIndex != index.row()) {
+            clearRowHighlight();
+            items[index.row()].rowHighlighted = true;
+            highlightedRowIndex = index.row();
+        } else if (!highlighted && highlightedRowIndex == index.row()) {
+            clearRowHighlight();
+            return true;
+        } else if (!highlighted && !items[index.row()].rowHighlighted) {
+            return true;
+        } else {
+            items[index.row()].rowHighlighted = highlighted;
+            highlightedRowIndex = highlighted ? index.row() : -1;
+        }
+        emit dataChanged(index, index, {Qt::UserRole + 2});
         return true;
     }
     return false;
@@ -148,7 +178,9 @@ void ChatListModel::notifyMessageChanged(const ChatMessage* message)
     if (!messageIndex.isValid()) {
         return;
     }
-    emit dataChanged(messageIndex, messageIndex, {Qt::DisplayRole, Qt::SizeHintRole, Qt::UserRole});
+    emit dataChanged(messageIndex,
+                     messageIndex,
+                     {Qt::DisplayRole, Qt::SizeHintRole, Qt::UserRole, Qt::UserRole + 2});
 }
 
 void ChatListModel::setMessages(QVector<QSharedPointer<ChatMessage>> nextMessages)
@@ -197,6 +229,39 @@ QSharedPointer<ChatMessage> ChatListModel::sharedMessageAt(int index) const
     return {};
 }
 
+const ChatMessage* ChatListModel::messageById(const QString& messageId) const
+{
+    if (messageId.isEmpty()) {
+        return nullptr;
+    }
+
+    for (const QSharedPointer<ChatMessage>& message : messages) {
+        if (message && message->getMessageId() == messageId) {
+            return message.get();
+        }
+    }
+    return nullptr;
+}
+
+QModelIndex ChatListModel::indexForMessageId(const QString& messageId) const
+{
+    if (messageId.isEmpty()) {
+        return {};
+    }
+
+    for (int row = 0; row < items.size(); ++row) {
+        if (!items.at(row).isHeader &&
+                !items.at(row).isBottomSpace &&
+                !items.at(row).isNewMessageDivider &&
+                !items.at(row).isLoadingPlaceholder &&
+                items.at(row).message &&
+                items.at(row).message->getMessageId() == messageId) {
+            return index(row, 0);
+        }
+    }
+    return {};
+}
+
 void ChatListModel::clearSelection()
 {
     if (selectedMessageIndex >= 0) {
@@ -204,6 +269,18 @@ void ChatListModel::clearSelection()
         QModelIndex index = this->index(selectedMessageIndex);
         selectedMessageIndex = -1;
         emit dataChanged(index, index);
+    }
+}
+
+void ChatListModel::clearRowHighlight()
+{
+    if (highlightedRowIndex >= 0 && highlightedRowIndex < items.size()) {
+        items[highlightedRowIndex].rowHighlighted = false;
+        const QModelIndex highlightedIndex = index(highlightedRowIndex);
+        highlightedRowIndex = -1;
+        emit dataChanged(highlightedIndex, highlightedIndex, {Qt::UserRole + 2});
+    } else {
+        highlightedRowIndex = -1;
     }
 }
 
@@ -229,6 +306,7 @@ bool ChatListModel::removeMessage(int index)
     beginResetModel();
     messages.removeAt(messageIndex);
     selectedMessageIndex = -1;
+    highlightedRowIndex = -1;
     rebuildItems();
     endResetModel();
     return true;
@@ -467,6 +545,7 @@ void ChatListModel::showInitialLoadingPlaceholders(int targetHeight)
     items.clear();
     messages.clear();
     selectedMessageIndex = -1;
+    highlightedRowIndex = -1;
     newMessageDividerBefore = nullptr;
     items.reserve(placeholderCount + 1);
     for (int i = 0; i < placeholderCount; ++i) {
@@ -507,6 +586,7 @@ void ChatListModel::clear() {
     items.clear();
     messages.clear();
     selectedMessageIndex = -1;
+    highlightedRowIndex = -1;
     newMessageDividerBefore = nullptr;
     endResetModel();
 }
@@ -515,6 +595,7 @@ void ChatListModel::rebuildItems()
 {
     items.clear();
     selectedMessageIndex = -1;
+    highlightedRowIndex = -1;
 
     QDateTime previousTime;
     bool dividerInserted = false;

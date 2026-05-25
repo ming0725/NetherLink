@@ -14,6 +14,7 @@
 #include "shared/types/ChatMessage.h"
 #include "HistoryUnreadNotifier.h"
 #include "NewMessageNotifier.h"
+#include "ReferenceMessageNotifier.h"
 #include "shared/ui/FloatingInputBar.h"
 #include "shared/types/Group.h"
 #include "shared/types/RepositoryTypes.h"
@@ -62,6 +63,9 @@ private slots:
     void onSendTextAsPeer(const QString &text);
     void onDeleteMessageRequested(int row);
     void onRecallMessageRequested(int row);
+    void onReferenceMessageRequested(int row);
+    void onReferenceMessageCloseRequested();
+    void onReferencedMessageClicked(const QString& messageId);
     void onReeditMessageRequested(int row);
     void onRecallLatestPeerMessageRequested();
     void onInfoButtonClicked();
@@ -108,6 +112,7 @@ private:
     QTimer* historyUnreadNotifierLoadTimer = nullptr;
     QTimer* messageLoadingAnimationTimer = nullptr;
     NewMessageNotifier* newMessageNotifier;
+    ReferenceMessageNotifier* referenceMessageNotifier;
     QWidget* bottomGapGradientOverlay;
     FloatingInputBar* inputBar;
     QLabel* statusIcon;
@@ -128,6 +133,8 @@ private:
     void updateNewMessageNotifier();
     void updateNewMessageNotifierPosition();
     bool shouldShowNewMessageNotifier() const;
+    void updateReferenceMessageNotifierPosition();
+    void updateReferenceMessageNotifier();
     void updateHistoryUnreadNotifier();
     void showHistoryUnreadNotifier();
     void hideHistoryUnreadNotifier();
@@ -162,6 +169,9 @@ private:
     bool loadHistoryUnreadMessages(int requestedMessageCount);
     QString conversationId() const;
     bool isGroupMode() const;
+    bool ensureMessageLoaded(const QString& messageId);
+    void scrollToMessageAndHighlight(const QString& messageId);
+    void applyPendingReference(const ChatMessagePtr& message);
     QWidget* activeInfoPanel() const;
     QWidget* inactiveInfoPanel() const;
     QWidget* ensureActiveInfoPanel();
@@ -204,6 +214,7 @@ private:
                                                       bool moderatorRecall) const;
     void scheduleReeditExpiry(const QSharedPointer<RecallMessage>& message);
     void removeUnreadCandidate(const ChatMessage* message);
+    QString m_pendingReferenceMessageId;
 };
 
 #endif // CHATAREA_H 

@@ -15,8 +15,12 @@ public:
 
     QVector<ConversationSummary> requestConversationList(const ConversationListRequest& query = {}) const;
     ChatMessageList requestConversationMessages(const ConversationMessagesRequest& query) const;
+    QSharedPointer<ChatMessage> requestMessageById(const QString& conversationId,
+                                                   const QString& messageId) const;
     ConversationMeta requestConversationMeta(const ConversationMetaRequest& query) const;
     ConversationThreadData requestConversationThread(const ConversationThreadRequest& query) const;
+    ConversationThreadData requestConversationThreadUntilMessage(
+            const ConversationThreadUntilMessageRequest& query) const;
     QString requestConversationThreadAsync(const ConversationThreadRequest& query);
 
 public slots:

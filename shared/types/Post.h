@@ -18,4 +18,5 @@ struct Post {
     QSize thumbnailSize;
     QVector<QString> picturesPath;
     bool isLiked = false;
+    bool isFollowedAuthor = false;
 };

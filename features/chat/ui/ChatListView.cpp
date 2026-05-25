@@ -354,6 +354,27 @@ void ChatListView::mousePressEvent(QMouseEvent* event)
             }
 
             const bool hitBubble = delegate->bubbleHitTest(option, index, event->pos());
+            const QString referencedImageSource =
+                    delegate->referencedImageSourceAt(option, index, event->pos());
+            if (!referencedImageSource.isEmpty()) {
+                if (model()) {
+                    static_cast<ChatListModel*>(model())->clearSelection();
+                }
+                clearTextSelection();
+                openImageViewer(referencedImageSource);
+                event->accept();
+                return;
+            }
+            const QString referencedMessageId = delegate->referencedMessageIdAt(option, index, event->pos());
+            if (!referencedMessageId.isEmpty()) {
+                if (model()) {
+                    static_cast<ChatListModel*>(model())->clearSelection();
+                }
+                clearTextSelection();
+                emit referencedMessageClicked(referencedMessageId);
+                event->accept();
+                return;
+            }
             if (delegate->triggerReeditIfHit(option, index, event->pos())) {
                 clearTextSelection();
                 event->accept();
@@ -494,13 +515,20 @@ void ChatListView::mouseMoveEvent(QMouseEvent* event)
     bool overUrl = false;
     bool overText = false;
     bool overSystemEventUser = false;
+    bool overReference = false;
+    bool overReferenceImage = false;
     if (delegate) {
         const QModelIndex index = indexAt(event->pos());
         if (index.isValid()) {
             const QStyleOptionViewItem option = viewOptionForIndex(index);
             overSystemEventUser =
                     !delegate->groupSystemEventUserIdAt(option, index, event->pos()).isEmpty();
-            overUrl = !overSystemEventUser && !delegate->urlAt(option, index, event->pos()).isEmpty();
+            overReferenceImage = !overSystemEventUser &&
+                    !delegate->referencedImageSourceAt(option, index, event->pos()).isEmpty();
+            overReference = !overSystemEventUser && !overReferenceImage &&
+                    !delegate->referencedMessageIdAt(option, index, event->pos()).isEmpty();
+            overUrl = !overSystemEventUser && !overReferenceImage && !overReference &&
+                    !delegate->urlAt(option, index, event->pos()).isEmpty();
             if (!overUrl && delegate->reeditHitTest(option, index, event->pos())) {
                 viewport()->setCursor(Qt::PointingHandCursor);
                 OverlayScrollListView::mouseMoveEvent(event);
@@ -509,7 +537,7 @@ void ChatListView::mouseMoveEvent(QMouseEvent* event)
             overText = overUrl || delegate->characterIndexAt(option, index, event->pos()) >= 0;
         }
     }
-    viewport()->setCursor(overUrl ? Qt::PointingHandCursor
+    viewport()->setCursor((overUrl || overReference || overReferenceImage) ? Qt::PointingHandCursor
                                   : (overText ? Qt::IBeamCursor : Qt::ArrowCursor));
 
     OverlayScrollListView::mouseMoveEvent(event);

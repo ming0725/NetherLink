@@ -2,6 +2,7 @@
 #include <utility>
 
 #include <QDate>
+#include <QFontMetrics>
 #include <QLabel>
 #include <QMouseEvent>
 #include <QPainter>
@@ -11,6 +12,7 @@
 #include <QScrollBar>
 #include <QTimer>
 #include <QVariantAnimation>
+#include <QtMath>
 
 #include "features/post/model/PostDetailListModel.h"
 #include "features/post/ui/PostSessionController.h"
@@ -19,6 +21,7 @@
 #include "shared/theme/ThemeManager.h"
 #include "shared/ui/IconLineEdit.h"
 #include "shared/ui/ImageViewer.h"
+#include "shared/ui/popup/InWindowPopupDialogs.h"
 #include "shared/ui/StatefulPushButton.h"
 #include "PostCommentDelegate.h"
 #include "PostDetailListView.h"
@@ -35,6 +38,16 @@ constexpr int kFallbackImageHeight = 4;
 constexpr int kCommentExpandAnimationDurationMs = 420;
 constexpr int kLoadingAnimationFrameMs = 16;
 constexpr int kLoadingCommentPreviewCount = 3;
+constexpr int kImageChromeAnimationDurationMs = 210;
+constexpr int kImageSlideAnimationDurationMs = 260;
+constexpr int kImageArrowDiameter = 30;
+constexpr int kImageArrowInset = 14;
+constexpr int kImageArrowSlideDistance = 10;
+constexpr int kImageCounterHeight = 24;
+constexpr int kImageCounterTopInset = 14;
+constexpr int kImageCounterRightInset = 14;
+constexpr qreal kImageArrowChevronAngleDegrees = 100.0;
+constexpr qreal kImageArrowChevronHalfHeight = 5.0;
 const QString kCommentIconSource = QStringLiteral(":/resources/icon/selected_message.png");
 
 QString likeIconSource(bool liked)
@@ -53,6 +66,13 @@ QSize normalizedImageSize(const QSize& size)
         return size;
     }
     return QSize(kFallbackImageWidth, kFallbackImageHeight);
+}
+
+qreal chevronHalfWidthForAngle(qreal angleDegrees, qreal halfHeight)
+{
+    const qreal boundedAngle = qBound(1.0, angleDegrees, 178.0);
+    const qreal horizontalSpan = halfHeight / qTan(qDegreesToRadians(boundedAngle / 2.0));
+    return horizontalSpan / 2.0;
 }
 
 int sidePanelWidthForTotalWidth(int totalWidth)
@@ -188,6 +208,7 @@ PostDetailView::PostDetailView(QWidget* parent)
     , m_loadingAnimationTimer(new QTimer(this))
 {
     setupUI();
+    setMouseTracking(true);
     setAttribute(Qt::WA_TranslucentBackground);
     disableContextMenu(this);
 }
@@ -220,6 +241,71 @@ QRect PostDetailView::fittedImageRect(const QRect& bounds, const QSize& imageSiz
                  bounds.y() + (bounds.height() - fitted.height()) / 2,
                  fitted.width(),
                  fitted.height());
+}
+
+QString PostDetailView::currentImageSource() const
+{
+    if (m_state.currentImageIndex >= 0 && m_state.currentImageIndex < m_state.imageSources.size()) {
+        return m_state.imageSources.at(m_state.currentImageIndex);
+    }
+    return {};
+}
+
+QSize PostDetailView::currentImageSize() const
+{
+    if (m_state.currentImageIndex >= 0 && m_state.currentImageIndex < m_state.imageSizes.size()) {
+        return m_state.imageSizes.at(m_state.currentImageIndex);
+    }
+    return {};
+}
+
+QString PostDetailView::firstImageSource() const
+{
+    return m_state.imageSources.isEmpty() ? QString() : m_state.imageSources.first();
+}
+
+QSize PostDetailView::firstImageSize() const
+{
+    return m_state.imageSizes.isEmpty() ? QSize() : m_state.imageSizes.first();
+}
+
+int PostDetailView::imageCount() const
+{
+    return m_state.imageSources.size();
+}
+
+QRect PostDetailView::imageCounterRect() const
+{
+    const QString text = QStringLiteral("%1/%2")
+            .arg(qBound(1, m_state.currentImageIndex + 1, qMax(1, imageCount())))
+            .arg(qMax(1, imageCount()));
+    QFont font = AppFonts::applicationPixelSizedFont(12, true);
+    const int textWidth = QFontMetrics(font).horizontalAdvance(text);
+    const int counterWidth = qMax(42, textWidth + 20);
+    const QRect frame = imageRect();
+    return QRect(frame.right() - kImageCounterRightInset - counterWidth + 1,
+                 frame.top() + kImageCounterTopInset,
+                 counterWidth,
+                 kImageCounterHeight);
+}
+
+QRect PostDetailView::imageArrowRect(bool previous, qreal progress) const
+{
+    const QRect frame = imageRect();
+    if (!frame.isValid()) {
+        return {};
+    }
+
+    const qreal boundedProgress = qBound(0.0, progress, 1.0);
+    const int finalX = previous
+            ? frame.left() + kImageArrowInset
+            : frame.right() - kImageArrowInset - kImageArrowDiameter + 1;
+    const int hiddenOffset = previous ? -kImageArrowSlideDistance : kImageArrowSlideDistance;
+    const int x = qRound(finalX + hiddenOffset * (1.0 - boundedProgress));
+    return QRect(x,
+                 frame.top() + (frame.height() - kImageArrowDiameter) / 2,
+                 kImageArrowDiameter,
+                 kImageArrowDiameter);
 }
 
 void PostDetailView::setupUI()
@@ -335,8 +421,25 @@ void PostDetailView::setupUI()
     setWidgetTextColor(m_commentCount, ThemeManager::instance().color(ThemeColor::SecondaryText));
 
     connect(m_followBtn, &QPushButton::clicked, this, [this]() {
-        m_state.isFollowed = !m_state.isFollowed;
-        m_followBtn->setText(m_state.isFollowed ? "已关注" : "关注");
+        const bool nextFollowed = !m_state.isFollowed;
+        if (!nextFollowed) {
+            const InWindowPopup::Button result = InWindowPopup::question(
+                    this,
+                    QStringLiteral("取消关注"),
+                    QStringLiteral("确认不再关注 %1 吗？").arg(m_state.authorName));
+            if (result != InWindowPopup::Button::Yes) {
+                syncFollowUi();
+                return;
+            }
+        }
+
+        if (m_controller && !m_controller->setAuthorFollowed(m_state.authorId, nextFollowed)) {
+            syncFollowUi();
+            return;
+        }
+
+        m_state.isFollowed = nextFollowed;
+        syncFollowUi();
         emit followClicked(m_state.isFollowed);
     });
 
@@ -381,6 +484,14 @@ void PostDetailView::setupUI()
             this, &PostDetailView::maybeLoadMoreComments);
     connect(&ThemeManager::instance(), &ThemeManager::themeChanged,
             this, &PostDetailView::applyTheme);
+    m_panelContainer->installEventFilter(this);
+    m_panelContainer->setMouseTracking(true);
+    m_panelContainer->setAttribute(Qt::WA_Hover);
+    for (QWidget* child : m_panelContainer->findChildren<QWidget*>()) {
+        child->installEventFilter(this);
+        child->setMouseTracking(true);
+        child->setAttribute(Qt::WA_Hover);
+    }
     applyTheme();
 }
 
@@ -390,8 +501,35 @@ void PostDetailView::resizeEvent(QResizeEvent* ev)
     updateLayout();
 }
 
+bool PostDetailView::eventFilter(QObject* watched, QEvent* event)
+{
+    const bool fromPanel = watched == m_panelContainer
+            || (m_panelContainer && m_panelContainer->isAncestorOf(qobject_cast<QWidget*>(watched)));
+    if (fromPanel
+        && (event->type() == QEvent::Enter
+            || event->type() == QEvent::HoverEnter
+            || event->type() == QEvent::MouseMove)) {
+        setImageHoverActive(false);
+    }
+
+    return QWidget::eventFilter(watched, event);
+}
+
 void PostDetailView::mousePressEvent(QMouseEvent* event)
 {
+    if (event->button() == Qt::LeftButton && imageCount() > 1) {
+        if (imageArrowRect(true).contains(event->pos())) {
+            showPreviousImage();
+            event->accept();
+            return;
+        }
+        if (imageArrowRect(false).contains(event->pos())) {
+            showNextImage();
+            event->accept();
+            return;
+        }
+    }
+
     if (event->button() == Qt::LeftButton && paintedImageRect().contains(event->pos())) {
         openPostImageViewer();
         event->accept();
@@ -399,6 +537,18 @@ void PostDetailView::mousePressEvent(QMouseEvent* event)
     }
 
     QWidget::mousePressEvent(event);
+}
+
+void PostDetailView::mouseMoveEvent(QMouseEvent* event)
+{
+    updateImageHoverState(event->pos());
+    QWidget::mouseMoveEvent(event);
+}
+
+void PostDetailView::leaveEvent(QEvent* event)
+{
+    setImageHoverActive(false);
+    QWidget::leaveEvent(event);
 }
 
 QSize PostDetailView::preferredSize(const QSize& availableBounds) const
@@ -419,8 +569,14 @@ QRect PostDetailView::imageRect() const
 
 QRect PostDetailView::paintedImageRect() const
 {
-    return fittedImageRect(imageRect(),
-                           m_state.fullImageSource.isEmpty() ? m_state.previewImageSize : m_state.fullImageSize);
+    const QSize size = currentImageSource().isEmpty() ? m_state.previewImageSize : currentImageSize();
+    return fittedImageRect(imageRect(), size);
+}
+
+QRect PostDetailView::transitionImageRect() const
+{
+    const QSize size = firstImageSource().isEmpty() ? m_state.previewImageSize : firstImageSize();
+    return fittedImageRect(imageRect(), size);
 }
 
 void PostDetailView::setImageVisible(bool visible)
@@ -429,12 +585,19 @@ void PostDetailView::setImageVisible(bool visible)
         return;
     }
     m_state.imageVisible = visible;
+    if (!visible) {
+        setImageHoverActive(false);
+        stopImageSlideAnimation();
+        m_state.previousImageIndex = -1;
+        m_state.imageSlideDirection = 0;
+        m_state.imageSlideProgress = 1.0;
+    }
     update(imageRect());
 }
 
 QPixmap PostDetailView::transitionPixmap() const
 {
-    const QString source = m_state.fullImageSource.isEmpty() ? m_state.previewImageSource : m_state.fullImageSource;
+    const QString source = firstImageSource().isEmpty() ? m_state.previewImageSource : firstImageSource();
     if (source.isEmpty()) {
         return {};
     }
@@ -461,29 +624,110 @@ void PostDetailView::paintEvent(QPaintEvent*)
     p.drawLine(QPoint(detailImageRect.right() + 1, height() - 1), QPoint(width() - 1, height() - 1));
 
     const qreal dpr = p.device()->devicePixelRatioF();
-    if (m_state.imageVisible && !m_state.previewImageSource.isEmpty()) {
-        const QRect previewRect = fittedImageRect(detailImageRect, m_state.previewImageSize);
-        const QPixmap preview = ImageService::instance().scaled(m_state.previewImageSource,
-                                                                previewRect.size(),
-                                                                Qt::KeepAspectRatio,
-                                                                dpr);
-        if (!preview.isNull()) {
-            p.drawPixmap(previewRect, preview);
+    auto drawImageInViewport = [&](const QRect& targetRect, const QPixmap& image, qreal opacity) {
+        if (image.isNull() || opacity <= 0.0) {
+            return;
+        }
+
+        p.save();
+        p.setClipPath(outerPath);
+        p.setClipRect(detailImageRect, Qt::IntersectClip);
+        p.setOpacity(opacity);
+        p.drawPixmap(targetRect, image);
+        p.restore();
+    };
+
+    auto drawImageAtIndex = [&](int index, int xOffset, qreal opacity) {
+        if (index < 0 || index >= imageCount() || opacity <= 0.0) {
+            return;
+        }
+
+        const QString source = m_state.imageSources.at(index);
+        const QSize sourceSize = index < m_state.imageSizes.size() ? m_state.imageSizes.at(index) : QSize();
+        if (source.isEmpty()) {
+            return;
+        }
+
+        const QRect fittedRect = fittedImageRect(detailImageRect, sourceSize).translated(xOffset, 0);
+        const QPixmap image = ImageService::instance().scaled(source,
+                                                             fittedRect.size(),
+                                                             Qt::KeepAspectRatio,
+                                                             dpr);
+        drawImageInViewport(fittedRect, image, opacity);
+    };
+
+    if (m_state.imageVisible) {
+        const bool showingFirstImage = m_state.currentImageIndex == 0 || currentImageSource().isEmpty();
+        const bool sliding = m_state.previousImageIndex >= 0 && m_state.imageSlideProgress < 1.0;
+        if (!sliding && showingFirstImage && !m_state.previewImageSource.isEmpty()) {
+            const QRect previewRect = fittedImageRect(detailImageRect, m_state.previewImageSize);
+            const QPixmap preview = ImageService::instance().scaled(m_state.previewImageSource,
+                                                                    previewRect.size(),
+                                                                    Qt::KeepAspectRatio,
+                                                                    dpr);
+            drawImageInViewport(previewRect, preview, 1.0);
+        }
+
+        if (sliding) {
+            const int travel = detailImageRect.width();
+            const int direction = m_state.imageSlideDirection >= 0 ? 1 : -1;
+            const int previousOffset = qRound(-direction * travel * m_state.imageSlideProgress);
+            const int currentOffset = qRound(direction * travel * (1.0 - m_state.imageSlideProgress));
+            drawImageAtIndex(m_state.previousImageIndex, previousOffset, 1.0);
+            drawImageAtIndex(m_state.currentImageIndex, currentOffset, 1.0);
+        } else {
+            drawImageAtIndex(m_state.currentImageIndex, 0, m_state.fullImageOpacity);
         }
     }
 
-    if (m_state.imageVisible && !m_state.fullImageSource.isEmpty()) {
-        const QRect fullRect = fittedImageRect(detailImageRect, m_state.fullImageSize);
-        const QPixmap fullImage = ImageService::instance().scaled(m_state.fullImageSource,
-                                                                  fullRect.size(),
-                                                                  Qt::KeepAspectRatio,
-                                                                  dpr);
-        if (!fullImage.isNull() && m_state.fullImageOpacity > 0.0) {
+    if (m_state.imageVisible && imageCount() > 1 && m_state.imageHoverProgress > 0.0) {
+        const qreal progress = qBound(0.0, m_state.imageHoverProgress, 1.0);
+        const int bgAlpha = qRound(128 * progress);
+        const int iconAlpha = qRound(235 * progress);
+
+        auto drawArrow = [&](bool previous) {
+            const QRect arrowRect = imageArrowRect(previous, progress);
+            if (!arrowRect.isValid()) {
+                return;
+            }
+
             p.save();
-            p.setOpacity(m_state.fullImageOpacity);
-            p.drawPixmap(fullRect, fullImage);
+            p.setOpacity(progress);
+            p.setPen(Qt::NoPen);
+            p.setBrush(QColor(20, 20, 20, bgAlpha));
+            p.drawEllipse(arrowRect);
+
+            QPen pen(QColor(255, 255, 255, iconAlpha), 1.7, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
+            p.setPen(pen);
+            const QPointF center = QRectF(arrowRect).center();
+            const qreal halfWidth = chevronHalfWidthForAngle(kImageArrowChevronAngleDegrees,
+                                                             kImageArrowChevronHalfHeight);
+            const qreal halfHeight = kImageArrowChevronHalfHeight;
+            const qreal tipX = center.x() + (previous ? -halfWidth : halfWidth);
+            const qreal tailX = center.x() + (previous ? halfWidth : -halfWidth);
+            const QPointF tip(tipX, center.y());
+            const QPointF top(tailX, center.y() - halfHeight);
+            const QPointF bottom(tailX, center.y() + halfHeight);
+            p.drawLine(top, tip);
+            p.drawLine(tip, bottom);
             p.restore();
-        }
+        };
+
+        drawArrow(true);
+        drawArrow(false);
+
+        const QString counterText = QStringLiteral("%1/%2").arg(m_state.currentImageIndex + 1).arg(imageCount());
+        QFont counterFont = AppFonts::applicationPixelSizedFont(12, true);
+        p.save();
+        p.setOpacity(progress);
+        p.setPen(Qt::NoPen);
+        p.setBrush(QColor(20, 20, 20, bgAlpha));
+        const QRect counterRect = imageCounterRect();
+        p.drawRoundedRect(counterRect, 8, 8);
+        p.setFont(counterFont);
+        p.setPen(QColor(255, 255, 255, iconAlpha));
+        p.drawText(counterRect, Qt::AlignCenter, counterText);
+        p.restore();
     }
 }
 
@@ -526,7 +770,8 @@ void PostDetailView::applyTheme()
     setWidgetTextColor(m_likeCount, ThemeManager::instance().color(ThemeColor::SecondaryText));
     setWidgetTextColor(m_commentCount, ThemeManager::instance().color(ThemeColor::SecondaryText));
     if (auto* followButton = qobject_cast<StatefulPushButton*>(m_followBtn)) {
-        followButton->setPrimaryStyle();
+        Q_UNUSED(followButton);
+        syncFollowUi();
     }
     if (m_commentDelegate) {
         m_commentDelegate->clearCaches();
@@ -555,17 +800,29 @@ void PostDetailView::setPostData(const PostDetailData& data)
     m_state.content = data.content;
     m_state.contentCreatedAt = data.contentCreatedAt;
     m_state.isLiked = data.isLiked;
+    m_state.isFollowed = data.isFollowedAuthor;
     m_state.likeCount = data.likeCount;
     m_state.commentCount = data.commentCount;
 
-    if (!data.imagePaths.isEmpty()) {
-        m_state.fullImageSource = data.imagePaths.first();
-        m_state.fullImageSize = ImageService::instance().sourceSize(m_state.fullImageSource);
-    } else {
-        m_state.fullImageSource.clear();
-        m_state.fullImageSize = {};
+    m_state.imageSources = data.imagePaths;
+    m_state.imageSizes.clear();
+    m_state.imageSizes.reserve(m_state.imageSources.size());
+    for (const QString& source : std::as_const(m_state.imageSources)) {
+        m_state.imageSizes.append(ImageService::instance().sourceSize(source));
     }
+    m_state.currentImageIndex = 0;
+    m_state.previousImageIndex = -1;
+    m_state.imageSlideDirection = 0;
+    m_state.imageSlideProgress = 1.0;
     m_state.fullImageOpacity = 0.0;
+    m_state.imageHoverActive = false;
+    m_state.imageHoverProgress = 0.0;
+    if (m_imageHoverAnimation) {
+        m_imageHoverAnimation->stop();
+        m_imageHoverAnimation->deleteLater();
+        m_imageHoverAnimation = nullptr;
+    }
+    stopImageSlideAnimation();
 
     const bool loadingPreviewActive = m_detailModel && m_detailModel->hasLoadingPreview();
     if (postChanged || loadingPreviewActive) {
@@ -581,6 +838,7 @@ void PostDetailView::setPostData(const PostDetailData& data)
     syncUiFromState();
     loadInitialComments();
     requestPostImageViewerReplacement();
+    preloadNextImage();
 
     stopImageFadeAnimation();
     auto* imageFade = new QVariantAnimation(this);
@@ -622,15 +880,28 @@ void PostDetailView::applySummaryState(const PostSummary& summary, bool resetDet
     m_state.previewImageSource = summary.thumbnailImagePath;
     m_state.previewImageSize = summary.thumbnailImageSize;
     m_state.isLiked = summary.isLiked;
+    m_state.isFollowed = summary.isFollowedAuthor;
     m_state.likeCount = summary.likeCount;
     m_state.commentCount = summary.commentCount;
 
     if (resetDetailContent) {
         m_state.content.clear();
         m_state.contentCreatedAt = {};
-        m_state.fullImageSource.clear();
-        m_state.fullImageSize = {};
+        m_state.imageSources.clear();
+        m_state.imageSizes.clear();
+        m_state.currentImageIndex = 0;
+        m_state.previousImageIndex = -1;
+        m_state.imageSlideDirection = 0;
+        m_state.imageSlideProgress = 1.0;
         m_state.fullImageOpacity = 0.0;
+        m_state.imageHoverActive = false;
+        m_state.imageHoverProgress = 0.0;
+        if (m_imageHoverAnimation) {
+            m_imageHoverAnimation->stop();
+            m_imageHoverAnimation->deleteLater();
+            m_imageHoverAnimation = nullptr;
+        }
+        stopImageSlideAnimation();
         if (m_detailModel) {
             stopCommentAnimations();
             stopImageFadeAnimation();
@@ -650,7 +921,7 @@ void PostDetailView::syncUiFromState()
 {
     m_authorName->setText(m_state.authorName);
     m_authorAvatar->setPixmap(ImageService::instance().circularAvatar(m_state.authorAvatarPath, 32));
-    m_followBtn->setText(m_state.isFollowed ? "已关注" : "关注");
+    syncFollowUi();
     const QString contentDateText = postDateText(m_state.contentCreatedAt);
     if (m_detailModel) {
         if (!m_detailModel->hasLoadingPreview()) {
@@ -660,6 +931,23 @@ void PostDetailView::syncUiFromState()
     syncEngagementUi();
     updateLayout();
     update();
+}
+
+void PostDetailView::syncFollowUi()
+{
+    if (!m_followBtn) {
+        return;
+    }
+
+    m_followBtn->setText(m_state.isFollowed ? QStringLiteral("已关注")
+                                            : QStringLiteral("关注"));
+    if (auto* followButton = qobject_cast<StatefulPushButton*>(m_followBtn)) {
+        if (m_state.isFollowed) {
+            followButton->setDefaultStyle();
+        } else {
+            followButton->setPrimaryStyle();
+        }
+    }
 }
 
 void PostDetailView::syncEngagementUi()
@@ -675,9 +963,9 @@ void PostDetailView::openPostImageViewer()
         return;
     }
 
-    const QString initialSource = !m_state.previewImageSource.isEmpty()
-            ? m_state.previewImageSource
-            : m_state.fullImageSource;
+    const QString initialSource = !currentImageSource().isEmpty()
+            ? currentImageSource()
+            : m_state.previewImageSource;
     if (initialSource.isEmpty()) {
         return;
     }
@@ -693,13 +981,124 @@ void PostDetailView::openPostImageViewer()
 
 void PostDetailView::requestPostImageViewerReplacement()
 {
-    if (!m_postImageViewer || m_postImageViewerPostId != m_state.postId || m_state.fullImageSource.isEmpty()) {
+    const QString source = currentImageSource();
+    if (!m_postImageViewer || m_postImageViewerPostId != m_state.postId || source.isEmpty()) {
         return;
     }
 
-    const QPixmap fullPixmap = ImageService::instance().pixmap(m_state.fullImageSource);
+    const QPixmap fullPixmap = ImageService::instance().pixmap(source);
     if (!fullPixmap.isNull()) {
-        m_postImageViewer->replaceImage(fullPixmap.toImage(), m_state.fullImageSource);
+        m_postImageViewer->replaceImage(fullPixmap.toImage(), source);
+    }
+}
+
+void PostDetailView::updateImageHoverState(const QPoint& pos)
+{
+    setImageHoverActive(m_state.imageVisible
+                        && imageCount() > 1
+                        && imageRect().contains(pos));
+}
+
+void PostDetailView::setImageHoverActive(bool active)
+{
+    if (m_state.imageHoverActive == active) {
+        return;
+    }
+
+    m_state.imageHoverActive = active;
+    if (m_imageHoverAnimation) {
+        m_imageHoverAnimation->stop();
+        m_imageHoverAnimation->deleteLater();
+        m_imageHoverAnimation = nullptr;
+    }
+
+    auto* animation = new QVariantAnimation(this);
+    m_imageHoverAnimation = animation;
+    animation->setDuration(kImageChromeAnimationDurationMs);
+    animation->setStartValue(m_state.imageHoverProgress);
+    animation->setEndValue(active ? 1.0 : 0.0);
+    animation->setEasingCurve(active ? QEasingCurve::OutCubic : QEasingCurve::InCubic);
+    connect(animation, &QVariantAnimation::valueChanged, this, [this](const QVariant& value) {
+        m_state.imageHoverProgress = value.toReal();
+        update(imageRect());
+    });
+    connect(animation, &QVariantAnimation::finished, this, [this, animation, active]() {
+        if (m_imageHoverAnimation == animation) {
+            m_imageHoverAnimation = nullptr;
+        }
+        m_state.imageHoverProgress = active ? 1.0 : 0.0;
+        update(imageRect());
+        animation->deleteLater();
+    });
+    animation->start();
+}
+
+void PostDetailView::setCurrentImageIndex(int index, int direction)
+{
+    const int count = imageCount();
+    if (count <= 0) {
+        return;
+    }
+
+    const int boundedIndex = (index % count + count) % count;
+    if (m_state.currentImageIndex == boundedIndex) {
+        return;
+    }
+
+    stopImageFadeAnimation();
+    stopImageSlideAnimation();
+    m_state.previousImageIndex = m_state.currentImageIndex;
+    m_state.currentImageIndex = boundedIndex;
+    m_state.imageSlideDirection = direction < 0 ? -1 : 1;
+    m_state.imageSlideProgress = 0.0;
+    m_state.fullImageOpacity = 1.0;
+    preloadNextImage();
+    requestPostImageViewerReplacement();
+
+    auto* slideAnimation = new QVariantAnimation(this);
+    m_imageSlideAnimation = slideAnimation;
+    slideAnimation->setDuration(kImageSlideAnimationDurationMs);
+    slideAnimation->setStartValue(0.0);
+    slideAnimation->setEndValue(1.0);
+    slideAnimation->setEasingCurve(QEasingCurve::OutCubic);
+    connect(slideAnimation, &QVariantAnimation::valueChanged, this, [this](const QVariant& value) {
+        m_state.imageSlideProgress = value.toReal();
+        update(imageRect());
+    });
+    connect(slideAnimation, &QVariantAnimation::finished, this, [this, slideAnimation]() {
+        if (m_imageSlideAnimation == slideAnimation) {
+            m_imageSlideAnimation = nullptr;
+        }
+        m_state.previousImageIndex = -1;
+        m_state.imageSlideDirection = 0;
+        m_state.imageSlideProgress = 1.0;
+        update(imageRect());
+        slideAnimation->deleteLater();
+    });
+    slideAnimation->start();
+}
+
+void PostDetailView::showPreviousImage()
+{
+    setCurrentImageIndex(m_state.currentImageIndex - 1, -1);
+}
+
+void PostDetailView::showNextImage()
+{
+    setCurrentImageIndex(m_state.currentImageIndex + 1, 1);
+}
+
+void PostDetailView::preloadNextImage()
+{
+    const int count = imageCount();
+    if (count <= 1) {
+        return;
+    }
+
+    const int nextIndex = (m_state.currentImageIndex + 1) % count;
+    const QString nextSource = m_state.imageSources.value(nextIndex);
+    if (!nextSource.isEmpty()) {
+        ImageService::instance().requestOriginalWarmup(nextSource);
     }
 }
 
@@ -902,6 +1301,18 @@ void PostDetailView::stopImageFadeAnimation()
 
     QVariantAnimation* animation = m_imageFadeAnimation;
     m_imageFadeAnimation = nullptr;
+    animation->stop();
+    animation->deleteLater();
+}
+
+void PostDetailView::stopImageSlideAnimation()
+{
+    if (!m_imageSlideAnimation) {
+        return;
+    }
+
+    QVariantAnimation* animation = m_imageSlideAnimation;
+    m_imageSlideAnimation = nullptr;
     animation->stop();
     animation->deleteLater();
 }

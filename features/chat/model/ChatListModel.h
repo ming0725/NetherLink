@@ -64,7 +64,10 @@ public:
     void notifyMessageChanged(const ChatMessage* message);
     const ChatMessage* messageAt(int index) const;
     QSharedPointer<ChatMessage> sharedMessageAt(int index) const;
+    const ChatMessage* messageById(const QString& messageId) const;
+    QModelIndex indexForMessageId(const QString& messageId) const;
     void clearSelection();
+    void clearRowHighlight();
     bool removeMessage(int index);
 
     bool isTimeHeader(int index) const;
@@ -97,6 +100,7 @@ private:
         bool isBottomSpace = false;
         bool isNewMessageDivider = false;
         bool isLoadingPlaceholder = false;
+        bool rowHighlighted = false;
         int bottomSpaceHeight = BottomSpace::DEFAULT_HEIGHT;  // 使用默认高度
         int nearestPeerRowBefore = -1;
         int nearestPeerRowAfter = -1;
@@ -104,6 +108,7 @@ private:
     QVector<ListItem> items;
     QVector<QSharedPointer<ChatMessage>> messages;
     int selectedMessageIndex = -1;
+    int highlightedRowIndex = -1;
     int bottomSpaceHeight = BottomSpace::DEFAULT_HEIGHT;
     const ChatMessage* newMessageDividerBefore = nullptr;
 

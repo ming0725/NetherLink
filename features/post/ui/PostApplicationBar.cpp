@@ -118,7 +118,7 @@ void PostApplicationBar::initItems()
     static const QStringList labels = {
         QStringLiteral("首页"),
         QStringLiteral("关注"),
-        QStringLiteral("发表"),
+        QStringLiteral("搜索"),
         QStringLiteral("消息"),
         QStringLiteral("我")
     };

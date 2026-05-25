@@ -3,6 +3,7 @@
 
 #include "NetherLinkCreditsWindow.h"
 #include "features/post/ui/PostApplicationBar.h"
+#include "features/post/ui/PostFloatingActionButton.h"
 #include "shared/services/ImageService.h"
 #include "shared/services/AudioService.h"
 #include "shared/theme/ThemeColorPalette.h"
@@ -1396,6 +1397,9 @@ void SettingsWindow::applyAppearance()
         }
         else if (auto* postBar = qobject_cast<PostApplicationBar*>(widget)) {
             postBar->refreshPlatformAppearance();
+        }
+        else if (auto* postActionButton = qobject_cast<PostFloatingActionButton*>(widget)) {
+            postActionButton->refreshPlatformAppearance();
         }
     }
 }

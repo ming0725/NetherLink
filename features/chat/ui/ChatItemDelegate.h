@@ -40,6 +40,12 @@ public:
     QString imageSourceAt(const QStyleOptionViewItem& option,
                           const QModelIndex& index,
                           const QPoint& viewportPos) const;
+    QString referencedImageSourceAt(const QStyleOptionViewItem& option,
+                                    const QModelIndex& index,
+                                    const QPoint& viewportPos) const;
+    QString referencedMessageIdAt(const QStyleOptionViewItem& option,
+                                  const QModelIndex& index,
+                                  const QPoint& viewportPos) const;
     QString groupSystemEventUserIdAt(const QStyleOptionViewItem& option,
                                      const QModelIndex& index,
                                      const QPoint& viewportPos) const;
@@ -59,6 +65,7 @@ public:
     QString selectedText() const;
     QPersistentModelIndex selectionIndex() const;
     void setRecallEligibilityCallback(std::function<bool(const ChatMessage*)> callback);
+    void setReferenceResolver(std::function<const ChatMessage*(const QString&)> resolver);
     bool reeditHitTest(const QStyleOptionViewItem& option,
                        const QModelIndex& index,
                        const QPoint& viewportPos) const;
@@ -69,6 +76,7 @@ public:
 signals:
     void deleteRequested(int row);
     void recallRequested(int row);
+    void referenceRequested(int row);
     void reeditRequested(int row);
 
 private:
@@ -123,6 +131,12 @@ private:
     static constexpr int NEW_MESSAGE_DIVIDER_FONT_SIZE = 12;
     static constexpr int GROUP_EVENT_HEIGHT = 32;
     static constexpr int LOADING_PLACEHOLDER_HEIGHT = 66;
+    static constexpr int REFERENCE_GAP = 4;
+    static constexpr int REFERENCE_PADDING = 8;
+    static constexpr int REFERENCE_RADIUS = 6;
+    static constexpr int REFERENCE_IMAGE_GAP = 6;
+    static constexpr int REFERENCE_IMAGE_MAX_LINES = 2;
+    static constexpr int REFERENCE_IMAGE_RADIUS = 5;
     
     void drawBubble(QPainter* painter, const QRect& rect,
                     bool isFromMe, const ChatMessage* message, bool isSelected,
@@ -152,6 +166,10 @@ private:
     void drawGroupSystemEventMessage(QPainter* painter,
                                      const QRect& rect,
                                      const ChatMessage* message) const;
+    void drawMessageReference(QPainter* painter,
+                              const QRect& rect,
+                              const ChatMessage* referencedMessage) const;
+    void drawRowHighlight(QPainter* painter, const QRect& rect) const;
 
     QRect calculateBubbleRect(const QRect& contentRect,
                              const ChatMessage* message,
@@ -162,6 +180,14 @@ private:
     QRect calculateTimeHeaderRect(const QRect& contentRect,
                                 const QString& text) const;
     QRect calculateTextRect(const QRect& bubbleRect) const;
+    QRect calculatePaintedBubbleRect(const QRect& contentRect,
+                                     const ChatMessage* message,
+                                     int maxWidth) const;
+    QRect calculateReferenceRect(const QRect& contentRect,
+                                 const ChatMessage* message,
+                                 const ChatMessage* referencedMessage) const;
+    QRect calculateReferenceImageRect(const QRect& referenceRect,
+                                      const ChatMessage* referencedMessage) const;
     QRect calculateRecallContentRect(const QRect& contentRect,
                                      const RecallMessage* message) const;
     QRect calculateRecallReeditRect(const QRect& contentRect,
@@ -173,6 +199,7 @@ private:
             const ChatMessage* message) const;
     QFont messageFont() const;
     QFont recallFont() const;
+    QFont referenceFont() const;
     QSize textDocumentSize(const QString& text, const QFont& font, int maxTextWidth) const;
     const QTextDocument& cachedTextDocument(const QString& text,
                                             const QFont& font,
@@ -196,6 +223,7 @@ private:
     QPersistentModelIndex m_selectionIndex;
     SelectableText::Selection m_selection;
     std::function<bool(const ChatMessage*)> m_recallEligibilityCallback;
+    std::function<const ChatMessage*(const QString&)> m_referenceResolver;
     mutable QCache<QString, TextDocumentCacheEntry> m_textDocumentCache;
     mutable QCache<QString, TextSizeCacheEntry> m_textSizeCache;
     mutable QCache<QString, UrlRangesCacheEntry> m_urlRangesCache;

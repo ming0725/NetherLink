@@ -21,6 +21,7 @@
 @property(nonatomic, assign) QWidget* owner;
 - (instancetype)initWithOwner:(QWidget*)owner;
 - (void)handleButtonTap:(NSButton*)sender;
+- (void)handleActionButtonTap:(NSButton*)sender;
 @end
 
 @interface NLPostBarButton : NSButton
@@ -50,6 +51,18 @@
                               Q_ARG(int, static_cast<int>(selectedSegment)));
 }
 
+- (void)handleActionButtonTap:(NSButton*)sender
+{
+    Q_UNUSED(sender);
+    if (!self.owner) {
+        return;
+    }
+
+    QMetaObject::invokeMethod(self.owner,
+                              "onNativeActionTriggered",
+                              Qt::QueuedConnection);
+}
+
 @end
 
 @implementation NLPostBarButton
@@ -70,6 +83,11 @@ const void* const kShadowHostAssociationKey = &kShadowHostAssociationKey;
 const void* const kSelectionAssociationKey = &kSelectionAssociationKey;
 const void* const kButtonsAssociationKey = &kButtonsAssociationKey;
 const void* const kTargetAssociationKey = &kTargetAssociationKey;
+const void* const kActionContainerAssociationKey = &kActionContainerAssociationKey;
+const void* const kActionContentAssociationKey = &kActionContentAssociationKey;
+const void* const kActionShadowHostAssociationKey = &kActionShadowHostAssociationKey;
+const void* const kActionButtonAssociationKey = &kActionButtonAssociationKey;
+const void* const kActionTargetAssociationKey = &kActionTargetAssociationKey;
 
 constexpr CGFloat kCornerRadius = 15.0;
 constexpr CGFloat kHorizontalInset = 10.0;
@@ -78,6 +96,7 @@ constexpr CGFloat kSelectionInsetX = 4.0;
 constexpr CGFloat kSelectionInsetY = 2.0;
 constexpr CGFloat kSelectionCornerRadius = 9.0;
 constexpr CGFloat kLabelFontSize = 13.0;
+constexpr CGFloat kActionFontSize = 24.0;
 constexpr NSTimeInterval kSelectionAnimationDuration = 0.28;
 
 struct AppearanceStyle {
@@ -310,6 +329,41 @@ NLPostBarTarget* targetForView(NSView* qtView)
             : nil;
 }
 
+NSView* actionContainerForView(NSView* qtView)
+{
+    return qtView
+            ? static_cast<NSView*>(objc_getAssociatedObject(qtView, kActionContainerAssociationKey))
+            : nil;
+}
+
+NSView* actionContentForView(NSView* qtView)
+{
+    return qtView
+            ? static_cast<NSView*>(objc_getAssociatedObject(qtView, kActionContentAssociationKey))
+            : nil;
+}
+
+NSView* actionShadowHostForView(NSView* qtView)
+{
+    return qtView
+            ? static_cast<NSView*>(objc_getAssociatedObject(qtView, kActionShadowHostAssociationKey))
+            : nil;
+}
+
+NSButton* actionButtonForView(NSView* qtView)
+{
+    return qtView
+            ? static_cast<NSButton*>(objc_getAssociatedObject(qtView, kActionButtonAssociationKey))
+            : nil;
+}
+
+NLPostBarTarget* actionTargetForView(NSView* qtView)
+{
+    return qtView
+            ? static_cast<NLPostBarTarget*>(objc_getAssociatedObject(qtView, kActionTargetAssociationKey))
+            : nil;
+}
+
 NSView* selectionViewFor(NSView* qtView)
 {
     return qtView
@@ -362,6 +416,45 @@ void clearSelectionView(NSView* qtView)
     }
 
     objc_setAssociatedObject(qtView, kSelectionAssociationKey, nil, OBJC_ASSOCIATION_ASSIGN);
+}
+
+void clearActionButtonViews(NSView* qtView)
+{
+    if (!qtView) {
+        return;
+    }
+
+    NSButton* button = actionButtonForView(qtView);
+    prepareButtonForRemoval(button);
+    if (button) {
+        [button removeFromSuperview];
+    }
+
+    NLPostBarTarget* target = actionTargetForView(qtView);
+    if (target) {
+        target.owner = nullptr;
+    }
+
+    NSView* container = actionContainerForView(qtView);
+    NSView* shadowHost = actionShadowHostForView(qtView);
+    if (shadowHost) {
+        [shadowHost removeFromSuperview];
+    }
+
+    NSView* contentView = actionContentForView(qtView);
+    if (contentView && contentView != container) {
+        [contentView removeFromSuperview];
+    }
+
+    if (container) {
+        [container removeFromSuperview];
+    }
+
+    objc_setAssociatedObject(qtView, kActionButtonAssociationKey, nil, OBJC_ASSOCIATION_ASSIGN);
+    objc_setAssociatedObject(qtView, kActionContentAssociationKey, nil, OBJC_ASSOCIATION_ASSIGN);
+    objc_setAssociatedObject(qtView, kActionShadowHostAssociationKey, nil, OBJC_ASSOCIATION_ASSIGN);
+    objc_setAssociatedObject(qtView, kActionTargetAssociationKey, nil, OBJC_ASSOCIATION_ASSIGN);
+    objc_setAssociatedObject(qtView, kActionContainerAssociationKey, nil, OBJC_ASSOCIATION_ASSIGN);
 }
 
 void configureHostView(NSView* qtView)
@@ -600,6 +693,192 @@ NSView* ensureContainer(NSView* hostView, MacPostBarBridge::Appearance appearanc
     }
 }
 
+NSView* ensureActionShadowHost(NSView* hostView)
+{
+    if (!hostView) {
+        return nil;
+    }
+
+    NSView* shadowHost = actionShadowHostForView(hostView);
+    if (!shadowHost) {
+        shadowHost = [[NSView alloc] initWithFrame:NSZeroRect];
+        shadowHost.wantsLayer = YES;
+        shadowHost.layer.backgroundColor = NSColor.clearColor.CGColor;
+        shadowHost.layer.masksToBounds = NO;
+        objc_setAssociatedObject(hostView,
+                                 kActionShadowHostAssociationKey,
+                                 shadowHost,
+                                 OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        [hostView addSubview:shadowHost positioned:NSWindowAbove relativeTo:nil];
+        [shadowHost release];
+        shadowHost = actionShadowHostForView(hostView);
+    } else if (shadowHost.superview != hostView) {
+        [shadowHost removeFromSuperview];
+        [hostView addSubview:shadowHost positioned:NSWindowAbove relativeTo:nil];
+    }
+
+    shadowHost.wantsLayer = YES;
+    shadowHost.layer.backgroundColor = NSColor.clearColor.CGColor;
+    shadowHost.layer.masksToBounds = NO;
+    return shadowHost;
+}
+
+NSView* ensureActionGlassContentView(NSView* hostView, NSView* container)
+{
+    if (!hostView || !container) {
+        return nil;
+    }
+
+    NSView* contentView = actionContentForView(hostView);
+#if NETHERLINK_HAS_NS_GLASS_EFFECT_VIEW
+    NSGlassEffectView* glassContainer = [container isKindOfClass:[NSGlassEffectView class]]
+            ? static_cast<NSGlassEffectView*>(container)
+            : nil;
+    if (!glassContainer) {
+        return nil;
+    }
+
+    if (!contentView || contentView == container || glassContainer.contentView != contentView) {
+        if (contentView && contentView != container && contentView != glassContainer.contentView) {
+            [contentView removeFromSuperview];
+        }
+
+        contentView = [[NSView alloc] initWithFrame:container.bounds];
+        contentView.wantsLayer = YES;
+        contentView.layer.backgroundColor = NSColor.clearColor.CGColor;
+        applyAppThemeAppearance(contentView);
+        glassContainer.contentView = contentView;
+        objc_setAssociatedObject(hostView,
+                                 kActionContentAssociationKey,
+                                 contentView,
+                                 OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        [contentView release];
+        contentView = actionContentForView(hostView);
+    } else {
+        contentView.frame = container.bounds;
+        applyAppThemeAppearance(contentView);
+    }
+#endif
+
+    return contentView;
+}
+
+NSView* ensureActionVisualEffectContainer(NSView* hostView, const AppearanceStyle& style)
+{
+    if (!hostView) {
+        return nil;
+    }
+
+    NSView* shadowHost = ensureActionShadowHost(hostView);
+    if (!shadowHost) {
+        return nil;
+    }
+
+    NSVisualEffectView* container = static_cast<NSVisualEffectView*>(actionContainerForView(hostView));
+    if (!container || ![container isKindOfClass:[NSVisualEffectView class]]) {
+        if (container) {
+            [container removeFromSuperview];
+        }
+
+        container = [[NSVisualEffectView alloc] initWithFrame:NSZeroRect];
+        objc_setAssociatedObject(hostView,
+                                 kActionContainerAssociationKey,
+                                 container,
+                                 OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        [hostView addSubview:container positioned:NSWindowAbove relativeTo:shadowHost];
+        objc_setAssociatedObject(hostView,
+                                 kActionContentAssociationKey,
+                                 container,
+                                 OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        [container release];
+        container = static_cast<NSVisualEffectView*>(actionContainerForView(hostView));
+    } else if (container.superview != hostView) {
+        [container removeFromSuperview];
+        [hostView addSubview:container positioned:NSWindowAbove relativeTo:shadowHost];
+    }
+
+    applyAppThemeAppearance(container);
+    container.blendingMode = NSVisualEffectBlendingModeWithinWindow;
+    container.material = NSVisualEffectMaterialPopover;
+    container.state = NSVisualEffectStateActive;
+    container.wantsLayer = YES;
+    container.layer.masksToBounds = YES;
+    container.layer.backgroundColor = nsColorForTheme(ThemeColor::PanelBackground,
+                                                      style.backgroundAlpha).CGColor;
+    container.layer.borderWidth = 1.0;
+    container.layer.borderColor = nsColorForTheme(ThemeColor::Divider,
+                                                  style.borderAlpha).CGColor;
+    applyCommonContainerShadow(shadowHost, style);
+    return container;
+}
+
+#if NETHERLINK_HAS_NS_GLASS_EFFECT_VIEW
+NSView* ensureActionGlassContainer(NSView* hostView, const AppearanceStyle& style)
+{
+    if (!hostView) {
+        return nil;
+    }
+
+    if (@available(macOS 26.0, *)) {
+        NSView* shadowHost = ensureActionShadowHost(hostView);
+        if (!shadowHost) {
+            return nil;
+        }
+
+        NSGlassEffectView* container = static_cast<NSGlassEffectView*>(actionContainerForView(hostView));
+        if (!container || ![container isKindOfClass:[NSGlassEffectView class]]) {
+            if (container) {
+                [container removeFromSuperview];
+            }
+
+            container = [[NSGlassEffectView alloc] initWithFrame:NSZeroRect];
+            objc_setAssociatedObject(hostView,
+                                     kActionContainerAssociationKey,
+                                     container,
+                                     OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+            [hostView addSubview:container positioned:NSWindowAbove relativeTo:shadowHost];
+            [container release];
+            container = static_cast<NSGlassEffectView*>(actionContainerForView(hostView));
+        } else if (container.superview != hostView) {
+            [container removeFromSuperview];
+            [hostView addSubview:container positioned:NSWindowAbove relativeTo:shadowHost];
+        }
+
+        applyAppThemeAppearance(container);
+        container.style = NSGlassEffectViewStyleRegular;
+        container.tintColor = nil;
+        applyCommonContainerShadow(shadowHost, style);
+
+        NSView* contentView = ensureActionGlassContentView(hostView, container);
+        objc_setAssociatedObject(hostView,
+                                 kActionContentAssociationKey,
+                                 contentView,
+                                 OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        return container;
+    }
+
+    return nil;
+}
+#endif
+
+NSView* ensureActionContainer(NSView* hostView, MacPostBarBridge::Appearance appearance)
+{
+    const AppearanceStyle style = styleForAppearance(appearance);
+    switch (appearance) {
+    case MacPostBarBridge::Appearance::LiquidGlass:
+#if NETHERLINK_HAS_NS_GLASS_EFFECT_VIEW
+        return ensureActionGlassContainer(hostView, style);
+#else
+        return nil;
+#endif
+    case MacPostBarBridge::Appearance::NativeBlur:
+        return ensureActionVisualEffectContainer(hostView, style);
+    case MacPostBarBridge::Appearance::Unsupported:
+    default:
+        return nil;
+    }
+}
+
 NSView* ensureSelectionView(NSView* qtView, NSView* contentView)
 {
     if (!qtView || !contentView) {
@@ -652,9 +931,39 @@ NLPostBarTarget* ensureTarget(NSView* qtView, QWidget* widget)
     return target;
 }
 
+NLPostBarTarget* ensureActionTarget(NSView* qtView, QWidget* widget)
+{
+    if (!qtView) {
+        return nil;
+    }
+
+    NLPostBarTarget* target = actionTargetForView(qtView);
+    if (!target) {
+        target = [[NLPostBarTarget alloc] initWithOwner:widget];
+        objc_setAssociatedObject(qtView,
+                                 kActionTargetAssociationKey,
+                                 target,
+                                 OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        [target release];
+        target = actionTargetForView(qtView);
+    } else {
+        target.owner = widget;
+    }
+
+    return target;
+}
+
 NSFont* labelFont()
 {
     return [NSFont systemFontOfSize:kLabelFontSize weight:NSFontWeightSemibold];
+}
+
+NSDictionary<NSAttributedStringKey, id>* actionLabelAttributes()
+{
+    return @{
+        NSFontAttributeName: [NSFont systemFontOfSize:kActionFontSize weight:NSFontWeightMedium],
+        NSForegroundColorAttributeName: nsColorForTheme(ThemeColor::PrimaryText, 0.94)
+    };
 }
 
 NSDictionary<NSAttributedStringKey, id>* labelAttributes(bool selected)
@@ -673,6 +982,12 @@ NSAttributedString* attributedLabel(const QString& label, bool selected)
     NSString* nativeLabel = [NSString stringWithUTF8String:utf8.constData()];
     return [[[NSAttributedString alloc] initWithString:(nativeLabel ?: @"")
                                             attributes:labelAttributes(selected)] autorelease];
+}
+
+NSAttributedString* attributedActionLabel()
+{
+    return [[[NSAttributedString alloc] initWithString:@"+"
+                                            attributes:actionLabelAttributes()] autorelease];
 }
 
 CGFloat buttonWidthForLabel(const QString& label)
@@ -756,6 +1071,39 @@ NSMutableArray<NSButton*>* ensureButtons(NSView* qtView,
     }
 
     return buttons;
+}
+
+NSButton* ensureActionButton(NSView* qtView, NSView* contentView, QWidget* widget)
+{
+    if (!qtView || !contentView) {
+        return nil;
+    }
+
+    NSButton* button = actionButtonForView(qtView);
+    if (!button) {
+        button = [[NLPostBarButton alloc] initWithFrame:NSZeroRect];
+        button.bordered = NO;
+        button.buttonType = NSButtonTypeMomentaryChange;
+        button.focusRingType = NSFocusRingTypeNone;
+        button.bezelStyle = NSBezelStyleRegularSquare;
+        objc_setAssociatedObject(qtView,
+                                 kActionButtonAssociationKey,
+                                 button,
+                                 OBJC_ASSOCIATION_RETAIN_NONATOMIC);
+        [contentView addSubview:button];
+        [button release];
+        button = actionButtonForView(qtView);
+    } else if (button.superview != contentView) {
+        [button removeFromSuperview];
+        [contentView addSubview:button];
+    }
+
+    NLPostBarTarget* target = ensureActionTarget(qtView, widget);
+    applyAppThemeAppearance(button);
+    button.target = target;
+    button.action = @selector(handleActionButtonTap:);
+    button.attributedTitle = attributedActionLabel();
+    return button;
 }
 
 void layoutButtons(NSMutableArray<NSButton*>* buttons,
@@ -913,6 +1261,76 @@ void syncBar(QWidget* widget,
     layoutButtons(buttons, selectionView, contentView, labels, selectedIndex, animateSelection);
 }
 
+void syncActionButton(QWidget* widget, double opacity)
+{
+    const Appearance current = appearance();
+    if (!widget || current == Appearance::Unsupported || !widget->isVisible()) {
+        clearActionButton(widget);
+        return;
+    }
+
+    NSView* hostView = topLevelQtViewForWidget(widget, true);
+    if (!hostView) {
+        return;
+    }
+
+    const AppearanceStyle style = styleForAppearance(current);
+    configureHostView(hostView);
+    NSView* container = ensureActionContainer(hostView, current);
+    NSView* contentView = actionContentForView(hostView);
+    NSView* shadowHost = actionShadowHostForView(hostView);
+    NSButton* button = ensureActionButton(hostView, contentView, widget);
+    if (!container || !contentView || !shadowHost || !button) {
+        return;
+    }
+
+    const NSRect frame = hostFrameForWidget(widget, hostView);
+    const CGFloat cornerRadius = frame.size.height / 2.0;
+    const NSRect shadowFrame = NSMakeRect(frame.origin.x - style.shadowPaddingX,
+                                          frame.origin.y - style.shadowPaddingTop,
+                                          frame.size.width + style.shadowPaddingX * 2.0,
+                                          frame.size.height + style.shadowPaddingTop + style.shadowPaddingBottom);
+    shadowHost.frame = shadowFrame;
+    shadowHost.hidden = NO;
+    const NSRect containerFrame = NSMakeRect(style.shadowPaddingX,
+                                             style.shadowPaddingTop,
+                                             frame.size.width,
+                                             frame.size.height);
+    CGPathRef shadowPath = CGPathCreateWithRoundedRect(containerFrame,
+                                                       cornerRadius,
+                                                       cornerRadius,
+                                                       nil);
+    shadowHost.layer.shadowPath = shadowPath;
+    CGPathRelease(shadowPath);
+
+    container.frame = frame;
+    const BOOL hidden = widget->isHidden() || widget->width() <= 0 || widget->height() <= 0;
+    const CGFloat alpha = static_cast<CGFloat>(qBound(0.0, opacity, 1.0));
+    shadowHost.alphaValue = alpha;
+    container.alphaValue = alpha;
+    shadowHost.hidden = hidden;
+    container.hidden = hidden;
+    if (contentView != container) {
+        contentView.frame = container.bounds;
+    }
+
+#if NETHERLINK_HAS_NS_GLASS_EFFECT_VIEW
+    if (@available(macOS 26.0, *)) {
+        if ([container isKindOfClass:[NSGlassEffectView class]]) {
+            NSGlassEffectView* glassContainer = static_cast<NSGlassEffectView*>(container);
+            glassContainer.cornerRadius = cornerRadius;
+        }
+    }
+#endif
+    container.wantsLayer = YES;
+    container.layer.cornerRadius = cornerRadius;
+    container.layer.masksToBounds = YES;
+    button.frame = contentView.bounds;
+    if (button.window) {
+        [button.window invalidateCursorRectsForView:button];
+    }
+}
+
 void clearBar(QWidget* widget)
 {
     NSView* hostView = topLevelQtViewForWidget(widget, false);
@@ -944,6 +1362,14 @@ void clearBar(QWidget* widget)
         objc_setAssociatedObject(hostView, kShadowHostAssociationKey, nil, OBJC_ASSOCIATION_ASSIGN);
         objc_setAssociatedObject(hostView, kTargetAssociationKey, nil, OBJC_ASSOCIATION_ASSIGN);
         objc_setAssociatedObject(hostView, kContainerAssociationKey, nil, OBJC_ASSOCIATION_ASSIGN);
+    }
+}
+
+void clearActionButton(QWidget* widget)
+{
+    NSView* hostView = topLevelQtViewForWidget(widget, false);
+    if (hostView) {
+        clearActionButtonViews(hostView);
     }
 }
 

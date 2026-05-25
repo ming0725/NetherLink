@@ -1,6 +1,7 @@
 // PostApplication.cpp
 #include "PostApplication.h"
 #include "PostApplicationBar.h"
+#include "PostFloatingActionButton.h"
 #include "PostFeedPage.h"
 #include "PostDetailView.h"
 #include "PostOverlay.h"
@@ -198,6 +199,7 @@ PostApplication::PostApplication(QWidget* parent)
         : QWidget(parent)
         , m_postController(new PostSessionController(this))
         , m_bar(new PostApplicationBar(this))
+        , m_addButton(new PostFloatingActionButton(this))
         , m_stack(new QStackedWidget(this))
         , m_detailView(nullptr)
 {
@@ -219,6 +221,8 @@ PostApplication::PostApplication(QWidget* parent)
             this, [this](const PostSummary&) {
                 schedulePostBarLiquidGlassUpdate();
             });
+    connect(m_bar, &PostApplicationBar::pageClicked,
+            this, &PostApplication::onPageTabClicked);
 
     m_barFadeAnimation = new QVariantAnimation(this);
     m_barFadeAnimation->setDuration(220);
@@ -226,6 +230,9 @@ PostApplication::PostApplication(QWidget* parent)
     connect(m_barFadeAnimation, &QVariantAnimation::valueChanged, this, [this](const QVariant& value) {
         if (m_bar) {
             m_bar->setVisualOpacity(value.toReal());
+        }
+        if (m_addButton) {
+            m_addButton->setVisualOpacity(value.toReal());
         }
     });
 
@@ -247,6 +254,8 @@ PostApplication::PostApplication(QWidget* parent)
     m_overlay->lower();
     m_bar->setLiquidGlassSourceWidget(m_stack);
     m_bar->setVisualOpacity(1.0);
+    m_addButton->setLiquidGlassSourceWidget(m_stack);
+    m_addButton->setVisualOpacity(1.0);
     updateLayerOrder();
 
 }
@@ -258,12 +267,18 @@ void PostApplication::setSystemFloatingBarsSuppressed(bool suppressed)
     }
 
     m_bar->setProperty("systemFloatingBarsSuppressed", suppressed);
+    if (m_addButton) {
+        m_addButton->setProperty("systemFloatingBarsSuppressed", suppressed);
+    }
 
     if (m_systemFloatingBarsSuppressed == suppressed) {
         if (suppressed && m_bar->usesNativeBar() && !m_bar->isHidden()) {
             m_barVisibleBeforeSystemSuppression = true;
             m_barOpacityBeforeSystemSuppression = m_bar->visualOpacity();
             m_bar->hide();
+            if (m_addButton) {
+                m_addButton->hide();
+            }
         }
         return;
     }
@@ -274,6 +289,9 @@ void PostApplication::setSystemFloatingBarsSuppressed(bool suppressed)
             m_barVisibleBeforeSystemSuppression = !m_bar->isHidden();
             m_barOpacityBeforeSystemSuppression = m_bar->visualOpacity();
             m_bar->hide();
+            if (m_addButton) {
+                m_addButton->hide();
+            }
         } else {
             m_barVisibleBeforeSystemSuppression = false;
             m_barOpacityBeforeSystemSuppression = 1.0;
@@ -285,8 +303,16 @@ void PostApplication::setSystemFloatingBarsSuppressed(bool suppressed)
         m_bar->setVisualOpacity(m_barOpacityBeforeSystemSuppression);
         m_bar->refreshPlatformAppearance();
         m_bar->show();
+        if (m_addButton) {
+            m_addButton->setVisualOpacity(m_barOpacityBeforeSystemSuppression);
+            m_addButton->refreshPlatformAppearance();
+            m_addButton->show();
+        }
     } else if (!m_bar->isHidden()) {
         m_bar->refreshPlatformAppearance();
+        if (m_addButton) {
+            m_addButton->refreshPlatformAppearance();
+        }
     }
     m_barVisibleBeforeSystemSuppression = false;
     m_barOpacityBeforeSystemSuppression = 1.0;
@@ -301,6 +327,7 @@ void PostApplication::resizeEvent(QResizeEvent* ev)
     const int barW = m_bar->width();
     const int barH = m_bar->height();
     const int bottomMargin = 15;
+    const int actionRightMargin = 24;
 #ifdef Q_OS_MACOS
     const int stackBottomSafeInset = 0;
 #else
@@ -313,6 +340,10 @@ void PostApplication::resizeEvent(QResizeEvent* ev)
     const int x = (w - barW) / 2;
     const int y = h - barH - bottomMargin;
     m_bar->setGeometry(x, y, barW, barH);
+    if (m_addButton) {
+        m_addButton->setFixedSize(barH, barH);
+        m_addButton->setGeometry(w - barH - actionRightMargin, y, barH, barH);
+    }
     m_overlay->setGeometry(rect());
 
     if (m_detailView) {
@@ -485,6 +516,22 @@ void PostApplication::onPostUpdated(const PostSummary& summary)
     }
 }
 
+void PostApplication::onPageTabClicked(int index)
+{
+    if (index != 0 && index != 1) {
+        return;
+    }
+
+    ensurePageLoaded(0);
+    if (m_homeFeedPage) {
+        if (m_stack->currentWidget() != m_homeFeedPage) {
+            m_stack->setCurrentWidget(m_homeFeedPage);
+        }
+        m_homeFeedPage->switchFeedMode(index == 1);
+        schedulePostBarLiquidGlassUpdate();
+    }
+}
+
 QWidget* PostApplication::createPlaceholderPage() const
 {
     auto* page = new QWidget(m_stack);
@@ -586,6 +633,9 @@ void PostApplication::fadeBar(qreal startOpacity, qreal endOpacity, bool hideAft
 
     if (m_systemFloatingBarsSuppressed) {
         m_bar->hide();
+        if (m_addButton) {
+            m_addButton->hide();
+        }
         return;
     }
 
@@ -600,6 +650,13 @@ void PostApplication::fadeBar(qreal startOpacity, qreal endOpacity, bool hideAft
         m_bar->show();
         updateLayerOrder();
     }
+    if (m_addButton) {
+        m_addButton->setVisualOpacity(startOpacity);
+        if (!m_addButton->isVisible()) {
+            m_addButton->show();
+            updateLayerOrder();
+        }
+    }
 
     m_barFadeAnimation->setStartValue(startOpacity);
     m_barFadeAnimation->setEndValue(endOpacity);
@@ -608,6 +665,11 @@ void PostApplication::fadeBar(qreal startOpacity, qreal endOpacity, bool hideAft
             if (m_bar) {
                 m_bar->hide();
                 m_bar->setVisualOpacity(0.0);
+                updateLayerOrder();
+            }
+            if (m_addButton) {
+                m_addButton->hide();
+                m_addButton->setVisualOpacity(0.0);
                 updateLayerOrder();
             }
         });
@@ -643,17 +705,26 @@ void PostApplication::updateLayerOrder()
     if (!modalActive) {
         m_stack->lower();
         m_bar->raise();
+        if (m_addButton) {
+            m_addButton->raise();
+        }
         return;
     }
 
     m_stack->lower();
     m_bar->raise();
+    if (m_addButton) {
+        m_addButton->raise();
+    }
     if (m_overlay) {
         if (!m_overlay->isVisible()) {
             m_overlay->show();
         }
         m_overlay->raise();
         m_bar->stackUnder(m_overlay);
+        if (m_addButton) {
+            m_addButton->stackUnder(m_overlay);
+        }
     }
     if (m_detailView) {
         m_detailView->raise();
@@ -669,10 +740,17 @@ void PostApplication::updateLayerOrder()
 void PostApplication::schedulePostBarLiquidGlassUpdate()
 {
     if (!m_bar || !m_bar->usesQtFallbackLiquidGlass()) {
-        return;
+        if (!m_addButton || !m_addButton->usesQtFallbackLiquidGlass()) {
+            return;
+        }
     }
 
-    m_bar->scheduleLiquidGlassInteractiveUpdate();
+    if (m_bar && m_bar->usesQtFallbackLiquidGlass()) {
+        m_bar->scheduleLiquidGlassInteractiveUpdate();
+    }
+    if (m_addButton && m_addButton->usesQtFallbackLiquidGlass()) {
+        m_addButton->scheduleLiquidGlassInteractiveUpdate();
+    }
 }
 
 bool PostApplication::hasModalLayerActive() const
@@ -895,8 +973,8 @@ void PostApplication::startCloseAnimation()
 
     const QRect startImageGeometry = m_transitionImage
             ? m_transitionImage->geometry()
-            : QRect(m_detailView->geometry().topLeft() + m_detailView->paintedImageRect().topLeft(),
-                    m_detailView->paintedImageRect().size());
+            : QRect(m_detailView->geometry().topLeft() + m_detailView->transitionImageRect().topLeft(),
+                    m_detailView->transitionImageRect().size());
     const qreal startRevealProgress = transitionImageWidget(m_transitionImage)
             ? transitionImageWidget(m_transitionImage)->revealProgress()
             : 1.0;

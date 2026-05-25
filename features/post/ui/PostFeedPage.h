@@ -18,6 +18,7 @@ public:
     explicit PostFeedPage(QWidget* parent = nullptr);
     void setController(PostSessionController* controller);
     void ensureInitialized();
+    void switchFeedMode(bool followOnly);
     void setPosts(const QVector<PostSummary>& posts);
 
 signals:
@@ -32,7 +33,9 @@ private slots:
 
 private:
     void scheduleLoadMore();
-    void loadMore(qint64 loadingStartedAt);
+    void loadMore(qint64 loadingStartedAt, int generation);
+    void clearFeedData();
+    void reloadCurrentFeed();
     void showInitialLoadingPlaceholders();
     int loadingPlaceholderCountForViewport() const;
     void stopLoadingAnimation();
@@ -43,8 +46,10 @@ private:
     PostSessionController* m_controller = nullptr;
     QMetaObject::Connection m_postUpdatedConnection;
     int m_nextOffset = 0;
+    int m_loadGeneration = 0;
     bool m_hasMore = true;
     bool m_initialized = false;
     bool m_loading = false;
     bool m_loadMoreScheduled = false;
+    bool m_followOnly = false;
 };

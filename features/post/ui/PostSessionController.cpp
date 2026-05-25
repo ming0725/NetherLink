@@ -5,6 +5,7 @@
 #include "app/state/CurrentUser.h"
 #include "features/post/data/PostCommentRepository.h"
 #include "features/post/data/PostRepository.h"
+#include "features/friend/data/UserRepository.h"
 
 PostSessionController::PostSessionController(QObject* parent)
     : QObject(parent)
@@ -70,6 +71,21 @@ bool PostSessionController::setPostLiked(const QString& postId, bool liked)
         return false;
     }
     return PostRepository::instance().setPostLiked(postId, liked);
+}
+
+bool PostSessionController::setAuthorFollowed(const QString& authorId, bool followed)
+{
+    if (authorId.isEmpty()) {
+        return false;
+    }
+
+    if (followed) {
+        UserRepository::instance().addFriend(authorId);
+    } else {
+        UserRepository::instance().removeUser(authorId);
+    }
+    PostRepository::instance().refreshAuthorFollowState(authorId);
+    return true;
 }
 
 bool PostSessionController::setCommentLiked(const QString& commentId, bool liked)

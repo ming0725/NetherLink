@@ -20,6 +20,7 @@ public:
 
     bool setCurrentPostLiked(bool liked);
     bool setPostLiked(const QString& postId, bool liked);
+    bool setAuthorFollowed(const QString& authorId, bool followed);
     bool setCommentLiked(const QString& commentId, bool liked);
     bool setReplyLiked(const QString& replyId, bool liked);
     bool adjustCurrentPostCommentCount(int delta);

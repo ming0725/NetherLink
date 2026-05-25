@@ -7,6 +7,7 @@
 #include <QPointer>
 #include <QRect>
 #include <QSize>
+#include <QVector>
 #include <QWidget>
 
 #include "shared/types/RepositoryTypes.h"
@@ -36,6 +37,7 @@ public:
     QSize preferredSize(const QSize& availableBounds) const;
     QRect imageRect() const;
     QRect paintedImageRect() const;
+    QRect transitionImageRect() const;
     QPixmap transitionPixmap() const;
 
 signals:
@@ -43,6 +45,7 @@ signals:
     void followClicked(bool followed);
     void likeClicked(bool liked);
 protected:
+    bool eventFilter(QObject* watched, QEvent* event) override;
     void mousePressEvent(QMouseEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;
     void leaveEvent(QEvent* event) override;
@@ -62,6 +65,9 @@ private:
         QVector<QString> imageSources;
         QVector<QSize> imageSizes;
         int currentImageIndex = 0;
+        int previousImageIndex = -1;
+        int imageSlideDirection = 0;
+        qreal imageSlideProgress = 1.0;
         qreal fullImageOpacity = 0.0;
         bool imageVisible = true;
         bool imageHoverActive = false;
@@ -82,7 +88,7 @@ private:
     QRect imageArrowRect(bool previous, qreal progress = 1.0) const;
     void updateImageHoverState(const QPoint& pos);
     void setImageHoverActive(bool active);
-    void setCurrentImageIndex(int index);
+    void setCurrentImageIndex(int index, int direction);
     void showPreviousImage();
     void showNextImage();
     void preloadNextImage();
@@ -91,6 +97,7 @@ private:
     void applyTheme();
     void applySummaryState(const PostSummary& summary, bool resetDetailContent);
     void syncUiFromState();
+    void syncFollowUi();
     void syncEngagementUi();
     void openPostImageViewer();
     void requestPostImageViewerReplacement();
@@ -104,6 +111,7 @@ private:
     void animateMoreReplies(const QString& commentId);
     void stopCommentAnimations();
     void stopImageFadeAnimation();
+    void stopImageSlideAnimation();
     void setReplyTarget(const QString& commentId, const QString& replyId = QString());
     void clearReplyTarget();
     void submitCommentText();
@@ -142,6 +150,7 @@ private:
     QHash<QString, QPointer<QVariantAnimation>> m_moreReplyAnimations;
     QPointer<QVariantAnimation> m_imageFadeAnimation;
     QPointer<QVariantAnimation> m_imageHoverAnimation;
+    QPointer<QVariantAnimation> m_imageSlideAnimation;
     QPointer<class ImageViewer> m_postImageViewer;
     QString m_postImageViewerPostId;
 };

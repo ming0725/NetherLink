@@ -16,6 +16,7 @@ public:
     QString requestPostDetailAsync(const PostDetailRequest& query, int delayMs = 120);
     bool setPostLiked(const QString& postId, bool liked);
     bool adjustPostCommentCount(const QString& postId, int delta);
+    void refreshAuthorFollowState(const QString& authorId);
 
 signals:
     void postUpdated(const PostSummary& summary);

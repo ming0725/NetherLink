@@ -297,6 +297,46 @@ void appendSyntheticGroupUnreadMessages(QVector<QSharedPointer<ChatMessage>>& me
     }
 }
 
+void addLongGapReferenceSamples(QVector<QSharedPointer<ChatMessage>>& messages)
+{
+    const int messageCount = static_cast<int>(messages.size());
+    if (messageCount < 42) {
+        return;
+    }
+
+    struct ReferencePair {
+        int referencedIndex = 0;
+        int replyIndex = 0;
+    };
+
+    const QVector<ReferencePair> pairs = {
+            {1, messageCount - 3},
+            {qMax(2, messageCount / 5), messageCount - 12},
+            {qMax(3, messageCount / 2 - 8), messageCount - 24}
+    };
+
+    QSet<int> usedReplyIndexes;
+    for (const ReferencePair& pair : pairs) {
+        if (pair.referencedIndex < 0 ||
+                pair.referencedIndex >= messages.size() ||
+                pair.replyIndex < 0 ||
+                pair.replyIndex >= messages.size() ||
+                pair.referencedIndex >= pair.replyIndex ||
+                usedReplyIndexes.contains(pair.replyIndex)) {
+            continue;
+        }
+
+        const QSharedPointer<ChatMessage>& referencedMessage = messages.at(pair.referencedIndex);
+        const QSharedPointer<ChatMessage>& replyMessage = messages.at(pair.replyIndex);
+        if (referencedMessage.isNull() || replyMessage.isNull()) {
+            continue;
+        }
+
+        replyMessage->setReferencedMessageId(referencedMessage->getMessageId());
+        usedReplyIndexes.insert(pair.replyIndex);
+    }
+}
+
 bool sampleDoNotDisturb(int ordinal)
 {
     return ordinal % 5 == 1 || ordinal % 7 == 3;
@@ -653,6 +693,7 @@ MessageRepository::MessageRepository(QObject* parent)
                                             peerId,
                                             peerName,
                                             unreadCount);
+        addLongGapReferenceSamples(generatedMessages);
         for (const QSharedPointer<ChatMessage>& msg : generatedMessages) {
             addMessage(conversationId, msg);
         }
@@ -699,6 +740,7 @@ MessageRepository::MessageRepository(QObject* parent)
                                            timeline,
                                            participants,
                                            unreadCount);
+        addLongGapReferenceSamples(generatedMessages);
         for (const QSharedPointer<ChatMessage>& msg : generatedMessages) {
             addMessage(group.groupId, msg);
         }
@@ -744,6 +786,27 @@ ChatMessageList MessageRepository::requestConversationMessages(const Conversatio
     return ConversationMessagesRequestOperation(m_store).request(query);
 }
 
+QSharedPointer<ChatMessage> MessageRepository::requestMessageById(const QString& conversationId,
+                                                                  const QString& messageId) const
+{
+    if (conversationId.isEmpty() || messageId.isEmpty()) {
+        return {};
+    }
+
+    QMutexLocker locker(&m_mutex);
+    const auto it = m_store.constFind(conversationId);
+    if (it == m_store.constEnd()) {
+        return {};
+    }
+
+    for (const QSharedPointer<ChatMessage>& message : it.value()) {
+        if (message && message->getMessageId() == messageId) {
+            return message;
+        }
+    }
+    return {};
+}
+
 ConversationMeta MessageRepository::requestConversationMeta(const ConversationMetaRequest& query) const
 {
     QMutexLocker locker(&m_mutex);
@@ -767,6 +830,45 @@ ConversationThreadData MessageRepository::requestConversationThread(const Conver
         thread.hasMoreBefore = thread.loadedMessageCount < allMessages.size();
         thread.unreadCount = m_conversationStates.value(query.conversationId).unreadCount;
     }
+    return thread;
+}
+
+ConversationThreadData MessageRepository::requestConversationThreadUntilMessage(
+        const ConversationThreadUntilMessageRequest& query) const
+{
+    ConversationThreadData thread;
+    thread.meta = requestConversationMeta({query.conversationId});
+    if (query.conversationId.isEmpty() || query.messageId.isEmpty()) {
+        return thread;
+    }
+
+    QMutexLocker locker(&m_mutex);
+    const ChatMessageList allMessages = m_store.value(query.conversationId);
+    const int total = allMessages.size();
+    const int offset = qBound(0, query.offsetFromLatest, total);
+    const int end = total - offset;
+    thread.unreadCount = m_conversationStates.value(query.conversationId).unreadCount;
+    thread.loadedMessageCount = offset;
+    thread.hasMoreBefore = offset < total;
+    if (end <= 0) {
+        return thread;
+    }
+
+    bool targetInUnloadedRange = false;
+    for (int index = 0; index < end; ++index) {
+        const QSharedPointer<ChatMessage>& message = allMessages.at(index);
+        if (message && message->getMessageId() == query.messageId) {
+            targetInUnloadedRange = true;
+            break;
+        }
+    }
+    if (!targetInUnloadedRange) {
+        return thread;
+    }
+
+    thread.messages = allMessages.mid(0, end);
+    thread.loadedMessageCount = total;
+    thread.hasMoreBefore = false;
     return thread;
 }
 

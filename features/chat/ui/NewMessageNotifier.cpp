@@ -45,6 +45,7 @@ NewMessageNotifier::NewMessageNotifier(QWidget *parent) : QWidget(parent)
         update();
     });
 
+    updateSize();
     QWidget::hide();
 }
 

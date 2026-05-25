@@ -14,6 +14,7 @@ class QStackedWidget;
 class QVariantAnimation;
 class PostFeedPage;
 class PostApplicationBar;
+class PostFloatingActionButton;
 class PostDetailView;
 class PostOverlay;
 class PostSessionController;
@@ -55,6 +56,7 @@ private:
     };
 
     void onPostUpdated(const PostSummary& summary);
+    void onPageTabClicked(int index);
     bool hasModalLayerActive() const;
     void fadeOverlay(qreal startOpacity, qreal endOpacity, bool hideAfter);
     void fadeBar(qreal startOpacity, qreal endOpacity, bool hideAfter);
@@ -75,6 +77,7 @@ private:
     void ensurePageLoaded(int index);
     PostSessionController* m_postController = nullptr;
     PostApplicationBar*   m_bar;
+    PostFloatingActionButton* m_addButton = nullptr;
     PostOverlay* m_overlay = nullptr;
     QVariantAnimation* m_overlayFadeAnimation = nullptr;
     QVariantAnimation* m_barFadeAnimation = nullptr;
