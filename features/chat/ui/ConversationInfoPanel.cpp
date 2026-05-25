@@ -688,6 +688,7 @@ GroupConversationInfoPanel::GroupConversationInfoPanel(QWidget* parent)
     , m_pinSwitch(new RedstoneLampSwitch(this))
     , m_doNotDisturbSwitch(new RedstoneLampSwitch(this))
     , m_clearHistoryButton(new StatefulPushButton(QStringLiteral("删除聊天记录"), this))
+    , m_transferOwnerButton(new StatefulPushButton(QStringLiteral("转让群聊"), this))
     , m_exitGroupButton(new StatefulPushButton(QStringLiteral("退出群聊"), this))
     , m_groupInfoCard(new RectPanel(this))
     , m_memberSummaryCard(new MemberListPanel(this))
@@ -785,7 +786,10 @@ GroupConversationInfoPanel::GroupConversationInfoPanel(QWidget* parent)
     layout->addSpacing(kSectionSpacing);
 
     applyPanelActionButtonStyle(m_clearHistoryButton, ThemeManager::instance().color(ThemeColor::ChatInfoPanelText), Qt::AlignLeft | Qt::AlignVCenter);
+    applyPanelActionButtonStyle(m_transferOwnerButton, ThemeManager::instance().color(ThemeColor::ChatInfoPanelText), Qt::AlignLeft | Qt::AlignVCenter);
     applyPanelActionButtonStyle(m_exitGroupButton, ThemeManager::instance().color(ThemeColor::DangerText), Qt::AlignCenter);
+    layout->addWidget(m_transferOwnerButton);
+    layout->addSpacing(kSectionSpacing);
     layout->addWidget(m_clearHistoryButton);
     layout->addSpacing(kSectionSpacing);
     layout->addWidget(m_exitGroupButton);
@@ -836,6 +840,15 @@ GroupConversationInfoPanel::GroupConversationInfoPanel(QWidget* parent)
             this, &GroupConversationInfoPanel::doNotDisturbChanged);
     connect(m_clearHistoryButton, &StatefulPushButton::clicked,
             this, &GroupConversationInfoPanel::clearChatHistoryRequested);
+    connect(m_transferOwnerButton, &StatefulPushButton::clicked, this, [this]() {
+        if (!canTransferOwner()) {
+            return;
+        }
+        const QString userId = CreateGroupChatPopup::openTransferOwner(this, m_group);
+        if (!userId.isEmpty()) {
+            emit groupOwnerTransferRequested(userId);
+        }
+    });
     connect(m_exitGroupButton, &StatefulPushButton::clicked,
             this, &GroupConversationInfoPanel::exitGroupRequested);
     connect(m_memberSearchInput->getLineEdit(), &QLineEdit::textChanged, this, [this](const QString& keyword) {
@@ -883,6 +896,7 @@ void GroupConversationInfoPanel::setGroupSummary(const Group& group,
     m_groupRemarkText->setText(validGroup ? group.remark : QString());
     m_pinSwitch->setLampChecked(validGroup && meta.isPinned);
     m_doNotDisturbSwitch->setLampChecked(validGroup && meta.isDoNotDisturb);
+    m_transferOwnerButton->setEnabled(canTransferOwner());
     m_exitGroupButton->setEnabled(m_canExitGroup);
     m_memberSummaryCard->setVisible(validGroup);
     rebuildMemberPreview();
@@ -1198,6 +1212,16 @@ bool GroupConversationInfoPanel::canRemoveMember(const User& user) const
         return true;
     }
     return currentRole == GroupRole::Admin && targetRole == GroupRole::Member;
+}
+
+bool GroupConversationInfoPanel::canTransferOwner() const
+{
+    if (m_group.groupId.isEmpty() || m_group.membersID.size() <= 1) {
+        return false;
+    }
+
+    const QString currentUserId = CurrentUser::instance().getUserId();
+    return !currentUserId.isEmpty() && m_group.ownerId == currentUserId;
 }
 
 void GroupConversationInfoPanel::requestNextMemberPage()

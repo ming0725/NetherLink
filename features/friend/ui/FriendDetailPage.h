@@ -50,6 +50,7 @@ private:
     void updateRemarkText();
     void updateGroupButtonText();
     void updateSignatureText();
+    void copyCurrentId();
     void saveRemark();
     void showGroupMenu();
     void rebuildGroupMenu();
@@ -65,7 +66,9 @@ private:
     QString m_avatarSource;
     QWidget* m_contentWidget;
     PaintedLabel* m_nameLabel;
+    PaintedLabel* m_idPrefixLabel;
     PaintedLabel* m_idLabel;
+    QToolButton* m_copyIdButton;
     QWidget* m_regionRow;
     PaintedLabel* m_regionLabel;
     QLabel* m_statusIcon;

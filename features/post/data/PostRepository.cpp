@@ -318,10 +318,16 @@ Post PostRepository::buildPostAt(int index) const
     post.authorID = authorIDs.at((index * 3 + 1) % authorIDs.size());
     post.createdAt = baseTime.addSecs(-index * 1800);
     post.contentCreatedAt = post.createdAt;
-    const QString imagePath = QString(":/resources/post/%1.jpg").arg((index * 7 + 3) % 10);
+    const int imageSeed = (index * 7 + 3) % 10;
+    const QString imagePath = QString(":/resources/post/%1.jpg").arg(imageSeed);
     post.thumbnailPath = imagePath;
     post.thumbnailSize = imageSizeForSource(imagePath);
-    post.picturesPath.append(imagePath);
+    const int pictureCount = 2 + (index % 3);
+    post.picturesPath.reserve(pictureCount);
+    for (int pictureIndex = 0; pictureIndex < pictureCount; ++pictureIndex) {
+        post.picturesPath.append(QString(":/resources/post/%1.jpg")
+                                         .arg((imageSeed + pictureIndex * 3) % 10));
+    }
 
     const auto likeIt = m_likeStates.constFind(post.postID);
     if (likeIt != m_likeStates.constEnd()) {

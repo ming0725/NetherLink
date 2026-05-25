@@ -8,6 +8,7 @@
 #include "features/friend/ui/FriendProfilePopup.h"
 #include "features/friend/ui/AddContactSearchWindow.h"
 #include "features/friend/ui/FriendSessionController.h"
+#include "app/frame/current_user/CurrentUserProfileEditContent.h"
 #include "app/state/CurrentUser.h"
 #include "shared/services/AudioService.h"
 #include "shared/services/ImageService.h"
@@ -65,6 +66,15 @@ static constexpr int kHistoryUnreadNotifierLoadDelayMs = 120;
 static constexpr int kMessageLoadingSkeletonFrameMs = 40;
 static constexpr int kNewMessageNotifierMinBottomDistance = 220;
 static constexpr int kNewMessageNotifierViewportDistanceDivisor = 2;
+
+bool isGroupSystemEventMessage(const ChatMessage* message)
+{
+    if (!message) {
+        return false;
+    }
+    return message->getType() == MessageType::GroupMemberJoined ||
+           message->getType() == MessageType::GroupSystemEvent;
+}
 
 class SquareDotsButton : public QPushButton
 {
@@ -220,6 +230,25 @@ QString groupRoleLabel(GroupRole role)
     default:
         return QStringLiteral("群成员");
     }
+}
+
+bool canEditGroupMemberNickname(const Group& group, const QString& userId)
+{
+    if (group.groupId.isEmpty() || userId.isEmpty()) {
+        return false;
+    }
+
+    const QString currentUserId = CurrentUser::instance().getUserId();
+    if (userId == currentUserId) {
+        return true;
+    }
+
+    const GroupRole currentRole = groupRoleForUser(group, currentUserId);
+    const GroupRole targetRole = groupRoleForUser(group, userId);
+    if (currentRole == GroupRole::Owner) {
+        return true;
+    }
+    return currentRole == GroupRole::Admin && targetRole == GroupRole::Member;
 }
 
 QString directRecallText(bool originalFromMe, bool actorIsCurrentUser)
@@ -393,12 +422,18 @@ ChatArea::ChatArea(QWidget *parent)
             this, &ChatArea::showFriendProfilePopup);
     connect(chatView, &ChatListView::avatarContextMenuRequested,
             this, &ChatArea::showAvatarContextMenu);
+    connect(chatView, &ChatListView::groupSystemEventProfileRequested,
+            this, &ChatArea::showFriendProfilePopup);
     connect(friendProfilePopup, &FriendProfilePopup::requestMessage,
             this, &ChatArea::requestOpenConversation);
     connect(friendProfilePopup, &FriendProfilePopup::requestAddFriend,
             this, [this](const QString& userId) {
                 AddContactSearchWindow::openUserRequest(userId, this);
             });
+    connect(friendProfilePopup, &FriendProfilePopup::requestEditProfile,
+            this, &ChatArea::showCurrentUserEditProfilePopup);
+    connect(friendProfilePopup, &FriendProfilePopup::requestGroupNicknameChange,
+            sessionController, &ChatSessionController::saveGroupMemberNickname);
     connect(inputBar, &FloatingInputBar::sendImage,
             this, &ChatArea::onSendImage);
     connect(inputBar, &FloatingInputBar::sendText,
@@ -424,6 +459,8 @@ ChatArea::ChatArea(QWidget *parent)
             });
     connect(&MessageRepository::instance(), &MessageRepository::lastMessageChanged,
             this, &ChatArea::appendRepositoryMessage);
+    connect(&GroupRepository::instance(), &GroupRepository::groupListChanged,
+            this, &ChatArea::refreshCurrentGroupMessageDisplayNames);
     connect(sessionController, &ChatSessionController::directPanelDataLoaded,
             this, &ChatArea::onDirectPanelDataLoaded);
     connect(sessionController, &ChatSessionController::groupPanelDataLoaded,
@@ -445,7 +482,8 @@ void ChatArea::addMessage(QSharedPointer<ChatMessage> message)
     }
 
     const bool isOwnMessage = message->isFromMe();
-    const bool shouldFollowIncomingMessage = chatView->isBottomLocked();
+    const bool isSystemEvent = isGroupSystemEventMessage(message.get());
+    const bool shouldFollowIncomingMessage = !isSystemEvent && chatView->isBottomLocked();
     // 添加消息
     chatModel->addMessage(message);
     assignAppendedPeerMessageOrdinal(message);
@@ -461,7 +499,7 @@ void ChatArea::addMessage(QSharedPointer<ChatMessage> message)
         updateNewMessageNotifier();
     }
 
-    if (isOwnMessage) {
+    if (isOwnMessage && !isSystemEvent) {
         QTimer::singleShot(0, this, [this]() {
             scrollToBottom(true);
         });
@@ -494,7 +532,8 @@ void ChatArea::appendRepositoryMessage(const QString& changedConversationId,
     }
 
     const bool isOwnMessage = message->isFromMe();
-    const bool shouldFollowIncomingMessage = chatView->isBottomLocked();
+    const bool isSystemEvent = isGroupSystemEventMessage(message.get());
+    const bool shouldFollowIncomingMessage = !isSystemEvent && chatView->isBottomLocked();
     chatModel->addMessage(message);
     assignAppendedPeerMessageOrdinal(message);
     ++m_state.loadedMessageCount;
@@ -505,7 +544,7 @@ void ChatArea::appendRepositoryMessage(const QString& changedConversationId,
         updateNewMessageNotifier();
     }
 
-    if (isOwnMessage) {
+    if (isOwnMessage && !isSystemEvent) {
         QTimer::singleShot(0, this, [this]() {
             scrollToBottom(true);
         });
@@ -521,6 +560,85 @@ void ChatArea::appendRepositoryMessage(const QString& changedConversationId,
                 updateNewMessageNotifier();
             }
         });
+    }
+}
+
+void ChatArea::refreshCurrentGroupMessageDisplayNames()
+{
+    if (!chatModel || conversationId().isEmpty() || !isGroupMode()) {
+        return;
+    }
+
+    const Group group = GroupRepository::instance().requestGroupDetail({conversationId()});
+    if (group.groupId.isEmpty()) {
+        return;
+    }
+
+    for (int row = 0; row < chatModel->rowCount(); ++row) {
+        const QSharedPointer<ChatMessage> message = chatModel->sharedMessageAt(row);
+        if (message.isNull() ||
+            !message->isInGroupChat() ||
+            (message->getSenderId().isEmpty() && message->getType() != MessageType::GroupMemberJoined &&
+             message->getType() != MessageType::GroupSystemEvent)) {
+            continue;
+        }
+
+        bool changed = false;
+        if (!message->getSenderId().isEmpty()) {
+            const QString nextName = groupMemberDisplayName(group, message->getSenderId());
+            const GroupRole nextRole = groupRoleForUser(group, message->getSenderId());
+            if (message->getSenderName() != nextName || message->getRole() != nextRole) {
+                message->setSenderName(nextName);
+                message->setRole(nextRole);
+                changed = true;
+            }
+        }
+
+        if (message->getType() == MessageType::Recall) {
+            auto* recallMessage = static_cast<RecallMessage*>(message.data());
+            if (!recallMessage->getActorId().isEmpty()) {
+                const QString actorName = groupMemberDisplayName(group, recallMessage->getActorId());
+                const GroupRole actorRole = groupRoleForUser(group, recallMessage->getActorId());
+                if (recallMessage->getActorName() != actorName ||
+                    recallMessage->getActorRole() != actorRole) {
+                    recallMessage->setActorName(actorName);
+                    recallMessage->setActorRole(actorRole);
+                    changed = true;
+                }
+            }
+        } else if (message->getType() == MessageType::GroupMemberJoined) {
+            auto* joinedMessage = static_cast<GroupMemberJoinedMessage*>(message.data());
+            if (!joinedMessage->getMemberId().isEmpty()) {
+                const QString memberName = groupMemberDisplayName(group, joinedMessage->getMemberId());
+                if (joinedMessage->getMemberName() != memberName) {
+                    joinedMessage->setMemberName(memberName);
+                    changed = true;
+                }
+            }
+            if (!joinedMessage->getInviterId().isEmpty()) {
+                const QString inviterName = groupMemberDisplayName(group, joinedMessage->getInviterId());
+                if (joinedMessage->getInviterName() != inviterName) {
+                    joinedMessage->setInviterName(inviterName);
+                    changed = true;
+                }
+            }
+        } else if (message->getType() == MessageType::GroupSystemEvent) {
+            auto* eventMessage = static_cast<GroupSystemEventMessage*>(message.data());
+            if (!eventMessage->getHighlightedUserId().isEmpty()) {
+                const QString highlightedName = groupMemberDisplayName(group, eventMessage->getHighlightedUserId());
+                if (eventMessage->getHighlightedName() != highlightedName) {
+                    eventMessage->setHighlightedName(highlightedName);
+                    changed = true;
+                }
+            }
+        }
+
+        if (changed) {
+            chatModel->notifyMessageChanged(message.get());
+        }
+    }
+    if (chatView && chatView->viewport()) {
+        chatView->viewport()->update();
     }
 }
 
@@ -585,7 +703,7 @@ int ChatArea::registerHistoryUnreadCandidates(const ChatMessageList& messages, i
     int lastOrdinal = -1;
     for (auto it = messages.crbegin(); it != messages.crend() && registeredCount < maxCount; ++it) {
         const ChatMessagePtr& message = *it;
-        if (!message || message->isFromMe()) {
+        if (!message || message->isFromMe() || isGroupSystemEventMessage(message.get())) {
             continue;
         }
 
@@ -613,7 +731,7 @@ int ChatArea::registerHistoryUnreadCandidates(const ChatMessageList& messages, i
 
 bool ChatArea::registerNewUnreadCandidate(const ChatMessagePtr& message)
 {
-    if (!message || message->isFromMe()) {
+    if (!message || message->isFromMe() || isGroupSystemEventMessage(message.get())) {
         return false;
     }
 
@@ -781,7 +899,7 @@ int ChatArea::historyUnreadJumpRow(int unreadCount) const
     int oldestAvailablePeerRow = -1;
     for (int row = chatModel->rowCount() - 1; row >= 0; --row) {
         const ChatMessage* message = chatModel->messageAt(row);
-        if (!message || message->isFromMe()) {
+        if (!message || message->isFromMe() || isGroupSystemEventMessage(message)) {
             continue;
         }
 
@@ -800,7 +918,7 @@ void ChatArea::assignInitialPeerMessageOrdinals(const ChatMessageList& messages)
     m_state.peerMessageOrdinals.clear();
     int ordinal = 0;
     for (const ChatMessagePtr& message : messages) {
-        if (!message || message->isFromMe()) {
+        if (!message || message->isFromMe() || isGroupSystemEventMessage(message.get())) {
             continue;
         }
         m_state.peerMessageOrdinals.insert(message.get(), ordinal++);
@@ -813,7 +931,7 @@ void ChatArea::assignPrependedPeerMessageOrdinals(const ChatMessageList& message
 {
     int peerCount = 0;
     for (const ChatMessagePtr& message : messages) {
-        if (message && !message->isFromMe()) {
+        if (message && !message->isFromMe() && !isGroupSystemEventMessage(message.get())) {
             ++peerCount;
         }
     }
@@ -825,7 +943,7 @@ void ChatArea::assignPrependedPeerMessageOrdinals(const ChatMessageList& message
             ? 0
             : m_state.minPeerMessageOrdinal - peerCount;
     for (const ChatMessagePtr& message : messages) {
-        if (!message || message->isFromMe()) {
+        if (!message || message->isFromMe() || isGroupSystemEventMessage(message.get())) {
             continue;
         }
         m_state.peerMessageOrdinals.insert(message.get(), ordinal++);
@@ -840,7 +958,7 @@ void ChatArea::assignPrependedPeerMessageOrdinals(const ChatMessageList& message
 
 void ChatArea::assignAppendedPeerMessageOrdinal(const ChatMessagePtr& message)
 {
-    if (!message || message->isFromMe()) {
+    if (!message || message->isFromMe() || isGroupSystemEventMessage(message.get())) {
         return;
     }
 
@@ -1242,6 +1360,8 @@ void ChatArea::connectGroupInfoPanel(GroupConversationInfoPanel* panel)
             sessionController, &ChatSessionController::removeGroupMember);
     connect(panel, &GroupConversationInfoPanel::groupMembersBatchRemovalRequested,
             sessionController, &ChatSessionController::removeGroupMembers);
+    connect(panel, &GroupConversationInfoPanel::groupOwnerTransferRequested,
+            sessionController, &ChatSessionController::transferGroupOwner);
     connect(panel, &GroupConversationInfoPanel::groupRemarkChanged,
             sessionController, &ChatSessionController::saveGroupRemark);
     connect(panel, &GroupConversationInfoPanel::pinChanged,
@@ -1307,7 +1427,56 @@ void ChatArea::showFriendProfilePopup(const QString& userId, const QPoint& globa
         return;
     }
 
+    if (isGroupMode() && !conversationId().isEmpty()) {
+        const Group group = GroupRepository::instance().requestGroupDetail({conversationId()});
+        friendProfilePopup->setGroupContext(group, canEditGroupMemberNickname(group, userId));
+    } else {
+        friendProfilePopup->clearGroupContext();
+    }
     friendProfilePopup->popupAt(globalPos, userId);
+}
+
+void ChatArea::showCurrentUserEditProfilePopup()
+{
+    if (currentUserEditProfilePopup) {
+        currentUserEditProfilePopup->raise();
+        return;
+    }
+
+    const CurrentUserProfile profile = CurrentUser::instance().profile();
+    if (!profile.isValid()) {
+        return;
+    }
+
+    auto* content = new CurrentUserProfileEditContent(profile);
+    InWindowPopupOverlay::Options options;
+    options.maximumPopupSize = QSize(520, 520);
+    options.dismissOnOutsideClick = true;
+    options.dismissOnEscape = true;
+
+    currentUserEditProfilePopup = InWindowPopupOverlay::showPopup(this, content, options);
+    if (!currentUserEditProfilePopup) {
+        return;
+    }
+
+    content->saveRequested = [this](const CurrentUserProfile& editedProfile) {
+        CurrentUser::instance().saveProfile(editedProfile);
+        if (currentUserEditProfilePopup) {
+            currentUserEditProfilePopup->closePopup(InWindowPopupOverlay::DismissReason::Accepted);
+        }
+    };
+    content->cancelRequested = [this]() {
+        if (currentUserEditProfilePopup) {
+            currentUserEditProfilePopup->closePopup(InWindowPopupOverlay::DismissReason::Rejected);
+        }
+    };
+
+    connect(currentUserEditProfilePopup,
+            &InWindowPopupOverlay::dismissed,
+            this,
+            [this]() {
+                currentUserEditProfilePopup = nullptr;
+            });
 }
 
 void ChatArea::showAvatarContextMenu(const QString& userId, const QPoint& globalPos)
@@ -1720,16 +1889,18 @@ void ChatArea::onSendImage(const QString &path)
 {
     if (ImageService::instance().sourceSize(path).isValid()) {
         GroupRole role = GroupRole::Member;
+        QString senderName = CurrentUser::instance().getUserName();
         if (isGroupMode()) {
             const Group group = GroupRepository::instance().requestGroupDetail({conversationId()});
             role = groupRoleForUser(group, CurrentUser::instance().getUserId());
+            senderName = groupMemberDisplayName(group, CurrentUser::instance().getUserId());
         }
         auto ptr =
                 QSharedPointer<ImageMessage>::create(path,
                                                true,
                                                CurrentUser::instance().getUserId(),
                                                isGroupMode(),
-                                               CurrentUser::instance().getUserName(),
+                                               senderName,
                                                role);
         addMessage(ptr);
     }
@@ -1739,16 +1910,18 @@ void ChatArea::onSendText(const QString &text)
 {
     if (!text.trimmed().isEmpty()) {
         GroupRole role = GroupRole::Member;
+        QString senderName = CurrentUser::instance().getUserName();
         if (isGroupMode()) {
             const Group group = GroupRepository::instance().requestGroupDetail({conversationId()});
             role = groupRoleForUser(group, CurrentUser::instance().getUserId());
+            senderName = groupMemberDisplayName(group, CurrentUser::instance().getUserId());
         }
         auto ptr =
                 QSharedPointer<TextMessage>::create(text,
                                                true,
                                                CurrentUser::instance().getUserId(),
                                                isGroupMode(),
-                                               CurrentUser::instance().getUserName(),
+                                               senderName,
                                                role);
         addMessage(ptr);
     }
@@ -1786,7 +1959,11 @@ void ChatArea::onSendTextAsPeer(const QString& text)
 
 bool ChatArea::canRecallMessage(const ChatMessage* message) const
 {
-    if (!message || message->getType() == MessageType::Recall || conversationId().isEmpty()) {
+    if (!message ||
+        message->getType() == MessageType::Recall ||
+        message->getType() == MessageType::GroupMemberJoined ||
+        message->getType() == MessageType::GroupSystemEvent ||
+        conversationId().isEmpty()) {
         return false;
     }
 
@@ -2045,7 +2222,7 @@ void ChatArea::clearConversation(bool closeInfoPanel)
         sessionController->close();
     }
     if (friendProfilePopup) {
-        friendProfilePopup->hide();
+        friendProfilePopup->close();
         friendProfilePopup->clear();
     }
     chatModel->clear();

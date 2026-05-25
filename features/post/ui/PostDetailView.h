@@ -14,6 +14,7 @@
 class IconLineEdit;
 class QLabel;
 class QMouseEvent;
+class QEvent;
 class PostCommentDelegate;
 class PostDetailListModel;
 class PostDetailListView;
@@ -43,6 +44,8 @@ signals:
     void likeClicked(bool liked);
 protected:
     void mousePressEvent(QMouseEvent* event) override;
+    void mouseMoveEvent(QMouseEvent* event) override;
+    void leaveEvent(QEvent* event) override;
     void resizeEvent(QResizeEvent* ev) override;
     void paintEvent(QPaintEvent*) override;
 private:
@@ -56,10 +59,13 @@ private:
         QDateTime contentCreatedAt;
         QString previewImageSource;
         QSize previewImageSize;
-        QString fullImageSource;
-        QSize fullImageSize;
+        QVector<QString> imageSources;
+        QVector<QSize> imageSizes;
+        int currentImageIndex = 0;
         qreal fullImageOpacity = 0.0;
         bool imageVisible = true;
+        bool imageHoverActive = false;
+        qreal imageHoverProgress = 0.0;
         bool isFollowed = false;
         bool isLiked = false;
         int likeCount = 0;
@@ -67,6 +73,19 @@ private:
     };
 
     QRect fittedImageRect(const QRect& bounds, const QSize& imageSize) const;
+    QString currentImageSource() const;
+    QSize currentImageSize() const;
+    QString firstImageSource() const;
+    QSize firstImageSize() const;
+    int imageCount() const;
+    QRect imageCounterRect() const;
+    QRect imageArrowRect(bool previous, qreal progress = 1.0) const;
+    void updateImageHoverState(const QPoint& pos);
+    void setImageHoverActive(bool active);
+    void setCurrentImageIndex(int index);
+    void showPreviousImage();
+    void showNextImage();
+    void preloadNextImage();
     void setupUI();
     void updateLayout();
     void applyTheme();
@@ -122,6 +141,7 @@ private:
     QHash<QString, QPointer<QVariantAnimation>> m_replyExpansionAnimations;
     QHash<QString, QPointer<QVariantAnimation>> m_moreReplyAnimations;
     QPointer<QVariantAnimation> m_imageFadeAnimation;
+    QPointer<QVariantAnimation> m_imageHoverAnimation;
     QPointer<class ImageViewer> m_postImageViewer;
     QString m_postImageViewerPostId;
 };

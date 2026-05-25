@@ -34,7 +34,9 @@ constexpr int kPopupHeight = 480;
 constexpr int kPadding = 18;
 constexpr int kSearchHeight = 30;
 constexpr int kFooterHeight = 58;
-constexpr int kGroupHeaderHeight = 32;
+constexpr int kGroupHeaderHeight = 40;
+constexpr int kGroupTitleFontSize = 14;
+constexpr int kGroupCountFontSize = 12;
 constexpr int kContactItemHeight = 64;
 constexpr int kSelectedItemHeight = 56;
 constexpr int kAvatarSize = 38;
@@ -810,8 +812,8 @@ void CreateGroupChatContactDelegate::paint(QPainter* painter,
         const QString title = index.data(CreateGroupChatContactModel::GroupNameRole).toString();
         const QString count = QString::number(index.data(CreateGroupChatContactModel::GroupFriendCountRole).toInt());
         const int titleLeft = arrowRect.right() + 8;
-        const int countWidth = textMetrics(11, QFont::Medium).horizontalAdvance(count);
-        const int countRight = option.rect.right() - 18;
+        const int countWidth = textMetrics(kGroupCountFontSize, QFont::Medium).horizontalAdvance(count);
+        const int countRight = option.rect.right() - kGroupCountRightPadding;
         const QRect titleRect(titleLeft,
                               option.rect.top(),
                               qMax(0, countRight - countWidth - titleLeft - 8),
@@ -820,12 +822,13 @@ void CreateGroupChatContactDelegate::paint(QPainter* painter,
                               option.rect.top(),
                               countWidth,
                               option.rect.height());
-        painter->setFont(textFont(12, QFont::Medium));
+        painter->setFont(textFont(kGroupTitleFontSize, QFont::Medium));
         painter->setPen(theme.secondaryText);
         painter->drawText(titleRect,
                           Qt::AlignLeft | Qt::AlignVCenter,
-                          textMetrics(12, QFont::Medium).elidedText(title, Qt::ElideRight, titleRect.width()));
-        painter->setFont(textFont(11, QFont::Medium));
+                          textMetrics(kGroupTitleFontSize, QFont::Medium)
+                                  .elidedText(title, Qt::ElideRight, titleRect.width()));
+        painter->setFont(textFont(kGroupCountFontSize, QFont::Medium));
         painter->setPen(theme.tertiaryText);
         painter->drawText(countRect, Qt::AlignRight | Qt::AlignVCenter, count);
         painter->restore();
@@ -1255,7 +1258,7 @@ void CreateGroupChatContactListView::drawStickyGroup(QPainter* painter,
 
     const QString countText = QString::number(group.count);
     const int titleLeft = arrowRect.right() + 8;
-    const int countWidth = textMetrics(11, QFont::Medium).horizontalAdvance(countText);
+    const int countWidth = textMetrics(kGroupCountFontSize, QFont::Medium).horizontalAdvance(countText);
     const int countRight = rect.right() - kGroupCountRightPadding;
     const QRect countRect(qMax(titleLeft, countRight - countWidth + 1),
                           rect.top(),
@@ -1266,13 +1269,14 @@ void CreateGroupChatContactListView::drawStickyGroup(QPainter* painter,
                           qMax(0, countRect.left() - titleLeft - 8),
                           rect.height());
 
-    painter->setFont(textFont(12, QFont::Medium));
+    painter->setFont(textFont(kGroupTitleFontSize, QFont::Medium));
     painter->setPen(ThemeManager::instance().color(ThemeColor::CreateGroupPopupSecondaryText));
     painter->drawText(titleRect,
                       Qt::AlignLeft | Qt::AlignVCenter,
-                      textMetrics(12, QFont::Medium).elidedText(group.title, Qt::ElideRight, titleRect.width()));
+                      textMetrics(kGroupTitleFontSize, QFont::Medium)
+                              .elidedText(group.title, Qt::ElideRight, titleRect.width()));
 
-    painter->setFont(textFont(11, QFont::Medium));
+    painter->setFont(textFont(kGroupCountFontSize, QFont::Medium));
     painter->setPen(ThemeManager::instance().color(ThemeColor::CreateGroupPopupTertiaryText));
     painter->drawText(countRect, Qt::AlignRight | Qt::AlignVCenter, countText);
     painter->restore();
@@ -1554,6 +1558,14 @@ QStringList CreateGroupChatPopup::openRemoveMembers(QWidget* parent, const Group
     return openSelectionPopup(parent, content);
 }
 
+QString CreateGroupChatPopup::openTransferOwner(QWidget* parent, const Group& group)
+{
+    auto* content = new CreateGroupChatPopup;
+    content->configureForTransferOwner(group);
+    const QStringList result = openSelectionPopup(parent, content);
+    return result.isEmpty() ? QString() : result.first();
+}
+
 QStringList CreateGroupChatPopup::openSelectionPopup(QWidget* parent, CreateGroupChatPopup* content)
 {
     QStringList result;
@@ -1761,6 +1773,10 @@ void CreateGroupChatPopup::toggleContact(const FriendSummary& contact)
         return;
     }
 
+    if (m_singleSelection) {
+        m_selectedUserIds.clear();
+        m_selectedContacts.clear();
+    }
     m_selectedUserIds.insert(contact.userId);
     m_selectedContacts.push_back(contact);
     refreshSelectedView();
@@ -1859,6 +1875,7 @@ void CreateGroupChatPopup::configureForInvite(const Group& group, bool commitEna
 {
     m_useCustomContacts = false;
     m_commitSelection = commitEnabled;
+    m_singleSelection = false;
     m_disabledUserIds.clear();
     for (const QString& userId : group.membersID) {
         if (!userId.isEmpty()) {
@@ -1877,12 +1894,33 @@ void CreateGroupChatPopup::configureForRemove(const Group& group)
 {
     m_useCustomContacts = true;
     m_commitSelection = true;
+    m_singleSelection = false;
     m_sourceContacts = groupMembersAsContacts(group);
     m_sourceGroupId = group.groupId;
     m_sourceGroupName = QStringLiteral("群聊成员");
     m_disabledUserIds = removableDisabledUserIds(group);
     setModeTitle(QStringLiteral("移除成员"), QStringLiteral("成员"));
     m_okButton->setText(QStringLiteral("移除"));
+    m_selectedContacts.clear();
+    m_selectedUserIds.clear();
+    reloadContacts();
+    refreshSelectedView();
+}
+
+void CreateGroupChatPopup::configureForTransferOwner(const Group& group)
+{
+    m_useCustomContacts = true;
+    m_commitSelection = true;
+    m_singleSelection = true;
+    m_sourceContacts = groupMembersAsContacts(group);
+    m_sourceGroupId = group.groupId;
+    m_sourceGroupName = QStringLiteral("选择新群主");
+    m_disabledUserIds = {CurrentUser::instance().getUserId()};
+    if (!group.ownerId.isEmpty()) {
+        m_disabledUserIds.insert(group.ownerId);
+    }
+    setModeTitle(QStringLiteral("转让群聊"), QStringLiteral("成员"));
+    m_okButton->setText(QStringLiteral("转让"));
     m_selectedContacts.clear();
     m_selectedUserIds.clear();
     reloadContacts();

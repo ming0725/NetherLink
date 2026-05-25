@@ -277,6 +277,7 @@ public:
     static QStringList openInviteMembers(QWidget* parent, const Group& group);
     static QStringList openPreviewInviteMembers(QWidget* parent, const Group& group);
     static QStringList openRemoveMembers(QWidget* parent, const Group& group);
+    static QString openTransferOwner(QWidget* parent, const Group& group);
 
 signals:
     void accepted(const QString& groupId);
@@ -298,6 +299,7 @@ private:
     void acceptSelection();
     void configureForInvite(const Group& group, bool commitEnabled);
     void configureForRemove(const Group& group);
+    void configureForTransferOwner(const Group& group);
     void setModeTitle(const QString& title, const QString& countUnit);
     static QStringList openSelectionPopup(QWidget* parent, CreateGroupChatPopup* content);
 
@@ -318,5 +320,6 @@ private:
     QString m_countUnit = QStringLiteral("好友");
     bool m_useCustomContacts = false;
     bool m_commitSelection = true;
+    bool m_singleSelection = false;
     bool m_contactCacheLoaded = false;
 };

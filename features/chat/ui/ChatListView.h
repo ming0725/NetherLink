@@ -34,6 +34,7 @@ signals:
     void userScrollDownIntent();
     void avatarClicked(const QString& userId, const QPoint& globalPos);
     void avatarContextMenuRequested(const QString& userId, const QPoint& globalPos);
+    void groupSystemEventProfileRequested(const QString& userId, const QPoint& globalPos);
 
 protected:
     void keyPressEvent(QKeyEvent* event) override;

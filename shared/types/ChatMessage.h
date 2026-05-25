@@ -11,7 +11,8 @@ enum class MessageType {
     File,
     Voice,
     Recall,
-    GroupMemberJoined
+    GroupMemberJoined,
+    GroupSystemEvent
 };
 
 enum class GroupRole {
@@ -43,6 +44,8 @@ public:
     bool isInGroupChat() const { return isGroupChat; }
     QString getSenderName() const { return senderName; }
     GroupRole getRole() const { return role; }
+    void setSenderName(const QString& name) { senderName = name; }
+    void setRole(GroupRole nextRole) { role = nextRole; }
 
 protected:
     bool fromMe;
@@ -129,6 +132,8 @@ public:
     QString getActorName() const { return actorName; }
     GroupRole getActorRole() const { return actorRole; }
     bool isModeratorRecall() const { return moderatorRecall; }
+    void setActorName(const QString& name) { actorName = name; }
+    void setActorRole(GroupRole role) { actorRole = role; }
 
 private:
     QString displayText;
@@ -143,26 +148,87 @@ private:
 class GroupMemberJoinedMessage : public ChatMessage {
 public:
     GroupMemberJoinedMessage(const QString& memberId,
-                             const QString& memberName)
+                             const QString& memberName,
+                             const QString& inviterId = QString(),
+                             const QString& inviterName = QString())
         : ChatMessage(false,
                       memberId,
                       true,
                       memberName,
                       GroupRole::Member)
+        , memberId(memberId)
         , memberName(memberName)
+        , inviterId(inviterId)
+        , inviterName(inviterName)
     {
     }
 
     QString getContent() const override
     {
-        return QStringLiteral("%1 加入了群聊").arg(memberName);
+        if (!inviterName.isEmpty()) {
+            return QStringLiteral("%1邀请了%2加入群聊").arg(inviterName, memberName);
+        }
+        return QStringLiteral("%1加入了群聊").arg(memberName);
     }
 
     MessageType getType() const override { return MessageType::GroupMemberJoined; }
+    QString getMemberId() const { return memberId; }
     QString getMemberName() const { return memberName; }
+    QString getInviterId() const { return inviterId; }
+    QString getInviterName() const { return inviterName; }
+    void setMemberName(const QString& name) { memberName = name; senderName = name; }
+    void setInviterName(const QString& name) { inviterName = name; }
 
 private:
+    QString memberId;
     QString memberName;
+    QString inviterId;
+    QString inviterName;
+};
+
+class GroupSystemEventMessage : public ChatMessage {
+public:
+    GroupSystemEventMessage(const QString& highlightedName,
+                            const QString& suffix,
+                            const QString& prefix = QString(),
+                            const QString& highlightedUserId = QString())
+        : ChatMessage(false,
+                      QString(),
+                      true,
+                      QString(),
+                      GroupRole::Member)
+        , prefix(prefix)
+        , highlightedName(highlightedName)
+        , highlightedUserId(highlightedUserId)
+        , suffix(suffix)
+    {
+    }
+
+    QString getContent() const override
+    {
+        QString content;
+        if (!prefix.isEmpty()) {
+            content += prefix;
+        }
+        content += highlightedName;
+        if (!suffix.isEmpty()) {
+            content += suffix;
+        }
+        return content;
+    }
+
+    MessageType getType() const override { return MessageType::GroupSystemEvent; }
+    QString getPrefix() const { return prefix; }
+    QString getHighlightedName() const { return highlightedName; }
+    QString getHighlightedUserId() const { return highlightedUserId; }
+    QString getSuffix() const { return suffix; }
+    void setHighlightedName(const QString& name) { highlightedName = name; }
+
+private:
+    QString prefix;
+    QString highlightedName;
+    QString highlightedUserId;
+    QString suffix;
 };
 
 #endif // CHATMESSAGE_H

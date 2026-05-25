@@ -40,6 +40,9 @@ public:
     QString imageSourceAt(const QStyleOptionViewItem& option,
                           const QModelIndex& index,
                           const QPoint& viewportPos) const;
+    QString groupSystemEventUserIdAt(const QStyleOptionViewItem& option,
+                                     const QModelIndex& index,
+                                     const QPoint& viewportPos) const;
     bool avatarHitTest(const QStyleOptionViewItem& option,
                        const QModelIndex& index,
                        const QPoint& viewportPos) const;
@@ -85,6 +88,13 @@ private:
 
     struct UrlRangesCacheEntry {
         QVector<TextRange> ranges;
+    };
+
+    struct GroupSystemEventLayoutSegment {
+        QString text;
+        QString userId;
+        bool highlighted = false;
+        QRect rect;
     };
 
     static constexpr int AVATAR_SIZE = 40;
@@ -139,9 +149,9 @@ private:
                            const QRect& rect,
                            const RecallMessage* message,
                            const QModelIndex& index) const;
-    void drawGroupMemberJoinedMessage(QPainter* painter,
-                                      const QRect& rect,
-                                      const GroupMemberJoinedMessage* message) const;
+    void drawGroupSystemEventMessage(QPainter* painter,
+                                     const QRect& rect,
+                                     const ChatMessage* message) const;
 
     QRect calculateBubbleRect(const QRect& contentRect,
                              const ChatMessage* message,
@@ -156,8 +166,11 @@ private:
                                      const RecallMessage* message) const;
     QRect calculateRecallReeditRect(const QRect& contentRect,
                                     const RecallMessage* message) const;
-    QRect calculateGroupMemberJoinedContentRect(const QRect& contentRect,
-                                                const GroupMemberJoinedMessage* message) const;
+    QRect calculateGroupSystemEventContentRect(const QRect& contentRect,
+                                               const ChatMessage* message) const;
+    QVector<GroupSystemEventLayoutSegment> groupSystemEventLayoutSegments(
+            const QRect& contentRect,
+            const ChatMessage* message) const;
     QFont messageFont() const;
     QFont recallFont() const;
     QSize textDocumentSize(const QString& text, const QFont& font, int maxTextWidth) const;

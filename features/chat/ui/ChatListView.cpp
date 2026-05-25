@@ -341,6 +341,18 @@ void ChatListView::mousePressEvent(QMouseEvent* event)
                 }
             }
 
+            const QString systemEventUserId =
+                    delegate->groupSystemEventUserIdAt(option, index, event->pos());
+            if (!systemEventUserId.isEmpty()) {
+                if (model()) {
+                    static_cast<ChatListModel*>(model())->clearSelection();
+                }
+                clearTextSelection();
+                emit groupSystemEventProfileRequested(systemEventUserId, mouseGlobalPosition(event));
+                event->accept();
+                return;
+            }
+
             const bool hitBubble = delegate->bubbleHitTest(option, index, event->pos());
             if (delegate->triggerReeditIfHit(option, index, event->pos())) {
                 clearTextSelection();
@@ -481,11 +493,14 @@ void ChatListView::mouseMoveEvent(QMouseEvent* event)
 
     bool overUrl = false;
     bool overText = false;
+    bool overSystemEventUser = false;
     if (delegate) {
         const QModelIndex index = indexAt(event->pos());
         if (index.isValid()) {
             const QStyleOptionViewItem option = viewOptionForIndex(index);
-            overUrl = !delegate->urlAt(option, index, event->pos()).isEmpty();
+            overSystemEventUser =
+                    !delegate->groupSystemEventUserIdAt(option, index, event->pos()).isEmpty();
+            overUrl = !overSystemEventUser && !delegate->urlAt(option, index, event->pos()).isEmpty();
             if (!overUrl && delegate->reeditHitTest(option, index, event->pos())) {
                 viewport()->setCursor(Qt::PointingHandCursor);
                 OverlayScrollListView::mouseMoveEvent(event);

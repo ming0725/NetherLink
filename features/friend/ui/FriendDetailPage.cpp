@@ -3,6 +3,7 @@
 
 #include <QActionGroup>
 #include <QApplication>
+#include <QClipboard>
 #include <QEvent>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -24,6 +25,7 @@
 #include "shared/ui/ImageViewer.h"
 #include "shared/ui/InWindowPopupOverlay.h"
 #include "shared/ui/InlineEditableText.h"
+#include "shared/ui/GlobalNotification.h"
 #include "shared/ui/PaintedLabel.h"
 #include "shared/ui/StatefulPushButton.h"
 #include "shared/ui/StyledActionMenu.h"
@@ -77,6 +79,93 @@ void applyDangerOutlineButtonStyle(StatefulPushButton* button)
     button->setBorderColor(ThemeManager::instance().color(ThemeColor::Divider));
     button->setBorderWidth(1);
 }
+
+class CopyIdButton final : public QToolButton
+{
+public:
+    explicit CopyIdButton(QWidget* parent = nullptr)
+        : QToolButton(parent)
+    {
+        setFixedSize(26, 24);
+        setCursor(Qt::PointingHandCursor);
+        setFocusPolicy(Qt::NoFocus);
+        setIconSize(QSize(15, 15));
+        setToolTip(QStringLiteral("复制ID"));
+        setAccessibleName(QStringLiteral("复制ID"));
+    }
+
+protected:
+    bool event(QEvent* event) override
+    {
+        if (event->type() == QEvent::Enter) {
+            m_hovered = true;
+            update();
+        } else if (event->type() == QEvent::Leave) {
+            m_hovered = false;
+            update();
+        }
+        return QToolButton::event(event);
+    }
+
+    void paintEvent(QPaintEvent* event) override
+    {
+        Q_UNUSED(event);
+
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing, true);
+
+        if (isDown() || m_hovered) {
+            painter.setPen(Qt::NoPen);
+            painter.setBrush(ThemeManager::instance().color(isDown()
+                    ? ThemeColor::ControlPressed
+                    : ThemeColor::ControlHover));
+            painter.drawRoundedRect(rect().adjusted(1, 1, -1, -1), 5, 5);
+        }
+
+        QPixmap icon = ImageService::instance().scaled(QStringLiteral(":/resources/icon/copy.svg"),
+                                                       iconSize(),
+                                                       Qt::KeepAspectRatio,
+                                                       devicePixelRatioF());
+        if (!icon.isNull()) {
+            if (ThemeManager::instance().isDark()) {
+                QImage image = icon.toImage().convertToFormat(QImage::Format_ARGB32_Premultiplied);
+                image.invertPixels(QImage::InvertRgb);
+                icon = QPixmap::fromImage(image);
+                icon.setDevicePixelRatio(devicePixelRatioF());
+            }
+            QRect target(QPoint(0, 0), iconSize());
+            target.moveCenter(rect().center());
+            painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
+            painter.drawPixmap(target, icon);
+            return;
+        }
+
+        const QColor iconColor = isEnabled()
+                ? ThemeManager::instance().color(m_hovered ? ThemeColor::PrimaryText : ThemeColor::TertiaryText)
+                : ThemeManager::instance().color(ThemeColor::PlaceholderText);
+        painter.setPen(QPen(iconColor, 1.5, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+        painter.setBrush(Qt::NoBrush);
+
+        const QRect iconRect(QPoint(0, 0), QSize(16, 16));
+        QRect centeredIconRect = iconRect;
+        centeredIconRect.moveCenter(rect().center());
+        const QRectF backSheet(centeredIconRect.left() + 6,
+                               centeredIconRect.top() + 2,
+                               8,
+                               10);
+        const QRectF frontSheet(centeredIconRect.left() + 2,
+                                centeredIconRect.top() + 6,
+                                10,
+                                8);
+        painter.drawRoundedRect(backSheet, 2, 2);
+        painter.fillRect(frontSheet.adjusted(0, 0, 1, 1),
+                         ThemeManager::instance().color(ThemeColor::PageBackground));
+        painter.drawRoundedRect(frontSheet, 2, 2);
+    }
+
+private:
+    bool m_hovered = false;
+};
 
 } // namespace
 
@@ -163,7 +252,9 @@ FriendDetailPage::FriendDetailPage(QWidget* parent)
     : QWidget(parent)
     , m_contentWidget(new QWidget(this))
     , m_nameLabel(new PaintedLabel(this))
+    , m_idPrefixLabel(new PaintedLabel(QStringLiteral("ID"), this))
     , m_idLabel(new PaintedLabel(this))
+    , m_copyIdButton(new CopyIdButton(this))
     , m_regionRow(new QWidget(this))
     , m_regionLabel(new PaintedLabel(this))
     , m_statusIcon(new QLabel(this))
@@ -205,12 +296,15 @@ FriendDetailPage::FriendDetailPage(QWidget* parent)
 
     QFont secondaryFont = m_idLabel->font();
     secondaryFont.setPixelSize(13);
+    m_idPrefixLabel->setFont(secondaryFont);
     m_idLabel->setFont(secondaryFont);
     m_regionLabel->setFont(secondaryFont);
     m_statusLabel->setFont(secondaryFont);
+    m_idPrefixLabel->setProperty("themeTextRole", static_cast<int>(ThemeColor::TertiaryText));
     m_idLabel->setProperty("themeTextRole", static_cast<int>(ThemeColor::TertiaryText));
     m_regionLabel->setProperty("themeTextRole", static_cast<int>(ThemeColor::TertiaryText));
     m_statusLabel->setProperty("themeTextRole", static_cast<int>(ThemeColor::PrimaryText));
+    m_idPrefixLabel->setTextColor(ThemeManager::instance().color(ThemeColor::TertiaryText));
     m_idLabel->setTextColor(ThemeManager::instance().color(ThemeColor::TertiaryText));
     m_idLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
     m_regionLabel->setTextColor(ThemeManager::instance().color(ThemeColor::TertiaryText));
@@ -225,8 +319,19 @@ FriendDetailPage::FriendDetailPage(QWidget* parent)
     statusRow->addWidget(m_statusLabel);
     statusRow->addStretch();
 
+    auto* idRow = new QHBoxLayout;
+    idRow->setContentsMargins(0, 0, 0, 0);
+    idRow->setSpacing(5);
+    idRow->addWidget(m_idPrefixLabel, 0, Qt::AlignLeft | Qt::AlignVCenter);
+    idRow->addWidget(m_idLabel, 0, Qt::AlignLeft | Qt::AlignVCenter);
+    idRow->addWidget(m_copyIdButton, 0, Qt::AlignLeft | Qt::AlignVCenter);
+    idRow->addStretch();
+    m_idPrefixLabel->setVisible(false);
+    m_copyIdButton->setEnabled(false);
+    m_copyIdButton->setVisible(false);
+
     identity->addWidget(m_nameLabel);
-    identity->addWidget(m_idLabel);
+    identity->addLayout(idRow);
     identity->addLayout(statusRow);
     identity->addStretch();
     header->addLayout(identity, 1);
@@ -301,6 +406,7 @@ FriendDetailPage::FriendDetailPage(QWidget* parent)
     connect(m_deleteButton, &StatefulPushButton::clicked, this, [this]() {
         confirmDeleteFriend();
     });
+    connect(m_copyIdButton, &QToolButton::clicked, this, &FriendDetailPage::copyCurrentId);
 
     connect(m_groupButton, &QToolButton::clicked, this, &FriendDetailPage::showGroupMenu);
     connect(m_groupMenu, &QMenu::aboutToHide, this, [this]() {
@@ -376,7 +482,10 @@ void FriendDetailPage::clear()
     m_avatarSource.clear();
     m_avatarImageRequestId.clear();
     m_nameLabel->clear();
+    m_idPrefixLabel->setVisible(false);
     m_idLabel->clear();
+    m_copyIdButton->setEnabled(false);
+    m_copyIdButton->setVisible(false);
     m_regionLabel->clear();
     m_regionRow->hide();
     m_statusLabel->clear();
@@ -450,7 +559,10 @@ void FriendDetailPage::setUser(const User& user)
     m_remarkEdit->finishEditing();
 
     m_nameLabel->setText(m_user.nick);
-    m_idLabel->setText(QStringLiteral("ID %1").arg(m_user.id));
+    m_idPrefixLabel->setVisible(true);
+    m_idLabel->setText(m_user.id);
+    m_copyIdButton->setEnabled(true);
+    m_copyIdButton->setVisible(true);
     m_regionLabel->setText(m_user.region);
     m_regionRow->setVisible(!m_user.region.isEmpty());
     m_statusLabel->setText(statusText(m_user.status));
@@ -517,6 +629,7 @@ void FriendDetailPage::applyTheme()
     applyPrimaryButtonStyle(m_messageButton);
     applyDangerOutlineButtonStyle(m_deleteButton);
     m_groupButton->update();
+    m_copyIdButton->update();
     update();
 }
 
@@ -543,6 +656,16 @@ void FriendDetailPage::updateSignatureText()
     const int availableWidth = qMax(0, m_signatureLabel->width());
     const QFontMetrics metrics(m_signatureLabel->font());
     m_signatureLabel->setText(metrics.elidedText(signature, Qt::ElideRight, availableWidth));
+}
+
+void FriendDetailPage::copyCurrentId()
+{
+    if (!m_hasUser || m_user.id.isEmpty()) {
+        return;
+    }
+
+    QApplication::clipboard()->setText(m_user.id);
+    GlobalNotification::showSuccess(this, QStringLiteral("复制成功"));
 }
 
 void FriendDetailPage::saveRemark()

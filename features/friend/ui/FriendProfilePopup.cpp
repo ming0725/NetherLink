@@ -1,9 +1,13 @@
 #include "FriendProfilePopup.h"
 
 #include <QApplication>
+#include <QClipboard>
+#include <QCloseEvent>
 #include <QFontMetrics>
 #include <QGuiApplication>
+#include <QHideEvent>
 #include <QLabel>
+#include <QLineEdit>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPaintEvent>
@@ -11,6 +15,7 @@
 #include <QScreen>
 #include <QShowEvent>
 #include <QTimer>
+#include <QToolButton>
 #include <QVariant>
 
 #include "app/state/CurrentUser.h"
@@ -19,9 +24,11 @@
 #include "shared/services/AppFonts.h"
 #include "shared/services/ImageService.h"
 #include "shared/theme/ThemeManager.h"
+#include "shared/ui/GlobalNotification.h"
 #include "shared/ui/ImageViewer.h"
 #include "shared/ui/PaintedLabel.h"
 #include "shared/ui/StatefulPushButton.h"
+#include "shared/ui/popup/InWindowPopupDialogs.h"
 
 namespace {
 
@@ -78,19 +85,87 @@ void applyPrimaryButtonStyle(StatefulPushButton* button)
     button->setPrimaryStyle();
 }
 
+class CopyIdButton final : public QToolButton
+{
+public:
+    explicit CopyIdButton(QWidget* parent = nullptr)
+        : QToolButton(parent)
+    {
+        setFixedSize(26, 24);
+        setCursor(Qt::PointingHandCursor);
+        setFocusPolicy(Qt::NoFocus);
+        setIconSize(QSize(15, 15));
+        setToolTip(QStringLiteral("复制ID"));
+        setAccessibleName(QStringLiteral("复制ID"));
+    }
+
+protected:
+    bool event(QEvent* event) override
+    {
+        if (event->type() == QEvent::Enter) {
+            m_hovered = true;
+            update();
+        } else if (event->type() == QEvent::Leave) {
+            m_hovered = false;
+            update();
+        }
+        return QToolButton::event(event);
+    }
+
+    void paintEvent(QPaintEvent* event) override
+    {
+        Q_UNUSED(event);
+
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing, true);
+
+        if (isDown() || m_hovered) {
+            painter.setPen(Qt::NoPen);
+            painter.setBrush(ThemeManager::instance().color(isDown()
+                    ? ThemeColor::ControlPressed
+                    : ThemeColor::ControlHover));
+            painter.drawRoundedRect(rect().adjusted(1, 1, -1, -1), 5, 5);
+        }
+
+        QPixmap icon = ImageService::instance().scaled(QStringLiteral(":/resources/icon/copy.svg"),
+                                                       iconSize(),
+                                                       Qt::KeepAspectRatio,
+                                                       devicePixelRatioF());
+        if (!icon.isNull()) {
+            if (ThemeManager::instance().isDark()) {
+                QImage image = icon.toImage().convertToFormat(QImage::Format_ARGB32_Premultiplied);
+                image.invertPixels(QImage::InvertRgb);
+                icon = QPixmap::fromImage(image);
+                icon.setDevicePixelRatio(devicePixelRatioF());
+            }
+            QRect target(QPoint(0, 0), iconSize());
+            target.moveCenter(rect().center());
+            painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
+            painter.drawPixmap(target, icon);
+        }
+    }
+
+private:
+    bool m_hovered = false;
+};
+
 } // namespace
 
 FriendProfilePopup::FriendProfilePopup(QWidget* parent)
     : QWidget(parent, Qt::Popup | Qt::FramelessWindowHint)
     , m_contentWidget(new QWidget(this))
     , m_nameLabel(makeThemedLabel(ThemeColor::PrimaryText, 18, this))
+    , m_idPrefixLabel(makeThemedLabel(ThemeColor::TertiaryText, 12, this))
     , m_idLabel(makeThemedLabel(ThemeColor::TertiaryText, 12, this))
+    , m_copyIdButton(new CopyIdButton(this))
     , m_statusLabel(makeThemedLabel(ThemeColor::PrimaryText, 12, this))
     , m_regionTitleLabel(makeTitleLabel(QStringLiteral("地区"), this))
     , m_remarkTitleLabel(makeTitleLabel(QStringLiteral("备注"), this))
+    , m_groupNicknameTitleLabel(makeTitleLabel(QStringLiteral("群昵称"), this))
     , m_signatureTitleLabel(makeTitleLabel(QStringLiteral("签名"), this))
     , m_regionLabel(makeThemedLabel(ThemeColor::PrimaryText, 13, this))
     , m_remarkLabel(makeThemedLabel(ThemeColor::PrimaryText, 13, this))
+    , m_groupNicknameLabel(makeThemedLabel(ThemeColor::PrimaryText, 13, this))
     , m_signatureLabel(makeThemedLabel(ThemeColor::PrimaryText, 13, this))
     , m_statusIcon(new QLabel(this))
     , m_actionButton(new StatefulPushButton(this))
@@ -104,13 +179,20 @@ FriendProfilePopup::FriendProfilePopup(QWidget* parent)
     nameFont.setWeight(QFont::DemiBold);
     m_nameLabel->setFont(nameFont);
     m_nameLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    m_idPrefixLabel->setText(QStringLiteral("ID"));
+    m_idPrefixLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    m_idPrefixLabel->setTextInteractionFlags(Qt::NoTextInteraction);
     m_idLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
     m_statusLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
+    m_idPrefixLabel->hide();
+    m_copyIdButton->setEnabled(false);
+    m_copyIdButton->hide();
 
     m_statusIcon->setFixedSize(12, 12);
 
     m_regionRow = makeInfoRow(m_regionTitleLabel, m_regionLabel, this);
     m_remarkRow = makeInfoRow(m_remarkTitleLabel, m_remarkLabel, this);
+    m_groupNicknameRow = makeInfoRow(m_groupNicknameTitleLabel, m_groupNicknameLabel, this);
     m_signatureRow = makeInfoRow(m_signatureTitleLabel, m_signatureLabel, this);
 
     m_actionButton->resize(kButtonWidth, kButtonHeight);
@@ -121,15 +203,21 @@ FriendProfilePopup::FriendProfilePopup(QWidget* parent)
             return;
         }
 
-        if (m_isCurrentUser) {
-            emit requestEditProfile();
-        } else if (m_user.isFriend) {
-            emit requestMessage(m_user.id);
-        } else {
-            emit requestAddFriend(m_user.id);
-        }
-        hide();
+        const QString userId = m_user.id;
+        const bool isCurrentUser = m_isCurrentUser;
+        const bool isFriend = m_user.isFriend;
+        close();
+        QTimer::singleShot(0, this, [this, userId, isCurrentUser, isFriend]() {
+            if (isCurrentUser) {
+                emit requestEditProfile();
+            } else if (isFriend) {
+                emit requestMessage(userId);
+            } else {
+                emit requestAddFriend(userId);
+            }
+        });
     });
+    connect(m_copyIdButton, &QToolButton::clicked, this, &FriendProfilePopup::copyCurrentId);
 
     connect(&ThemeManager::instance(), &ThemeManager::themeChanged, this, [this]() {
         applyTheme();
@@ -178,6 +266,23 @@ void FriendProfilePopup::setController(FriendSessionController* controller)
     });
 }
 
+void FriendProfilePopup::setGroupContext(const Group& group, bool canEditMemberNickname)
+{
+    m_groupContext = group;
+    m_canEditGroupNickname = canEditMemberNickname;
+    updateInfoRows();
+    updateElidedTexts();
+    updatePopupHeight();
+}
+
+void FriendProfilePopup::clearGroupContext()
+{
+    m_groupContext = {};
+    m_canEditGroupNickname = false;
+    updateInfoRows();
+    updatePopupHeight();
+}
+
 void FriendProfilePopup::popupAt(const QPoint& globalPos, const QString& userId)
 {
     setUserId(userId);
@@ -213,21 +318,42 @@ void FriendProfilePopup::setUserId(const QString& userId)
 
 void FriendProfilePopup::clear()
 {
+    releaseProfileState();
+    updatePopupHeight();
+    update();
+}
+
+void FriendProfilePopup::closeEvent(QCloseEvent* event)
+{
+    QWidget::closeEvent(event);
+    releaseProfileState();
+}
+
+void FriendProfilePopup::hideEvent(QHideEvent* event)
+{
+    QWidget::hideEvent(event);
+    releaseProfileState();
+}
+
+void FriendProfilePopup::releaseProfileState()
+{
     m_user = {};
     m_hasUser = false;
     m_isCurrentUser = false;
     m_avatarSource.clear();
     m_avatarImageRequestId.clear();
     m_nameLabel->clear();
+    m_idPrefixLabel->hide();
     m_idLabel->clear();
+    m_copyIdButton->setEnabled(false);
+    m_copyIdButton->hide();
     m_statusLabel->clear();
     m_statusIcon->clear();
     m_regionRow->hide();
     m_remarkRow->hide();
+    m_groupNicknameRow->hide();
     m_signatureRow->hide();
     m_actionButton->hide();
-    updatePopupHeight();
-    update();
 }
 
 void FriendProfilePopup::resizeEvent(QResizeEvent* event)
@@ -276,6 +402,16 @@ void FriendProfilePopup::mousePressEvent(QMouseEvent* event)
         return;
     }
 
+    if (event->button() == Qt::LeftButton &&
+        m_groupNicknameRow &&
+        m_groupNicknameRow->isVisible() &&
+        m_canEditGroupNickname &&
+        m_groupNicknameRow->geometry().contains(event->pos())) {
+        promptGroupNicknameChange();
+        event->accept();
+        return;
+    }
+
     QWidget::mousePressEvent(event);
 }
 
@@ -302,7 +438,10 @@ void FriendProfilePopup::setUser(const User& user, bool isCurrentUser)
     m_hasUser = true;
     m_isCurrentUser = isCurrentUser;
 
-    m_idLabel->setText(QStringLiteral("ID %1").arg(m_user.id));
+    m_idPrefixLabel->show();
+    m_idLabel->setText(m_user.id);
+    m_copyIdButton->setEnabled(true);
+    m_copyIdButton->show();
     m_statusLabel->setText(statusText(m_user.status));
     updateAvatar();
     updateInfoRows();
@@ -366,11 +505,50 @@ void FriendProfilePopup::updateInfoRows()
 {
     const bool hasRegion = !m_user.region.trimmed().isEmpty();
     const bool showRemark = !m_isCurrentUser && m_user.isFriend;
+    const bool showGroupNickname = hasGroupContextForCurrentUser();
     const bool hasSignature = !m_user.signature.trimmed().isEmpty();
 
     m_regionRow->setVisible(hasRegion);
     m_remarkRow->setVisible(showRemark);
+    m_groupNicknameRow->setVisible(showGroupNickname);
+    m_groupNicknameRow->setCursor(showGroupNickname && m_canEditGroupNickname
+                                          ? Qt::PointingHandCursor
+                                          : Qt::ArrowCursor);
     m_signatureRow->setVisible(hasSignature);
+}
+
+void FriendProfilePopup::promptGroupNicknameChange()
+{
+    if (!m_hasUser || !hasGroupContextForCurrentUser() || !m_canEditGroupNickname) {
+        return;
+    }
+
+    bool accepted = false;
+    const QString currentNickname = currentGroupNickname();
+    const QString fallbackName = m_user.nick.trimmed().isEmpty() ? m_user.id : m_user.nick.trimmed();
+    const QString initialText = currentNickname.isEmpty() ? fallbackName : currentNickname;
+    const QString nextNickname = InWindowPopup::getText(this,
+                                                        QStringLiteral("修改群昵称"),
+                                                        QStringLiteral("群昵称"),
+                                                        QLineEdit::Normal,
+                                                        initialText,
+                                                        &accepted).trimmed();
+    if (!accepted) {
+        return;
+    }
+
+    emit requestGroupNicknameChange(m_user.id, nextNickname);
+    if (nextNickname.isEmpty()) {
+        m_groupContext.memberNicknames.remove(m_user.id);
+    } else {
+        m_groupContext.memberNicknames.insert(m_user.id, nextNickname);
+    }
+    if (CurrentUser::instance().isCurrentUserId(m_user.id)) {
+        m_groupContext.currentUserNickname = nextNickname;
+    }
+    updateInfoRows();
+    updateElidedTexts();
+    updatePopupHeight();
 }
 
 void FriendProfilePopup::updatePopupHeight()
@@ -387,11 +565,23 @@ void FriendProfilePopup::layoutPopup()
     const int nameHeight = QFontMetrics(m_nameLabel->font()).height() + 4;
     const int idHeight = QFontMetrics(m_idLabel->font()).height() + 2;
     const int statusHeight = qMax(12, QFontMetrics(m_statusLabel->font()).height() + 2);
+    const int idPrefixWidth = QFontMetrics(m_idPrefixLabel->font()).horizontalAdvance(QStringLiteral("ID"));
+    constexpr int idGap = 5;
+    const int copyButtonWidth = m_copyIdButton->width();
+    const int maxIdWidth = qMax(0, identityWidth - idPrefixWidth - idGap * 2 - copyButtonWidth);
+    const int idTextWidth = qMin(maxIdWidth,
+                                 QFontMetrics(m_idLabel->font()).horizontalAdvance(m_user.id));
 
     m_contentWidget->setGeometry(kHorizontalMargin, 0, contentWidth, height());
     m_nameLabel->setGeometry(identityX, nameY, identityWidth, nameHeight);
-    m_idLabel->setGeometry(identityX, m_nameLabel->geometry().bottom() + 5,
-                           identityWidth, idHeight);
+    const int idY = m_nameLabel->geometry().bottom() + 5;
+    m_idPrefixLabel->setGeometry(identityX, idY, idPrefixWidth, idHeight);
+    m_idLabel->setGeometry(m_idPrefixLabel->geometry().right() + idGap,
+                           idY,
+                           idTextWidth,
+                           idHeight);
+    m_copyIdButton->move(m_idLabel->geometry().right() + idGap,
+                         idY + (idHeight - m_copyIdButton->height()) / 2);
     m_statusIcon->setGeometry(identityX, m_idLabel->geometry().bottom() + 7, 12, 12);
     m_statusLabel->setGeometry(m_statusIcon->geometry().right() + 6,
                                m_statusIcon->y() - 1,
@@ -430,6 +620,7 @@ void FriendProfilePopup::layoutPopup()
     const int rowsStartY = nextRowY;
     placeRow(m_regionRow, m_regionTitleLabel, m_regionLabel);
     placeRow(m_remarkRow, m_remarkTitleLabel, m_remarkLabel);
+    placeRow(m_groupNicknameRow, m_groupNicknameTitleLabel, m_groupNicknameLabel);
     placeRow(m_signatureRow, m_signatureTitleLabel, m_signatureLabel);
     const bool hasRows = nextRowY != rowsStartY;
     if (hasRows) {
@@ -461,12 +652,15 @@ void FriendProfilePopup::updateElidedTexts()
     };
 
     elided(m_nameLabel, m_user.nick.isEmpty() ? m_user.id : m_user.nick);
-    elided(m_idLabel, QStringLiteral("ID %1").arg(m_user.id));
+    elided(m_idLabel, m_user.id);
     elided(m_statusLabel, statusText(m_user.status));
     m_regionLabel->setText(m_user.region.trimmed());
     m_remarkLabel->setText(m_user.remark.trimmed().isEmpty()
                                    ? QStringLiteral("未设置")
                                    : m_user.remark.trimmed());
+    m_groupNicknameLabel->setText(currentGroupNickname().isEmpty()
+                                          ? QStringLiteral("未设置")
+                                          : currentGroupNickname());
     m_signatureLabel->setText(m_user.signature.trimmed());
 }
 
@@ -483,7 +677,27 @@ void FriendProfilePopup::applyTheme()
     }
 
     applyPrimaryButtonStyle(m_actionButton);
+    m_copyIdButton->update();
     update();
+}
+
+void FriendProfilePopup::copyCurrentId()
+{
+    if (!m_hasUser || m_user.id.isEmpty()) {
+        return;
+    }
+
+    QApplication::clipboard()->setText(m_user.id);
+    GlobalNotification::showSuccess(notificationHost(), QStringLiteral("复制成功"));
+}
+
+QWidget* FriendProfilePopup::notificationHost() const
+{
+    QWidget* host = parentWidget();
+    while (host && host->windowType() == Qt::Popup) {
+        host = host->parentWidget();
+    }
+    return host ? host : QApplication::activeWindow();
 }
 
 User FriendProfilePopup::currentUserAsUser() const
@@ -499,6 +713,31 @@ User FriendProfilePopup::currentUserAsUser() const
     user.region = profile.region;
     user.isFriend = false;
     return user;
+}
+
+QString FriendProfilePopup::currentGroupNickname() const
+{
+    if (!m_hasUser || m_groupContext.groupId.isEmpty() || m_user.id.isEmpty()) {
+        return {};
+    }
+
+    const QString storedNickname = m_groupContext.memberNicknames.value(m_user.id).trimmed();
+    if (!storedNickname.isEmpty()) {
+        return storedNickname;
+    }
+    if (CurrentUser::instance().isCurrentUserId(m_user.id) &&
+        !m_groupContext.currentUserNickname.trimmed().isEmpty()) {
+        return m_groupContext.currentUserNickname.trimmed();
+    }
+    return {};
+}
+
+bool FriendProfilePopup::hasGroupContextForCurrentUser() const
+{
+    return m_hasUser &&
+           !m_groupContext.groupId.isEmpty() &&
+           !m_user.id.isEmpty() &&
+           m_groupContext.membersID.contains(m_user.id);
 }
 
 QPoint FriendProfilePopup::constrainedPopupPos(const QPoint& globalPos) const

@@ -24,6 +24,7 @@
 #include <QMenu>
 #include <QKeyEvent>
 #include <QtMath>
+#include <utility>
 
 namespace {
 
@@ -106,6 +107,66 @@ QString roleText(GroupRole role)
     }
 }
 
+bool isGroupSystemEventMessage(const ChatMessage* message)
+{
+    if (!message) {
+        return false;
+    }
+    return message->getType() == MessageType::GroupMemberJoined ||
+           message->getType() == MessageType::GroupSystemEvent;
+}
+
+struct GroupSystemEventSegment {
+    QString text;
+    QString userId;
+    bool highlighted = false;
+};
+
+QVector<GroupSystemEventSegment> groupSystemEventSegments(const ChatMessage* message)
+{
+    if (!message) {
+        return {};
+    }
+    if (message->getType() == MessageType::GroupMemberJoined) {
+        const auto* joinedMessage = static_cast<const GroupMemberJoinedMessage*>(message);
+        QVector<GroupSystemEventSegment> segments;
+        if (!joinedMessage->getInviterName().isEmpty()) {
+            segments.push_back(GroupSystemEventSegment{
+                    joinedMessage->getInviterName(),
+                    joinedMessage->getInviterId(),
+                    true
+            });
+            segments.push_back(GroupSystemEventSegment{QStringLiteral("邀请了"), QString(), false});
+        }
+        segments.push_back(GroupSystemEventSegment{
+                joinedMessage->getMemberName(),
+                joinedMessage->getMemberId(),
+                true
+        });
+        segments.push_back(GroupSystemEventSegment{QStringLiteral("加入群聊"), QString(), false});
+        return segments;
+    }
+    if (message->getType() == MessageType::GroupSystemEvent) {
+        const auto* eventMessage = static_cast<const GroupSystemEventMessage*>(message);
+        QVector<GroupSystemEventSegment> segments;
+        if (!eventMessage->getPrefix().isEmpty()) {
+            segments.push_back(GroupSystemEventSegment{eventMessage->getPrefix(), QString(), false});
+        }
+        if (!eventMessage->getHighlightedName().isEmpty()) {
+            segments.push_back(GroupSystemEventSegment{
+                    eventMessage->getHighlightedName(),
+                    eventMessage->getHighlightedUserId(),
+                    true
+            });
+        }
+        if (!eventMessage->getSuffix().isEmpty()) {
+            segments.push_back(GroupSystemEventSegment{eventMessage->getSuffix(), QString(), false});
+        }
+        return segments;
+    }
+    return {};
+}
+
 } // namespace
 
 ChatItemDelegate::ChatItemDelegate(QObject* parent)
@@ -158,10 +219,8 @@ void ChatItemDelegate::paint(QPainter* painter, const QStyleOptionViewItem& opti
         );
         drawTimeHeader(painter, timeHeaderRect, timeHeader->text);
     } else if (message) {
-        if (message->getType() == MessageType::GroupMemberJoined) {
-            drawGroupMemberJoinedMessage(painter,
-                                         option.rect,
-                                         static_cast<const GroupMemberJoinedMessage*>(message));
+        if (isGroupSystemEventMessage(message)) {
+            drawGroupSystemEventMessage(painter, option.rect, message);
             painter->restore();
             return;
         }
@@ -233,7 +292,7 @@ bool ChatItemDelegate::editorEvent(QEvent* event, QAbstractItemModel* model,
             model->setData(index, false, Qt::UserRole + 1);
             return true;
         }
-        if (message->getType() == MessageType::GroupMemberJoined) {
+        if (isGroupSystemEventMessage(message)) {
             model->setData(index, false, Qt::UserRole + 1);
             return true;
         }
@@ -404,6 +463,27 @@ QString ChatItemDelegate::imageSourceAt(const QStyleOptionViewItem& option,
     return static_cast<const ImageMessage*>(message)->getImageSource();
 }
 
+QString ChatItemDelegate::groupSystemEventUserIdAt(const QStyleOptionViewItem& option,
+                                                   const QModelIndex& index,
+                                                   const QPoint& viewportPos) const
+{
+    const ChatMessage* message = index.data(Qt::UserRole).value<ChatMessage*>();
+    if (!isGroupSystemEventMessage(message)) {
+        return {};
+    }
+
+    const QVector<GroupSystemEventLayoutSegment> segments =
+            groupSystemEventLayoutSegments(option.rect, message);
+    for (const GroupSystemEventLayoutSegment& segment : segments) {
+        if (segment.highlighted &&
+                !segment.userId.isEmpty() &&
+                segment.rect.adjusted(-3, -4, 3, 4).contains(viewportPos)) {
+            return segment.userId;
+        }
+    }
+    return {};
+}
+
 bool ChatItemDelegate::avatarHitTest(const QStyleOptionViewItem& option,
                                      const QModelIndex& index,
                                      const QPoint& viewportPos) const
@@ -417,7 +497,7 @@ QRect ChatItemDelegate::avatarRectForIndex(const QStyleOptionViewItem& option,
     const ChatMessage* message = index.data(Qt::UserRole).value<ChatMessage*>();
     if (!message ||
             message->getType() == MessageType::Recall ||
-            message->getType() == MessageType::GroupMemberJoined) {
+            isGroupSystemEventMessage(message)) {
         return {};
     }
 
@@ -680,11 +760,13 @@ void ChatItemDelegate::drawRecallMessage(QPainter* painter,
     painter->restore();
 }
 
-void ChatItemDelegate::drawGroupMemberJoinedMessage(QPainter* painter,
-                                                    const QRect& rect,
-                                                    const GroupMemberJoinedMessage* message) const
+void ChatItemDelegate::drawGroupSystemEventMessage(QPainter* painter,
+                                                   const QRect& rect,
+                                                   const ChatMessage* message) const
 {
-    if (!message) {
+    const QVector<GroupSystemEventLayoutSegment> segments =
+            groupSystemEventLayoutSegments(rect, message);
+    if (segments.isEmpty()) {
         return;
     }
 
@@ -694,22 +776,18 @@ void ChatItemDelegate::drawGroupMemberJoinedMessage(QPainter* painter,
     painter->setFont(font);
     const QFontMetrics fm(font);
 
-    const QString suffix = QStringLiteral("加入了群聊");
-    const QRect contentRect = calculateGroupMemberJoinedContentRect(rect, message);
-    const int baselineY = contentRect.top() + (contentRect.height() + fm.ascent() - fm.descent()) / 2;
     const QColor normalColor = ThemeManager::instance().color(ThemeColor::TertiaryText);
     const QColor accentColor = ThemeManager::instance().color(ThemeColor::Accent);
+    const int baselineY = segments.first().rect.top() +
+            (segments.first().rect.height() + fm.ascent() - fm.descent()) / 2;
 
-    const int maxNameWidth = qMax(0, contentRect.width() - fm.horizontalAdvance(suffix));
-    const QString name = fm.elidedText(message->getMemberName(), Qt::ElideRight, maxNameWidth);
-
-    int x = contentRect.left();
-    painter->setPen(accentColor);
-    painter->drawText(x, baselineY, name);
-    x += fm.horizontalAdvance(name);
-
-    painter->setPen(normalColor);
-    painter->drawText(x, baselineY, suffix);
+    for (const GroupSystemEventLayoutSegment& segment : segments) {
+        if (segment.text.isEmpty()) {
+            continue;
+        }
+        painter->setPen(segment.highlighted ? accentColor : normalColor);
+        painter->drawText(segment.rect.left(), baselineY, segment.text);
+    }
     painter->restore();
 }
 
@@ -892,7 +970,7 @@ QSize ChatItemDelegate::sizeHint(const QStyleOptionViewItem& option,
         // 时间标识的高度（包括上下间距）
         return QSize(option.rect.width(), TIME_HEADER_HEIGHT + 12);  // 12是上下各6像素的间距
     } else if (message) {
-        if (message->getType() == MessageType::GroupMemberJoined) {
+        if (isGroupSystemEventMessage(message)) {
             return QSize(option.rect.width(), GROUP_EVENT_HEIGHT);
         }
         if (message->getType() == MessageType::Recall) {
@@ -1057,24 +1135,86 @@ QRect ChatItemDelegate::calculateRecallReeditRect(const QRect& contentRect,
                  fullRect.height());
 }
 
-QRect ChatItemDelegate::calculateGroupMemberJoinedContentRect(
+QRect ChatItemDelegate::calculateGroupSystemEventContentRect(
         const QRect& contentRect,
-        const GroupMemberJoinedMessage* message) const
+        const ChatMessage* message) const
 {
-    if (!message) {
+    const QVector<GroupSystemEventSegment> segments = groupSystemEventSegments(message);
+    if (segments.isEmpty()) {
         return {};
     }
 
     const QFontMetrics fm(recallFont());
-    const QString suffix = QStringLiteral("加入了群聊");
     const int maxWidth = qMax(0, contentRect.width() - HORIZONTAL_EDGE_MARGIN * 2);
-    const int fullTextWidth = fm.horizontalAdvance(message->getMemberName()) +
-            fm.horizontalAdvance(suffix);
+    int fullTextWidth = 0;
+    for (const GroupSystemEventSegment& segment : segments) {
+        fullTextWidth += fm.horizontalAdvance(segment.text);
+    }
     const int width = qMin(fullTextWidth, maxWidth);
     return QRect(contentRect.left() + (contentRect.width() - width) / 2,
                  contentRect.top(),
                  width,
                  contentRect.height());
+}
+
+QVector<ChatItemDelegate::GroupSystemEventLayoutSegment>
+ChatItemDelegate::groupSystemEventLayoutSegments(
+        const QRect& contentRect,
+        const ChatMessage* message) const
+{
+    const QVector<GroupSystemEventSegment> sourceSegments = groupSystemEventSegments(message);
+    if (sourceSegments.isEmpty()) {
+        return {};
+    }
+
+    const QFontMetrics fm(recallFont());
+    const QRect layoutRect = calculateGroupSystemEventContentRect(contentRect, message);
+    if (layoutRect.isEmpty()) {
+        return {};
+    }
+
+    int fullWidth = 0;
+    int fixedWidth = 0;
+    int highlightedWidth = 0;
+    for (const GroupSystemEventSegment& segment : sourceSegments) {
+        const int width = fm.horizontalAdvance(segment.text);
+        fullWidth += width;
+        if (segment.highlighted) {
+            highlightedWidth += width;
+        } else {
+            fixedWidth += width;
+        }
+    }
+
+    const bool shouldElideHighlighted =
+            fullWidth > layoutRect.width() && highlightedWidth > 0;
+    const int availableHighlightedWidth =
+            qMax(0, layoutRect.width() - fixedWidth);
+
+    QVector<GroupSystemEventLayoutSegment> layoutSegments;
+    layoutSegments.reserve(sourceSegments.size());
+    int x = layoutRect.left();
+    for (const GroupSystemEventSegment& segment : sourceSegments) {
+        QString paintedText = segment.text;
+        if (shouldElideHighlighted && segment.highlighted) {
+            const int segmentWidth = fm.horizontalAdvance(segment.text);
+            const int targetWidth = highlightedWidth <= 0
+                    ? 0
+                    : qMax(0, availableHighlightedWidth * segmentWidth / highlightedWidth);
+            paintedText = fm.elidedText(segment.text, Qt::ElideRight, targetWidth);
+        }
+
+        const int width = fm.horizontalAdvance(paintedText);
+        GroupSystemEventLayoutSegment layoutSegment;
+        layoutSegment.text = paintedText;
+        layoutSegment.userId = segment.userId;
+        layoutSegment.highlighted = segment.highlighted;
+        layoutSegment.rect = QRect(x, layoutRect.top(), width, layoutRect.height());
+        layoutSegments.push_back(std::move(layoutSegment));
+        x += width;
+    }
+
+    return layoutSegments;
 }
 
 QFont ChatItemDelegate::messageFont() const

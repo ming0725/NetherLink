@@ -30,6 +30,10 @@ public slots:
     void removeConversation(const QString& conversationId);
     void addMessage(const QString& conversationId,
                     QSharedPointer<ChatMessage> message);
+    void refreshGroupMemberDisplayName(const QString& groupId,
+                                       const QString& userId,
+                                       const QString& displayName,
+                                       GroupRole role);
     bool replaceMessage(const QString& conversationId,
                         const QSharedPointer<ChatMessage>& oldMessage,
                         QSharedPointer<ChatMessage> newMessage);

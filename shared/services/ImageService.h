@@ -35,6 +35,7 @@ public:
     void requestPreviewWarmup(const QString& source,
                               const QSize& targetSize,
                               qreal devicePixelRatio = 1.0);
+    void requestOriginalWarmup(const QString& source);
 
     QPixmap circularAvatar(const QString& source,
                            int size,
@@ -67,4 +68,5 @@ private:
     mutable QCache<QString, QImage> m_originalCache;
     mutable QCache<QString, QImage> m_previewCache;
     mutable QSet<QString> m_pendingPreviewLoads;
+    mutable QSet<QString> m_pendingOriginalLoads;
 };

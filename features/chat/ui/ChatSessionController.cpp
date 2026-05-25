@@ -119,6 +119,55 @@ QVector<User> requestGroupMembers(const Group& group)
     return members;
 }
 
+QString memberDisplayNameForId(const Group& group,
+                               const QString& userId,
+                               const QHash<QString, User>& usersById = {})
+{
+    if (userId.isEmpty()) {
+        return {};
+    }
+
+    const auto cachedUser = usersById.constFind(userId);
+    if (cachedUser != usersById.cend()) {
+        return memberDisplayName(group, cachedUser.value());
+    }
+
+    User user;
+    const CurrentUser& currentUser = CurrentUser::instance();
+    if (currentUser.isCurrentUserId(userId)) {
+        const CurrentUserProfile profile = currentUser.identity();
+        user.id = profile.userId;
+        user.nick = profile.nickName;
+        user.avatarPath = profile.avatarPath;
+        user.status = profile.status;
+    } else {
+        user = UserRepository::instance().requestUserDetail({userId});
+    }
+    if (user.id.isEmpty()) {
+        return group.memberNicknames.value(userId, userId);
+    }
+    return memberDisplayName(group, user);
+}
+
+void appendGroupSystemEvent(const QString& groupId,
+                            const QString& highlightedUserId,
+                            const QString& highlightedName,
+                            const QString& suffix,
+                            const QString& prefix = QString())
+{
+    if (groupId.isEmpty() || (highlightedName.isEmpty() && prefix.isEmpty() && suffix.isEmpty())) {
+        return;
+    }
+
+    MessageRepository::instance().addMessage(
+            groupId,
+            QSharedPointer<ChatMessage>(
+                    new GroupSystemEventMessage(highlightedName,
+                                                suffix,
+                                                prefix,
+                                                highlightedUserId)));
+}
+
 void appendPreviewMember(QVector<User>& members, QSet<QString>& seen, const QString& userId)
 {
     if (userId.isEmpty() || seen.contains(userId) || members.size() >= kPanelMemberPreviewLimit) {
@@ -405,6 +454,10 @@ void ChatSessionController::saveGroupMemberNickname(const QString& userId, const
     }
 
     GroupRepository::instance().saveGroup(group);
+    MessageRepository::instance().refreshGroupMemberDisplayName(group.groupId,
+                                                                userId,
+                                                                memberDisplayNameForId(group, userId),
+                                                                memberRole(group, userId));
 }
 
 void ChatSessionController::promoteGroupMemberToAdmin(const QString& userId)
@@ -423,7 +476,9 @@ void ChatSessionController::promoteGroupMemberToAdmin(const QString& userId)
     }
 
     group.adminsID.push_back(userId);
+    const QString memberName = memberDisplayNameForId(group, userId);
     GroupRepository::instance().saveGroup(group);
+    appendGroupSystemEvent(group.groupId, userId, memberName, QStringLiteral("被设置为管理员"));
 }
 
 void ChatSessionController::cancelGroupMemberAdmin(const QString& userId)
@@ -491,6 +546,15 @@ void ChatSessionController::inviteGroupMembers(const QStringList& userIds)
 
     group.memberNum = group.membersID.size();
     GroupRepository::instance().saveGroup(group);
+    const QString inviterId = CurrentUser::instance().getUserId();
+    const QString inviterName = memberDisplayNameForId(group, inviterId, usersById);
+    for (const QString& userId : std::as_const(newUserIds)) {
+        const QString memberName = memberDisplayNameForId(group, userId, usersById);
+        MessageRepository::instance().addMessage(
+                group.groupId,
+                QSharedPointer<ChatMessage>(
+                        new GroupMemberJoinedMessage(userId, memberName, inviterId, inviterName)));
+    }
 }
 
 void ChatSessionController::removeGroupMember(const QString& userId)
@@ -562,6 +626,22 @@ void ChatSessionController::removeGroupMembers(const QStringList& userIds)
     group.adminsID = nextAdmins;
     group.memberNum = group.membersID.size();
     GroupRepository::instance().saveGroup(group);
+}
+
+void ChatSessionController::transferGroupOwner(const QString& userId)
+{
+    if (m_meta.conversationId.isEmpty() || !m_meta.isGroup || userId.isEmpty()) {
+        return;
+    }
+
+    Group group = GroupRepository::instance().requestGroupDetail({m_meta.conversationId});
+    if (group.groupId.isEmpty() || !canTransferOwner(group, userId)) {
+        return;
+    }
+
+    const QString memberName = memberDisplayNameForId(group, userId);
+    GroupRepository::instance().transferOwner(group.groupId, userId);
+    appendGroupSystemEvent(group.groupId, userId, memberName, QStringLiteral("成为新群主"));
 }
 
 void ChatSessionController::saveGroupRemark(const QString& remark)
@@ -745,6 +825,18 @@ bool ChatSessionController::canRemoveMember(const Group& group, const QString& u
         return true;
     }
     return currentRole == GroupRole::Admin && targetRole == GroupRole::Member;
+}
+
+bool ChatSessionController::canTransferOwner(const Group& group, const QString& userId) const
+{
+    if (group.groupId.isEmpty() || userId.isEmpty() || !group.membersID.contains(userId)) {
+        return false;
+    }
+
+    const QString currentUserId = CurrentUser::instance().getUserId();
+    return !currentUserId.isEmpty() &&
+           group.ownerId == currentUserId &&
+           userId != currentUserId;
 }
 
 void ChatSessionController::saveGroupField(const QString& value, void (*assign)(Group&, const QString&))

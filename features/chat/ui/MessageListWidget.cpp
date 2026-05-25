@@ -279,7 +279,8 @@ QString MessageListWidget::previewTextForMessage(const QString& conversationId,
         return {};
     }
 
-    if (message->getType() == MessageType::GroupMemberJoined) {
+    if (message->getType() == MessageType::GroupMemberJoined ||
+        message->getType() == MessageType::GroupSystemEvent) {
         return message->getContent();
     }
 

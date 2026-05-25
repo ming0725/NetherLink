@@ -324,6 +324,30 @@ void ImageService::requestPreviewWarmup(const QString& source,
     }));
 }
 
+void ImageService::requestOriginalWarmup(const QString& source)
+{
+    if (source.isEmpty()) {
+        return;
+    }
+
+    {
+        QMutexLocker locker(&m_mutex);
+        if (m_originalCache.object(source) || m_pendingOriginalLoads.contains(source)) {
+            return;
+        }
+        m_pendingOriginalLoads.insert(source);
+    }
+
+    QThreadPool::globalInstance()->start(QRunnable::create([this, source]() {
+        const QImage image = originalImage(source);
+        QMetaObject::invokeMethod(this, [this, source, image]() {
+            Q_UNUSED(image);
+            QMutexLocker locker(&m_mutex);
+            m_pendingOriginalLoads.remove(source);
+        }, Qt::QueuedConnection);
+    }));
+}
+
 QPixmap ImageService::circularAvatar(const QString& source,
                                      int size,
                                      qreal devicePixelRatio) const
@@ -406,4 +430,5 @@ void ImageService::invalidateSource(const QString& source)
             m_pendingPreviewLoads.remove(key);
         }
     }
+    m_pendingOriginalLoads.remove(source);
 }

@@ -50,6 +50,7 @@ private:
     void updateIntroText();
     void updateAnnouncementText();
     void updateMemberCountText();
+    void copyCurrentId();
     QString elidedValueText(const QString& text, const QLabel* label) const;
     void saveRemark();
     void showCategoryMenu();
@@ -67,7 +68,9 @@ private:
     QString m_avatarSource;
     QWidget* m_contentWidget;
     PaintedLabel* m_nameLabel;
+    PaintedLabel* m_idPrefixLabel;
     PaintedLabel* m_idLabel;
+    QToolButton* m_copyIdButton;
     InlineEditableText* m_remarkEdit;
     QToolButton* m_categoryButton;
     StyledActionMenu* m_categoryMenu;

@@ -6,6 +6,7 @@
 #include <QDateTime>
 #include <QHash>
 #include <QPersistentModelIndex>
+#include <QPointer>
 #include <optional>
 #include "ChatListView.h"
 #include "features/chat/model/ChatListModel.h"
@@ -26,6 +27,7 @@ class DirectConversationInfoPanel;
 class FriendProfilePopup;
 class FriendSessionController;
 class GroupConversationInfoPanel;
+class InWindowPopupOverlay;
 class PaintedLabel;
 
 class ChatArea : public QWidget
@@ -66,6 +68,7 @@ private slots:
     void confirmClearChatHistory();
     void confirmDeleteFriend();
     void confirmExitGroup();
+    void showCurrentUserEditProfilePopup();
 
 private:
     struct ConversationState {
@@ -115,6 +118,7 @@ private:
     ChatSessionController* sessionController;
     FriendSessionController* friendProfileController = nullptr;
     FriendProfilePopup* friendProfilePopup = nullptr;
+    QPointer<InWindowPopupOverlay> currentUserEditProfilePopup;
     QPropertyAnimation* infoPanelAnimation;
     bool infoPanelOpen = false;
     bool m_systemFloatingBarsSuppressed = false;
@@ -148,6 +152,7 @@ private:
     void recalculateNewUnreadCount();
     void appendRepositoryMessage(const QString& changedConversationId,
                                  const ChatMessagePtr& message);
+    void refreshCurrentGroupMessageDisplayNames();
     void reconcileHistoryUnreadAfterHistoryExhausted();
     void adjustBottomSpace();
     void updateInputBarPosition();

@@ -39,6 +39,7 @@ public slots:
     void inviteGroupMembers(const QStringList& userIds);
     void removeGroupMember(const QString& userId);
     void removeGroupMembers(const QStringList& userIds);
+    void transferGroupOwner(const QString& userId);
     void saveGroupRemark(const QString& remark);
     void saveDirectRemark(const QString& remark);
     void setPinned(bool pinned);
@@ -73,6 +74,7 @@ private:
     bool canPromoteMemberToAdmin(const Group& group, const QString& userId) const;
     bool canCancelMemberAdmin(const Group& group, const QString& userId) const;
     bool canRemoveMember(const Group& group, const QString& userId) const;
+    bool canTransferOwner(const Group& group, const QString& userId) const;
     void saveGroupField(const QString& value, void (*assign)(Group&, const QString&));
 
     ConversationMeta m_meta;

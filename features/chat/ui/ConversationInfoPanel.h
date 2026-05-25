@@ -53,6 +53,7 @@ signals:
     void groupMemberRemovalRequested(const QString& userId);
     void groupMemberInvitationRequested(const QStringList& userIds);
     void groupMembersBatchRemovalRequested(const QStringList& userIds);
+    void groupOwnerTransferRequested(const QString& userId);
     void groupRemarkChanged(const QString& remark);
     void pinChanged(bool pinned);
     void doNotDisturbChanged(bool enabled);
@@ -72,6 +73,7 @@ private:
     RedstoneLampSwitch* m_pinSwitch = nullptr;
     RedstoneLampSwitch* m_doNotDisturbSwitch = nullptr;
     StatefulPushButton* m_clearHistoryButton = nullptr;
+    StatefulPushButton* m_transferOwnerButton = nullptr;
     StatefulPushButton* m_exitGroupButton = nullptr;
     QWidget* m_groupInfoCard = nullptr;
     QWidget* m_memberSummaryCard = nullptr;
@@ -109,6 +111,7 @@ private:
     bool canPromoteMemberToAdmin(const User& user) const;
     bool canCancelMemberAdmin(const User& user) const;
     bool canRemoveMember(const User& user) const;
+    bool canTransferOwner() const;
 };
 
 class DirectConversationInfoPanel : public ConversationInfoPanel

@@ -55,9 +55,14 @@ void appendGroupParticipant(QVector<SampleParticipant>& participants,
     }
 
     const CurrentUser& currentUser = CurrentUser::instance();
-    QString displayName = currentUser.isCurrentUserId(userId)
-            ? currentUser.getUserName()
-            : group.memberNicknames.value(userId);
+    QString displayName = group.memberNicknames.value(userId).trimmed();
+    if (displayName.isEmpty() && currentUser.isCurrentUserId(userId) &&
+        !group.currentUserNickname.trimmed().isEmpty()) {
+        displayName = group.currentUserNickname.trimmed();
+    }
+    if (displayName.isEmpty() && currentUser.isCurrentUserId(userId)) {
+        displayName = currentUser.getUserName();
+    }
     if (displayName.isEmpty()) {
         displayName = userNameForIdentity(userId);
     }
@@ -82,6 +87,15 @@ bool isKnownNonFriendUser(const QString& userId)
 
     const User user = UserRepository::instance().requestUserDetail({userId});
     return !user.id.isEmpty() && !user.isFriend;
+}
+
+bool isGroupSystemEventMessage(const QSharedPointer<ChatMessage>& message)
+{
+    if (!message) {
+        return false;
+    }
+    return message->getType() == MessageType::GroupMemberJoined ||
+           message->getType() == MessageType::GroupSystemEvent;
 }
 
 QVector<SampleParticipant> sampleParticipantsForGroup(const Group& group, int ordinal)
@@ -148,7 +162,7 @@ QString buildPreviewText(const QSharedPointer<ChatMessage>& message,
         return message->getContent();
     }
 
-    if (message->getType() == MessageType::GroupMemberJoined) {
+    if (isGroupSystemEventMessage(message)) {
         return message->getContent();
     }
 
@@ -919,6 +933,87 @@ void MessageRepository::addMessage(const QString& conversationId,
     }
     emit lastMessageChanged(conversationId, message);
     emit conversationListChanged(conversationId);
+}
+
+void MessageRepository::refreshGroupMemberDisplayName(const QString& groupId,
+                                                      const QString& userId,
+                                                      const QString& displayName,
+                                                      GroupRole role)
+{
+    if (groupId.isEmpty() || userId.isEmpty()) {
+        return;
+    }
+
+    QSharedPointer<ChatMessage> lastMsg;
+    bool changed = false;
+    bool changedLast = false;
+    {
+        QMutexLocker locker(&m_mutex);
+        auto it = m_store.find(groupId);
+        if (it == m_store.end()) {
+            return;
+        }
+
+        ChatMessageList& messages = it.value();
+        for (int index = 0; index < messages.size(); ++index) {
+            const QSharedPointer<ChatMessage>& message = messages.at(index);
+            if (!message || !message->isInGroupChat()) {
+                continue;
+            }
+
+            bool messageChanged = false;
+            if (message->getSenderId() == userId &&
+                (message->getSenderName() != displayName || message->getRole() != role)) {
+                message->setSenderName(displayName);
+                message->setRole(role);
+                messageChanged = true;
+            }
+
+            if (message->getType() == MessageType::Recall) {
+                auto* recallMessage = static_cast<RecallMessage*>(message.data());
+                if (recallMessage->getActorId() == userId &&
+                    (recallMessage->getActorName() != displayName || recallMessage->getActorRole() != role)) {
+                    recallMessage->setActorName(displayName);
+                    recallMessage->setActorRole(role);
+                    messageChanged = true;
+                }
+            } else if (message->getType() == MessageType::GroupMemberJoined) {
+                auto* joinedMessage = static_cast<GroupMemberJoinedMessage*>(message.data());
+                if (joinedMessage->getMemberId() == userId && joinedMessage->getMemberName() != displayName) {
+                    joinedMessage->setMemberName(displayName);
+                    messageChanged = true;
+                }
+                if (joinedMessage->getInviterId() == userId && joinedMessage->getInviterName() != displayName) {
+                    joinedMessage->setInviterName(displayName);
+                    messageChanged = true;
+                }
+            } else if (message->getType() == MessageType::GroupSystemEvent) {
+                auto* eventMessage = static_cast<GroupSystemEventMessage*>(message.data());
+                if (eventMessage->getHighlightedUserId() == userId &&
+                    eventMessage->getHighlightedName() != displayName) {
+                    eventMessage->setHighlightedName(displayName);
+                    messageChanged = true;
+                }
+            }
+
+            if (messageChanged) {
+                changed = true;
+                changedLast = index == messages.size() - 1;
+            }
+        }
+        if (changedLast && !messages.isEmpty()) {
+            lastMsg = messages.last();
+        }
+    }
+
+    if (!changed) {
+        return;
+    }
+
+    if (changedLast) {
+        emit lastMessageChanged(groupId, lastMsg);
+    }
+    emit conversationListChanged(groupId);
 }
 
 bool MessageRepository::replaceMessage(const QString& conversationId,

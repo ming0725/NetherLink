@@ -3,6 +3,7 @@
 
 #include <QActionGroup>
 #include <QApplication>
+#include <QClipboard>
 #include <QEvent>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -23,6 +24,7 @@
 #include "shared/ui/ImageViewer.h"
 #include "shared/ui/InWindowPopupOverlay.h"
 #include "shared/ui/InlineEditableText.h"
+#include "shared/ui/GlobalNotification.h"
 #include "shared/ui/PaintedLabel.h"
 #include "shared/ui/StatefulPushButton.h"
 #include "shared/ui/StyledActionMenu.h"
@@ -98,6 +100,93 @@ void applyDangerOutlineButtonStyle(StatefulPushButton* button)
     button->setBorderColor(ThemeManager::instance().color(ThemeColor::Divider));
     button->setBorderWidth(1);
 }
+
+class CopyIdButton final : public QToolButton
+{
+public:
+    explicit CopyIdButton(QWidget* parent = nullptr)
+        : QToolButton(parent)
+    {
+        setFixedSize(26, 24);
+        setCursor(Qt::PointingHandCursor);
+        setFocusPolicy(Qt::NoFocus);
+        setIconSize(QSize(15, 15));
+        setToolTip(QStringLiteral("复制ID"));
+        setAccessibleName(QStringLiteral("复制ID"));
+    }
+
+protected:
+    bool event(QEvent* event) override
+    {
+        if (event->type() == QEvent::Enter) {
+            m_hovered = true;
+            update();
+        } else if (event->type() == QEvent::Leave) {
+            m_hovered = false;
+            update();
+        }
+        return QToolButton::event(event);
+    }
+
+    void paintEvent(QPaintEvent* event) override
+    {
+        Q_UNUSED(event);
+
+        QPainter painter(this);
+        painter.setRenderHint(QPainter::Antialiasing, true);
+
+        if (isDown() || m_hovered) {
+            painter.setPen(Qt::NoPen);
+            painter.setBrush(ThemeManager::instance().color(isDown()
+                    ? ThemeColor::ControlPressed
+                    : ThemeColor::ControlHover));
+            painter.drawRoundedRect(rect().adjusted(1, 1, -1, -1), 5, 5);
+        }
+
+        QPixmap icon = ImageService::instance().scaled(QStringLiteral(":/resources/icon/copy.svg"),
+                                                       iconSize(),
+                                                       Qt::KeepAspectRatio,
+                                                       devicePixelRatioF());
+        if (!icon.isNull()) {
+            if (ThemeManager::instance().isDark()) {
+                QImage image = icon.toImage().convertToFormat(QImage::Format_ARGB32_Premultiplied);
+                image.invertPixels(QImage::InvertRgb);
+                icon = QPixmap::fromImage(image);
+                icon.setDevicePixelRatio(devicePixelRatioF());
+            }
+            QRect target(QPoint(0, 0), iconSize());
+            target.moveCenter(rect().center());
+            painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
+            painter.drawPixmap(target, icon);
+            return;
+        }
+
+        const QColor iconColor = isEnabled()
+                ? ThemeManager::instance().color(m_hovered ? ThemeColor::PrimaryText : ThemeColor::TertiaryText)
+                : ThemeManager::instance().color(ThemeColor::PlaceholderText);
+        painter.setPen(QPen(iconColor, 1.5, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
+        painter.setBrush(Qt::NoBrush);
+
+        const QRect iconRect(QPoint(0, 0), QSize(16, 16));
+        QRect centeredIconRect = iconRect;
+        centeredIconRect.moveCenter(rect().center());
+        const QRectF backSheet(centeredIconRect.left() + 6,
+                               centeredIconRect.top() + 2,
+                               8,
+                               10);
+        const QRectF frontSheet(centeredIconRect.left() + 2,
+                                centeredIconRect.top() + 6,
+                                10,
+                                8);
+        painter.drawRoundedRect(backSheet, 2, 2);
+        painter.fillRect(frontSheet.adjusted(0, 0, 1, 1),
+                         ThemeManager::instance().color(ThemeColor::PageBackground));
+        painter.drawRoundedRect(frontSheet, 2, 2);
+    }
+
+private:
+    bool m_hovered = false;
+};
 
 const QStringList& editableCategoryOrder()
 {
@@ -207,7 +296,9 @@ GroupDetailPage::GroupDetailPage(QWidget* parent)
     : QWidget(parent)
     , m_contentWidget(new QWidget(this))
     , m_nameLabel(new PaintedLabel(this))
+    , m_idPrefixLabel(new PaintedLabel(QStringLiteral("ID"), this))
     , m_idLabel(new PaintedLabel(this))
+    , m_copyIdButton(new CopyIdButton(this))
     , m_remarkEdit(new InlineEditableText(this))
     , m_categoryButton(new CategorySelectButton(this))
     , m_categoryMenu(new StyledActionMenu(this))
@@ -247,17 +338,33 @@ GroupDetailPage::GroupDetailPage(QWidget* parent)
 
     QFont secondaryFont = m_idLabel->font();
     secondaryFont.setPixelSize(13);
+    m_idPrefixLabel->setFont(secondaryFont);
     m_idLabel->setFont(secondaryFont);
+    m_idPrefixLabel->setProperty("themeTextRole", static_cast<int>(ThemeColor::TertiaryText));
     m_idLabel->setProperty("themeTextRole", static_cast<int>(ThemeColor::TertiaryText));
+    m_idPrefixLabel->setTextColor(ThemeManager::instance().color(ThemeColor::TertiaryText));
     m_idLabel->setTextColor(ThemeManager::instance().color(ThemeColor::TertiaryText));
     m_idLabel->setTextInteractionFlags(Qt::TextSelectableByMouse);
     m_idLabel->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
     m_idLabel->setFixedHeight(QFontMetrics(secondaryFont).height() + 2);
+    m_idPrefixLabel->setSizePolicy(QSizePolicy::Fixed, QSizePolicy::Fixed);
+    m_idPrefixLabel->setFixedHeight(QFontMetrics(secondaryFont).height() + 2);
     m_nameLabel->setSizePolicy(QSizePolicy::Preferred, QSizePolicy::Fixed);
     m_nameLabel->setFixedHeight(QFontMetrics(nameFont).height() + 2);
 
+    auto* idRow = new QHBoxLayout;
+    idRow->setContentsMargins(0, 0, 0, 0);
+    idRow->setSpacing(5);
+    idRow->addWidget(m_idPrefixLabel, 0, Qt::AlignLeft | Qt::AlignVCenter);
+    idRow->addWidget(m_idLabel, 0, Qt::AlignLeft | Qt::AlignVCenter);
+    idRow->addWidget(m_copyIdButton, 0, Qt::AlignLeft | Qt::AlignVCenter);
+    idRow->addStretch();
+    m_idPrefixLabel->setVisible(false);
+    m_copyIdButton->setEnabled(false);
+    m_copyIdButton->setVisible(false);
+
     identity->addWidget(m_nameLabel);
-    identity->addWidget(m_idLabel);
+    identity->addLayout(idRow);
     identity->addStretch();
     header->addLayout(identity, 1);
     contentLayout->addLayout(header);
@@ -321,6 +428,7 @@ GroupDetailPage::GroupDetailPage(QWidget* parent)
     connect(m_exitButton, &StatefulPushButton::clicked, this, [this]() {
         confirmExitGroup();
     });
+    connect(m_copyIdButton, &QToolButton::clicked, this, &GroupDetailPage::copyCurrentId);
 
     connect(m_categoryButton, &QToolButton::clicked, this, &GroupDetailPage::showCategoryMenu);
     connect(m_categoryMenu, &QMenu::aboutToHide, this, [this]() {
@@ -396,7 +504,10 @@ void GroupDetailPage::clear()
     m_avatarSource.clear();
     m_avatarImageRequestId.clear();
     m_nameLabel->clear();
+    m_idPrefixLabel->setVisible(false);
     m_idLabel->clear();
+    m_copyIdButton->setEnabled(false);
+    m_copyIdButton->setVisible(false);
     m_introLabel->clear();
     m_announcementLabel->clear();
     m_memberCountLabel->clear();
@@ -471,7 +582,10 @@ void GroupDetailPage::setGroup(const Group& group)
     m_remarkEdit->finishEditing();
 
     m_nameLabel->setText(m_group.groupName);
-    m_idLabel->setText(QStringLiteral("ID %1").arg(m_group.groupId));
+    m_idPrefixLabel->setVisible(true);
+    m_idLabel->setText(m_group.groupId);
+    m_copyIdButton->setEnabled(true);
+    m_copyIdButton->setVisible(true);
     updateAvatar();
     updateRemarkText();
     updateCategoryButtonText();
@@ -534,6 +648,7 @@ void GroupDetailPage::applyTheme()
     applyPrimaryButtonStyle(m_messageButton);
     applyDangerOutlineButtonStyle(m_exitButton);
     m_categoryButton->update();
+    m_copyIdButton->update();
     update();
 }
 
@@ -574,6 +689,16 @@ void GroupDetailPage::updateMemberCountText()
 {
     const QString text = QStringLiteral("%1人").arg(m_group.memberNum);
     m_memberCountLabel->setText(text);
+}
+
+void GroupDetailPage::copyCurrentId()
+{
+    if (!m_hasGroup || m_group.groupId.isEmpty()) {
+        return;
+    }
+
+    QApplication::clipboard()->setText(m_group.groupId);
+    GlobalNotification::showSuccess(this, QStringLiteral("复制成功"));
 }
 
 QString GroupDetailPage::elidedValueText(const QString& text, const QLabel* label) const

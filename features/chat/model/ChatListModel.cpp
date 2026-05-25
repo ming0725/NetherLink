@@ -7,6 +7,19 @@ Q_DECLARE_METATYPE(ChatMessage*)
 Q_DECLARE_METATYPE(NewMessageDivider*)
 Q_DECLARE_METATYPE(LoadingPlaceholder*)
 
+namespace {
+
+bool isGroupSystemEventMessage(const ChatMessage* message)
+{
+    if (!message) {
+        return false;
+    }
+    return message->getType() == MessageType::GroupMemberJoined ||
+           message->getType() == MessageType::GroupSystemEvent;
+}
+
+} // namespace
+
 ChatListModel::ChatListModel(QObject* parent)
     : QAbstractListModel(parent)
 {
@@ -558,7 +571,8 @@ void ChatListModel::refreshPeerMessageRows()
                 !items.at(row).isNewMessageDivider &&
                 !items.at(row).isLoadingPlaceholder &&
                 items.at(row).message &&
-                !items.at(row).message->isFromMe()) {
+                !items.at(row).message->isFromMe() &&
+                !isGroupSystemEventMessage(items.at(row).message.get())) {
             previousPeerRow = row;
         }
         items[row].nearestPeerRowBefore = previousPeerRow;
@@ -571,7 +585,8 @@ void ChatListModel::refreshPeerMessageRows()
                 !items.at(row).isNewMessageDivider &&
                 !items.at(row).isLoadingPlaceholder &&
                 items.at(row).message &&
-                !items.at(row).message->isFromMe()) {
+                !items.at(row).message->isFromMe() &&
+                !isGroupSystemEventMessage(items.at(row).message.get())) {
             nextPeerRow = row;
         }
         items[row].nearestPeerRowAfter = nextPeerRow;
