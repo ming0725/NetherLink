@@ -5,10 +5,16 @@
 #include <QString>
 #include <QVector>
 
+#include "shared/types/User.h"
+
 struct LoginAccount {
     QString accountId;
     QString password;
+    QString displayName;
     QString avatarPath;
+    UserStatus status = Offline;
+    QString signature;
+    QString region;
     qint64 lastLoginOrder = 0;
 };
 
@@ -31,6 +37,7 @@ public:
     int requestLoginAccountCount() const;
     bool validateCredentials(const QString& accountId, const QString& password) const;
 
+    bool registerAccount(const QString& email, const QString& password, const QString& displayName);
     void recordSuccessfulLogin(const QString& accountId, const QString& password);
     void removeLoginAccount(const QString& accountId);
 

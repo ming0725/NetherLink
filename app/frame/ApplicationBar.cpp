@@ -521,11 +521,6 @@ void ApplicationBar::setAvatarStatusChoiceIndex(int index)
 
     if (index == 3) {
         privateInvisibleStatus = true;
-        CurrentUserProfile profile = CurrentUser::instance().profile();
-        if (profile.isValid() && profile.status != Offline) {
-            profile.status = Offline;
-            CurrentUser::instance().saveProfile(profile);
-        }
         update();
         return;
     }

@@ -6,11 +6,14 @@
 #include <QElapsedTimer>
 #include <QImage>
 #include <QPointF>
+#include <QPointer>
 #include <QVector>
 
 class QLabel;
 class LoginInputField;
+class RegisterWindow;
 class QAbstractButton;
+class QCloseEvent;
 class StatefulPushButton;
 class QTimer;
 template <typename T>
@@ -29,6 +32,7 @@ signals:
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
+    void closeEvent(QCloseEvent* event) override;
     void paintEvent(QPaintEvent* event) override;
     void showEvent(QShowEvent* event) override;
 
@@ -55,6 +59,8 @@ private:
     void updateAutoLoginRules();
     void updateAvatarForAccount(const QString& accountId);
     void attemptLogin();
+    void showRegisterWindow();
+    void closeRegisterWindow();
     void showAccountPopup();
     void centerOnPrimaryScreen();
     void setupBackgroundLights();
@@ -68,6 +74,7 @@ private:
     LoginInputField* m_accountField = nullptr;
     LoginInputField* m_passwordField = nullptr;
     QWidget* m_accountPopup = nullptr;
+    QPointer<RegisterWindow> m_registerWindow;
     StatefulPushButton* m_loginButton = nullptr;
     QLabel* m_errorLabel = nullptr;
     QAbstractButton* m_rememberButton = nullptr;

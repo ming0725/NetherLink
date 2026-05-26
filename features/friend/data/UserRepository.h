@@ -18,6 +18,7 @@ public:
     QVector<FriendGroupSummary> requestFriendGroupSummaries(const FriendGroupListRequest& query = {}) const;
     QVector<FriendSummary> requestFriendsInGroup(const FriendGroupItemsRequest& query) const;
     QVector<User> requestUserSearch(const QString& keyword, int limit = 80, int offset = 0) const;
+    QVector<User> requestAllUsers() const;
     User requestUserDetail(const UserDetailRequest& query) const;
     QVector<User> requestUserDetails(const QStringList& userIds) const;
     QMap<QString, QString> requestFriendGroups() const;

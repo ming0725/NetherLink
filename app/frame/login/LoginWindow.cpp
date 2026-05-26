@@ -2,6 +2,9 @@
 
 #include "LoginAccountRepository.h"
 #include "LoginInputField.h"
+#include "RegisterWindow.h"
+#include "app/state/CurrentUser.h"
+#include "app/state/CurrentUserProfileRepository.h"
 #include "shared/services/AppFonts.h"
 #include "shared/theme/ThemeManager.h"
 #include "shared/ui/FastGaussianBlur.h"
@@ -10,6 +13,7 @@
 
 #include <QAbstractButton>
 #include <QApplication>
+#include <QCloseEvent>
 #include <QFutureWatcher>
 #include <QGuiApplication>
 #include <QHBoxLayout>
@@ -74,6 +78,21 @@ QColor withAlphaF(QColor color, qreal alpha)
 {
     color.setAlphaF(qBound<qreal>(0.0, alpha, 1.0));
     return color;
+}
+
+QColor loginAvatarStrokeColor()
+{
+    QColor color = ThemeManager::instance().color(ThemeColor::TertiaryText);
+    color.setAlpha(190);
+    return color;
+}
+
+QString loginAccountDisplayText(const LoginAccount& account)
+{
+    if (account.displayName.isEmpty() || account.displayName == account.accountId) {
+        return account.accountId;
+    }
+    return QStringLiteral("%1 (%2)").arg(account.displayName, account.accountId);
 }
 
 qreal wrapHue(qreal hue)
@@ -280,7 +299,7 @@ protected:
         }
 
         painter.setClipping(false);
-        painter.setPen(QPen(ThemeManager::instance().color(ThemeColor::OverlayStroke), 1.2));
+        painter.setPen(QPen(loginAvatarStrokeColor(), 1.2));
         painter.setBrush(Qt::NoBrush);
         painter.drawEllipse(avatarRect);
     }
@@ -452,7 +471,7 @@ private:
         }
         painter->restore();
 
-        painter->setPen(QPen(ThemeManager::instance().color(ThemeColor::OverlayStroke), 1.0));
+        painter->setPen(QPen(loginAvatarStrokeColor(), 1.0));
         painter->setBrush(Qt::NoBrush);
         painter->drawEllipse(QRectF(avatarRect).adjusted(0.5, 0.5, -0.5, -0.5));
 
@@ -465,7 +484,7 @@ private:
         painter->setPen(ThemeManager::instance().color(ThemeColor::PrimaryText));
         painter->drawText(textRect,
                           Qt::AlignLeft | Qt::AlignVCenter,
-                          account.accountId);
+                          loginAccountDisplayText(account));
 
         if (hovered) {
             const QRect closeRect = deleteButtonRect(row);
@@ -843,6 +862,7 @@ LoginWindow::LoginWindow(QWidget* parent)
 
 LoginWindow::~LoginWindow()
 {
+    closeRegisterWindow();
     qApp->removeEventFilter(this);
 }
 
@@ -891,8 +911,7 @@ void LoginWindow::setupUi()
     m_accountField = new LoginInputField(content);
     m_accountField->setFixedWidth(kFormWidth);
     m_accountField->setDropdownEnabled(true);
-    m_accountField->setDigitsOnly(true);
-    m_accountField->setPlaceholderText(QStringLiteral("账号"));
+    m_accountField->setPlaceholderText(QStringLiteral("用户 ID"));
     m_accountField->setText(initialAccount.accountId);
     if (!initialAccount.avatarPath.isEmpty()) {
         static_cast<AvatarView*>(m_avatarView)->setAvatarPath(initialAccount.avatarPath);
@@ -973,9 +992,7 @@ void LoginWindow::setupUi()
     setTabOrder(m_accountField->lineEdit(), m_passwordField->lineEdit());
     connect(m_passwordField->lineEdit(), &QLineEdit::returnPressed, this, &LoginWindow::attemptLogin);
     connect(m_loginButton, &QPushButton::clicked, this, &LoginWindow::attemptLogin);
-    connect(registerButton, &QAbstractButton::clicked, this, []() {
-        // Registration flow is intentionally left for later implementation.
-    });
+    connect(registerButton, &QAbstractButton::clicked, this, &LoginWindow::showRegisterWindow);
 
     auto updateThemeLabels = [this]() {
         updateLabelColor(m_errorLabel, ThemeColor::DangerText);
@@ -1003,6 +1020,12 @@ bool LoginWindow::eventFilter(QObject* watched, QEvent* event)
     }
 
     return SystemWindow::eventFilter(watched, event);
+}
+
+void LoginWindow::closeEvent(QCloseEvent* event)
+{
+    closeRegisterWindow();
+    SystemWindow::closeEvent(event);
 }
 
 void LoginWindow::paintEvent(QPaintEvent* event)
@@ -1087,11 +1110,62 @@ void LoginWindow::attemptLogin()
     m_loginButton->setEnabled(false);
     m_loginButton->setText(QStringLiteral("等待主窗口出现"));
     LoginAccountRepository::instance().recordSuccessfulLogin(accountId, password);
+    const LoginAccount account = LoginAccountRepository::instance().requestLoginAccount({accountId});
+    CurrentUserProfile profile;
+    profile.userId = account.accountId;
+    profile.nickName = account.displayName.isEmpty() ? account.accountId : account.displayName;
+    profile.avatarPath = account.avatarPath;
+    profile.status = account.status;
+    profile.signature = account.signature;
+    profile.region = account.region;
+    CurrentUserProfileRepository::instance().saveCurrentUserProfile(profile);
+    CurrentUser::instance().setUserInfo(profile.userId);
     GlobalNotification::showSuccess(this, QStringLiteral("登录成功"));
 
     QTimer::singleShot(kShowMainWindowDelayMs, this, [this]() {
         emit loginAccepted();
     });
+}
+
+void LoginWindow::showRegisterWindow()
+{
+    if (m_registerWindow) {
+        m_registerWindow->raise();
+        m_registerWindow->activateWindow();
+        return;
+    }
+
+    auto* window = new RegisterWindow(this);
+    m_registerWindow = window;
+    connect(window, &RegisterWindow::accountRegistered, this, [this](const QString& accountId,
+                                                                     const QString& password) {
+        if (m_accountField) {
+            m_accountField->setText(accountId);
+        }
+        if (m_passwordField) {
+            m_passwordField->setText(password);
+            m_passwordField->lineEdit()->setFocus(Qt::OtherFocusReason);
+        }
+        updateAvatarForAccount(accountId);
+        m_errorLabel->clear();
+    });
+    connect(window, &QObject::destroyed, this, [this]() {
+        m_registerWindow = nullptr;
+    });
+    window->show();
+    window->raise();
+    window->activateWindow();
+}
+
+void LoginWindow::closeRegisterWindow()
+{
+    if (!m_registerWindow) {
+        return;
+    }
+
+    RegisterWindow* window = m_registerWindow;
+    m_registerWindow = nullptr;
+    window->close();
 }
 
 void LoginWindow::showAccountPopup()

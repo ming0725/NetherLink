@@ -427,6 +427,12 @@ QVector<User> UserRepository::requestUserSearch(const QString& keyword, int limi
     return result.mid(boundedOffset, boundedLimit);
 }
 
+QVector<User> UserRepository::requestAllUsers() const
+{
+    QMutexLocker locker(&mutex);
+    return QVector<User>::fromList(userMap.values());
+}
+
 User UserRepository::requestUserDetail(const UserDetailRequest& query) const
 {
     QMutexLocker locker(&mutex);
