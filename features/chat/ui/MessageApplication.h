@@ -4,7 +4,7 @@
 #include <QStackedWidget>
 #include <functional>
 #include "shared/ui/IconLineEdit.h"
-#include "shared/ui/StatefulPushButton.h"
+#include "shared/ui/PlusButton.h"
 #include "features/chat/ui/MessageListWidget.h"
 #include "app/frame/DefaultPage.h"
 #include "features/chat/ui/ChatArea.h"
@@ -40,7 +40,7 @@ private:
         void applyTheme();
 
         IconLineEdit* m_searchInput;
-        StatefulPushButton* m_addButton;
+        PlusButton* m_addButton;
         MessageListWidget* m_msgList;
         std::function<void(const QString&)> m_createdGroupCallback;
     };

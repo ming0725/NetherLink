@@ -29,6 +29,8 @@ QVariant AiChatListModel::data(const QModelIndex& index, int role) const
         return entry.title;
     case TimeRole:
         return entry.time;
+    case HasUnreadDotRole:
+        return entry.hasUnreadDot;
     case SectionTitleRole:
         return sectionTitleAt(index.row());
     case IsSectionStartRole:

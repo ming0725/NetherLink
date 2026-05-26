@@ -314,6 +314,25 @@ AiChatRepository::AiChatRepository(QObject* parent)
         };
         m_entries.push_back(entry);
     }
+
+    QVector<int> latestIndexes;
+    latestIndexes.reserve(m_entries.size());
+    for (int index = 0; index < m_entries.size(); ++index) {
+        latestIndexes.push_back(index);
+    }
+    std::sort(latestIndexes.begin(), latestIndexes.end(), [this](int lhs, int rhs) {
+        return m_entries.at(lhs).time > m_entries.at(rhs).time;
+    });
+
+    const int candidateCount = qMin(8, latestIndexes.size());
+    const int unreadDotCount = qMin(4, candidateCount);
+    QSet<int> selectedIndexes;
+    while (selectedIndexes.size() < unreadDotCount) {
+        selectedIndexes.insert(latestIndexes.at(QRandomGenerator::global()->bounded(candidateCount)));
+    }
+    for (int index : selectedIndexes) {
+        m_entries[index].hasUnreadDot = true;
+    }
 }
 
 AiChatRepository& AiChatRepository::instance()
@@ -389,7 +408,7 @@ QString AiChatRepository::createAiChatConversation(const QString& title, const Q
 
     QMutexLocker locker(&m_mutex);
     const QString conversationId = QStringLiteral("ai-chat-%1").arg(m_nextConversationId++);
-    const AiChatListEntry entry {conversationId, trimmedTitle, time};
+    const AiChatListEntry entry {conversationId, trimmedTitle, time, false};
     m_entries.push_back(entry);
     m_messages.insert(conversationId, {});
     m_seededMessageConversationIds.insert(conversationId);
@@ -424,9 +443,6 @@ AiChatMessage AiChatRepository::addAiChatMessage(const QString& conversationId,
     m_messages[conversationId].push_back(message);
     m_contextUsages.remove(conversationId);
     entryIt->time = time;
-    if (isFromUser) {
-        entryIt->title = messageText.simplified().left(28);
-    }
     return message;
 }
 
@@ -462,6 +478,48 @@ bool AiChatRepository::updateAiChatMessageText(const QString& conversationId,
     }
 
     return false;
+}
+
+bool AiChatRepository::setConversationUnreadDot(const QString& conversationId, bool unread)
+{
+    if (conversationId.isEmpty()) {
+        return false;
+    }
+
+    bool changed = false;
+    {
+        QMutexLocker locker(&m_mutex);
+        for (AiChatListEntry& entry : m_entries) {
+            if (entry.conversationId != conversationId) {
+                continue;
+            }
+
+            if (entry.hasUnreadDot == unread) {
+                return false;
+            }
+
+            entry.hasUnreadDot = unread;
+            changed = true;
+            break;
+        }
+    }
+
+    if (changed) {
+        emit unreadDotStateChanged();
+    }
+    return changed;
+}
+
+int AiChatRepository::unreadDotCount() const
+{
+    QMutexLocker locker(&m_mutex);
+    int count = 0;
+    for (const AiChatListEntry& entry : m_entries) {
+        if (entry.hasUnreadDot) {
+            ++count;
+        }
+    }
+    return count;
 }
 
 bool AiChatRepository::removeAiChatMessage(const QString& conversationId, const QString& messageId)
@@ -521,18 +579,26 @@ bool AiChatRepository::removeAiChatConversation(const QString& conversationId)
         return false;
     }
 
-    QMutexLocker locker(&m_mutex);
-    const auto it = std::find_if(m_entries.begin(), m_entries.end(), [&conversationId](const AiChatListEntry& entry) {
-        return entry.conversationId == conversationId;
-    });
-    if (it == m_entries.end()) {
-        return false;
+    bool hadUnreadDot = false;
+    {
+        QMutexLocker locker(&m_mutex);
+        const auto it = std::find_if(m_entries.begin(), m_entries.end(), [&conversationId](const AiChatListEntry& entry) {
+            return entry.conversationId == conversationId;
+        });
+        if (it == m_entries.end()) {
+            return false;
+        }
+
+        hadUnreadDot = it->hasUnreadDot;
+        m_entries.erase(it);
+        m_messages.remove(conversationId);
+        m_seededMessageConversationIds.remove(conversationId);
+        m_contextUsages.remove(conversationId);
     }
 
-    m_entries.erase(it);
-    m_messages.remove(conversationId);
-    m_seededMessageConversationIds.remove(conversationId);
-    m_contextUsages.remove(conversationId);
+    if (hadUnreadDot) {
+        emit unreadDotStateChanged();
+    }
     return true;
 }
 

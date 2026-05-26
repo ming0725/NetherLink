@@ -1,6 +1,7 @@
 #include "markdownlistview.h"
 
 #include "shared/ui/GlobalNotification.h"
+#include "shared/theme/ThemeManager.h"
 
 #include "markdowndelegate.h"
 #include "markdowndocumentmodel.h"
@@ -12,9 +13,12 @@
 #include <QKeyEvent>
 #include <QMouseEvent>
 #include <QResizeEvent>
+#include <QVariant>
 #include <QTimer>
 #include <QUrl>
 #include <QWheelEvent>
+
+#include <utility>
 
 namespace {
 
@@ -29,6 +33,23 @@ int effectiveFontPixelSize(const QFont &font)
         return font.pixelSize();
     }
     return qMax(kMinFontPixelSize, QFontInfo(font).pixelSize());
+}
+
+ThemeManager::Mode modeFromValue(const QString &value, ThemeManager::Mode fallback)
+{
+    const QString normalized = value.trimmed().toLower();
+    if (normalized == QStringLiteral("light") || normalized == QStringLiteral("浅色模式")) {
+        return ThemeManager::Mode::Light;
+    }
+    if (normalized == QStringLiteral("dark") || normalized == QStringLiteral("深色模式")) {
+        return ThemeManager::Mode::Dark;
+    }
+    if (normalized == QStringLiteral("follow-system") ||
+        normalized == QStringLiteral("system") ||
+        normalized == QStringLiteral("跟随系统")) {
+        return ThemeManager::Mode::FollowSystem;
+    }
+    return fallback;
 }
 
 } // namespace
@@ -62,6 +83,8 @@ void MarkdownListView::setMarkdown(const QString &markdown)
 {
     m_model->setMarkdown(markdown);
     clearCopiedCodeIndex();
+    m_revokedSettingRows.clear();
+    syncRevokedSettingRowsProperty();
 }
 
 MarkdownDocumentModel *MarkdownListView::markdownModel() const
@@ -172,6 +195,13 @@ void MarkdownListView::mousePressEvent(QMouseEvent *event)
     QModelIndex copyHitIndex = indexAt(event->pos());
     if (copyHitIndex.isValid()) {
         const auto *markdownDelegate = qobject_cast<const MarkdownDelegate *>(itemDelegateForIndex(copyHitIndex));
+        if (markdownDelegate &&
+            markdownDelegate->isSettingActionButtonAtPosition(optionForIndex(copyHitIndex), copyHitIndex, event->pos())) {
+            toggleSettingAction(copyHitIndex);
+            event->accept();
+            return;
+        }
+
         if (markdownDelegate &&
             markdownDelegate->isCodeCopyButtonAtPosition(optionForIndex(copyHitIndex), copyHitIndex, event->pos())) {
             const QVariant value = copyHitIndex.data(MarkdownDocumentModel::BlockRole);
@@ -306,7 +336,8 @@ void MarkdownListView::updateCursorForViewportPosition(const QPoint &position)
     if (hitIndex.isValid()) {
         const auto *markdownDelegate = qobject_cast<const MarkdownDelegate *>(itemDelegateForIndex(hitIndex));
         if (markdownDelegate &&
-            markdownDelegate->isCodeCopyButtonAtPosition(optionForIndex(hitIndex), hitIndex, position)) {
+            (markdownDelegate->isCodeCopyButtonAtPosition(optionForIndex(hitIndex), hitIndex, position) ||
+             markdownDelegate->isSettingActionButtonAtPosition(optionForIndex(hitIndex), hitIndex, position))) {
             viewport()->setCursor(Qt::PointingHandCursor);
             return;
         }
@@ -360,4 +391,46 @@ void MarkdownListView::clearCopiedCodeIndex()
     if (previousIndex.isValid()) {
         viewport()->update(visualRect(previousIndex));
     }
+}
+
+void MarkdownListView::toggleSettingAction(const QModelIndex &index)
+{
+    const QVariant value = index.data(MarkdownDocumentModel::BlockRole);
+    if (!value.canConvert<MarkdownRenderer::Block>()) {
+        return;
+    }
+
+    const MarkdownRenderer::Block block = value.value<MarkdownRenderer::Block>();
+    if (block.type != MarkdownRenderer::BlockType::SettingBlock ||
+        block.settingAction != QStringLiteral("settings.appearance.mode")) {
+        return;
+    }
+
+    const bool revoked = m_revokedSettingRows.contains(index.row());
+    if (revoked) {
+        ThemeManager::instance().setMode(modeFromValue(block.settingValueText,
+                                                       ThemeManager::Mode::Dark));
+        m_revokedSettingRows.remove(index.row());
+        GlobalNotification::showSuccess(this, QStringLiteral("已重新应用设置"));
+    } else {
+        ThemeManager::instance().setMode(modeFromValue(block.settingPreviousValueText,
+                                                       ThemeManager::Mode::FollowSystem));
+        m_revokedSettingRows.insert(index.row());
+        GlobalNotification::showSuccess(this, QStringLiteral("已撤回设置"));
+    }
+
+    syncRevokedSettingRowsProperty();
+    viewport()->update(visualRect(index));
+}
+
+void MarkdownListView::syncRevokedSettingRowsProperty()
+{
+    QVariantList rows;
+    rows.reserve(m_revokedSettingRows.size());
+    for (int row : std::as_const(m_revokedSettingRows)) {
+        rows.push_back(row);
+    }
+
+    setProperty("markdownRevokedSettingRows", rows);
+    viewport()->setProperty("markdownRevokedSettingRows", rows);
 }

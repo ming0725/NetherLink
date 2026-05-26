@@ -4,6 +4,7 @@
 #include <QAbstractListModel>
 #include <QAbstractTextDocumentLayout>
 #include <QApplication>
+#include <QColor>
 #include <QFontMetricsF>
 #include <QImage>
 #include <QDebug>
@@ -23,6 +24,7 @@
 #include <QtMath>
 
 #include <algorithm>
+#include <utility>
 
 #include "features/aichat/model/AiChatMessageListModel.h"
 #include "shared/services/ImageService.h"
@@ -274,6 +276,50 @@ QString textDocumentCacheKey(const QString& text,
 int textCacheCost(const QString& text)
 {
     return qBound(1, text.size() / 512 + 1, 16);
+}
+
+ThemeManager::Mode modeFromSettingValue(const QString& value, ThemeManager::Mode fallback)
+{
+    const QString normalized = value.trimmed().toLower();
+    if (normalized == QStringLiteral("light") || normalized == QStringLiteral("浅色模式")) {
+        return ThemeManager::Mode::Light;
+    }
+    if (normalized == QStringLiteral("dark") || normalized == QStringLiteral("深色模式")) {
+        return ThemeManager::Mode::Dark;
+    }
+    if (normalized == QStringLiteral("follow-system") ||
+            normalized == QStringLiteral("system") ||
+            normalized == QStringLiteral("跟随系统")) {
+        return ThemeManager::Mode::FollowSystem;
+    }
+    return fallback;
+}
+
+bool applySettingValue(const QString& action, const QString& value)
+{
+    const QString normalizedAction = action.trimmed().toLower();
+    if (normalizedAction == QStringLiteral("settings.appearance.mode")) {
+        ThemeManager::instance().setMode(modeFromSettingValue(value, ThemeManager::Mode::FollowSystem));
+        return true;
+    }
+
+    if (normalizedAction == QStringLiteral("settings.appearance.theme_color") ||
+            normalizedAction == QStringLiteral("settings.appearance.themecolor")) {
+        const QColor color(value.trimmed());
+        if (!color.isValid()) {
+            return false;
+        }
+        ThemeManager::instance().setThemeColor(color);
+        return true;
+    }
+
+    return false;
+}
+
+bool mightContainSettingBlock(const QString& text)
+{
+    return text.contains(QStringLiteral("```")) &&
+            text.contains(QStringLiteral("setting"), Qt::CaseInsensitive);
 }
 
 int firstMarkdownBlockAtY(const QVector<int>& blockOffsets, const QVector<int>& blockHeights, int y)
@@ -843,6 +889,59 @@ bool AiChatMessageDelegate::isCodeCopyButtonAt(const QStyleOptionViewItem& optio
                                                         viewportPos);
 }
 
+bool AiChatMessageDelegate::isSettingActionButtonAt(const QStyleOptionViewItem& option,
+                                                    const QModelIndex& index,
+                                                    const QPoint& viewportPos) const
+{
+    if (!mightContainSettingBlock(index.data(AiChatMessageListModel::TextRole).toString())) {
+        return false;
+    }
+
+    const MarkdownBlockHit hit = markdownBlockAt(option, index, viewportPos);
+    if (!hit.valid || hit.block.type != MarkdownRenderer::BlockType::SettingBlock) {
+        return false;
+    }
+
+    const QList<MarkdownRenderer::Block> blocks{hit.block};
+    MarkdownBlockModel markdownModel(&blocks, {});
+    return m_markdownDelegate.isSettingActionButtonAtPosition(hit.option,
+                                                              markdownModel.index(0, 0),
+                                                              viewportPos);
+}
+
+bool AiChatMessageDelegate::toggleSettingActionAt(const QStyleOptionViewItem& option,
+                                                  const QModelIndex& index,
+                                                  const QPoint& viewportPos)
+{
+    if (!mightContainSettingBlock(index.data(AiChatMessageListModel::TextRole).toString())) {
+        return false;
+    }
+
+    const MarkdownBlockHit hit = markdownBlockAt(option, index, viewportPos);
+    if (!hit.valid ||
+            hit.block.type != MarkdownRenderer::BlockType::SettingBlock) {
+        return false;
+    }
+
+    const QString messageId = index.data(AiChatMessageListModel::MessageIdRole).toString();
+    QSet<int>& revokedRows = m_revokedSettingRowsByMessage[messageId];
+    if (revokedRows.contains(hit.row)) {
+        if (!applySettingValue(hit.block.settingAction, hit.block.settingValueText)) {
+            return false;
+        }
+        revokedRows.remove(hit.row);
+        if (revokedRows.isEmpty()) {
+            m_revokedSettingRowsByMessage.remove(messageId);
+        }
+    } else {
+        if (!applySettingValue(hit.block.settingAction, hit.block.settingPreviousValueText)) {
+            return false;
+        }
+        revokedRows.insert(hit.row);
+    }
+    return true;
+}
+
 int AiChatMessageDelegate::codeCopyBlockRowAt(const QStyleOptionViewItem& option,
                                               const QModelIndex& index,
                                               const QPoint& viewportPos) const
@@ -1390,6 +1489,9 @@ const AiChatMessageDelegate::MarkdownCacheEntry& AiChatMessageDelegate::cachedMa
     entry->blockStartOffsets.reserve(entry->blocks.size());
 
     for (int row = 0; row < entry->blocks.size(); ++row) {
+        if (entry->blocks.at(row).type == MarkdownRenderer::BlockType::SettingBlock) {
+            entry->hasSettingBlocks = true;
+        }
         if (row > 0) {
             entry->plainText += QLatin1Char('\n');
         }
@@ -1568,11 +1670,26 @@ void AiChatMessageDelegate::paintMarkdownMessage(QPainter* painter,
 
     MarkdownBlockModel markdownModel(&entry.blocks, selections);
     QVariant previousCopiedRowProperty;
+    QVariant previousRevokedRowsProperty;
     QWidget* optionWidget = const_cast<QWidget*>(option.widget);
     if (optionWidget) {
         previousCopiedRowProperty = optionWidget->property("markdownCopiedCodeRow");
         const int copiedRow = m_copiedCodeMessageIndex == index ? m_copiedCodeBlockRow : -1;
         optionWidget->setProperty("markdownCopiedCodeRow", copiedRow);
+
+        if (entry.hasSettingBlocks) {
+            previousRevokedRowsProperty = optionWidget->property("markdownRevokedSettingRows");
+            QVariantList revokedRows;
+            const QString messageId = index.data(AiChatMessageListModel::MessageIdRole).toString();
+            const auto rowsIt = m_revokedSettingRowsByMessage.constFind(messageId);
+            if (rowsIt != m_revokedSettingRowsByMessage.cend()) {
+                revokedRows.reserve(rowsIt->size());
+                for (int row : *rowsIt) {
+                    revokedRows.push_back(row);
+                }
+            }
+            optionWidget->setProperty("markdownRevokedSettingRows", revokedRows);
+        }
     }
 
     for (int row = firstRow; row <= qMin(lastRow, entry.blocks.size() - 1); ++row) {
@@ -1594,6 +1711,9 @@ void AiChatMessageDelegate::paintMarkdownMessage(QPainter* painter,
 
     if (optionWidget) {
         optionWidget->setProperty("markdownCopiedCodeRow", previousCopiedRowProperty);
+        if (entry.hasSettingBlocks) {
+            optionWidget->setProperty("markdownRevokedSettingRows", previousRevokedRowsProperty);
+        }
     }
 }
 

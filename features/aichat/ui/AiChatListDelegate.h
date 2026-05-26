@@ -24,6 +24,8 @@ private:
                      const QModelIndex& index) const;
     QRect titleRect(const QStyleOptionViewItem& option,
                     const QModelIndex& index) const;
+    QRect unreadDotRect(const QStyleOptionViewItem& option,
+                        const QModelIndex& index) const;
 
     static constexpr int kItemHeight = 36;
     static constexpr int kSectionHeaderHeight = 22;

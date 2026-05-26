@@ -3,6 +3,7 @@
 
 #include <QListView>
 #include <QPersistentModelIndex>
+#include <QSet>
 #include <QStyleOptionViewItem>
 
 class MarkdownDocumentModel;
@@ -42,10 +43,13 @@ private:
     QStyleOptionViewItem optionForIndex(const QModelIndex &index) const;
     void setCopiedCodeIndex(const QModelIndex &index);
     void clearCopiedCodeIndex();
+    void toggleSettingAction(const QModelIndex &index);
+    void syncRevokedSettingRowsProperty();
 
     MarkdownDocumentModel *m_model = nullptr;
     QTimer *m_copyResetTimer = nullptr;
     QPersistentModelIndex m_copiedCodeIndex;
+    QSet<int> m_revokedSettingRows;
     int m_anchorRow = -1;
     int m_anchorCursor = 0;
     int m_zoomWheelDelta = 0;

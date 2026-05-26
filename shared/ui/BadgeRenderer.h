@@ -25,6 +25,7 @@ namespace BadgeRenderer {
 
 constexpr int kBadgeHeight = 16;
 constexpr int kBadgeHorizontalPadding = 4;
+constexpr int kDotBadgeSize = 7;
 
 inline QFont badgeFont()
 {
@@ -41,6 +42,9 @@ inline QFontMetrics badgeMetrics()
 // Set isDark=true for dark theme.
 BadgeLayout layoutForUnreadCount(int unreadCount, bool doNotDisturb,
                                  bool selected, bool isDark);
+
+// Small red indicator without text, used where a full unread count badge is too heavy.
+BadgeLayout layoutForUnreadDot();
 
 // Draw a badge. Handles both icon mode (drawIcon) and text count mode.
 void drawBadge(QPainter* painter, const QRect& rect,

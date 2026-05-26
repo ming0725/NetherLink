@@ -430,6 +430,14 @@ void AiChatMessageListView::mousePressEvent(QMouseEvent* event)
                 return;
             }
 
+            if (m_delegate->isSettingActionButtonAt(option, index, event->pos())) {
+                if (m_delegate->toggleSettingActionAt(option, index, event->pos())) {
+                    viewport()->update(visualRect(index));
+                }
+                event->accept();
+                return;
+            }
+
             const QString url = m_delegate->urlAt(option, index, event->pos());
             if (!url.isEmpty()) {
                 m_delegate->clearBubbleSelection();
@@ -532,6 +540,7 @@ void AiChatMessageListView::mouseMoveEvent(QMouseEvent* event)
 
     bool overUrl = false;
     bool overCodeCopy = false;
+    bool overSettingAction = false;
     bool overMessageAction = false;
     bool overText = false;
     QModelIndex hoveredUserCopyIndex;
@@ -548,10 +557,13 @@ void AiChatMessageListView::mouseMoveEvent(QMouseEvent* event)
         }
         overMessageAction = messageAction != AiChatMessageDelegate::MessageAction::None;
         overCodeCopy = !overMessageAction && m_delegate->isCodeCopyButtonAt(option, index, event->pos());
-        overUrl = !overCodeCopy && !m_delegate->urlAt(option, index, event->pos()).isEmpty();
+        overSettingAction = !overMessageAction && !overCodeCopy &&
+                m_delegate->isSettingActionButtonAt(option, index, event->pos());
+        overUrl = !overCodeCopy && !overSettingAction && !m_delegate->urlAt(option, index, event->pos()).isEmpty();
         overText = overMessageAction ||
                 overUrl ||
                 overCodeCopy ||
+                overSettingAction ||
                 m_delegate->characterIndexAt(option, index, event->pos()) >= 0;
         if (kAiChatLayoutDebug && index.data(AiChatMessageListModel::IsFromUserRole).toBool() &&
                 (overMessageAction || overUserCopyAction || m_delegate->bubbleHitTest(option, index, event->pos()))) {
@@ -569,7 +581,7 @@ void AiChatMessageListView::mouseMoveEvent(QMouseEvent* event)
         }
     }
     updateHoveredUserCopyIndex(hoveredUserCopyIndex);
-    viewport()->setCursor((overMessageAction || overCodeCopy || overUrl) ? Qt::PointingHandCursor
+    viewport()->setCursor((overMessageAction || overCodeCopy || overSettingAction || overUrl) ? Qt::PointingHandCursor
                                   : (overText ? Qt::IBeamCursor : Qt::ArrowCursor));
 
     OverlayScrollListView::mouseMoveEvent(event);

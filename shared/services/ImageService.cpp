@@ -156,8 +156,26 @@ QImage ImageService::originalImage(const QString& source) const
 
 QPixmap ImageService::pixmap(const QString& source) const
 {
+    if (source.isEmpty()) {
+        return {};
+    }
+
+    const QString key = QStringLiteral("imgsvc|pixmap|%1").arg(source);
+    QPixmap cachedPixmap;
+    if (QPixmapCache::find(key, &cachedPixmap)) {
+        return cachedPixmap;
+    }
+
     const QImage image = originalImage(source);
-    return image.isNull() ? QPixmap() : QPixmap::fromImage(image);
+    if (image.isNull()) {
+        return {};
+    }
+
+    QPixmap pixmap = QPixmap::fromImage(image);
+    if (!pixmap.isNull()) {
+        QPixmapCache::insert(key, pixmap);
+    }
+    return pixmap;
 }
 
 QSize ImageService::sourceSize(const QString& source) const

@@ -5,6 +5,7 @@
 #include "shared/types/RepositoryTypes.h"
 
 class AiChatStreamClient;
+class AiChatTitleClient;
 
 class AiChatSessionController : public QObject
 {
@@ -19,11 +20,13 @@ public:
     int loadConversationsAsync(const AiChatListRequest& query = {});
     int loadMessagesAsync(const QString& conversationId);
     int loadContextUsageAsync(const AiChatContextUsageRequest& request);
-    QString createConversation(const QString& title);
+    AiChatListEntry createConversationFromFirstMessage(const QString& firstUserMessage);
     AiChatMessage submitUserMessage(const QString& conversationId, const QString& text);
     bool regenerateAiReply(const QString& conversationId, const QString& messageId);
     bool renameConversation(const QString& conversationId, const QString& title);
     bool deleteConversation(const QString& conversationId);
+    bool clearConversationUnreadDot(const QString& conversationId);
+    int unreadConversationDotCount() const;
 
     bool hasActiveAiReplyStream() const;
     QString activeStreamConversationId() const;
@@ -51,6 +54,7 @@ signals:
     void aiReplyMessageRemoved(const QString& conversationId, const QString& messageId);
     void aiReplyFinished(const QString& conversationId, const QString& messageId);
     void aiReplyCanceled(const QString& conversationId, const QString& messageId);
+    void unreadDotStateChanged();
 
 private slots:
     void onAiReplyChunkReceived(const QString& chunk);
@@ -61,6 +65,7 @@ private:
     void resetActiveAiReplyStream();
 
     AiChatStreamClient* m_streamClient = nullptr;
+    AiChatTitleClient* m_titleClient = nullptr;
     int m_nextAsyncRequestId = 1;
     QString m_streamConversationId;
     QString m_streamMessageId;

@@ -11,6 +11,7 @@ public:
         ConversationIdRole = Qt::UserRole + 1,
         TitleRole,
         TimeRole,
+        HasUnreadDotRole,
         SectionTitleRole,
         IsSectionStartRole
     };

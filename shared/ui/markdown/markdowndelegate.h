@@ -27,6 +27,9 @@ public:
     bool isCodeCopyButtonAtPosition(const QStyleOptionViewItem &option,
                                     const QModelIndex &index,
                                     const QPoint &position) const;
+    bool isSettingActionButtonAtPosition(const QStyleOptionViewItem &option,
+                                         const QModelIndex &index,
+                                         const QPoint &position) const;
 };
 
 #endif // MARKDOWNDELEGATE_H

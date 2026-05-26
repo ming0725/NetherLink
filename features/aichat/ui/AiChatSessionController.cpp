@@ -2,18 +2,26 @@
 
 #include "features/aichat/data/AiChatRepository.h"
 #include "features/aichat/data/AiChatStreamClient.h"
+#include "features/aichat/data/AiChatTitleClient.h"
 
+#include <QDateTime>
 #include <QFutureWatcher>
 #include <QtConcurrent/QtConcurrentRun>
 
 AiChatSessionController::AiChatSessionController(QObject* parent)
     : QObject(parent)
     , m_streamClient(new AiChatStreamClient(this))
+    , m_titleClient(new AiChatTitleClient(this))
 {
     connect(m_streamClient, &AiChatStreamClient::chunkReceived,
             this, &AiChatSessionController::onAiReplyChunkReceived);
     connect(m_streamClient, &AiChatStreamClient::finished,
             this, &AiChatSessionController::onAiReplyFinished);
+    connect(&AiChatRepository::instance(), &AiChatRepository::unreadDotStateChanged,
+            this, [this]() {
+                emit unreadDotStateChanged();
+                emit conversationsChanged();
+            });
 }
 
 QVector<AiChatListEntry> AiChatSessionController::loadConversations(const AiChatListRequest& query) const
@@ -76,13 +84,17 @@ int AiChatSessionController::loadContextUsageAsync(const AiChatContextUsageReque
     return requestId;
 }
 
-QString AiChatSessionController::createConversation(const QString& title)
+AiChatListEntry AiChatSessionController::createConversationFromFirstMessage(const QString& firstUserMessage)
 {
-    const QString conversationId = AiChatRepository::instance().createAiChatConversation(title);
+    const QDateTime createdAt = QDateTime::currentDateTime();
+    const QString title = m_titleClient
+            ? m_titleClient->generateTitle(firstUserMessage)
+            : QStringLiteral("新对话");
+    const QString conversationId = AiChatRepository::instance().createAiChatConversation(title, createdAt);
     if (!conversationId.isEmpty()) {
         emit conversationsChanged();
     }
-    return conversationId;
+    return {conversationId, title, createdAt};
 }
 
 AiChatMessage AiChatSessionController::submitUserMessage(const QString& conversationId, const QString& text)
@@ -183,6 +195,16 @@ bool AiChatSessionController::deleteConversation(const QString& conversationId)
     return removed;
 }
 
+bool AiChatSessionController::clearConversationUnreadDot(const QString& conversationId)
+{
+    return AiChatRepository::instance().setConversationUnreadDot(conversationId, false);
+}
+
+int AiChatSessionController::unreadConversationDotCount() const
+{
+    return AiChatRepository::instance().unreadDotCount();
+}
+
 bool AiChatSessionController::hasActiveAiReplyStream() const
 {
     return !m_streamConversationId.isEmpty() || (m_streamClient && m_streamClient->isRunning());
@@ -245,6 +267,7 @@ void AiChatSessionController::onAiReplyFinished()
     const QString messageId = m_streamMessageId;
     resetActiveAiReplyStream();
     if (!conversationId.isEmpty()) {
+        AiChatRepository::instance().setConversationUnreadDot(conversationId, true);
         emit conversationsChanged();
         emit aiReplyFinished(conversationId, messageId);
     }

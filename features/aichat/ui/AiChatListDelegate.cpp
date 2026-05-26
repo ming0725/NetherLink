@@ -7,6 +7,7 @@
 
 #include "features/aichat/model/AiChatListModel.h"
 #include "shared/theme/ThemeManager.h"
+#include "shared/ui/BadgeRenderer.h"
 
 namespace {
 
@@ -79,7 +80,16 @@ void AiChatListDelegate::paint(QPainter* painter,
                                                          Qt::ElideRight,
                                                          textRect.width()));
 
-    if (hovered || selected) {
+    const bool hasUnreadDot = index.data(AiChatListModel::HasUnreadDotRole).toBool();
+    if (hasUnreadDot) {
+        const BadgeLayout badgeLayout = BadgeRenderer::layoutForUnreadDot();
+        BadgeRenderer::drawBadge(painter,
+                                  unreadDotRect(option, index),
+                                  badgeLayout,
+                                  selected);
+    }
+
+    if ((hovered || selected) && !hasUnreadDot) {
         const QRect buttonRect = moreButtonRect(option, index);
         const QRect drawButtonRect = buttonRect.translated(0, 2);
         const QPoint cursorPos = option.widget
@@ -164,4 +174,16 @@ QRect AiChatListDelegate::titleRect(const QStyleOptionViewItem& option,
                  bodyRect.top(),
                  qMax(0, moreRect.left() - bodyRect.left() - kTextLeftPadding - 4),
                  bodyRect.height());
+}
+
+QRect AiChatListDelegate::unreadDotRect(const QStyleOptionViewItem& option,
+                                        const QModelIndex& index) const
+{
+    Q_UNUSED(index);
+    const QRect moreRect = moreButtonRect(option, index);
+    const QSize dotSize = BadgeRenderer::layoutForUnreadDot().size;
+    return QRect(moreRect.left() + (moreRect.width() - dotSize.width()) / 2,
+                 moreRect.top() + (moreRect.height() - dotSize.height()) / 2,
+                 dotSize.width(),
+                 dotSize.height());
 }

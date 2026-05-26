@@ -76,6 +76,15 @@ BadgeLayout layoutForUnreadCount(int unreadCount, bool doNotDisturb,
     return layout;
 }
 
+BadgeLayout layoutForUnreadDot()
+{
+    BadgeLayout layout;
+    layout.size = QSize(kDotBadgeSize, kDotBadgeSize);
+    layout.backgroundColor = ThemeManager::instance().color(ThemeColor::BadgeUnreadBackground);
+    layout.textColor = ThemeManager::instance().color(ThemeColor::BadgeUnreadText);
+    return layout;
+}
+
 void drawBadge(QPainter* painter, const QRect& rect,
                 const BadgeLayout& layout, bool selected)
 {

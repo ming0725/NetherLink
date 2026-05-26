@@ -2,6 +2,7 @@
 
 #include <QObject>
 #include <QString>
+#include <QVector>
 
 class QTimer;
 
@@ -21,12 +22,31 @@ signals:
     void finished();
 
 private:
+    struct StreamSegment {
+        enum class Kind {
+            Text,
+            SettingCall
+        };
+
+        Kind kind = Kind::Text;
+        QString text;
+        QString action;
+        QString value;
+        QString label;
+    };
+
     void emitNextChunk();
-    QString responseForPrompt(const QString& prompt) const;
+    QVector<StreamSegment> responseForPrompt(const QString& prompt) const;
+    static StreamSegment textSegment(const QString& text);
+    static StreamSegment settingSegment(const QString& action,
+                                        const QString& value,
+                                        const QString& label);
+    static QString applySettingCall(const StreamSegment& segment);
     void scheduleNextChunk(int minDelayMs = 35, int maxDelayMs = 120);
 
     QTimer* m_timer = nullptr;
-    QString m_response;
+    QVector<StreamSegment> m_segments;
+    int m_segmentIndex = 0;
     int m_offset = 0;
     bool m_running = false;
 };

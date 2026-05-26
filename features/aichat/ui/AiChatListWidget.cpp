@@ -246,7 +246,8 @@ void AiChatListWidget::mousePressEvent(QMouseEvent* event)
         const QModelIndex index = indexAt(event->pos());
         if (index.isValid()) {
             QStyleOptionViewItem option = viewOptionForIndex(index);
-            if (m_delegate->moreButtonRect(option, index).contains(event->pos())) {
+            const bool hasUnreadDot = index.data(AiChatListModel::HasUnreadDotRole).toBool();
+            if (!hasUnreadDot && m_delegate->moreButtonRect(option, index).contains(event->pos())) {
                 showItemMenu(index, viewport()->mapToGlobal(m_delegate->moreButtonRect(option, index).bottomLeft()));
                 event->accept();
                 return;
@@ -276,7 +277,8 @@ void AiChatListWidget::mouseMoveEvent(QMouseEvent* event)
     bool overMoreButton = false;
     if (index.isValid()) {
         const QStyleOptionViewItem option = viewOptionForIndex(index);
-        overMoreButton = m_delegate->moreButtonRect(option, index).contains(event->pos());
+        const bool hasUnreadDot = index.data(AiChatListModel::HasUnreadDotRole).toBool();
+        overMoreButton = !hasUnreadDot && m_delegate->moreButtonRect(option, index).contains(event->pos());
     }
 
     viewport()->setCursor(overMoreButton ? Qt::PointingHandCursor : Qt::ArrowCursor);

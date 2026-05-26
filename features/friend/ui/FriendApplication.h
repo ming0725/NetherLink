@@ -5,7 +5,7 @@
 #include <QSplitter>
 #include <QStackedWidget>
 #include "shared/ui/IconLineEdit.h"
-#include "shared/ui/StatefulPushButton.h"
+#include "shared/ui/PlusButton.h"
 #include "features/friend/ui/FriendListWidget.h"
 #include "features/friend/ui/GroupListWidget.h"
 #include "app/frame/DefaultPage.h"
@@ -46,7 +46,7 @@ private:
         void applyTheme();
 
         IconLineEdit* m_searchInput;
-        StatefulPushButton* m_addButton;
+        PlusButton* m_addButton;
         QWidget* m_modeBar;
         QPushButton* m_friendModeButton;
         QPushButton* m_groupModeButton;

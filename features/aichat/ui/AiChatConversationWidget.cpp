@@ -215,18 +215,31 @@ void AiChatConversationWidget::openConversation(const AiChatListEntry& entry)
 
     if (m_currentConversation.conversationId == entry.conversationId) {
         m_currentConversation = entry;
+        if (m_controller) {
+            m_controller->clearConversationUnreadDot(entry.conversationId);
+            const bool currentConversationStreaming =
+                    m_controller->activeStreamConversationId() == entry.conversationId;
+            m_inputBar->setStreaming(currentConversationStreaming);
+            m_messageView->messageDelegate()->setStreamingMessageId(
+                    currentConversationStreaming ? m_controller->activeStreamMessageId() : QString());
+        }
         updateHeader();
         updateLayout();
         return;
     }
 
-    cancelActiveAiReplyStream();
     m_currentConversation = entry;
+    if (m_controller) {
+        m_controller->clearConversationUnreadDot(entry.conversationId);
+    }
     m_pendingMessagesConversationId = entry.conversationId;
     m_pendingContextUsageRequestId = 0;
     m_pendingContextUsageConversationId.clear();
     m_pendingMessagesRequestId = 0;
-    m_messageView->messageDelegate()->setStreamingMessageId(QString());
+    const bool currentConversationStreaming = m_controller &&
+            m_controller->activeStreamConversationId() == entry.conversationId;
+    m_messageView->messageDelegate()->setStreamingMessageId(
+            currentConversationStreaming ? m_controller->activeStreamMessageId() : QString());
     m_messageModel->clear();
     m_messageView->clearTextSelection();
     m_messageView->show();
@@ -239,6 +252,7 @@ void AiChatConversationWidget::openConversation(const AiChatListEntry& entry)
     m_streamingNotifierHeld = false;
     m_newMessageNotifier->hide();
     m_inputBar->setContextUsageVisible(false);
+    m_inputBar->setStreaming(currentConversationStreaming);
     updateHeader();
     updateLayout();
     if (m_controller) {
@@ -259,7 +273,6 @@ void AiChatConversationWidget::closeConversation()
 
 void AiChatConversationWidget::showStartPage()
 {
-    cancelActiveAiReplyStream();
     if (isStartPage()) {
         saveStartPageDraft();
     }
@@ -281,6 +294,7 @@ void AiChatConversationWidget::showStartPage()
     m_streamingNotifierHeld = false;
     m_newMessageNotifier->hide();
     m_inputBar->setContextUsageVisible(false);
+    m_inputBar->setStreaming(false);
     m_emptyLabel->show();
     updateHeader();
     updateLayout();
@@ -305,27 +319,26 @@ void AiChatConversationWidget::resizeEvent(QResizeEvent* event)
 
 void AiChatConversationWidget::onSendText(const QString& text)
 {
-    if (!m_controller || hasActiveAiReplyStream()) {
+    if (!m_controller || m_controller->hasActiveAiReplyStream()) {
         return;
     }
 
     if (m_currentConversation.conversationId.isEmpty()) {
-        const QString title = titleForPrompt(text);
-        const QString conversationId = m_controller->createConversation(title);
-        if (conversationId.isEmpty()) {
+        const AiChatListEntry entry = m_controller->createConversationFromFirstMessage(text);
+        if (entry.conversationId.isEmpty()) {
             m_inputBar->setText(text);
             return;
         }
 
         m_startPageDraft.clear();
-        m_currentConversation = {conversationId, title, QDateTime::currentDateTime()};
+        m_currentConversation = entry;
         m_messageModel->clear();
         m_messageView->clearTextSelection();
         m_messageView->show();
         m_emptyLabel->hide();
         m_titleLabel->show();
         m_headerDivider->show();
-        emit conversationCreatedFromStartPage(conversationId);
+        emit conversationCreatedFromStartPage(entry.conversationId);
         updateHeader();
         updateLayout();
     }
@@ -459,19 +472,6 @@ void AiChatConversationWidget::saveStartPageDraft()
     if (m_inputBar && isStartPage()) {
         m_startPageDraft = m_inputBar->text();
     }
-}
-
-QString AiChatConversationWidget::titleForPrompt(const QString& text) const
-{
-    QString title = text.simplified();
-    const int lineBreak = title.indexOf(QLatin1Char('\n'));
-    if (lineBreak >= 0) {
-        title = title.left(lineBreak).trimmed();
-    }
-    if (title.size() > 24) {
-        title = title.left(24).trimmed() + QStringLiteral("...");
-    }
-    return title.isEmpty() ? QStringLiteral("新对话") : title;
 }
 
 void AiChatConversationWidget::updateNewMessageNotifier()
@@ -644,6 +644,9 @@ void AiChatConversationWidget::onAiReplyMessageRemoved(const QString& conversati
 void AiChatConversationWidget::onAiReplyFinished(const QString& conversationId, const QString& messageId)
 {
     if (m_currentConversation.conversationId == conversationId) {
+        if (m_controller) {
+            m_controller->clearConversationUnreadDot(conversationId);
+        }
         if (m_messageView->messageDelegate()->streamingMessageId() == messageId) {
             m_messageView->messageDelegate()->setStreamingMessageId(QString());
             m_messageView->refreshMessageLayout();
@@ -686,13 +689,19 @@ void AiChatConversationWidget::onConversationMessagesLoaded(int requestId,
 
     m_pendingMessagesRequestId = 0;
     m_pendingMessagesConversationId.clear();
+    m_messageView->setUpdatesEnabled(false);
     m_messageModel->setMessages(messages);
+    if (m_controller && m_controller->activeStreamConversationId() == conversationId) {
+        m_messageView->messageDelegate()->setStreamingMessageId(m_controller->activeStreamMessageId());
+        m_inputBar->setStreaming(true);
+    } else {
+        m_messageView->messageDelegate()->setStreamingMessageId(QString());
+        m_inputBar->setStreaming(false);
+    }
+    m_messageView->jumpToBottom();
+    m_messageView->setUpdatesEnabled(true);
+    m_messageView->viewport()->update();
     requestContextUsage();
-    QTimer::singleShot(0, this, [this, conversationId]() {
-        if (conversationId == m_currentConversation.conversationId) {
-            m_messageView->jumpToBottom();
-        }
-    });
 }
 
 void AiChatConversationWidget::onContextUsageLoaded(int requestId,
@@ -722,5 +731,7 @@ void AiChatConversationWidget::cancelActiveAiReplyStream()
 
 bool AiChatConversationWidget::hasActiveAiReplyStream() const
 {
-    return m_controller && m_controller->hasActiveAiReplyStream();
+    return m_controller &&
+            m_controller->hasActiveAiReplyStream() &&
+            m_controller->activeStreamConversationId() == m_currentConversation.conversationId;
 }

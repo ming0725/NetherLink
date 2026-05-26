@@ -4,6 +4,7 @@
 #include "markdowndocumentmodel.h"
 
 #include "jkqtmathtext/jkqtmathtext.h"
+#include "shared/services/AppFonts.h"
 #include "shared/services/ImageService.h"
 #include "shared/theme/ThemeManager.h"
 
@@ -13,6 +14,7 @@
 #include <QFontInfo>
 #include <QHash>
 #include <QImage>
+#include <QMargins>
 #include <QPainter>
 #include <QPainterPath>
 #include <QPixmap>
@@ -44,6 +46,10 @@ constexpr int kCodeHeaderIconSize = 14;
 constexpr int kCodeHeaderGap = 7;
 constexpr int kCodeCopyButtonSize = 22;
 constexpr int kCodeBlockRadius = 6;
+constexpr int kSettingActionButtonSize = 24;
+constexpr int kSettingBodyPadding = 14;
+constexpr int kSettingControlHeight = 40;
+constexpr int kSettingControlMaxWidth = 340;
 constexpr int kInlineCodePaddingX = 3;
 constexpr int kInlineCodePaddingY = 1;
 constexpr int kInlineCodeRadius = 6;
@@ -63,6 +69,13 @@ constexpr qreal kMathRasterPaddingX = 4.0;
 constexpr qreal kMathRasterPaddingY = 3.0;
 constexpr int kDefaultFontPixelSize = 18;
 constexpr int kMinFontPixelSize = 10;
+
+const QString kSettingsBackgroundSource(QStringLiteral(":/resources/icon/options_background.png"));
+const QString kMinecraftButtonSource(QStringLiteral(":/resources/icon/mc_button.png"));
+const QString kMinecraftSliderSource(QStringLiteral(":/resources/icon/mc_slider.png"));
+const QString kMinecraftSliderHandleSource(QStringLiteral(":/resources/icon/mc_slider_handle.png"));
+const QString kSettingUndoSource(QStringLiteral(":/resources/icon/undo.svg"));
+const QString kSettingReapplySource(QStringLiteral(":/resources/icon/refresh.svg"));
 
 struct CodeBlockPalette {
     QColor background;
@@ -193,6 +206,27 @@ QString blockSignature(const MarkdownRenderer::Block &block)
                 signature += QLatin1Char('\x1e');
             }
         }
+    }
+
+    if (block.type == MarkdownRenderer::BlockType::SettingBlock) {
+        signature += QLatin1Char('|');
+        signature += QString::number(static_cast<int>(block.settingControl));
+        signature += QLatin1Char('|');
+        signature += block.settingLabel;
+        signature += QLatin1Char('|');
+        signature += block.settingAction;
+        signature += QLatin1Char('|');
+        signature += block.settingValueText;
+        signature += QLatin1Char('|');
+        signature += block.settingPreviousValueText;
+        signature += QLatin1Char('|');
+        signature += block.settingPreviousLabel;
+        signature += QLatin1Char('|');
+        signature += QString::number(block.settingMinimum);
+        signature += QLatin1Char(':');
+        signature += QString::number(block.settingMaximum);
+        signature += QLatin1Char(':');
+        signature += QString::number(block.settingValue);
     }
 
     return QString::number(qHash(signature)) + QLatin1Char(':') + QString::number(signature.size());
@@ -2255,6 +2289,81 @@ bool drawRasterIcon(QPainter *painter,
     return false;
 }
 
+QMargins scaledTargetMargins(const QSize &sourceSize, const QSize &targetSize, const QMargins &sourceMargins)
+{
+    if (sourceSize.isEmpty() || targetSize.isEmpty()) {
+        return {};
+    }
+
+    const qreal scale = static_cast<qreal>(targetSize.height()) / static_cast<qreal>(sourceSize.height());
+    int left = qMax(1, qRound(sourceMargins.left() * scale));
+    int right = qMax(1, qRound(sourceMargins.right() * scale));
+    int top = qMax(1, qRound(sourceMargins.top() * scale));
+    int bottom = qMax(1, qRound(sourceMargins.bottom() * scale));
+
+    const int maxHorizontalMargin = qMax(1, targetSize.width() / 2 - 1);
+    const int maxVerticalMargin = qMax(1, targetSize.height() / 2 - 1);
+    left = qMin(left, maxHorizontalMargin);
+    right = qMin(right, maxHorizontalMargin);
+    top = qMin(top, maxVerticalMargin);
+    bottom = qMin(bottom, maxVerticalMargin);
+    return {left, top, right, bottom};
+}
+
+void drawNinePatch(QPainter *painter,
+                   const QPixmap &pixmap,
+                   const QRect &targetRect,
+                   const QMargins &sourceMargins = QMargins(5, 5, 5, 5))
+{
+    if (!painter || pixmap.isNull() || targetRect.isEmpty()) {
+        return;
+    }
+
+    const QRect sourceRect(QPoint(0, 0), pixmap.size());
+    const QMargins margins(qMin(sourceMargins.left(), sourceRect.width() / 2 - 1),
+                           qMin(sourceMargins.top(), sourceRect.height() / 2 - 1),
+                           qMin(sourceMargins.right(), sourceRect.width() / 2 - 1),
+                           qMin(sourceMargins.bottom(), sourceRect.height() / 2 - 1));
+    const QMargins targetMargins = scaledTargetMargins(sourceRect.size(), targetRect.size(), margins);
+
+    const int sourceXs[] = {
+        sourceRect.left(),
+        sourceRect.left() + margins.left(),
+        sourceRect.right() - margins.right() + 1,
+        sourceRect.right() + 1
+    };
+    const int sourceYs[] = {
+        sourceRect.top(),
+        sourceRect.top() + margins.top(),
+        sourceRect.bottom() - margins.bottom() + 1,
+        sourceRect.bottom() + 1
+    };
+    const int targetXs[] = {
+        targetRect.left(),
+        targetRect.left() + targetMargins.left(),
+        targetRect.right() - targetMargins.right() + 1,
+        targetRect.right() + 1
+    };
+    const int targetYs[] = {
+        targetRect.top(),
+        targetRect.top() + targetMargins.top(),
+        targetRect.bottom() - targetMargins.bottom() + 1,
+        targetRect.bottom() + 1
+    };
+
+    for (int row = 0; row < 3; ++row) {
+        for (int column = 0; column < 3; ++column) {
+            const QRect sourcePart(QPoint(sourceXs[column], sourceYs[row]),
+                                   QPoint(sourceXs[column + 1] - 1, sourceYs[row + 1] - 1));
+            const QRect targetPart(QPoint(targetXs[column], targetYs[row]),
+                                   QPoint(targetXs[column + 1] - 1, targetYs[row + 1] - 1));
+            if (!sourcePart.isEmpty() && !targetPart.isEmpty()) {
+                painter->drawPixmap(targetPart, pixmap, sourcePart);
+            }
+        }
+    }
+}
+
 void drawCopyIcon(QPainter *painter,
                   const QRect &buttonRect,
                   const QColor &color,
@@ -2341,6 +2450,246 @@ QPainterPath topRoundedRectPath(const QRectF &rect, qreal radius)
     path.lineTo(rect.right(), rect.bottom());
     path.closeSubpath();
     return path;
+}
+
+QRect settingContainerRect(const QStyleOptionViewItem &option)
+{
+    return contentRect(option).adjusted(0, 2, 0, -2);
+}
+
+QRect settingHeaderRect(const QStyleOptionViewItem &option)
+{
+    const QRect container = settingContainerRect(option);
+    return QRect(container.left(), container.top(), container.width(), kCodeHeaderHeight);
+}
+
+QRect settingBodyRect(const QStyleOptionViewItem &option)
+{
+    const QRect container = settingContainerRect(option);
+    return QRect(container.left(),
+                 container.top() + kCodeHeaderHeight,
+                 container.width(),
+                 qMax(0, container.height() - kCodeHeaderHeight));
+}
+
+QRect settingControlRect(const QStyleOptionViewItem &option)
+{
+    const QRect body = settingBodyRect(option).adjusted(kSettingBodyPadding,
+                                                        kSettingBodyPadding,
+                                                        -kSettingBodyPadding,
+                                                        -kSettingBodyPadding);
+    const QSize size(qMin(kSettingControlMaxWidth, qMax(0, body.width())),
+                     kSettingControlHeight);
+    QRect control(QPoint(0, 0), size);
+    control.moveCenter(body.center());
+    return control;
+}
+
+QRect settingActionButtonRect(const QStyleOptionViewItem &option)
+{
+    const QRect header = settingHeaderRect(option);
+    return QRect(header.right() - kCodeHeaderHorizontalPadding - kSettingActionButtonSize + 1,
+                 header.top() + (header.height() - kSettingActionButtonSize) / 2,
+                 kSettingActionButtonSize,
+                 kSettingActionButtonSize);
+}
+
+QRect settingActionHitRect(const QStyleOptionViewItem &option)
+{
+    const QRect header = settingHeaderRect(option);
+    return QRect(header.right() - kCodeHeaderHorizontalPadding - 40 + 1,
+                 header.top(),
+                 40,
+                 header.height());
+}
+
+bool isSettingRevoked(const QStyleOptionViewItem &option, int row)
+{
+    for (const QObject *object = option.widget; object; object = object->parent()) {
+        const QVariant value = object->property("markdownRevokedSettingRows");
+        if (!value.isValid()) {
+            continue;
+        }
+        const QVariantList rows = value.toList();
+        for (const QVariant &rowValue : rows) {
+            if (rowValue.toInt() == row) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+void drawMinecraftButtonPreview(QPainter *painter,
+                                const QRect &buttonRect,
+                                const QString &text,
+                                const QFont &baseFont)
+{
+    painter->save();
+    painter->setRenderHint(QPainter::SmoothPixmapTransform, true);
+    const QPixmap pixmap = ImageService::instance().pixmap(kMinecraftButtonSource);
+    if (pixmap.isNull()) {
+        painter->fillRect(buttonRect, QColor(0x75, 0x75, 0x75));
+    } else {
+        drawNinePatch(painter, pixmap, buttonRect);
+    }
+
+    AppFonts::configurePainterForText(*painter);
+    QFont textFont = AppFonts::pixelSizedFont(baseFont, 13, true);
+    painter->setFont(textFont);
+    const QRect textRect = buttonRect.adjusted(10, 0, -10, 0);
+    painter->setPen(QColor(0, 0, 0, 180));
+    painter->drawText(textRect.translated(1, 1), Qt::AlignCenter, text);
+    painter->setPen(QColor(0xFF, 0xFF, 0xFF));
+    painter->drawText(textRect, Qt::AlignCenter, text);
+    painter->restore();
+}
+
+void drawMinecraftSliderPreview(QPainter *painter,
+                                const QRect &sliderRect,
+                                const MarkdownRenderer::Block &block,
+                                const QFont &baseFont)
+{
+    painter->save();
+    painter->setRenderHint(QPainter::SmoothPixmapTransform, true);
+    const QPixmap sliderPixmap = ImageService::instance().pixmap(kMinecraftSliderSource);
+    if (sliderPixmap.isNull()) {
+        painter->fillRect(sliderRect, QColor(0x75, 0x75, 0x75));
+    } else {
+        drawNinePatch(painter, sliderPixmap, sliderRect);
+    }
+
+    const QPixmap handlePixmap = ImageService::instance().pixmap(kMinecraftSliderHandleSource);
+    const int range = qMax(1, block.settingMaximum - block.settingMinimum);
+    const int fallbackHandleWidth = qMax(10, sliderRect.height() / 2);
+    const int handleWidth = handlePixmap.isNull() || handlePixmap.height() <= 0
+            ? fallbackHandleWidth
+            : qBound(10,
+                     qRound(static_cast<qreal>(handlePixmap.width()) * sliderRect.height()
+                            / static_cast<qreal>(handlePixmap.height())),
+                     qMax(10, sliderRect.width()));
+    const int availableWidth = qMax(0, sliderRect.width() - handleWidth);
+    const qreal progress = static_cast<qreal>(block.settingValue - block.settingMinimum)
+            / static_cast<qreal>(range);
+    const QRect handle(sliderRect.left() + qRound(progress * availableWidth),
+                       sliderRect.top(),
+                       handleWidth,
+                       sliderRect.height());
+    if (handlePixmap.isNull()) {
+        painter->fillRect(handle, QColor(0xC6, 0xC6, 0xC6));
+    } else {
+        painter->drawPixmap(handle, handlePixmap, handlePixmap.rect());
+    }
+
+    AppFonts::configurePainterForText(*painter);
+    QFont textFont = AppFonts::pixelSizedFont(baseFont, 13, true);
+    painter->setFont(textFont);
+    const QRect textRect = sliderRect.adjusted(8, 0, -8, 0);
+    painter->setPen(QColor(0, 0, 0, 180));
+    painter->drawText(textRect.translated(1, 1), Qt::AlignCenter, block.settingLabel);
+    painter->setPen(QColor(0xFF, 0xFF, 0xFF));
+    painter->drawText(textRect, Qt::AlignCenter, block.settingLabel);
+    painter->restore();
+}
+
+QString settingLabelForValue(const MarkdownRenderer::Block &block, const QString &value)
+{
+    const QString normalizedAction = block.settingAction.trimmed().toLower();
+    const QString normalizedValue = value.trimmed().toLower();
+    if (normalizedAction == QStringLiteral("settings.appearance.mode")) {
+        if (normalizedValue == QStringLiteral("light") || normalizedValue == QStringLiteral("浅色模式")) {
+            return QStringLiteral("外观模式：浅色模式");
+        }
+        if (normalizedValue == QStringLiteral("dark") || normalizedValue == QStringLiteral("深色模式")) {
+            return QStringLiteral("外观模式：深色模式");
+        }
+        if (normalizedValue == QStringLiteral("follow-system") ||
+                normalizedValue == QStringLiteral("system") ||
+                normalizedValue == QStringLiteral("跟随系统")) {
+            return QStringLiteral("外观模式：跟随系统");
+        }
+    }
+    if (normalizedAction == QStringLiteral("settings.appearance.theme_color") ||
+            normalizedAction == QStringLiteral("settings.appearance.themecolor")) {
+        return QStringLiteral("主题颜色：%1").arg(value.trimmed().toUpper());
+    }
+    return {};
+}
+
+QString settingDisplayLabel(const MarkdownRenderer::Block &block, bool revoked)
+{
+    if (!revoked) {
+        return block.settingLabel;
+    }
+    if (!block.settingPreviousLabel.isEmpty()) {
+        return block.settingPreviousLabel;
+    }
+    const QString fallback = settingLabelForValue(block, block.settingPreviousValueText);
+    return fallback.isEmpty() ? block.settingLabel : fallback;
+}
+
+void drawSettingBlock(QPainter *painter,
+                      const QStyleOptionViewItem &option,
+                      const MarkdownRenderer::Block &block,
+                      int row)
+{
+    const QRect container = settingContainerRect(option);
+    const QRect header = settingHeaderRect(option);
+    const QRect actionButton = settingActionButtonRect(option);
+    const QRect control = settingControlRect(option);
+    const CodeBlockPalette palette = codeBlockPalette();
+    const bool revoked = isSettingRevoked(option, row);
+
+    painter->save();
+    painter->setRenderHint(QPainter::Antialiasing, true);
+    QPainterPath containerPath;
+    containerPath.addRoundedRect(QRectF(container), kCodeBlockRadius, kCodeBlockRadius);
+    painter->fillPath(containerPath, ThemeManager::instance().color(ThemeColor::SettingsFallbackBackground));
+
+    painter->save();
+    painter->setClipPath(containerPath);
+    const QPixmap background = ImageService::instance().pixmap(kSettingsBackgroundSource);
+    if (!background.isNull()) {
+        painter->drawTiledPixmap(container, background);
+    }
+    painter->fillRect(container, ThemeManager::instance().color(ThemeColor::SettingsOverlay));
+    painter->restore();
+
+    painter->fillPath(topRoundedRectPath(QRectF(header), kCodeBlockRadius), palette.headerBackground);
+    painter->setPen(QPen(palette.headerBorder, 1));
+    painter->drawLine(header.left(), header.bottom(), header.right(), header.bottom());
+
+    AppFonts::configurePainterForText(*painter);
+    QFont titleFont = option.font;
+    titleFont.setPixelSize(qMax(kMinFontPixelSize, fontPixelSize(option.font)));
+    titleFont.setWeight(QFont::DemiBold);
+    painter->setFont(titleFont);
+    painter->setPen(palette.headerText);
+    painter->drawText(header.adjusted(kCodeHeaderHorizontalPadding,
+                                      0,
+                                      -(kCodeHeaderHorizontalPadding + kSettingActionButtonSize + kCodeHeaderGap),
+                                      0),
+                      Qt::AlignVCenter | Qt::AlignLeft,
+                      QStringLiteral("Setting"));
+
+    drawRasterIcon(painter,
+                   revoked ? kSettingReapplySource : kSettingUndoSource,
+                   actionButton,
+                   QSize(15, 15),
+                   ThemeManager::instance().isDark());
+
+    const QString controlLabel = settingDisplayLabel(block, revoked);
+    if (block.settingControl == MarkdownRenderer::SettingControlType::Slider) {
+        MarkdownRenderer::Block displayedBlock = block;
+        displayedBlock.settingLabel = controlLabel;
+        drawMinecraftSliderPreview(painter, control, displayedBlock, option.font);
+    } else {
+        drawMinecraftButtonPreview(painter, control, controlLabel, option.font);
+    }
+
+    painter->setPen(QPen(palette.border, 1));
+    painter->drawPath(containerPath);
+    painter->restore();
 }
 
 int copiedCodeRow(const QStyleOptionViewItem &option)
@@ -2456,6 +2805,12 @@ void MarkdownDelegate::paint(QPainter *painter,
         return;
     }
 
+    if (block.type == MarkdownRenderer::BlockType::SettingBlock) {
+        drawSettingBlock(painter, viewOption, block, index.row());
+        painter->restore();
+        return;
+    }
+
     if (block.type == MarkdownRenderer::BlockType::Table) {
         const TableLayout tableLayout = buildTableLayout(viewOption, block);
         for (const TableRowLayout &row : tableLayout.rows) {
@@ -2551,6 +2906,13 @@ QSize MarkdownDelegate::sizeHint(const QStyleOptionViewItem &option, const QMode
     QStyleOptionViewItem viewOption(option);
     viewOption.index = index;
 
+    if (index.data(MarkdownDocumentModel::TypeRole).toInt() ==
+            static_cast<int>(MarkdownRenderer::BlockType::SettingBlock)) {
+        return QSize(qMax(80, option.rect.width()),
+                     kCodeHeaderHeight + kSettingBodyPadding * 2 + kSettingControlHeight
+                             + kVerticalPadding * 2 + 4);
+    }
+
     const MarkdownRenderer::Block block = modelBlock(index);
     static QCache<QString, QSize> sizeCache(8192);
     const QString cacheKey = sizeHintCacheKey(viewOption, block);
@@ -2592,6 +2954,9 @@ int MarkdownDelegate::cursorForPosition(const QStyleOptionViewItem &option,
     if (block.type == MarkdownRenderer::BlockType::MathBlock) {
         return jkMathCursorForPosition(buildJkMathLayout(viewOption, block), block, position);
     }
+    if (block.type == MarkdownRenderer::BlockType::SettingBlock) {
+        return 0;
+    }
 
     BlockLayout layout = buildLayout(viewOption, index);
 
@@ -2627,6 +2992,9 @@ bool MarkdownDelegate::hasTextAtPosition(const QStyleOptionViewItem &option,
     if (block.type == MarkdownRenderer::BlockType::MathBlock) {
         return jkMathHasTextAtPosition(buildJkMathLayout(viewOption, block), position);
     }
+    if (block.type == MarkdownRenderer::BlockType::SettingBlock) {
+        return false;
+    }
     if (block.type == MarkdownRenderer::BlockType::CodeBlock && codeHeaderRect(viewOption).contains(position)) {
         return false;
     }
@@ -2657,6 +3025,9 @@ QString MarkdownDelegate::linkAtPosition(const QStyleOptionViewItem &option,
                                          const QPoint &position) const
 {
     const MarkdownRenderer::Block block = modelBlock(index);
+    if (block.type == MarkdownRenderer::BlockType::SettingBlock) {
+        return {};
+    }
     if (block.type == MarkdownRenderer::BlockType::Table) {
         QStyleOptionViewItem viewOption(option);
         viewOption.index = index;
@@ -2736,4 +3107,18 @@ bool MarkdownDelegate::isCodeCopyButtonAtPosition(const QStyleOptionViewItem &op
     }
 
     return codeCopyButtonRect(viewOption).contains(position);
+}
+
+bool MarkdownDelegate::isSettingActionButtonAtPosition(const QStyleOptionViewItem &option,
+                                                       const QModelIndex &index,
+                                                       const QPoint &position) const
+{
+    QStyleOptionViewItem viewOption(option);
+    viewOption.index = index;
+    if (index.data(MarkdownDocumentModel::TypeRole).toInt() !=
+            static_cast<int>(MarkdownRenderer::BlockType::SettingBlock)) {
+        return false;
+    }
+
+    return settingActionHitRect(viewOption).contains(position);
 }

@@ -1,6 +1,8 @@
 #include "PostFeedPage.h"
 
 #include <QDateTime>
+#include <QPainter>
+#include <QPaintEvent>
 #include <QScrollBar>
 #include <QTimer>
 
@@ -122,6 +124,17 @@ void PostFeedPage::setPosts(const QVector<PostSummary>& posts)
     m_model->setPosts(posts);
     m_nextOffset = posts.size();
     m_hasMore = posts.size() >= kPageSize;
+}
+
+void PostFeedPage::paintEvent(QPaintEvent* event)
+{
+    PostMasonryView::paintEvent(event);
+
+#ifdef Q_OS_MACOS
+    QPainter painter(viewport());
+    painter.fillRect(QRect(0, 0, 1, viewport()->height()),
+                     ThemeManager::instance().color(ThemeColor::Divider));
+#endif
 }
 
 void PostFeedPage::loadMore()

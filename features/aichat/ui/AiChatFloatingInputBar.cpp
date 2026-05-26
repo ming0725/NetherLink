@@ -33,6 +33,7 @@ namespace {
 
 constexpr int kLightPanelAlpha = 246;
 constexpr int kDarkPanelAlpha = 226;
+const QColor kLightPanelBorderColor(0xc2, 0xc2, 0xc2);
 
 QString submittedText(QString text)
 {
@@ -709,8 +710,10 @@ void AiChatFloatingInputBar::paintEvent(QPaintEvent* event)
     background.setAlpha(ThemeManager::instance().isDark() ? kDarkPanelAlpha : kLightPanelAlpha);
     painter.fillPath(path, background);
 
-    QColor border = ThemeManager::instance().color(ThemeColor::Divider);
-    border.setAlpha(ThemeManager::instance().isDark() ? 130 : 190);
+    const bool dark = ThemeManager::instance().isDark();
+    QColor border = dark ? ThemeManager::instance().color(ThemeColor::Divider)
+                         : kLightPanelBorderColor;
+    border.setAlpha(dark ? 130 : 230);
     painter.setPen(QPen(border, 1));
     painter.setBrush(Qt::NoBrush);
     painter.drawPath(path);

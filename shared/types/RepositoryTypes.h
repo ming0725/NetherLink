@@ -179,6 +179,7 @@ struct AiChatListEntry {
     QString conversationId;
     QString title;
     QDateTime time;
+    bool hasUnreadDot = false;
 };
 
 struct AiChatMessage {

@@ -1,5 +1,6 @@
 #include "markdownrenderer.h"
 
+#include <QHash>
 #include <QRegularExpression>
 
 namespace {
@@ -354,6 +355,63 @@ QString displayBlockText(const QStringList &lines)
     return text;
 }
 
+QString normalizedSettingKey(QString key)
+{
+    return key.trimmed().toLower();
+}
+
+int settingIntValue(const QHash<QString, QString> &fields, const QString &key, int fallback)
+{
+    bool ok = false;
+    const int value = fields.value(key).toInt(&ok);
+    return ok ? value : fallback;
+}
+
+MarkdownRenderer::Block parseSettingBlock(const QStringList &lines)
+{
+    QHash<QString, QString> fields;
+    for (const QString &rawLine : lines) {
+        const QString line = rawLine.trimmed();
+        if (line.isEmpty() || line.startsWith(QLatin1Char('#'))) {
+            continue;
+        }
+
+        int separator = line.indexOf(QLatin1Char(':'));
+        if (separator < 0) {
+            separator = line.indexOf(QStringLiteral("："));
+        }
+        if (separator <= 0) {
+            continue;
+        }
+
+        fields.insert(normalizedSettingKey(line.left(separator)),
+                      line.mid(separator + 1).trimmed());
+    }
+
+    MarkdownRenderer::Block block;
+    block.type = MarkdownRenderer::BlockType::SettingBlock;
+    block.language = QStringLiteral("setting");
+    block.settingControl = fields.value(QStringLiteral("type")).compare(QStringLiteral("slider"),
+                                                                         Qt::CaseInsensitive) == 0
+            ? MarkdownRenderer::SettingControlType::Slider
+            : MarkdownRenderer::SettingControlType::Button;
+    block.settingLabel = fields.value(QStringLiteral("label"), QStringLiteral("设置"));
+    block.settingAction = fields.value(QStringLiteral("action"));
+    block.settingValueText = fields.value(QStringLiteral("value"));
+    block.settingPreviousValueText = fields.value(QStringLiteral("previous"));
+    block.settingPreviousLabel = fields.value(QStringLiteral("previous-label"));
+    block.settingMinimum = settingIntValue(fields, QStringLiteral("min"), 0);
+    block.settingMaximum = settingIntValue(fields, QStringLiteral("max"), 100);
+    if (block.settingMinimum > block.settingMaximum) {
+        qSwap(block.settingMinimum, block.settingMaximum);
+    }
+    block.settingValue = qBound(block.settingMinimum,
+                                settingIntValue(fields, QStringLiteral("value"), block.settingMinimum),
+                                block.settingMaximum);
+    block.text = block.settingLabel;
+    return block;
+}
+
 } // namespace
 
 QList<MarkdownRenderer::Block> MarkdownRenderer::parseBlocks(const QString &markdown)
@@ -382,11 +440,15 @@ QList<MarkdownRenderer::Block> MarkdownRenderer::parseBlocks(const QString &mark
                 codeLanguage = codeLanguageFromFence(trimmed);
                 inCodeBlock = true;
             } else {
-                Block block;
-                block.type = BlockType::CodeBlock;
-                block.text = displayBlockText(codeLines);
-                block.language = codeLanguage;
-                blocks.append(block);
+                if (codeLanguage.compare(QStringLiteral("setting"), Qt::CaseInsensitive) == 0) {
+                    blocks.append(parseSettingBlock(codeLines));
+                } else {
+                    Block block;
+                    block.type = BlockType::CodeBlock;
+                    block.text = displayBlockText(codeLines);
+                    block.language = codeLanguage;
+                    blocks.append(block);
+                }
                 codeLines.clear();
                 codeLanguage.clear();
                 inCodeBlock = false;
@@ -508,11 +570,15 @@ QList<MarkdownRenderer::Block> MarkdownRenderer::parseBlocks(const QString &mark
     }
 
     if (inCodeBlock) {
-        Block block;
-        block.type = BlockType::CodeBlock;
-        block.text = displayBlockText(codeLines);
-        block.language = codeLanguage;
-        blocks.append(block);
+        if (codeLanguage.compare(QStringLiteral("setting"), Qt::CaseInsensitive) == 0) {
+            blocks.append(parseSettingBlock(codeLines));
+        } else {
+            Block block;
+            block.type = BlockType::CodeBlock;
+            block.text = displayBlockText(codeLines);
+            block.language = codeLanguage;
+            blocks.append(block);
+        }
     }
 
     if (inMathBlock) {

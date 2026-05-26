@@ -4,6 +4,7 @@
 #include <QHash>
 #include <QPair>
 #include <QPersistentModelIndex>
+#include <QSet>
 #include <QString>
 #include <QStyledItemDelegate>
 #include <QTextDocument>
@@ -56,6 +57,12 @@ public:
     bool isCodeCopyButtonAt(const QStyleOptionViewItem& option,
                             const QModelIndex& index,
                             const QPoint& viewportPos) const;
+    bool isSettingActionButtonAt(const QStyleOptionViewItem& option,
+                                 const QModelIndex& index,
+                                 const QPoint& viewportPos) const;
+    bool toggleSettingActionAt(const QStyleOptionViewItem& option,
+                               const QModelIndex& index,
+                               const QPoint& viewportPos);
     int codeCopyBlockRowAt(const QStyleOptionViewItem& option,
                            const QModelIndex& index,
                            const QPoint& viewportPos) const;
@@ -128,6 +135,7 @@ private:
         QVector<int> blockStartOffsets;
         QString plainText;
         QString sourceText;
+        bool hasSettingBlocks = false;
     };
 
     struct MarkdownLayoutCacheEntry {
@@ -208,6 +216,7 @@ private:
     QHash<QString, MessageFeedback> m_messageFeedback;
     QHash<QString, qreal> m_userMessageExpansionProgress;
     QHash<QString, qreal> m_userCopyButtonOpacity;
+    QHash<QString, QSet<int>> m_revokedSettingRowsByMessage;
     QString m_streamingMessageId;
     mutable QCache<QString, TextDocumentCacheEntry> m_textDocumentCache;
     mutable QCache<QString, TextSizeCacheEntry> m_textSizeCache;

@@ -9,6 +9,8 @@
 #include "shared/types/RepositoryTypes.h"
 
 class AiChatRepository : public QObject {
+    Q_OBJECT
+
 public:
     static AiChatRepository& instance();
 
@@ -25,9 +27,14 @@ public:
                                  const QString& messageId,
                                  const QString& text,
                                  const QDateTime& time = QDateTime::currentDateTime());
+    bool setConversationUnreadDot(const QString& conversationId, bool unread);
+    int unreadDotCount() const;
     bool removeAiChatMessage(const QString& conversationId, const QString& messageId);
     bool renameAiChatConversation(const QString& conversationId, const QString& title);
     bool removeAiChatConversation(const QString& conversationId);
+
+signals:
+    void unreadDotStateChanged();
 
 private:
     explicit AiChatRepository(QObject* parent = nullptr);

@@ -114,6 +114,16 @@ void ApplicationBarItem::setBadgeCount(int count)
     emit updateRequested();
 }
 
+void ApplicationBarItem::setBadgeDotVisible(bool visible)
+{
+    if (badgeDotVisible == visible) {
+        return;
+    }
+
+    badgeDotVisible = visible;
+    emit updateRequested();
+}
+
 void ApplicationBarItem::setSelected(bool select)
 {
     if (selected == select) {
@@ -247,13 +257,20 @@ void ApplicationBarItem::paint(QPainter& painter) const
         painter.restore();
     }
 
-    const BadgeLayout badgeLayout = BadgeRenderer::layoutForUnreadCount(
-            badgeCount, false, selected, ThemeManager::instance().isDark());
+    const BadgeLayout badgeLayout = badgeCount > 0
+            ? BadgeRenderer::layoutForUnreadCount(
+                    badgeCount, false, selected, ThemeManager::instance().isDark())
+            : (badgeDotVisible ? BadgeRenderer::layoutForUnreadDot() : BadgeLayout{});
     BadgeLayout appBarBadgeLayout = badgeLayout;
     forceUnreadBadgeColors(appBarBadgeLayout);
     if (appBarBadgeLayout.size.isValid()) {
-        const int badgeX = itemRect.right() - appBarBadgeLayout.size.width() + 2;
-        const int badgeY = itemRect.top() - 2;
+        const bool isDotBadge = badgeCount <= 0 && badgeDotVisible;
+        const int badgeX = isDotBadge
+                ? itemRect.right() - appBarBadgeLayout.size.width() - 4
+                : itemRect.right() - appBarBadgeLayout.size.width() + 2;
+        const int badgeY = isDotBadge
+                ? itemRect.top() + 5
+                : itemRect.top() - 2;
         BadgeRenderer::drawBadge(&painter,
                                   QRect(badgeX,
                                         badgeY,

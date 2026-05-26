@@ -1,6 +1,7 @@
 #include "ApplicationBarItem.h"
 #include "ApplicationBar.h"
 #include "app/frame/CurrentUserPopups.h"
+#include "features/aichat/data/AiChatRepository.h"
 #include "features/chat/data/MessageRepository.h"
 #include "features/friend/data/FriendNotificationRepository.h"
 #include "features/friend/data/GroupNotificationRepository.h"
@@ -59,11 +60,11 @@ ApplicationBar::ApplicationBar(QWidget* parent)
     momentItem->setPixmapScale(0.68);
     addItem(momentItem);
 
-    auto aiChat = new ApplicationBarItem(
+    aiChatItem = new ApplicationBarItem(
             ":/resources/icon/unselected_aichat.png",
             ":/resources/icon/aichat.png");
-    aiChat->setPixmapScale(0.77);
-    addItem(aiChat);
+    aiChatItem->setPixmapScale(0.77);
+    addItem(aiChatItem);
 
     auto notItem = new ApplicationBarItem(
             ":/resources/icon/unselected_nether.png",
@@ -91,11 +92,14 @@ ApplicationBar::ApplicationBar(QWidget* parent)
 
     connect(&MessageRepository::instance(), &MessageRepository::conversationListChanged,
             this, [this](const QString&) { refreshChatBadge(); });
+    connect(&AiChatRepository::instance(), &AiChatRepository::unreadDotStateChanged,
+            this, [this]() { refreshAiChatBadge(); });
     connect(&FriendNotificationRepository::instance(), &FriendNotificationRepository::notificationListChanged,
             this, [this]() { refreshFriendBadge(); });
     connect(&GroupNotificationRepository::instance(), &GroupNotificationRepository::notificationListChanged,
             this, [this]() { refreshFriendBadge(); });
     refreshChatBadge();
+    refreshAiChatBadge();
     refreshFriendBadge();
 }
 
@@ -243,6 +247,15 @@ void ApplicationBar::refreshChatBadge()
         totalPromptUnreadCount += qMax(0, conversation.unreadCount);
     }
     messageItem->setBadgeCount(totalPromptUnreadCount);
+}
+
+void ApplicationBar::refreshAiChatBadge()
+{
+    if (!aiChatItem) {
+        return;
+    }
+
+    aiChatItem->setBadgeDotVisible(AiChatRepository::instance().unreadDotCount() > 0);
 }
 
 void ApplicationBar::refreshFriendBadge()

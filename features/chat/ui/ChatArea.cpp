@@ -849,11 +849,26 @@ std::optional<int> ChatArea::firstVisiblePeerOrdinal() const
     if (!index.isValid()) {
         index = chatView->indexAt(QPoint(viewportRect.left() + 1, viewportRect.top() + 1));
     }
-    if (!index.isValid()) {
-        return std::nullopt;
+    if (index.isValid()) {
+        const std::optional<int> ordinal =
+                peerOrdinalForRow(chatModel->nearestPeerMessageRowAtOrAfter(index.row()));
+        if (ordinal.has_value()) {
+            return ordinal;
+        }
     }
 
-    return peerOrdinalForRow(chatModel->nearestPeerMessageRowAtOrAfter(index.row()));
+    for (int row = 0; row < chatModel->rowCount(); ++row) {
+        if (!chatView->visualRect(chatModel->index(row, 0)).intersects(viewportRect)) {
+            continue;
+        }
+
+        const std::optional<int> ordinal =
+                peerOrdinalForRow(chatModel->nearestPeerMessageRowAtOrAfter(row));
+        if (ordinal.has_value()) {
+            return ordinal;
+        }
+    }
+    return std::nullopt;
 }
 
 std::optional<int> ChatArea::lastVisiblePeerOrdinal() const
@@ -871,11 +886,26 @@ std::optional<int> ChatArea::lastVisiblePeerOrdinal() const
     if (!index.isValid()) {
         index = chatView->indexAt(QPoint(viewportRect.left() + 1, viewportRect.bottom() - 1));
     }
-    if (!index.isValid()) {
-        return std::nullopt;
+    if (index.isValid()) {
+        const std::optional<int> ordinal =
+                peerOrdinalForRow(chatModel->nearestPeerMessageRowAtOrBefore(index.row()));
+        if (ordinal.has_value()) {
+            return ordinal;
+        }
     }
 
-    return peerOrdinalForRow(chatModel->nearestPeerMessageRowAtOrBefore(index.row()));
+    for (int row = chatModel->rowCount() - 1; row >= 0; --row) {
+        if (!chatView->visualRect(chatModel->index(row, 0)).intersects(viewportRect)) {
+            continue;
+        }
+
+        const std::optional<int> ordinal =
+                peerOrdinalForRow(chatModel->nearestPeerMessageRowAtOrBefore(row));
+        if (ordinal.has_value()) {
+            return ordinal;
+        }
+    }
+    return std::nullopt;
 }
 
 std::optional<int> ChatArea::peerOrdinalForRow(int row) const

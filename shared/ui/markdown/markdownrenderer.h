@@ -37,7 +37,13 @@ public:
         CodeBlock,
         MathBlock,
         Table,
+        SettingBlock,
         Blank
+    };
+
+    enum class SettingControlType {
+        Button,
+        Slider
     };
 
     enum class TableAlignment {
@@ -64,6 +70,15 @@ public:
         QVector<InlineSpan> spans;
         QVector<TableRow> tableRows;
         QVector<TableAlignment> tableAlignments;
+        SettingControlType settingControl = SettingControlType::Button;
+        QString settingLabel;
+        QString settingAction;
+        QString settingValueText;
+        QString settingPreviousValueText;
+        QString settingPreviousLabel;
+        int settingMinimum = 0;
+        int settingMaximum = 100;
+        int settingValue = 0;
         int level = 0;
         int number = 0;
     };

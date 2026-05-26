@@ -58,7 +58,6 @@ private:
     void updateNewMessageNotifierPosition();
     void requestContextUsage();
     void saveStartPageDraft();
-    QString titleForPrompt(const QString& text) const;
     bool shouldShowNewMessageNotifier() const;
     bool isMessageViewAtBottom() const;
     bool isStartPage() const;

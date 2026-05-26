@@ -16,6 +16,7 @@ public:
     void setPixmapScale(qreal scale);
     void setDarkModeInversionEnabled(bool enabled);
     void setBadgeCount(int count);
+    void setBadgeDotVisible(bool visible);
     void setSelected(bool);
     bool isSelected() const;
 
@@ -40,6 +41,7 @@ private:
     bool selected = false;
     bool darkModeInversionEnabled = true;
     int badgeCount = 0;
+    bool badgeDotVisible = false;
     qreal pixmapScale = 0.6;
     qreal rippleRadius = 0.0;
     QVariantAnimation* rippleAnim = nullptr;

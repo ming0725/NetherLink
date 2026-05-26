@@ -39,6 +39,7 @@ signals:
 private:
     void layoutItems();
     void refreshChatBadge();
+    void refreshAiChatBadge();
     void refreshFriendBadge();
     QRect avatarRect() const;
     QRect avatarStatusRect() const;
@@ -58,6 +59,7 @@ private:
     ApplicationBarItem* hoveredItem = nullptr;
     ApplicationBarItem* messageItem = nullptr;
     ApplicationBarItem* friendItem = nullptr;
+    ApplicationBarItem* aiChatItem = nullptr;
     ApplicationBarItem* moreOptionsItem = nullptr;
     QPointer<FriendProfilePopup> currentUserProfilePopup;
     QPointer<InWindowPopupOverlay> currentUserStatusPopup;

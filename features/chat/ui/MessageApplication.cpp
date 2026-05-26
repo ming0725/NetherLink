@@ -25,7 +25,7 @@ constexpr int kConversationLoadingShowDelayMs = 150;
 MessageApplication::LeftPane::LeftPane(QWidget* parent)
         : QWidget(parent)
         , m_searchInput(new IconLineEdit(this))
-        , m_addButton(new StatefulPushButton("+", this))
+        , m_addButton(new PlusButton(this))
         , m_msgList(new MessageListWidget(this))
 {
     setMinimumWidth(144);
@@ -34,10 +34,6 @@ MessageApplication::LeftPane::LeftPane(QWidget* parent)
     m_searchInput->setFixedHeight(26);
     m_addButton->setRadius(8);
     m_addButton->setFixedHeight(26);
-
-    QFont addFont = m_addButton->font();
-    addFont.setPixelSize(18);
-    m_addButton->setFont(addFont);
 
     applyTheme();
     connect(&ThemeManager::instance(), &ThemeManager::themeChanged, this, [this]() {
