@@ -70,6 +70,19 @@ void AiChatListModel::appendEntries(const QVector<AiChatListEntry>& entries)
     endInsertRows();
 }
 
+bool AiChatListModel::setConversationUnreadDot(const QString& conversationId, bool hasUnreadDot)
+{
+    const int row = rowOfConversation(conversationId);
+    if (row < 0 || m_entries[row].hasUnreadDot == hasUnreadDot) {
+        return false;
+    }
+
+    m_entries[row].hasUnreadDot = hasUnreadDot;
+    const QModelIndex changedIndex = index(row, 0);
+    emit dataChanged(changedIndex, changedIndex, {HasUnreadDotRole});
+    return true;
+}
+
 AiChatListEntry AiChatListModel::entryAt(const QModelIndex& index) const
 {
     if (!index.isValid() || index.row() < 0 || index.row() >= m_entries.size()) {

@@ -3,6 +3,7 @@
 #include "app/frame/current_user/CurrentUserPopupStyle.h"
 #include "app/frame/current_user/StatusChoiceCard.h"
 #include "shared/services/AppFonts.h"
+#include "shared/services/AudioService.h"
 #include "shared/theme/ThemeManager.h"
 #include "shared/types/User.h"
 #include "shared/ui/PaintedLabel.h"
@@ -14,6 +15,26 @@
 #include <tuple>
 
 using namespace CurrentUserPopupStyle;
+
+namespace {
+
+AudioService::SoundEffect soundEffectForChoiceIndex(int index)
+{
+    switch (index) {
+    case 0:
+        return AudioService::SoundEffect::LevelUp;
+    case 1:
+        return AudioService::SoundEffect::Mining;
+    case 2:
+        return AudioService::SoundEffect::Flying;
+    case 3:
+        return AudioService::SoundEffect::Potion;
+    default:
+        return AudioService::SoundEffect::LevelUp;
+    }
+}
+
+} // namespace
 
 class CurrentUserStatusPopupContent::Private
 {
@@ -57,6 +78,7 @@ CurrentUserStatusPopupContent::CurrentUserStatusPopupContent(int selectedIndex, 
             if (index < 0 || index >= kStatusIconChoiceCount) {
                 return;
             }
+            AudioService::instance().play(soundEffectForChoiceIndex(index));
             d->selectedIndex = index;
             for (StatusChoiceCard* card : d->cards) {
                 card->setSelected(card->choiceIndex() == index);

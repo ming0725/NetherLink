@@ -8,6 +8,7 @@
 #include "features/aichat/model/AiChatListModel.h"
 #include "shared/theme/ThemeManager.h"
 #include "shared/ui/BadgeRenderer.h"
+#include "shared/ui/LoadingSpinnerRenderer.h"
 
 namespace {
 
@@ -80,6 +81,24 @@ void AiChatListDelegate::paint(QPainter* painter,
                                                          Qt::ElideRight,
                                                          textRect.width()));
 
+    const bool streaming = !m_streamingConversationId.isEmpty() &&
+            index.data(AiChatListModel::ConversationIdRole).toString() == m_streamingConversationId;
+    if (streaming) {
+        const QRect buttonRect = moreButtonRect(option, index).translated(0, 3);
+        const int spinnerSide = 16;
+        const QRect spinnerRect(buttonRect.center().x() - spinnerSide / 2,
+                                buttonRect.center().y() - spinnerSide / 2,
+                                spinnerSide,
+                                spinnerSide);
+        LoadingSpinnerRenderer::drawCircularSpinner(
+                painter,
+                spinnerRect,
+                ThemeManager::instance().color(ThemeColor::SecondaryText),
+                m_spinnerProgress);
+        painter->restore();
+        return;
+    }
+
     const bool hasUnreadDot = index.data(AiChatListModel::HasUnreadDotRole).toBool();
     if (hasUnreadDot) {
         const BadgeLayout badgeLayout = BadgeRenderer::layoutForUnreadDot();
@@ -118,6 +137,21 @@ void AiChatListDelegate::paint(QPainter* painter,
     }
 
     painter->restore();
+}
+
+void AiChatListDelegate::setStreamingConversationId(const QString& conversationId)
+{
+    m_streamingConversationId = conversationId;
+}
+
+QString AiChatListDelegate::streamingConversationId() const
+{
+    return m_streamingConversationId;
+}
+
+void AiChatListDelegate::setSpinnerProgress(qreal progress)
+{
+    m_spinnerProgress = progress;
 }
 
 QSize AiChatListDelegate::sizeHint(const QStyleOptionViewItem& option,

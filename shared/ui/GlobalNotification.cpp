@@ -174,7 +174,9 @@ void GlobalNotification::showNotification(QWidget* attachedWidget, Type type, co
 
     auto* notification = new GlobalNotification(parent, type, message, parent);
     notification->start();
-    AudioService::instance().play(AudioService::SoundEffect::SuccessfulHit);
+    AudioService::instance().play(type == Type::Failure
+                                  ? AudioService::SoundEffect::ClassicHurt
+                                  : AudioService::SoundEffect::SuccessfulHit);
 }
 
 bool GlobalNotification::eventFilter(QObject* watched, QEvent* event)

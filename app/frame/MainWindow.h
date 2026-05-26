@@ -16,9 +16,13 @@ class AiChatApplication;
 class SettingsWindow;
 
 class MainWindow : public SystemWindow {
+    Q_OBJECT
+
 public:
     MainWindow(QWidget *parent = nullptr);
     ~MainWindow() override;
+signals:
+    void logoutRequested();
 protected:
     void closeEvent(QCloseEvent* event) override;
     void resizeEvent(QResizeEvent *event) override;

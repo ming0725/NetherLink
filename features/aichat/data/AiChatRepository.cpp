@@ -442,7 +442,6 @@ AiChatMessage AiChatRepository::addAiChatMessage(const QString& conversationId,
     };
     m_messages[conversationId].push_back(message);
     m_contextUsages.remove(conversationId);
-    entryIt->time = time;
     return message;
 }
 
@@ -467,12 +466,6 @@ bool AiChatRepository::updateAiChatMessageText(const QString& conversationId,
             message.text = messageText;
             message.time = time;
             m_contextUsages.remove(conversationId);
-            for (AiChatListEntry& entry : m_entries) {
-                if (entry.conversationId == conversationId) {
-                    entry.time = time;
-                    break;
-                }
-            }
             return true;
         }
     }
@@ -542,14 +535,6 @@ bool AiChatRepository::removeAiChatMessage(const QString& conversationId, const 
 
         messages.removeAt(row);
         m_contextUsages.remove(conversationId);
-        for (AiChatListEntry& entry : m_entries) {
-            if (entry.conversationId == conversationId) {
-                entry.time = messages.isEmpty()
-                        ? QDateTime::currentDateTime()
-                        : messages.constLast().time;
-                break;
-            }
-        }
         return true;
     }
 

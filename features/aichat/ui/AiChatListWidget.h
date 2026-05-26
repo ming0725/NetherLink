@@ -12,6 +12,7 @@ class AiChatSessionController;
 class QMouseEvent;
 class QPaintEvent;
 class QModelIndex;
+class QTimer;
 
 class AiChatListWidget : public OverlayScrollListView
 {
@@ -52,6 +53,8 @@ private:
 
     StickyHeaderState calculateStickyHeaderState() const;
     QStyleOptionViewItem viewOptionForIndex(const QModelIndex& index) const;
+    void setStreamingConversationId(const QString& conversationId);
+    bool isStreamingConversation(const QModelIndex& index) const;
     void showItemMenu(const QModelIndex& index, const QPoint& globalPos);
     void renameItem(const QModelIndex& index);
     void deleteItem(const QModelIndex& index);
@@ -60,6 +63,8 @@ private:
     AiChatSessionController* m_controller = nullptr;
     AiChatListModel* m_model;
     AiChatListDelegate* m_delegate;
+    QTimer* m_streamingSpinnerTimer;
+    qreal m_spinnerProgress = 0.0;
     QString m_stickyTitle;
     bool m_stickyVisible = false;
     int m_stickyOffsetY = 0;

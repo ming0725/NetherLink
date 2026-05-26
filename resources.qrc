@@ -21,12 +21,12 @@
         <file>resources/icon/friend_unselected.png</file>
         <file>resources/icon/friend_unselected2.png</file>
         <file>resources/icon/full_heart.png</file>
-        <file>resources/icon/google_original.svg</file>
-        <file>resources/icon/google_negative.svg</file>
-        <file>resources/icon/apple_original.svg</file>
-        <file>resources/icon/apple_negative.svg</file>
-        <file>resources/icon/github_original.svg</file>
-        <file>resources/icon/github_negative.svg</file>
+        <file>resources/icon/google_original.png</file>
+        <file>resources/icon/google_negative.png</file>
+        <file>resources/icon/apple_original.png</file>
+        <file>resources/icon/apple_negative.png</file>
+        <file>resources/icon/github_original.png</file>
+        <file>resources/icon/github_negative.png</file>
         <file>resources/icon/heart.png</file>
         <file>resources/icon/flying.png</file>
         <file>resources/icon/hovered_book_and_pen.png</file>
@@ -109,6 +109,10 @@
         <file>resources/audio/portal2.wav</file>
         <file>resources/audio/successful_hit.wav</file>
         <file>resources/audio/click.wav</file>
+        <file>resources/audio/levelup.wav</file>
+        <file>resources/audio/mining.wav</file>
+        <file>resources/audio/flying.wav</file>
+        <file>resources/audio/potion.wav</file>
         <file>resources/audio/break.wav</file>
         <file>resources/audio/classic_hurt.wav</file>
         <file>resources/audio/chestopen.wav</file>

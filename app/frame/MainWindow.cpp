@@ -218,12 +218,14 @@ MainWindow::MainWindow(QWidget* parent)
             this, &MainWindow::openSettingsWindow);
     connect(appBar, &ApplicationBar::appearanceSettingsRequested,
             this, &MainWindow::openAppearanceSettingsWindow);
+    connect(appBar, &ApplicationBar::logoutRequested,
+            this, &MainWindow::logoutRequested);
 
     QScreen* screen = QGuiApplication::primaryScreen();
-    QRect   sg     = screen->geometry();
-    int     cx     = (sg.width()  - width())  / 2;
-    int     cy     = (sg.height() - height()) / 2;
-    move(cx, cy);
+    if (screen) {
+        const QRect available = screen->availableGeometry();
+        move(available.center() - rect().center());
+    }
 }
 
 MainWindow::~MainWindow()

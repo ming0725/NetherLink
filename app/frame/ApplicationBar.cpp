@@ -567,10 +567,11 @@ void ApplicationBar::showMoreOptionsMenu()
     QAction* themeColorAction = menu->addAction(QStringLiteral("主题颜色"));
     menu->addAction(QStringLiteral("聊天记录管理"));
     menu->addSeparator();
-    menu->addAction(QStringLiteral("退出账号"));
+    QAction* logoutAction = menu->addAction(QStringLiteral("退出登录"));
 
     connect(settingsAction, &QAction::triggered, this, &ApplicationBar::settingsRequested);
     connect(themeColorAction, &QAction::triggered, this, &ApplicationBar::appearanceSettingsRequested);
+    connect(logoutAction, &QAction::triggered, this, &ApplicationBar::logoutRequested);
 
     connect(menu, &QMenu::aboutToHide, this, [this, menu]() {
         if (moreOptionsItem) {

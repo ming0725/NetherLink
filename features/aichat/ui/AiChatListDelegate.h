@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QStyledItemDelegate>
+#include <QString>
 
 class AiChatListDelegate : public QStyledItemDelegate
 {
@@ -12,6 +13,10 @@ public:
                const QModelIndex& index) const override;
     QSize sizeHint(const QStyleOptionViewItem& option,
                    const QModelIndex& index) const override;
+
+    void setStreamingConversationId(const QString& conversationId);
+    QString streamingConversationId() const;
+    void setSpinnerProgress(qreal progress);
 
     QRect moreButtonRect(const QStyleOptionViewItem& option,
                          const QModelIndex& index) const;
@@ -37,4 +42,7 @@ private:
     static constexpr int kMoreButtonSize = 24;
     static constexpr int kMoreDotSize = 3;
     static constexpr int kMoreDotGap = 3;
+
+    QString m_streamingConversationId;
+    qreal m_spinnerProgress = 0.0;
 };

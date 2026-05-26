@@ -37,6 +37,7 @@ AiChatListWidget::AiChatListWidget(QWidget* parent)
     : OverlayScrollListView(parent)
     , m_model(new AiChatListModel(this))
     , m_delegate(new AiChatListDelegate(this))
+    , m_streamingSpinnerTimer(new QTimer(this))
 {
     setModel(m_model);
     setItemDelegate(m_delegate);
@@ -70,6 +71,20 @@ AiChatListWidget::AiChatListWidget(QWidget* parent)
             this, [this](const QModelIndex&, const QModelIndex&, const QVector<int>&) {
                 updateStickyHeader();
             });
+    m_streamingSpinnerTimer->setInterval(16);
+    connect(m_streamingSpinnerTimer, &QTimer::timeout, this, [this]() {
+        m_spinnerProgress += 0.018;
+        if (m_spinnerProgress >= 1.0) {
+            m_spinnerProgress -= 1.0;
+        }
+        m_delegate->setSpinnerProgress(m_spinnerProgress);
+        const int row = m_model->rowOfConversation(m_delegate->streamingConversationId());
+        if (row >= 0) {
+            viewport()->update(visualRect(m_model->index(row, 0)));
+        } else {
+            viewport()->update();
+        }
+    });
     updateStickyHeader();
 }
 
@@ -86,6 +101,7 @@ void AiChatListWidget::setController(AiChatSessionController* controller)
     m_controller = controller;
     if (!m_controller) {
         m_model->setEntries({});
+        setStreamingConversationId(QString());
         m_initialized = false;
         return;
     }
@@ -100,6 +116,22 @@ void AiChatListWidget::setController(AiChatSessionController* controller)
     });
     connect(m_controller, &AiChatSessionController::conversationsLoaded,
             this, &AiChatListWidget::onEntriesLoaded);
+    connect(m_controller, &AiChatSessionController::aiReplyStarted,
+            this, &AiChatListWidget::setStreamingConversationId);
+    connect(m_controller, &AiChatSessionController::aiReplyFinished, this,
+            [this](const QString& conversationId, const QString&) {
+                if (m_delegate->streamingConversationId() == conversationId) {
+                    m_model->setConversationUnreadDot(conversationId, true);
+                    setStreamingConversationId(QString());
+                }
+            });
+    connect(m_controller, &AiChatSessionController::aiReplyCanceled, this,
+            [this](const QString& conversationId, const QString&) {
+                if (m_delegate->streamingConversationId() == conversationId) {
+                    setStreamingConversationId(QString());
+                }
+            });
+    setStreamingConversationId(m_controller->activeStreamConversationId());
 }
 
 void AiChatListWidget::ensureInitialized()
@@ -247,7 +279,9 @@ void AiChatListWidget::mousePressEvent(QMouseEvent* event)
         if (index.isValid()) {
             QStyleOptionViewItem option = viewOptionForIndex(index);
             const bool hasUnreadDot = index.data(AiChatListModel::HasUnreadDotRole).toBool();
-            if (!hasUnreadDot && m_delegate->moreButtonRect(option, index).contains(event->pos())) {
+            if (!isStreamingConversation(index) &&
+                    !hasUnreadDot &&
+                    m_delegate->moreButtonRect(option, index).contains(event->pos())) {
                 showItemMenu(index, viewport()->mapToGlobal(m_delegate->moreButtonRect(option, index).bottomLeft()));
                 event->accept();
                 return;
@@ -278,7 +312,9 @@ void AiChatListWidget::mouseMoveEvent(QMouseEvent* event)
     if (index.isValid()) {
         const QStyleOptionViewItem option = viewOptionForIndex(index);
         const bool hasUnreadDot = index.data(AiChatListModel::HasUnreadDotRole).toBool();
-        overMoreButton = !hasUnreadDot && m_delegate->moreButtonRect(option, index).contains(event->pos());
+        overMoreButton = !isStreamingConversation(index) &&
+                !hasUnreadDot &&
+                m_delegate->moreButtonRect(option, index).contains(event->pos());
     }
 
     viewport()->setCursor(overMoreButton ? Qt::PointingHandCursor : Qt::ArrowCursor);
@@ -387,6 +423,43 @@ QStyleOptionViewItem AiChatListWidget::viewOptionForIndex(const QModelIndex& ind
     option.widget = viewport();
     option.rect = visualRect(index);
     return option;
+}
+
+void AiChatListWidget::setStreamingConversationId(const QString& conversationId)
+{
+    if (m_delegate->streamingConversationId() == conversationId) {
+        return;
+    }
+
+    const QString previousConversationId = m_delegate->streamingConversationId();
+    m_delegate->setStreamingConversationId(conversationId);
+    m_spinnerProgress = 0.0;
+    m_delegate->setSpinnerProgress(m_spinnerProgress);
+
+    if (conversationId.isEmpty()) {
+        m_streamingSpinnerTimer->stop();
+    } else if (!m_streamingSpinnerTimer->isActive()) {
+        m_streamingSpinnerTimer->start();
+    }
+
+    const int previousRow = m_model->rowOfConversation(previousConversationId);
+    if (previousRow >= 0) {
+        viewport()->update(visualRect(m_model->index(previousRow, 0)));
+    }
+    const int currentRow = m_model->rowOfConversation(conversationId);
+    if (currentRow >= 0) {
+        viewport()->update(visualRect(m_model->index(currentRow, 0)));
+    } else {
+        viewport()->update();
+    }
+}
+
+bool AiChatListWidget::isStreamingConversation(const QModelIndex& index) const
+{
+    return index.isValid() &&
+            !m_delegate->streamingConversationId().isEmpty() &&
+            index.data(AiChatListModel::ConversationIdRole).toString() ==
+                    m_delegate->streamingConversationId();
 }
 
 void AiChatListWidget::showItemMenu(const QModelIndex& index, const QPoint& globalPos)

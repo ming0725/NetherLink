@@ -31,6 +31,10 @@ constexpr SoundDefinition kSoundDefinitions[] = {
     {AudioService::SoundEffect::ChestOpen, ":/resources/audio/chestopen.wav", 0.80f, 8},
     {AudioService::SoundEffect::ChestClosed, ":/resources/audio/chestclosed.wav", 0.80f, 8},
     {AudioService::SoundEffect::Fuse, ":/resources/audio/fuse.wav", 0.80f, 8},
+    {AudioService::SoundEffect::LevelUp, ":/resources/audio/levelup.wav", 1.10f, 8},
+    {AudioService::SoundEffect::Mining, ":/resources/audio/mining.wav", 1.20f, 8},
+    {AudioService::SoundEffect::Flying, ":/resources/audio/flying.wav", 1.95f, 8},
+    {AudioService::SoundEffect::Potion, ":/resources/audio/potion.wav", 1.70f, 8},
 };
 
 struct AudioVoice {

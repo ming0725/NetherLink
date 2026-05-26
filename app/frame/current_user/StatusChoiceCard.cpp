@@ -2,7 +2,6 @@
 
 #include "app/frame/current_user/CurrentUserPopupStyle.h"
 #include "shared/services/AppFonts.h"
-#include "shared/services/AudioService.h"
 #include "shared/services/ImageService.h"
 #include "shared/theme/ThemeManager.h"
 #include "shared/ui/PaintedLabel.h"
@@ -74,7 +73,6 @@ void StatusChoiceCard::leaveEvent(QEvent* event)
 void StatusChoiceCard::mouseReleaseEvent(QMouseEvent* event)
 {
     if (event->button() == Qt::LeftButton && rect().contains(event->pos())) {
-        AudioService::instance().playButtonClick();
         if (clicked) {
             clicked(m_choiceIndex);
         }

@@ -1664,7 +1664,6 @@ void CreateGroupChatPopup::applyTheme()
     m_cancelButton->setBorderColor(ThemeManager::instance().color(ThemeColor::Divider));
     m_cancelButton->setBorderWidth(1);
     m_okButton->setPrimaryStyle();
-    m_okButton->setDisabledColor(ThemeManager::instance().color(ThemeColor::Divider));
     m_okButton->setEnabled(!m_selectedContacts.isEmpty());
 }
 

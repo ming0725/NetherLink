@@ -36,6 +36,7 @@ signals:
     void applicationClicked(ApplicationBarItem*);
     void settingsRequested();
     void appearanceSettingsRequested();
+    void logoutRequested();
 private:
     void layoutItems();
     void refreshChatBadge();

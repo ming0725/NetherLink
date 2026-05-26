@@ -15,7 +15,7 @@ StatefulPushButton::StatefulPushButton(QWidget* parent)
         , m_normalColor(ThemeManager::instance().color(ThemeColor::Accent))
         , m_hoverColor(ThemeManager::instance().color(ThemeColor::AccentHover))
         , m_pressColor(ThemeManager::instance().color(ThemeColor::AccentPressed))
-        , m_disabledColor(ThemeManager::instance().color(ThemeColor::ContextMenuDisabledText))
+        , m_disabledColor(ThemeManager::instance().color(ThemeColor::AccentPressed))
         , m_currentColor(m_normalColor)
         , m_textColor(ThemeManager::instance().color(ThemeColor::TextOnAccent))
         , m_textAlignment(Qt::AlignCenter)
@@ -38,7 +38,7 @@ StatefulPushButton::StatefulPushButton(const QString& text, QWidget* parent)
         , m_normalColor(ThemeManager::instance().color(ThemeColor::Accent))
         , m_hoverColor(ThemeManager::instance().color(ThemeColor::AccentHover))
         , m_pressColor(ThemeManager::instance().color(ThemeColor::AccentPressed))
-        , m_disabledColor(ThemeManager::instance().color(ThemeColor::ContextMenuDisabledText))
+        , m_disabledColor(ThemeManager::instance().color(ThemeColor::AccentPressed))
         , m_currentColor(m_normalColor)
         , m_textColor(ThemeManager::instance().color(ThemeColor::TextOnAccent))
         , m_textAlignment(Qt::AlignCenter)
@@ -187,6 +187,7 @@ void StatefulPushButton::setDefaultStyle() {
     setNormalColor(ThemeManager::instance().color(ThemeColor::PanelRaisedBackground));
     setHoverColor(ThemeManager::instance().color(ThemeColor::ListHover));
     setPressColor(ThemeManager::instance().color(ThemeColor::Divider));
+    setDisabledColor(ThemeManager::instance().color(ThemeColor::AccentPressed));
     setTextColor(ThemeManager::instance().color(ThemeColor::PrimaryText));
     m_textColorFollowsBackground = false;
 }
@@ -195,25 +196,32 @@ void StatefulPushButton::setPrimaryStyle() {
     setNormalColor(ThemeManager::instance().color(ThemeColor::Accent));
     setHoverColor(ThemeManager::instance().color(ThemeColor::AccentHover));
     setPressColor(ThemeManager::instance().color(ThemeColor::AccentPressed));
+    setDisabledColor(ThemeManager::instance().color(ThemeColor::AccentPressed));
     setTextColor(ThemeManager::instance().color(ThemeColor::TextOnAccent));
     m_textColorFollowsBackground = true;
 }
 
 void StatefulPushButton::setSuccessStyle() {
     setNormalColor(0x28A745); setHoverColor(0x218838);
-    setPressColor(0x1E7E34); setTextColor(0xFFFFFF);
+    setPressColor(0x1E7E34);
+    setDisabledColor(ThemeManager::instance().color(ThemeColor::AccentPressed));
+    setTextColor(0xFFFFFF);
     m_textColorFollowsBackground = false;
 }
 
 void StatefulPushButton::setWarningStyle() {
     setNormalColor(0xFFC107); setHoverColor(0xE0A800);
-    setPressColor(0xD39E00); setTextColor(0x333333);
+    setPressColor(0xD39E00);
+    setDisabledColor(ThemeManager::instance().color(ThemeColor::AccentPressed));
+    setTextColor(0x333333);
     m_textColorFollowsBackground = false;
 }
 
 void StatefulPushButton::setDangerStyle() {
     setNormalColor(0xDC3545); setHoverColor(0xC82333);
-    setPressColor(0xBD2130); setTextColor(0xFFFFFF);
+    setPressColor(0xBD2130);
+    setDisabledColor(ThemeManager::instance().color(ThemeColor::AccentPressed));
+    setTextColor(0xFFFFFF);
     m_textColorFollowsBackground = false;
 }
 

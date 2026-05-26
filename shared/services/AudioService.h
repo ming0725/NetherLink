@@ -18,7 +18,11 @@ public:
         ClassicHurt,
         ChestOpen,
         ChestClosed,
-        Fuse
+        Fuse,
+        LevelUp,
+        Mining,
+        Flying,
+        Potion
     };
 
     static AudioService& instance();
