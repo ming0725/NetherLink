@@ -39,7 +39,7 @@ NetherLink‑static 是一款基于 Qt 的聊天社交客户端静态原型，�
 
 > 以下为示例截图，展示主要页面风格。
 
-<img src="https://github.com/ming0725/NetherLink-static/blob/master/doc/images/1.png?raw=true" alt="聊天界面" width="180"/>
+<img src="https://github.com/ming0725/NetherLink-static/blob/master/doc/images/1.png?raw=true" alt="聊天界面" width="240"/>
 
 <img src="https://github.com/ming0725/NetherLink-static/blob/master/doc/images/3.png?raw=true" alt="帖子界面" width="600"/>
 
