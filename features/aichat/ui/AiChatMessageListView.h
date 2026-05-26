@@ -69,6 +69,8 @@ private:
     void setScrollBarToBottom();
     void onScrollValueChanged(int value);
     void unlockBottomLockForUserScrollUp();
+    void updateCodeBlockLoadingAnimation();
+    void syncCodeBlockLoadingAnimationTimer();
     bool isAtBottom() const;
     bool hasUpwardScrollIntent(const QWheelEvent* event) const;
     bool hasDownwardScrollIntent(const QWheelEvent* event) const;
@@ -77,7 +79,9 @@ private:
     QPropertyAnimation* m_scrollAnimation = nullptr;
     QPersistentModelIndex m_activeBubbleIndex;
     QPersistentModelIndex m_copiedCodeIndex;
+    QPersistentModelIndex m_codeBlockLoadingIndex;
     QTimer* m_copyResetTimer = nullptr;
+    QTimer* m_codeBlockLoadingTimer = nullptr;
     QPersistentModelIndex m_dragIndex;
     int m_dragAnchor = -1;
     bool m_dragging = false;

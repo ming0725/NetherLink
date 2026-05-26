@@ -577,6 +577,7 @@ QList<MarkdownRenderer::Block> MarkdownRenderer::parseBlocks(const QString &mark
             block.type = BlockType::CodeBlock;
             block.text = displayBlockText(codeLines);
             block.language = codeLanguage;
+            block.open = true;
             blocks.append(block);
         }
     }

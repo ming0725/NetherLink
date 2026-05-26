@@ -252,7 +252,7 @@ void AiChatConversationWidget::openConversation(const AiChatListEntry& entry)
     m_streamingNotifierHeld = false;
     m_newMessageNotifier->hide();
     m_inputBar->setContextUsageVisible(false);
-    m_inputBar->setStreaming(currentConversationStreaming);
+    m_inputBar->setStreaming(currentConversationStreaming, false);
     updateHeader();
     updateLayout();
     if (m_controller) {
@@ -294,7 +294,7 @@ void AiChatConversationWidget::showStartPage()
     m_streamingNotifierHeld = false;
     m_newMessageNotifier->hide();
     m_inputBar->setContextUsageVisible(false);
-    m_inputBar->setStreaming(false);
+    m_inputBar->setStreaming(false, false);
     m_emptyLabel->show();
     updateHeader();
     updateLayout();
@@ -341,6 +341,11 @@ void AiChatConversationWidget::onSendText(const QString& text)
         emit conversationCreatedFromStartPage(entry.conversationId);
         updateHeader();
         updateLayout();
+        QTimer::singleShot(0, m_inputBar, [inputBar = m_inputBar]() {
+            if (inputBar->isVisible()) {
+                inputBar->refocusInputAfterPositionChange();
+            }
+        });
     }
 
     const AiChatMessage message = m_controller->submitUserMessage(m_currentConversation.conversationId, text);
@@ -693,7 +698,7 @@ void AiChatConversationWidget::onConversationMessagesLoaded(int requestId,
     m_messageModel->setMessages(messages);
     if (m_controller && m_controller->activeStreamConversationId() == conversationId) {
         m_messageView->messageDelegate()->setStreamingMessageId(m_controller->activeStreamMessageId());
-        m_inputBar->setStreaming(true);
+        m_inputBar->setStreaming(true, false);
     } else {
         m_messageView->messageDelegate()->setStreamingMessageId(QString());
         m_inputBar->setStreaming(false);

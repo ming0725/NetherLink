@@ -81,6 +81,7 @@ public:
         int settingValue = 0;
         int level = 0;
         int number = 0;
+        bool open = false;
     };
 
     static QList<Block> parseBlocks(const QString &markdown);

@@ -7,9 +7,11 @@
 #include "shared/services/AppFonts.h"
 #include "shared/services/ImageService.h"
 #include "shared/theme/ThemeManager.h"
+#include "shared/ui/LoadingSpinnerRenderer.h"
 
 #include <QApplication>
 #include <QCache>
+#include <QDateTime>
 #include <QFontDatabase>
 #include <QFontInfo>
 #include <QHash>
@@ -43,6 +45,7 @@ constexpr int kCodeHeaderHeight = 30;
 constexpr int kCodeHeaderHorizontalPadding = 10;
 constexpr int kCodeHeaderIconWidth = 24;
 constexpr int kCodeHeaderIconSize = 14;
+constexpr int kCodeHeaderSpinnerSize = 13;
 constexpr int kCodeHeaderGap = 7;
 constexpr int kCodeCopyButtonSize = 22;
 constexpr int kCodeBlockRadius = 6;
@@ -184,6 +187,8 @@ QString blockSignature(const MarkdownRenderer::Block &block)
     signature += QString::number(block.level);
     signature += QLatin1Char('|');
     signature += QString::number(block.number);
+    signature += QLatin1Char('|');
+    signature += block.open ? QLatin1Char('1') : QLatin1Char('0');
     signature += QLatin1Char('|');
     signature += block.language;
     signature += QLatin1Char('|');
@@ -2071,6 +2076,25 @@ QRect codeCopyButtonRect(const QStyleOptionViewItem &option)
                  kCodeCopyButtonSize);
 }
 
+QRect centeredSquareRect(const QRect& rect, int side)
+{
+    const int boundedSide = qMax(1, qMin(side, qMin(rect.width(), rect.height())));
+    return QRect(rect.left() + (rect.width() - boundedSide) / 2,
+                 rect.top() + (rect.height() - boundedSide) / 2,
+                 boundedSide,
+                 boundedSide);
+}
+
+QRect codeLoadingSpinnerRect(const QStyleOptionViewItem& option)
+{
+    const QRect header = codeHeaderRect(option);
+    const QRect iconSlot(header.left() + kCodeHeaderHorizontalPadding,
+                         header.top(),
+                         kCodeHeaderIconWidth,
+                         header.height());
+    return centeredSquareRect(iconSlot, kCodeHeaderSpinnerSize);
+}
+
 int listMarkerWidth(const QStyleOptionViewItem &option, const MarkdownRenderer::Block &block)
 {
     if (block.type != MarkdownRenderer::BlockType::UnorderedList &&
@@ -2704,6 +2728,11 @@ int copiedCodeRow(const QStyleOptionViewItem &option)
     return -1;
 }
 
+bool isCodeBlockLoading(const QStyleOptionViewItem &option)
+{
+    return option.index.data(MarkdownDocumentModel::CodeBlockLoadingRole).toBool();
+}
+
 void drawCodeHeader(QPainter *painter,
                     const QStyleOptionViewItem &option,
                     const MarkdownRenderer::Block &block,
@@ -2713,6 +2742,7 @@ void drawCodeHeader(QPainter *painter,
     const QRect button = codeCopyButtonRect(option);
     const bool sticky = isCodeHeaderSticky(option);
     const bool copied = row >= 0 && row == copiedCodeRow(option);
+    const bool loading = isCodeBlockLoading(option);
     const CodeBlockPalette palette = codeBlockPalette();
 
     painter->save();
@@ -2733,7 +2763,15 @@ void drawCodeHeader(QPainter *painter,
                          header.top(),
                          kCodeHeaderIconWidth,
                          header.height());
-    drawCodeIcon(painter, iconRect, palette);
+    if (loading) {
+        const qint64 elapsed = QDateTime::currentMSecsSinceEpoch() % 1000;
+        LoadingSpinnerRenderer::drawCircularSpinner(painter,
+                                                    codeLoadingSpinnerRect(option),
+                                                    palette.icon,
+                                                    elapsed / 1000.0);
+    } else {
+        drawCodeIcon(painter, iconRect, palette);
+    }
 
     QFont labelFont = option.font;
     labelFont.setPixelSize(qMax(kMinFontPixelSize, baseSize));
@@ -3109,6 +3147,19 @@ bool MarkdownDelegate::isCodeCopyButtonAtPosition(const QStyleOptionViewItem &op
     return codeCopyButtonRect(viewOption).contains(position);
 }
 
+bool MarkdownDelegate::isCodeCopyButtonEnabledAtPosition(const QStyleOptionViewItem &option,
+                                                         const QModelIndex &index,
+                                                         const QPoint &position) const
+{
+    QStyleOptionViewItem viewOption(option);
+    viewOption.index = index;
+    if (!isCodeCopyButtonAtPosition(viewOption, index, position)) {
+        return false;
+    }
+
+    return !isCodeBlockLoading(viewOption);
+}
+
 bool MarkdownDelegate::isSettingActionButtonAtPosition(const QStyleOptionViewItem &option,
                                                        const QModelIndex &index,
                                                        const QPoint &position) const
@@ -3121,4 +3172,19 @@ bool MarkdownDelegate::isSettingActionButtonAtPosition(const QStyleOptionViewIte
     }
 
     return settingActionHitRect(viewOption).contains(position);
+}
+
+QRect MarkdownDelegate::codeBlockLoadingUpdateRect(const QStyleOptionViewItem &option,
+                                                   const QModelIndex &index) const
+{
+    QStyleOptionViewItem viewOption(option);
+    viewOption.index = index;
+    const MarkdownRenderer::Block block = modelBlock(index);
+    if (block.type != MarkdownRenderer::BlockType::CodeBlock ||
+            !index.data(MarkdownDocumentModel::CodeBlockLoadingRole).toBool()) {
+        return {};
+    }
+
+    return codeLoadingSpinnerRect(viewOption).adjusted(-3, -3, 3, 3)
+            .intersected(codeHeaderRect(viewOption));
 }

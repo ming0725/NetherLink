@@ -57,6 +57,9 @@ public:
     bool isCodeCopyButtonAt(const QStyleOptionViewItem& option,
                             const QModelIndex& index,
                             const QPoint& viewportPos) const;
+    bool isCodeCopyButtonDisabledAt(const QStyleOptionViewItem& option,
+                                    const QModelIndex& index,
+                                    const QPoint& viewportPos) const;
     bool isSettingActionButtonAt(const QStyleOptionViewItem& option,
                                  const QModelIndex& index,
                                  const QPoint& viewportPos) const;
@@ -80,6 +83,9 @@ public:
     MessageFeedback messageFeedback(const QString& messageId) const;
     void setStreamingMessageId(const QString& messageId);
     QString streamingMessageId() const;
+    bool hasStreamingOpenCodeBlock(const QModelIndex& index) const;
+    QRect streamingCodeBlockUpdateRect(const QStyleOptionViewItem& option,
+                                       const QModelIndex& index) const;
     void setCopiedCodeBlock(const QModelIndex& index, int blockRow);
     void clearCopiedCodeBlock();
     void setUserMessageExpanded(const QString& messageId, bool expanded);
@@ -99,6 +105,9 @@ public:
     QString selectedText() const;
     QString renderedText(const QModelIndex& index) const;
     QPersistentModelIndex selectionIndex() const;
+
+signals:
+    void streamingMessageIdChanged();
 
 private:
     struct LayoutMetrics {

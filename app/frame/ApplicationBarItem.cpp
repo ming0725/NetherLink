@@ -9,6 +9,8 @@
 
 namespace {
 
+constexpr int kAppBarDotBadgeSize = 8;
+
 QSize logicalPixmapSize(const QPixmap& pixmap)
 {
     if (pixmap.isNull()) {
@@ -265,6 +267,9 @@ void ApplicationBarItem::paint(QPainter& painter) const
     forceUnreadBadgeColors(appBarBadgeLayout);
     if (appBarBadgeLayout.size.isValid()) {
         const bool isDotBadge = badgeCount <= 0 && badgeDotVisible;
+        if (isDotBadge) {
+            appBarBadgeLayout.size = QSize(kAppBarDotBadgeSize, kAppBarDotBadgeSize);
+        }
         const int badgeX = isDotBadge
                 ? itemRect.right() - appBarBadgeLayout.size.width() - 4
                 : itemRect.right() - appBarBadgeLayout.size.width() + 2;

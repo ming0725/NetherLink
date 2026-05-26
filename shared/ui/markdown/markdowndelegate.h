@@ -1,6 +1,7 @@
 #ifndef MARKDOWNDELEGATE_H
 #define MARKDOWNDELEGATE_H
 
+#include <QRect>
 #include <QStyledItemDelegate>
 
 class MarkdownDelegate : public QStyledItemDelegate
@@ -27,9 +28,14 @@ public:
     bool isCodeCopyButtonAtPosition(const QStyleOptionViewItem &option,
                                     const QModelIndex &index,
                                     const QPoint &position) const;
+    bool isCodeCopyButtonEnabledAtPosition(const QStyleOptionViewItem &option,
+                                           const QModelIndex &index,
+                                           const QPoint &position) const;
     bool isSettingActionButtonAtPosition(const QStyleOptionViewItem &option,
                                          const QModelIndex &index,
                                          const QPoint &position) const;
+    QRect codeBlockLoadingUpdateRect(const QStyleOptionViewItem &option,
+                                     const QModelIndex &index) const;
 };
 
 #endif // MARKDOWNDELEGATE_H

@@ -56,6 +56,8 @@ QVariant MarkdownDocumentModel::data(const QModelIndex &index, int role) const
         return index.row() < m_selection.size() ? m_selection.at(index.row()).start : -1;
     case SelectionEndRole:
         return index.row() < m_selection.size() ? m_selection.at(index.row()).end : -1;
+    case CodeBlockLoadingRole:
+        return false;
     default:
         return {};
     }
@@ -79,6 +81,7 @@ QHash<int, QByteArray> MarkdownDocumentModel::roleNames() const
     roles[BlockRole] = "block";
     roles[SelectionStartRole] = "selectionStart";
     roles[SelectionEndRole] = "selectionEnd";
+    roles[CodeBlockLoadingRole] = "codeBlockLoading";
     return roles;
 }
 

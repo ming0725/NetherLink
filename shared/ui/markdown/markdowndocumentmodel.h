@@ -19,7 +19,8 @@ public:
         NumberRole,
         BlockRole,
         SelectionStartRole,
-        SelectionEndRole
+        SelectionEndRole,
+        CodeBlockLoadingRole
     };
 
     explicit MarkdownDocumentModel(QObject *parent = nullptr);

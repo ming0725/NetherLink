@@ -8,6 +8,7 @@
 #include <QGraphicsDropShadowEffect>
 #include <QImage>
 #include <QKeyEvent>
+#include <QLineF>
 #include <QLocale>
 #include <QMouseEvent>
 #include <QPainter>
@@ -16,6 +17,7 @@
 #include <QPixmap>
 #include <QResizeEvent>
 #include <QGuiApplication>
+#include <QRegion>
 #include <QScreen>
 #include <QStringList>
 #include <QTextCursor>
@@ -34,6 +36,25 @@ namespace {
 constexpr int kLightPanelAlpha = 246;
 constexpr int kDarkPanelAlpha = 226;
 const QColor kLightPanelBorderColor(0xc2, 0xc2, 0xc2);
+const QColor kDarkPanelBorderColor(0x72, 0x76, 0x80);
+
+qreal easeOutCubic(qreal progress)
+{
+    progress = qBound<qreal>(0.0, progress, 1.0);
+    const qreal inverse = 1.0 - progress;
+    return 1.0 - inverse * inverse * inverse;
+}
+
+qreal easeInOutCubic(qreal progress)
+{
+    progress = qBound<qreal>(0.0, progress, 1.0);
+    if (progress < 0.5) {
+        return 4.0 * progress * progress * progress;
+    }
+
+    const qreal factor = -2.0 * progress + 2.0;
+    return 1.0 - factor * factor * factor / 2.0;
+}
 
 QString submittedText(QString text)
 {
@@ -519,12 +540,17 @@ AiChatFloatingInputBar::AiChatFloatingInputBar(QWidget* parent)
     , m_permissionButton(new MenuTextButton(QStringLiteral("Default permissions"), this))
     , m_modelButton(new MenuTextButton(QString(), this))
     , m_actionButton(new SendButton(this))
+    , m_borderGlowTimer(new QTimer(this))
 {
     setAutoFillBackground(false);
     setAttribute(Qt::WA_TranslucentBackground);
     setAttribute(Qt::WA_NoSystemBackground);
     setWindowFlags(Qt::FramelessWindowHint);
     setFocusPolicy(Qt::StrongFocus);
+    m_borderGlowClock.start();
+    m_borderGlowTimer->setInterval(kBorderGlowFrameMs);
+    connect(m_borderGlowTimer, &QTimer::timeout,
+            this, &AiChatFloatingInputBar::updateBorderGlowAnimation);
 
     m_inputEdit->setFocusPolicy(Qt::StrongFocus);
     m_inputEdit->setAcceptRichText(false);
@@ -589,13 +615,35 @@ void AiChatFloatingInputBar::focusInput()
     m_inputEdit->moveCursor(QTextCursor::End);
 }
 
-void AiChatFloatingInputBar::setStreaming(bool streaming)
+void AiChatFloatingInputBar::refocusInputAfterPositionChange()
+{
+    m_inputEdit->clearFocus();
+    clearFocus();
+    QTimer::singleShot(kInputRefocusAfterMoveDelayMs, this, [this]() {
+        if (!isVisible() || !isEnabled()) {
+            return;
+        }
+        focusInput();
+    });
+}
+
+void AiChatFloatingInputBar::setStreaming(bool streaming, bool animateTransition)
 {
     if (m_streaming == streaming) {
+        if (!streaming && !animateTransition) {
+            stopBorderGlow();
+        }
         return;
     }
 
     m_streaming = streaming;
+    if (m_streaming) {
+        startBorderGlow();
+    } else if (animateTransition) {
+        finishBorderGlow();
+    } else {
+        stopBorderGlow();
+    }
     updateActionButtonIcon();
 }
 
@@ -711,17 +759,20 @@ void AiChatFloatingInputBar::paintEvent(QPaintEvent* event)
     painter.fillPath(path, background);
 
     const bool dark = ThemeManager::instance().isDark();
-    QColor border = dark ? ThemeManager::instance().color(ThemeColor::Divider)
+    QColor border = dark ? kDarkPanelBorderColor
                          : kLightPanelBorderColor;
-    border.setAlpha(dark ? 130 : 230);
+    border.setAlpha(dark ? 180 : 230);
     painter.setPen(QPen(border, 1));
     painter.setBrush(Qt::NoBrush);
     painter.drawPath(path);
+
+    paintBorderGlow(painter, panelRect);
 }
 
 void AiChatFloatingInputBar::resizeEvent(QResizeEvent* event)
 {
     QWidget::resizeEvent(event);
+    invalidateBorderGlowCache();
     updatePreferredHeight();
     updateInputGeometry();
 }
@@ -965,4 +1016,336 @@ void AiChatFloatingInputBar::updatePreferredHeight()
     m_preferredHeight = newHeight;
     updateGeometry();
     emit preferredHeightChanged(newHeight);
+}
+
+void AiChatFloatingInputBar::startBorderGlow()
+{
+    m_borderGlowState = BorderGlowState::Streaming;
+    m_borderGlowStartMs = m_borderGlowClock.elapsed();
+    m_borderGlowFinishStartMs = 0;
+    if (m_borderGlowTimer && !m_borderGlowTimer->isActive()) {
+        m_borderGlowTimer->start();
+    }
+    updateBorderGlowRegion();
+}
+
+void AiChatFloatingInputBar::finishBorderGlow()
+{
+    if (m_borderGlowState == BorderGlowState::Idle) {
+        updateBorderGlowRegion();
+        return;
+    }
+
+    if (m_borderGlowState == BorderGlowState::Streaming) {
+        const qint64 revealElapsed = m_borderGlowClock.elapsed() - m_borderGlowStartMs;
+        if (revealElapsed < kBorderGlowRevealDurationMs) {
+            m_borderGlowState = BorderGlowState::PendingFinish;
+            m_borderGlowFinishStartMs = 0;
+            if (m_borderGlowTimer && !m_borderGlowTimer->isActive()) {
+                m_borderGlowTimer->start();
+            }
+            updateBorderGlowRegion();
+            return;
+        }
+    }
+
+    m_borderGlowState = BorderGlowState::Finishing;
+    m_borderGlowFinishStartMs = m_borderGlowClock.elapsed();
+    if (m_borderGlowTimer && !m_borderGlowTimer->isActive()) {
+        m_borderGlowTimer->start();
+    }
+    updateBorderGlowRegion();
+}
+
+void AiChatFloatingInputBar::stopBorderGlow()
+{
+    m_borderGlowState = BorderGlowState::Idle;
+    m_borderGlowFinishStartMs = 0;
+    if (m_borderGlowTimer) {
+        m_borderGlowTimer->stop();
+    }
+    updateBorderGlowRegion();
+}
+
+void AiChatFloatingInputBar::updateBorderGlowAnimation()
+{
+    if (m_borderGlowState == BorderGlowState::Idle) {
+        if (m_borderGlowTimer) {
+            m_borderGlowTimer->stop();
+        }
+        return;
+    }
+
+    if (m_borderGlowState == BorderGlowState::PendingFinish) {
+        const qint64 revealElapsed = m_borderGlowClock.elapsed() - m_borderGlowStartMs;
+        if (revealElapsed >= kBorderGlowRevealDurationMs) {
+            m_borderGlowState = BorderGlowState::Finishing;
+            m_borderGlowFinishStartMs = m_borderGlowClock.elapsed();
+        }
+    }
+
+    if (m_borderGlowState == BorderGlowState::Finishing) {
+        const qint64 elapsed = m_borderGlowClock.elapsed() - m_borderGlowFinishStartMs;
+        if (elapsed >= kBorderGlowFinishDurationMs) {
+            m_borderGlowState = BorderGlowState::Idle;
+            if (m_borderGlowTimer) {
+                m_borderGlowTimer->stop();
+            }
+        }
+    }
+
+    updateBorderGlowRegion();
+}
+
+void AiChatFloatingInputBar::paintBorderGlow(QPainter& painter, const QRectF& panelRect)
+{
+    if (m_borderGlowState == BorderGlowState::Idle) {
+        return;
+    }
+
+    const QRectF glowRect = panelRect.adjusted(kBorderGlowInset,
+                                               kBorderGlowInset,
+                                               -kBorderGlowInset,
+                                               -kBorderGlowInset);
+    if (glowRect.width() <= kCornerRadius || glowRect.height() <= kCornerRadius) {
+        return;
+    }
+
+    if (!ensureBorderGlowCache(glowRect)) {
+        return;
+    }
+
+    const qreal totalLength = m_borderGlowTotalLength;
+    if (totalLength <= 0.0) {
+        return;
+    }
+
+    const qint64 now = m_borderGlowClock.elapsed();
+    const qreal phase = static_cast<qreal>(now - m_borderGlowStartMs) / 4200.0;
+    const qreal halfLength = totalLength * 0.5;
+
+    painter.save();
+    painter.setRenderHint(QPainter::Antialiasing, true);
+
+    if (m_borderGlowState == BorderGlowState::Streaming
+            || m_borderGlowState == BorderGlowState::PendingFinish) {
+        const qreal revealElapsed = static_cast<qreal>(now - m_borderGlowStartMs);
+        const qreal revealProgress = easeOutCubic(revealElapsed / kBorderGlowRevealDurationMs);
+        const qreal visibleHalfLength = halfLength * revealProgress;
+        paintBorderGlowRange(painter, totalLength, 0.0, visibleHalfLength, phase, 1.0);
+        paintBorderGlowRange(painter,
+                             totalLength,
+                             totalLength - visibleHalfLength,
+                             totalLength,
+                             phase,
+                             1.0);
+    } else {
+        const qreal finishElapsed = static_cast<qreal>(now - m_borderGlowFinishStartMs);
+        const qreal finishProgress = easeInOutCubic(finishElapsed / kBorderGlowFinishDurationMs);
+        const qreal clearedLength = halfLength * finishProgress;
+        const qreal opacity = 1.0 - finishProgress * 0.22;
+        paintBorderGlowRange(painter,
+                             totalLength,
+                             clearedLength,
+                             halfLength,
+                             phase,
+                             opacity);
+        paintBorderGlowRange(painter,
+                             totalLength,
+                             halfLength,
+                             totalLength - clearedLength,
+                             phase,
+                             opacity);
+    }
+
+    painter.restore();
+}
+
+bool AiChatFloatingInputBar::ensureBorderGlowCache(const QRectF& rect)
+{
+    if (m_borderGlowCachedRect == rect && !m_borderGlowSamples.isEmpty()) {
+        return true;
+    }
+
+    m_borderGlowCachedRect = rect;
+    m_borderGlowSamples.clear();
+    m_borderGlowTotalLength = 0.0;
+
+    const qreal radius = qMin<qreal>(kCornerRadius - kBorderGlowInset,
+                                     qMin(rect.width(), rect.height()) * 0.5);
+    if (radius <= 0.0) {
+        return false;
+    }
+
+    const qreal left = rect.left();
+    const qreal right = rect.right();
+    const qreal top = rect.top();
+    const qreal bottom = rect.bottom();
+    const qreal centerX = rect.center().x();
+
+    qreal cursor = 0.0;
+    auto appendPoint = [this](const QPointF& point, qreal length) {
+        if (!m_borderGlowSamples.isEmpty()
+            && QLineF(m_borderGlowSamples.constLast().point, point).length() < 0.001) {
+            m_borderGlowSamples.last().length = length;
+            return;
+        }
+
+        m_borderGlowSamples.append({point, length});
+    };
+
+    auto appendLine = [&appendPoint, &cursor](const QPointF& from, const QPointF& to) {
+        const qreal segmentLength = QLineF(from, to).length();
+        if (segmentLength <= 0.0) {
+            return;
+        }
+
+        const int steps = qMax(1, qCeil(segmentLength / kBorderGlowSampleStep));
+        for (int i = 1; i <= steps; ++i) {
+            const qreal progress = static_cast<qreal>(i) / steps;
+            appendPoint(from + (to - from) * progress, cursor + segmentLength * progress);
+        }
+        cursor += segmentLength;
+    };
+
+    auto appendArc = [&appendPoint, &cursor](const QPointF& center,
+                                             qreal arcRadius,
+                                             qreal startDegrees,
+                                             qreal sweepDegrees) {
+        const qreal segmentLength = qAbs(qDegreesToRadians(sweepDegrees)) * arcRadius;
+        if (segmentLength <= 0.0) {
+            return;
+        }
+
+        const int steps = qMax(1, qCeil(segmentLength / kBorderGlowSampleStep));
+        for (int i = 1; i <= steps; ++i) {
+            const qreal progress = static_cast<qreal>(i) / steps;
+            const qreal angle = qDegreesToRadians(startDegrees + sweepDegrees * progress);
+            appendPoint(QPointF(center.x() + qCos(angle) * arcRadius,
+                                center.y() - qSin(angle) * arcRadius),
+                        cursor + segmentLength * progress);
+        }
+        cursor += segmentLength;
+    };
+
+    const QPointF topCenter(centerX, top);
+    appendPoint(topCenter, 0.0);
+    appendLine(topCenter, QPointF(right - radius, top));
+    appendArc(QPointF(right - radius, top + radius), radius, 90.0, -90.0);
+    appendLine(QPointF(right, top + radius), QPointF(right, bottom - radius));
+    appendArc(QPointF(right - radius, bottom - radius), radius, 0.0, -90.0);
+    appendLine(QPointF(right - radius, bottom), QPointF(left + radius, bottom));
+    appendArc(QPointF(left + radius, bottom - radius), radius, -90.0, -90.0);
+    appendLine(QPointF(left, bottom - radius), QPointF(left, top + radius));
+    appendArc(QPointF(left + radius, top + radius), radius, 180.0, -90.0);
+    appendLine(QPointF(left + radius, top), topCenter);
+
+    m_borderGlowTotalLength = cursor;
+    return m_borderGlowSamples.size() >= 2 && m_borderGlowTotalLength > 0.0;
+}
+
+void AiChatFloatingInputBar::invalidateBorderGlowCache()
+{
+    m_borderGlowCachedRect = QRectF();
+    m_borderGlowSamples.clear();
+    m_borderGlowTotalLength = 0.0;
+}
+
+void AiChatFloatingInputBar::updateBorderGlowRegion()
+{
+    if (width() <= 0 || height() <= 0) {
+        update();
+        return;
+    }
+
+    const int band = qMin(qCeil(kBorderGlowInset + kBorderGlowMaxPenWidth + 3.0),
+                          qMin(width(), height()));
+    QRegion region(QRect(0, 0, width(), band));
+    region += QRect(0, qMax(0, height() - band), width(), band);
+    region += QRect(0, 0, band, height());
+    region += QRect(qMax(0, width() - band), 0, band, height());
+    update(region);
+}
+
+QColor AiChatFloatingInputBar::borderGlowColor(qreal position,
+                                               qreal phase,
+                                               qreal opacity,
+                                               qreal alphaScale) const
+{
+    qreal hue = position + phase * 0.72;
+    hue -= qFloor(hue);
+
+    const qreal twoPi = 6.283185307179586;
+    const qreal wave = 0.82 + 0.18 * ((qSin((position * 2.4 - phase * 1.8) * twoPi) + 1.0) * 0.5);
+    QColor color = QColor::fromHsvF(hue, 0.82, 1.0);
+    const qreal themeBoost = ThemeManager::instance().isDark() ? 1.0 : 0.82;
+    color.setAlpha(qRound(qBound<qreal>(0.0,
+                                        255.0 * opacity * alphaScale * wave * themeBoost,
+                                        255.0)));
+    return color;
+}
+
+void AiChatFloatingInputBar::paintBorderGlowRange(QPainter& painter,
+                                                  qreal totalLength,
+                                                  qreal startLength,
+                                                  qreal endLength,
+                                                  qreal phase,
+                                                  qreal opacity)
+{
+    startLength = qBound<qreal>(0.0, startLength, totalLength);
+    endLength = qBound<qreal>(0.0, endLength, totalLength);
+    if (endLength <= startLength || opacity <= 0.0) {
+        return;
+    }
+
+    if (m_borderGlowSamples.size() < 2) {
+        return;
+    }
+
+    struct GlowLayer {
+        qreal width;
+        qreal alphaScale;
+    };
+    const GlowLayer layers[] = {
+        {5.2, 0.10},
+        {2.8, 0.20},
+        {1.35, 0.92},
+    };
+
+    for (const GlowLayer& layer : layers) {
+        QPen pen(Qt::white, layer.width, Qt::SolidLine, Qt::FlatCap, Qt::RoundJoin);
+        painter.setPen(pen);
+
+        for (int i = 1; i < m_borderGlowSamples.size(); ++i) {
+            const BorderGlowSample& previous = m_borderGlowSamples.at(i - 1);
+            const BorderGlowSample& current = m_borderGlowSamples.at(i);
+            if (current.length <= startLength) {
+                continue;
+            }
+            if (previous.length >= endLength) {
+                break;
+            }
+
+            const qreal visibleStart = qMax(startLength, previous.length);
+            const qreal visibleEnd = qMin(endLength, current.length);
+            if (visibleEnd <= visibleStart || current.length <= previous.length) {
+                continue;
+            }
+
+            const qreal segmentLength = current.length - previous.length;
+            const qreal startProgress = (visibleStart - previous.length) / segmentLength;
+            const qreal endProgress = (visibleEnd - previous.length) / segmentLength;
+            const QPointF segmentStart = previous.point +
+                    (current.point - previous.point) * startProgress;
+            const QPointF segmentEnd = previous.point +
+                    (current.point - previous.point) * endProgress;
+            const qreal segmentMid = (visibleStart + visibleEnd) * 0.5;
+            pen.setColor(borderGlowColor(segmentMid / totalLength,
+                                         phase,
+                                         opacity,
+                                         layer.alphaScale));
+            painter.setPen(pen);
+            painter.drawLine(segmentStart, segmentEnd);
+        }
+    }
 }

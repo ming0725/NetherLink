@@ -29,6 +29,7 @@ namespace {
 
 constexpr int kUserCopyFadeDurationMs = 160;
 constexpr int kUserMessageExpandDurationMs = 420;
+constexpr int kCodeBlockLoadingFrameMs = 16;
 constexpr bool kAiChatLayoutDebug = false;
 constexpr int kViewPaintWidthInset = 4;
 
@@ -117,6 +118,7 @@ AiChatMessageListView::AiChatMessageListView(QWidget* parent)
     , m_delegate(new AiChatMessageDelegate(this))
     , m_scrollAnimation(new QPropertyAnimation(verticalScrollBar(), "value", this))
     , m_copyResetTimer(new QTimer(this))
+    , m_codeBlockLoadingTimer(new QTimer(this))
 {
     setItemDelegate(m_delegate);
     setSelectionMode(QAbstractItemView::NoSelection);
@@ -133,7 +135,13 @@ AiChatMessageListView::AiChatMessageListView(QWidget* parent)
 
     m_scrollAnimation->setEasingCurve(QEasingCurve::OutCubic);
     m_copyResetTimer->setSingleShot(true);
+    m_codeBlockLoadingTimer->setTimerType(Qt::PreciseTimer);
+    m_codeBlockLoadingTimer->setInterval(kCodeBlockLoadingFrameMs);
     connect(m_copyResetTimer, &QTimer::timeout, this, &AiChatMessageListView::clearCopiedCodeBlock);
+    connect(m_codeBlockLoadingTimer, &QTimer::timeout,
+            this, &AiChatMessageListView::updateCodeBlockLoadingAnimation);
+    connect(m_delegate, &AiChatMessageDelegate::streamingMessageIdChanged,
+            this, &AiChatMessageListView::syncCodeBlockLoadingAnimationTimer);
     connect(verticalScrollBar(), &QScrollBar::valueChanged,
             this, &AiChatMessageListView::onScrollValueChanged);
 }
@@ -418,6 +426,11 @@ void AiChatMessageListView::mousePressEvent(QMouseEvent* event)
                 return;
             }
 
+            if (m_delegate->isCodeCopyButtonDisabledAt(option, index, event->pos())) {
+                event->accept();
+                return;
+            }
+
             if (m_delegate->isCodeCopyButtonAt(option, index, event->pos())) {
                 const QString codeText = m_delegate->codeBlockTextAt(option, index, event->pos());
                 const int blockRow = m_delegate->codeCopyBlockRowAt(option, index, event->pos());
@@ -540,6 +553,7 @@ void AiChatMessageListView::mouseMoveEvent(QMouseEvent* event)
 
     bool overUrl = false;
     bool overCodeCopy = false;
+    bool overCodeCopyDisabled = false;
     bool overSettingAction = false;
     bool overMessageAction = false;
     bool overText = false;
@@ -556,13 +570,18 @@ void AiChatMessageListView::mouseMoveEvent(QMouseEvent* event)
             hoveredUserCopyIndex = index;
         }
         overMessageAction = messageAction != AiChatMessageDelegate::MessageAction::None;
-        overCodeCopy = !overMessageAction && m_delegate->isCodeCopyButtonAt(option, index, event->pos());
-        overSettingAction = !overMessageAction && !overCodeCopy &&
+        overCodeCopyDisabled = !overMessageAction &&
+                m_delegate->isCodeCopyButtonDisabledAt(option, index, event->pos());
+        overCodeCopy = !overMessageAction && !overCodeCopyDisabled &&
+                m_delegate->isCodeCopyButtonAt(option, index, event->pos());
+        overSettingAction = !overMessageAction && !overCodeCopyDisabled && !overCodeCopy &&
                 m_delegate->isSettingActionButtonAt(option, index, event->pos());
-        overUrl = !overCodeCopy && !overSettingAction && !m_delegate->urlAt(option, index, event->pos()).isEmpty();
+        overUrl = !overCodeCopyDisabled && !overCodeCopy && !overSettingAction &&
+                !m_delegate->urlAt(option, index, event->pos()).isEmpty();
         overText = overMessageAction ||
                 overUrl ||
                 overCodeCopy ||
+                overCodeCopyDisabled ||
                 overSettingAction ||
                 m_delegate->characterIndexAt(option, index, event->pos()) >= 0;
         if (kAiChatLayoutDebug && index.data(AiChatMessageListModel::IsFromUserRole).toBool() &&
@@ -581,8 +600,10 @@ void AiChatMessageListView::mouseMoveEvent(QMouseEvent* event)
         }
     }
     updateHoveredUserCopyIndex(hoveredUserCopyIndex);
-    viewport()->setCursor((overMessageAction || overCodeCopy || overSettingAction || overUrl) ? Qt::PointingHandCursor
-                                  : (overText ? Qt::IBeamCursor : Qt::ArrowCursor));
+    viewport()->setCursor(overCodeCopyDisabled ? Qt::ForbiddenCursor
+                                  : ((overMessageAction || overCodeCopy || overSettingAction || overUrl)
+                                             ? Qt::PointingHandCursor
+                                             : (overText ? Qt::IBeamCursor : Qt::ArrowCursor)));
 
     OverlayScrollListView::mouseMoveEvent(event);
 }
@@ -696,6 +717,58 @@ bool AiChatMessageListView::hasDownwardScrollIntent(const QWheelEvent* event) co
     }
 
     return event->angleDelta().y() < 0;
+}
+
+void AiChatMessageListView::updateCodeBlockLoadingAnimation()
+{
+    if (!model() || m_delegate->streamingMessageId().isEmpty()) {
+        syncCodeBlockLoadingAnimationTimer();
+        return;
+    }
+
+    const QString streamingMessageId = m_delegate->streamingMessageId();
+    if (!m_codeBlockLoadingIndex.isValid() ||
+            m_codeBlockLoadingIndex.data(AiChatMessageListModel::MessageIdRole).toString() != streamingMessageId) {
+        m_codeBlockLoadingIndex = QPersistentModelIndex();
+        const int rows = model()->rowCount();
+        for (int row = 0; row < rows; ++row) {
+            const QModelIndex index = model()->index(row, 0);
+            if (index.isValid() &&
+                    index.data(AiChatMessageListModel::MessageIdRole).toString() == streamingMessageId) {
+                m_codeBlockLoadingIndex = QPersistentModelIndex(index);
+                break;
+            }
+        }
+    }
+
+    if (!m_codeBlockLoadingIndex.isValid()) {
+        return;
+    }
+
+    const QStyleOptionViewItem option = viewOptionForIndex(m_codeBlockLoadingIndex);
+    const QRect rect = m_delegate->streamingCodeBlockUpdateRect(option, m_codeBlockLoadingIndex);
+    if (rect.isValid() && viewport()->rect().intersects(rect)) {
+        viewport()->update(rect);
+    }
+}
+
+void AiChatMessageListView::syncCodeBlockLoadingAnimationTimer()
+{
+    if (!m_codeBlockLoadingTimer) {
+        return;
+    }
+
+    if (m_delegate->streamingMessageId().isEmpty()) {
+        m_codeBlockLoadingTimer->stop();
+        m_codeBlockLoadingIndex = QPersistentModelIndex();
+        viewport()->update();
+        return;
+    }
+
+    m_codeBlockLoadingIndex = QPersistentModelIndex();
+    if (!m_codeBlockLoadingTimer->isActive()) {
+        m_codeBlockLoadingTimer->start();
+    }
 }
 
 QStyleOptionViewItem AiChatMessageListView::viewOptionForIndex(const QModelIndex& index) const

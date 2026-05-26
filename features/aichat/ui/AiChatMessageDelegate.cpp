@@ -86,10 +86,12 @@ class MarkdownBlockModel final : public QAbstractListModel
 public:
     MarkdownBlockModel(const QList<MarkdownRenderer::Block>* blocks,
                        const QVector<MarkdownBlockSelection>& selections,
+                       const QVector<bool>& loadingRows,
                        QObject* parent = nullptr)
         : QAbstractListModel(parent)
         , m_blocks(blocks)
         , m_selections(selections)
+        , m_loadingRows(loadingRows)
     {
     }
 
@@ -121,6 +123,8 @@ public:
             return index.row() < m_selections.size() ? m_selections.at(index.row()).start : -1;
         case MarkdownDocumentModel::SelectionEndRole:
             return index.row() < m_selections.size() ? m_selections.at(index.row()).end : -1;
+        case MarkdownDocumentModel::CodeBlockLoadingRole:
+            return index.row() < m_loadingRows.size() && m_loadingRows.at(index.row());
         default:
             return {};
         }
@@ -129,6 +133,7 @@ public:
 private:
     const QList<MarkdownRenderer::Block>* m_blocks = nullptr;
     QVector<MarkdownBlockSelection> m_selections;
+    QVector<bool> m_loadingRows;
 };
 
 QColor linkTextColor(bool dark, bool isFromUser, const QColor& textColor)
@@ -666,7 +671,7 @@ int AiChatMessageDelegate::characterIndexAt(const QStyleOptionViewItem& option,
                                               markdownLayout.blockHeights,
                                               localY);
         if (row >= 0 && row < markdown.blocks.size()) {
-            MarkdownBlockModel markdownModel(&markdown.blocks, {});
+            MarkdownBlockModel markdownModel(&markdown.blocks, {}, {});
             QStyleOptionViewItem blockOption(option);
             blockOption.font = messageFont();
             blockOption.palette.setColor(QPalette::Text,
@@ -813,7 +818,7 @@ QString AiChatMessageDelegate::urlAt(const QStyleOptionViewItem& option,
                                               markdownLayout.blockHeights,
                                               localY);
         if (row >= 0 && row < markdown.blocks.size()) {
-            MarkdownBlockModel markdownModel(&markdown.blocks, {});
+            MarkdownBlockModel markdownModel(&markdown.blocks, {}, {});
             QStyleOptionViewItem blockOption(option);
             blockOption.font = messageFont();
             blockOption.palette.setColor(QPalette::Text,
@@ -883,10 +888,36 @@ bool AiChatMessageDelegate::isCodeCopyButtonAt(const QStyleOptionViewItem& optio
     }
 
     const QList<MarkdownRenderer::Block> blocks{hit.block};
-    MarkdownBlockModel markdownModel(&blocks, {});
+    MarkdownBlockModel markdownModel(&blocks, {}, {});
     return m_markdownDelegate.isCodeCopyButtonAtPosition(hit.option,
                                                         markdownModel.index(0, 0),
                                                         viewportPos);
+}
+
+bool AiChatMessageDelegate::isCodeCopyButtonDisabledAt(const QStyleOptionViewItem& option,
+                                                       const QModelIndex& index,
+                                                       const QPoint& viewportPos) const
+{
+    const MarkdownBlockHit hit = markdownBlockAt(option, index, viewportPos);
+    if (!hit.valid || hit.block.type != MarkdownRenderer::BlockType::CodeBlock) {
+        return false;
+    }
+
+    const bool loading = hit.block.open &&
+            index.data(AiChatMessageListModel::MessageIdRole).toString() == m_streamingMessageId;
+    if (!loading) {
+        return false;
+    }
+
+    const QList<MarkdownRenderer::Block> blocks{hit.block};
+    const QVector<bool> loadingRows{true};
+    MarkdownBlockModel markdownModel(&blocks, {}, loadingRows);
+    return m_markdownDelegate.isCodeCopyButtonAtPosition(hit.option,
+                                                         markdownModel.index(0, 0),
+                                                         viewportPos) &&
+            !m_markdownDelegate.isCodeCopyButtonEnabledAtPosition(hit.option,
+                                                                  markdownModel.index(0, 0),
+                                                                  viewportPos);
 }
 
 bool AiChatMessageDelegate::isSettingActionButtonAt(const QStyleOptionViewItem& option,
@@ -903,7 +934,7 @@ bool AiChatMessageDelegate::isSettingActionButtonAt(const QStyleOptionViewItem& 
     }
 
     const QList<MarkdownRenderer::Block> blocks{hit.block};
-    MarkdownBlockModel markdownModel(&blocks, {});
+    MarkdownBlockModel markdownModel(&blocks, {}, {});
     return m_markdownDelegate.isSettingActionButtonAtPosition(hit.option,
                                                               markdownModel.index(0, 0),
                                                               viewportPos);
@@ -949,7 +980,8 @@ int AiChatMessageDelegate::codeCopyBlockRowAt(const QStyleOptionViewItem& option
     const MarkdownBlockHit hit = markdownBlockAt(option, index, viewportPos);
     if (!hit.valid ||
             hit.block.type != MarkdownRenderer::BlockType::CodeBlock ||
-            !isCodeCopyButtonAt(option, index, viewportPos)) {
+            !isCodeCopyButtonAt(option, index, viewportPos) ||
+            isCodeCopyButtonDisabledAt(option, index, viewportPos)) {
         return -1;
     }
 
@@ -963,7 +995,8 @@ QString AiChatMessageDelegate::codeBlockTextAt(const QStyleOptionViewItem& optio
     const MarkdownBlockHit hit = markdownBlockAt(option, index, viewportPos);
     if (!hit.valid ||
             hit.block.type != MarkdownRenderer::BlockType::CodeBlock ||
-            !isCodeCopyButtonAt(option, index, viewportPos)) {
+            !isCodeCopyButtonAt(option, index, viewportPos) ||
+            isCodeCopyButtonDisabledAt(option, index, viewportPos)) {
         return {};
     }
 
@@ -1080,12 +1113,108 @@ AiChatMessageDelegate::MessageFeedback AiChatMessageDelegate::messageFeedback(
 
 void AiChatMessageDelegate::setStreamingMessageId(const QString& messageId)
 {
+    if (m_streamingMessageId == messageId) {
+        return;
+    }
     m_streamingMessageId = messageId;
+    emit streamingMessageIdChanged();
 }
 
 QString AiChatMessageDelegate::streamingMessageId() const
 {
     return m_streamingMessageId;
+}
+
+bool AiChatMessageDelegate::hasStreamingOpenCodeBlock(const QModelIndex& index) const
+{
+    if (m_streamingMessageId.isEmpty() ||
+            !index.isValid() ||
+            index.data(AiChatMessageListModel::MessageIdRole).toString() != m_streamingMessageId) {
+        return false;
+    }
+
+    const QString text = index.data(AiChatMessageListModel::TextRole).toString();
+    if (text.isEmpty()) {
+        return false;
+    }
+
+    const MarkdownCacheEntry& markdown = cachedMarkdown(text);
+    for (const MarkdownRenderer::Block& block : markdown.blocks) {
+        if (block.type == MarkdownRenderer::BlockType::CodeBlock && block.open) {
+            return true;
+        }
+    }
+    return false;
+}
+
+QRect AiChatMessageDelegate::streamingCodeBlockUpdateRect(const QStyleOptionViewItem& option,
+                                                          const QModelIndex& index) const
+{
+    if (m_streamingMessageId.isEmpty() ||
+            !index.isValid() ||
+            index.data(AiChatMessageListModel::IsBottomSpaceRole).toBool() ||
+            index.data(AiChatMessageListModel::IsFromUserRole).toBool() ||
+            index.data(AiChatMessageListModel::MessageIdRole).toString() != m_streamingMessageId) {
+        return {};
+    }
+
+    const QString text = index.data(AiChatMessageListModel::TextRole).toString();
+    if (text.isEmpty()) {
+        return {};
+    }
+
+    const LayoutMetrics metrics = layoutMetrics(option, index);
+    const MarkdownCacheEntry& markdown = cachedMarkdown(text);
+    if (markdown.blocks.isEmpty()) {
+        return {};
+    }
+
+    const MarkdownLayoutCacheEntry& markdownLayout = cachedMarkdownLayout(markdown,
+                                                                          option,
+                                                                          messageFont(),
+                                                                          metrics.textRect.width());
+    QVector<bool> loadingRows(markdown.blocks.size());
+    bool hasLoadingRow = false;
+    for (int row = 0; row < markdown.blocks.size(); ++row) {
+        const MarkdownRenderer::Block& block = markdown.blocks.at(row);
+        const bool loading = block.type == MarkdownRenderer::BlockType::CodeBlock && block.open;
+        loadingRows[row] = loading;
+        hasLoadingRow = hasLoadingRow || loading;
+    }
+
+    if (!hasLoadingRow) {
+        return {};
+    }
+
+    MarkdownBlockModel markdownModel(&markdown.blocks, {}, loadingRows);
+    const QRect viewportRect = option.widget ? option.widget->rect() : option.rect;
+    QRect updateRect;
+    for (int row = 0; row < markdown.blocks.size(); ++row) {
+        if (!loadingRows.at(row)) {
+            continue;
+        }
+
+        QStyleOptionViewItem blockOption(option);
+        blockOption.font = messageFont();
+        blockOption.rect = QRect(metrics.textRect.left(),
+                                 metrics.textRect.top() + markdownLayout.blockOffsets.at(row),
+                                 metrics.textRect.width(),
+                                 markdownLayout.blockHeights.at(row));
+        blockOption.state &= ~(QStyle::State_Selected |
+                               QStyle::State_MouseOver |
+                               QStyle::State_HasFocus);
+        blockOption.state |= QStyle::State_Enabled;
+
+        const QModelIndex blockIndex = markdownModel.index(row, 0);
+        const QRect blockUpdate = m_markdownDelegate.codeBlockLoadingUpdateRect(blockOption, blockIndex);
+        if (!blockUpdate.isValid() || !viewportRect.intersects(blockUpdate)) {
+            continue;
+        }
+
+        updateRect = updateRect.isNull() ? blockUpdate : updateRect.united(blockUpdate);
+    }
+
+    return updateRect;
 }
 
 void AiChatMessageDelegate::setCopiedCodeBlock(const QModelIndex& index, int blockRow)
@@ -1527,7 +1656,7 @@ const AiChatMessageDelegate::MarkdownLayoutCacheEntry& AiChatMessageDelegate::ca
     layout->blockHeights.reserve(entry.blocks.size());
     layout->blockOffsets.reserve(entry.blocks.size());
 
-    MarkdownBlockModel markdownModel(&entry.blocks, {});
+    MarkdownBlockModel markdownModel(&entry.blocks, {}, {});
     int height = 0;
     for (int row = 0; row < entry.blocks.size(); ++row) {
         QStyleOptionViewItem blockOption(option);
@@ -1668,7 +1797,18 @@ void AiChatMessageDelegate::paintMarkdownMessage(QPainter* painter,
         }
     }
 
-    MarkdownBlockModel markdownModel(&entry.blocks, selections);
+    QVector<bool> loadingRows;
+    const bool isStreamingMessage = !m_streamingMessageId.isEmpty() &&
+            index.data(AiChatMessageListModel::MessageIdRole).toString() == m_streamingMessageId;
+    if (isStreamingMessage) {
+        loadingRows.resize(entry.blocks.size());
+        for (int row = 0; row < entry.blocks.size(); ++row) {
+            const MarkdownRenderer::Block& block = entry.blocks.at(row);
+            loadingRows[row] = block.type == MarkdownRenderer::BlockType::CodeBlock && block.open;
+        }
+    }
+
+    MarkdownBlockModel markdownModel(&entry.blocks, selections, loadingRows);
     QVariant previousCopiedRowProperty;
     QVariant previousRevokedRowsProperty;
     QWidget* optionWidget = const_cast<QWidget*>(option.widget);
