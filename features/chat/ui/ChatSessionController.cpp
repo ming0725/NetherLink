@@ -281,7 +281,7 @@ bool ChatSessionController::canEditGroupInfo() const
 
 bool ChatSessionController::canExitGroup() const
 {
-    return canExitGroup(m_group);
+    return !m_meta.conversationId.isEmpty() && m_meta.isGroup;
 }
 
 void ChatSessionController::loadPanelData()
@@ -307,7 +307,7 @@ void ChatSessionController::loadPanelData()
             const bool canEdit = validGroup &&
                                  (GroupRepository::instance().isCurrentUserGroupOwner(group) ||
                                   GroupRepository::instance().isCurrentUserGroupAdmin(group));
-            const bool canExit = validGroup && !GroupRepository::instance().isCurrentUserGroupOwner(group);
+            const bool canExit = validGroup;
 
             if (!controller) {
                 return;
@@ -712,7 +712,7 @@ void ChatSessionController::deleteFriend()
 
 void ChatSessionController::exitGroup()
 {
-    if (m_meta.conversationId.isEmpty() || !m_meta.isGroup || !canExitGroup(m_group)) {
+    if (m_meta.conversationId.isEmpty() || !m_meta.isGroup) {
         return;
     }
 
@@ -749,12 +749,6 @@ bool ChatSessionController::canEditGroupInfo(const Group& group) const
     return !group.groupId.isEmpty() &&
            (GroupRepository::instance().isCurrentUserGroupOwner(group) ||
             GroupRepository::instance().isCurrentUserGroupAdmin(group));
-}
-
-bool ChatSessionController::canExitGroup(const Group& group) const
-{
-    return !group.groupId.isEmpty() &&
-           !GroupRepository::instance().isCurrentUserGroupOwner(group);
 }
 
 bool ChatSessionController::canEditMemberNickname(const Group& group, const QString& userId) const

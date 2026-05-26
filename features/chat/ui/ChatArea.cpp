@@ -544,8 +544,13 @@ void ChatArea::appendRepositoryMessage(const QString& changedConversationId,
             changedConversationId != conversationId() ||
             m_state.loadingInitialMessages ||
             !message ||
-            !chatModel ||
-            chatModel->indexForMessage(message.get()).isValid()) {
+            !chatModel) {
+        return;
+    }
+
+    if (chatModel->indexForMessage(message.get()).isValid() ||
+            (!message->getMessageId().isEmpty() &&
+             chatModel->messageById(message->getMessageId()))) {
         return;
     }
 

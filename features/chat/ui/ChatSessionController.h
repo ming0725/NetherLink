@@ -69,7 +69,6 @@ private:
     void refreshSessionData(bool emitChange);
     bool hasCurrentConversation(const QString& changedConversationId) const;
     bool canEditGroupInfo(const Group& group) const;
-    bool canExitGroup(const Group& group) const;
     bool canEditMemberNickname(const Group& group, const QString& userId) const;
     bool canPromoteMemberToAdmin(const Group& group, const QString& userId) const;
     bool canCancelMemberAdmin(const Group& group, const QString& userId) const;

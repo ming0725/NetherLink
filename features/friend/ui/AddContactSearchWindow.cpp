@@ -1696,7 +1696,7 @@ void AddContactSearchWindow::performSearch()
 QVector<AddContactSearchItem> AddContactSearchWindow::searchUsers(const QString& keyword) const
 {
     QVector<AddContactSearchItem> items;
-    const QVector<User> users = UserRepository::instance().requestUserSearch(keyword, kSearchResultLimit);
+    const QVector<User> users = UserRepository::instance().requestUserSearch(keyword, -1);
     items.reserve(qMin(users.size(), kSearchResultLimit));
     for (const User& user : users) {
         if (user.isFriend || CurrentUser::instance().isCurrentUserId(user.id)) {
@@ -1716,7 +1716,7 @@ QVector<AddContactSearchItem> AddContactSearchWindow::searchUsers(const QString&
 QVector<AddContactSearchItem> AddContactSearchWindow::searchGroups(const QString& keyword) const
 {
     QVector<AddContactSearchItem> items;
-    const QVector<Group> groups = GroupRepository::instance().requestGroupSearch(keyword, kSearchResultLimit);
+    const QVector<Group> groups = GroupRepository::instance().requestGroupSearch(keyword, -1);
     items.reserve(qMin(groups.size(), kSearchResultLimit));
     int visibleGroupIndex = 0;
     for (const Group& group : groups) {
