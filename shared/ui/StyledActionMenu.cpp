@@ -2,6 +2,7 @@
 #include "shared/services/AppFonts.h"
 
 #include <QAction>
+#include <QApplication>
 #include <QCursor>
 #include <QEvent>
 #include <QFontMetrics>
@@ -57,6 +58,7 @@ constexpr int ItemHeight = 28;
 constexpr int ItemHorizontalPadding = 10;
 constexpr int ItemIconGap = 6;
 constexpr int ArrowWidth = 10;
+constexpr int ArrowTextGap = 12;
 constexpr int ItemFontSize = 13;
 constexpr int SeparatorHeight = 3;
 constexpr int MaxMouseReleaseWaitAttempts = 40;
@@ -86,6 +88,48 @@ QString shortcutText(const QString& text)
     return parts.size() > 1 ? parts.constLast() : QString();
 }
 
+QFont menuItemFont(const QFont& base)
+{
+    return AppFonts::pixelSizedFont(base, ItemFontSize);
+}
+
+int menuItemRowWidth(const QFontMetrics& metrics,
+                     const QString& text,
+                     bool checkable,
+                     bool hasIcon,
+                     bool hasShortcut,
+                     int shortcutWidth)
+{
+    int width = MenuPadding * 2 + ItemHorizontalPadding * 2 + ArrowTextGap + ArrowWidth;
+    if (checkable) {
+        width += 12 + ItemIconGap + 2;
+    }
+    if (hasIcon) {
+        width += 18 + ItemIconGap;
+    }
+
+    width += metrics.horizontalAdvance(menuText(text));
+    if (hasShortcut) {
+        width += 12 + shortcutWidth;
+    }
+    return width;
+}
+
+int menuItemRowWidth(const QFontMetrics& metrics, QAction* action)
+{
+    if (!action || action->isSeparator()) {
+        return 0;
+    }
+
+    const QString shortcut = shortcutText(action->text());
+    return menuItemRowWidth(metrics,
+                            action->text(),
+                            action->isCheckable(),
+                            !action->icon().isNull(),
+                            !shortcut.isEmpty(),
+                            metrics.horizontalAdvance(shortcut));
+}
+
 class StyledActionMenuSizeStyle final : public QProxyStyle
 {
 public:
@@ -105,8 +149,20 @@ public:
             return result;
         }
 
+        if (menuItem) {
+            const QFontMetrics metrics(menuItemFont(widget ? widget->font() : QApplication::font()));
+            const QString shortcut = shortcutText(menuItem->text);
+            result.setWidth(qMax(result.width(),
+                                 menuItemRowWidth(metrics,
+                                                  menuItem->text,
+                                                  menuItem->checkType != QStyleOptionMenuItem::NotCheckable,
+                                                  !menuItem->icon.isNull(),
+                                                  !shortcut.isEmpty(),
+                                                  menuItem->reservedShortcutWidth > 0
+                                                          ? menuItem->reservedShortcutWidth
+                                                          : metrics.horizontalAdvance(shortcut))));
+        }
         result.setHeight(ItemHeight);
-        result.rwidth() += 20;
         return result;
     }
 };
@@ -129,9 +185,7 @@ void paintMenuPanel(QPainter& painter,
     painter.setBrush(ThemeManager::instance().color(ThemeColor::ContextMenuBackground));
     painter.drawRoundedRect(panelRect, MenuRadius, MenuRadius);
 
-    QFont itemFont = painter.font();
-    itemFont.setPixelSize(ItemFontSize);
-    painter.setFont(itemFont);
+    painter.setFont(menuItemFont(painter.font()));
 
     const QColor separatorColor = readColor(widget->property(MenuSeparatorColorProperty),
                                            ThemeManager::instance().color(ThemeColor::ContextMenuSeparator));
@@ -178,7 +232,7 @@ void paintMenuPanel(QPainter& painter,
         painter.setPen(selected ? hoverTextColor : normalTextColor);
 
         QRect textRect = itemRect.adjusted(ItemHorizontalPadding, 0,
-                                           -ItemHorizontalPadding - ArrowWidth, 0);
+                                           -ItemHorizontalPadding - ArrowTextGap - ArrowWidth, 0);
         if (action->isCheckable()) {
             const int checkSize = 12;
             const QRect checkRect(itemRect.left() + ItemHorizontalPadding,
@@ -222,8 +276,7 @@ void paintMenuPanel(QPainter& painter,
         }
 
         painter.drawText(textRect, Qt::AlignVCenter | Qt::AlignLeft | Qt::TextSingleLine,
-                         painter.fontMetrics().elidedText(menuText(action->text()),
-                                                          Qt::ElideRight, textRect.width()));
+                         menuText(action->text()));
 
         if (!shortcut.isEmpty()) {
             painter.drawText(shortcutRect, Qt::AlignVCenter | Qt::AlignRight | Qt::TextSingleLine,
@@ -231,12 +284,12 @@ void paintMenuPanel(QPainter& painter,
         }
 
         if (hasSubmenu(action)) {
-            const int cx = itemRect.right() - ItemHorizontalPadding - 3;
-            const int cy = itemRect.center().y();
+            const qreal tipX = itemRect.right() - ItemHorizontalPadding - 3.0;
+            const qreal centerY = itemRect.top() + itemRect.height() / 2.0;
             QPainterPath arrow;
-            arrow.moveTo(cx - 3, cy - 5);
-            arrow.lineTo(cx + 3, cy);
-            arrow.lineTo(cx - 3, cy + 5);
+            arrow.moveTo(tipX - 6.0, centerY - 5.0);
+            arrow.lineTo(tipX, centerY);
+            arrow.lineTo(tipX - 6.0, centerY + 5.0);
             painter.setPen(QPen(selected ? hoverTextColor : ThemeManager::instance().color(ThemeColor::ContextMenuShortcutText), 1.6,
                                 Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
             painter.drawPath(arrow);
@@ -440,8 +493,8 @@ QString StyledActionMenu::title() const
 QSize StyledActionMenu::sizeHint() const
 {
 #ifdef Q_OS_WIN
-    const QFontMetrics metrics(font());
-    int maxRowWidth = 126;
+    const QFontMetrics metrics(menuItemFont(font()));
+    int maxRowWidth = 0;
     int totalHeight = 0;
 
     for (QAction* action : visibleActions()) {
@@ -450,28 +503,12 @@ QSize StyledActionMenu::sizeHint() const
             continue;
         }
 
-        int rowWidth = ItemHorizontalPadding * 2 + ArrowWidth;
-        if (action->isCheckable()) {
-            rowWidth += 18 + ItemIconGap;
-        }
-        if (!action->icon().isNull()) {
-            rowWidth += 18 + ItemIconGap;
-        }
-        rowWidth += metrics.horizontalAdvance(menuText(action->text()));
-        const QString shortcut = shortcutText(action->text());
-        if (!shortcut.isEmpty()) {
-            rowWidth += 18 + metrics.horizontalAdvance(shortcut);
-        }
-        if (m_submenus.contains(action)) {
-            rowWidth += ArrowWidth;
-        }
-
-        maxRowWidth = qMax(maxRowWidth, rowWidth);
+        maxRowWidth = qMax(maxRowWidth, menuItemRowWidth(metrics, action));
         totalHeight += ItemHeight;
     }
 
     const int edge = PopupChromeMargin + MenuPadding;
-    return QSize(maxRowWidth + edge * 2, qMax(ItemHeight, totalHeight) + edge * 2);
+    return QSize(qMax(1, maxRowWidth) + edge * 2, qMax(ItemHeight, totalHeight) + edge * 2);
 #else
     m_qtMenu->ensurePolished();
     return m_qtMenu->sizeHint();
@@ -480,9 +517,11 @@ QSize StyledActionMenu::sizeHint() const
 
 void StyledActionMenu::setFixedWidth(int width)
 {
-    QWidget::setFixedWidth(width);
+    setMinimumWidth(width);
+    setMaximumWidth(QWIDGETSIZE_MAX);
 #ifndef Q_OS_WIN
-    m_qtMenu->setFixedWidth(width);
+    m_qtMenu->setMinimumWidth(width);
+    m_qtMenu->setMaximumWidth(QWIDGETSIZE_MAX);
 #endif
 }
 
@@ -877,6 +916,21 @@ bool StyledActionMenu::childMenuContainsGlobalPoint(const QPoint& globalPos) con
     return false;
 }
 
+bool StyledActionMenu::hasReachedSubmenuCorridorTarget(QAction* action) const
+{
+    if (m_submenuCorridorAction != action || m_submenuCorridorAnchorGlobalPos.isNull()) {
+        return false;
+    }
+
+    StyledActionMenu* submenu = m_submenus.value(action, nullptr);
+    if (!submenu || !submenu->isVisible()) {
+        return false;
+    }
+
+    const QRect submenuRect(submenu->mapToGlobal(QPoint(0, 0)), submenu->size());
+    return submenuRect.contains(m_submenuCorridorAnchorGlobalPos);
+}
+
 bool StyledActionMenu::isInSubmenuHoverCorridor(QAction* action, const QPoint& globalPos) const
 {
     StyledActionMenu* submenu = m_submenus.value(action, nullptr);
@@ -889,22 +943,32 @@ bool StyledActionMenu::isInSubmenuHoverCorridor(QAction* action, const QPoint& g
         return false;
     }
 
-    QRect actionRect(mapToGlobal(localActionRect.topLeft()), localActionRect.size());
-    QRect submenuRect(submenu->mapToGlobal(QPoint(0, 0)), submenu->size());
+    const QRect rawActionRect(mapToGlobal(localActionRect.topLeft()), localActionRect.size());
+    const QRect rawSubmenuRect(submenu->mapToGlobal(QPoint(0, 0)), submenu->size());
+    const bool submenuOnRight = rawSubmenuRect.center().x() >= rawActionRect.center().x();
+    QRect actionRect = rawActionRect;
     actionRect.adjust(-SubmenuSourcePadding,
                       -SubmenuSourcePadding,
                       SubmenuSourcePadding,
                       SubmenuSourcePadding);
-    submenuRect.adjust(-SubmenuTargetPadding,
-                       -SubmenuTargetPadding,
-                       SubmenuTargetPadding,
-                       SubmenuTargetPadding);
+    const bool targetReached = hasReachedSubmenuCorridorTarget(action);
+    QRect submenuRect = rawSubmenuRect;
+    if (submenuOnRight) {
+        submenuRect.adjust(targetReached ? 0 : -SubmenuTargetPadding,
+                           -SubmenuTargetPadding,
+                           SubmenuTargetPadding,
+                           SubmenuTargetPadding);
+    } else {
+        submenuRect.adjust(-SubmenuTargetPadding,
+                           -SubmenuTargetPadding,
+                           targetReached ? 0 : SubmenuTargetPadding,
+                           SubmenuTargetPadding);
+    }
 
     if (actionRect.contains(globalPos) || submenuRect.contains(globalPos)) {
         return true;
     }
 
-    const bool submenuOnRight = submenuRect.left() >= actionRect.right();
     const int bridgeLeft = submenuOnRight ? actionRect.right() : submenuRect.right();
     const int bridgeRight = submenuOnRight ? submenuRect.left() : actionRect.left();
     const QRect bridgeRect(qMin(bridgeLeft, bridgeRight),
@@ -956,6 +1020,22 @@ bool StyledActionMenu::isInOpenSubmenuHoverCorridor(const QPoint& globalPos) con
     return false;
 }
 
+void StyledActionMenu::updateSubmenuCorridorAnchor(QAction* action, const QPoint& globalPos)
+{
+    if (m_submenuCorridorAction != action) {
+        return;
+    }
+
+    StyledActionMenu* submenu = m_submenus.value(action, nullptr);
+    if (!submenu || !submenu->isVisible()) {
+        return;
+    }
+
+    if (submenu->rect().contains(submenu->mapFromGlobal(globalPos))) {
+        m_submenuCorridorAnchorGlobalPos = globalPos;
+    }
+}
+
 void StyledActionMenu::startHoverTracking()
 {
     if (m_hoverTracker && !m_hoverTracker->isActive()) {
@@ -1001,7 +1081,10 @@ bool StyledActionMenu::updateHoverBranchFromGlobalPosition(const QPoint& globalP
     const QPoint localPos = mapFromGlobal(globalPos);
     if (rect().contains(localPos)) {
         QAction* action = actionAt(localPos);
-        if (action != m_activeAction && m_activeAction && isInSubmenuHoverCorridor(m_activeAction, globalPos)) {
+        if (action != m_activeAction
+                && m_activeAction
+                && !hasReachedSubmenuCorridorTarget(m_activeAction)
+                && isInSubmenuHoverCorridor(m_activeAction, globalPos)) {
             return true;
         }
 
@@ -1026,6 +1109,7 @@ bool StyledActionMenu::updateHoverBranchFromGlobalPosition(const QPoint& globalP
         }
 
         if (submenu->updateHoverBranchFromGlobalPosition(globalPos)) {
+            updateSubmenuCorridorAnchor(action, globalPos);
             setActiveAction(action);
             hideChildMenus(submenu);
             return true;

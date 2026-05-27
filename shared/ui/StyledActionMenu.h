@@ -87,8 +87,10 @@ private:
     StyledActionMenu* rootMenu();
     bool containsGlobalPoint(const QPoint& globalPos) const;
     bool childMenuContainsGlobalPoint(const QPoint& globalPos) const;
+    bool hasReachedSubmenuCorridorTarget(QAction* action) const;
     bool isInSubmenuHoverCorridor(QAction* action, const QPoint& globalPos) const;
     bool isInOpenSubmenuHoverCorridor(const QPoint& globalPos) const;
+    void updateSubmenuCorridorAnchor(QAction* action, const QPoint& globalPos);
     void startHoverTracking();
     void stopHoverTracking();
     void updateHoverFromGlobalPosition(const QPoint& globalPos);
