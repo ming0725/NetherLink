@@ -55,13 +55,15 @@ MessageApplication::LeftPane::LeftPane(QWidget* parent)
             AddContactSearchWindow::open(AddContactSearchWindow::InitialMode::Groups, m_addButton);
         });
         connect(createGroupAction, &QAction::triggered, this, [this]() {
-            const QString groupId = CreateGroupChatPopup::open(m_addButton);
-            if (!groupId.isEmpty() && m_createdGroupCallback) {
-                m_createdGroupCallback(groupId);
-            }
+            QTimer::singleShot(0, this, [this]() {
+                const QString groupId = CreateGroupChatPopup::open(m_addButton);
+                if (!groupId.isEmpty() && m_createdGroupCallback) {
+                    m_createdGroupCallback(groupId);
+                }
+            });
         });
 
-        connect(menu, &QMenu::aboutToHide, this, [this, menu]() {
+        connect(menu, &StyledActionMenu::aboutToHide, this, [this, menu]() {
             m_addButton->setPressedVisual(false);
             menu->deleteLater();
         });

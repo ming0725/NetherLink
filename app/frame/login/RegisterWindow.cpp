@@ -457,6 +457,8 @@ void RegisterWindow::setupUi()
     closeButton->setGeometry(m_titleBar->width() - closeButton->width(), 0, closeButton->width(), closeButton->height());
     minimizeButton->setGeometry(closeButton->x() - minimizeButton->width(), 0,
                                 minimizeButton->width(), minimizeButton->height());
+    minimizeButton->raise();
+    closeButton->raise();
     connect(minimizeButton, &QAbstractButton::clicked, this, &QWidget::showMinimized);
     connect(closeButton, &QAbstractButton::clicked, this, &RegisterWindow::scheduleClose);
 #elif !defined(Q_OS_MACOS)

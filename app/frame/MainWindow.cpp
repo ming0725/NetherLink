@@ -123,14 +123,13 @@ MainWindow::MainWindow(QWidget* parent)
     btnMaximize = new WindowsWindowControlButton(WindowsWindowControlButton::Kind::Maximize, titleBar);
     btnClose = new WindowsWindowControlButton(WindowsWindowControlButton::Kind::Close, titleBar);
 #ifdef Q_OS_WIN
-    btnMinimize->setFixedSize(32, 24);
-    btnMaximize->setFixedSize(32, 24);
-    btnClose->setFixedSize(32, 24);
+    btnMinimize->setFixedSize(28, 28);
+    btnMaximize->setFixedSize(28, 28);
+    btnClose->setFixedSize(28, 28);
 #else
     btnMinimize->setFixedSize(32, 32);
     btnMaximize->setFixedSize(32, 32);
     btnClose->setFixedSize(32, 32);
-#endif
 
     auto hl = new QHBoxLayout(titleBar);
     hl->setContentsMargins(0,0,0,0);
@@ -139,6 +138,7 @@ MainWindow::MainWindow(QWidget* parent)
     hl->addWidget(btnMaximize);
     hl->addWidget(btnClose);
     hl->setSpacing(0);
+#endif
 
     connect(btnMinimize, &QAbstractButton::clicked, this, &QWidget::showMinimized);
     connect(btnMaximize, &QAbstractButton::clicked, this, [this]() {
@@ -473,4 +473,24 @@ void MainWindow::layoutWindow()
     stack->setGeometry(x + barW, y, w - barW, h);
     titleBar->setGeometry(titleBarX, y, titleBarW, titleBar->height());
     titleBar->raise();
+
+#ifdef Q_OS_WIN
+    if (btnMinimize && btnMaximize && btnClose) {
+        btnClose->setGeometry(titleBar->width() - btnClose->width(),
+                              0,
+                              btnClose->width(),
+                              btnClose->height());
+        btnMaximize->setGeometry(btnClose->x() - btnMaximize->width(),
+                                 0,
+                                 btnMaximize->width(),
+                                 btnMaximize->height());
+        btnMinimize->setGeometry(btnMaximize->x() - btnMinimize->width(),
+                                 0,
+                                 btnMinimize->width(),
+                                 btnMinimize->height());
+        btnMinimize->raise();
+        btnMaximize->raise();
+        btnClose->raise();
+    }
+#endif
 }

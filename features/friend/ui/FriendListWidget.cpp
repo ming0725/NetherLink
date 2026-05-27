@@ -588,7 +588,7 @@ void FriendListWidget::showFriendMenu(const QPoint& globalPos, const QModelIndex
         deleteFriendFromMenu(userId);
     });
 
-    connect(menu, &QMenu::aboutToHide, this, [this, menu]() {
+    connect(menu, &StyledActionMenu::aboutToHide, this, [this, menu]() {
         m_model->setContextMenuFriend({});
         viewport()->update();
         menu->deleteLater();

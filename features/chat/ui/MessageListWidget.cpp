@@ -233,7 +233,7 @@ void MessageListWidget::showConversationMenu(const QPoint& globalPos, const QMod
         viewport()->update();
     });
 
-    connect(menu, &QMenu::aboutToHide, this, [this, menu]() {
+    connect(menu, &StyledActionMenu::aboutToHide, this, [this, menu]() {
         m_model->setContextMenuConversation({});
         viewport()->update();
         menu->deleteLater();

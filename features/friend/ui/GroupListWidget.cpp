@@ -572,7 +572,7 @@ void GroupListWidget::showGroupMenu(const QPoint& globalPos, const QModelIndex& 
         exitGroupFromMenu(groupId);
     });
 
-    connect(menu, &QMenu::aboutToHide, this, [this, menu, groupId = group.groupId]() {
+    connect(menu, &StyledActionMenu::aboutToHide, this, [this, menu, groupId = group.groupId]() {
         m_model->setHoverSuppressedGroup(groupId);
         viewport()->update();
         menu->deleteLater();

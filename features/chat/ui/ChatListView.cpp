@@ -766,7 +766,7 @@ void ChatListView::showSelectionMenu(const QPoint& globalPos)
         copySelectionToClipboard();
     });
 
-    connect(menu, &QMenu::aboutToHide, menu, [menu]() {
+    connect(menu, &StyledActionMenu::aboutToHide, menu, [menu]() {
         menu->deleteLater();
     });
 
@@ -787,7 +787,7 @@ void ChatListView::showUrlMenu(const QPoint& globalPos, const QString& url)
         openUrl(url);
     });
 
-    connect(menu, &QMenu::aboutToHide, menu, [menu]() {
+    connect(menu, &StyledActionMenu::aboutToHide, menu, [menu]() {
         menu->deleteLater();
     });
 

@@ -363,7 +363,7 @@ void PostDetailListView::showSelectionMenu(const QPoint& globalPos)
         });
     }
 
-    connect(menu, &QMenu::aboutToHide, menu, [menu]() {
+    connect(menu, &StyledActionMenu::aboutToHide, menu, [menu]() {
         menu->deleteLater();
     });
 
@@ -389,7 +389,7 @@ void PostDetailListView::showTargetMenu(const QPoint& globalPos,
         }
     });
 
-    connect(menu, &QMenu::aboutToHide, menu, [menu]() {
+    connect(menu, &StyledActionMenu::aboutToHide, menu, [menu]() {
         menu->deleteLater();
     });
 

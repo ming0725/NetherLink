@@ -432,7 +432,7 @@ GroupDetailPage::GroupDetailPage(QWidget* parent)
     connect(m_copyIdButton, &QToolButton::clicked, this, &GroupDetailPage::copyCurrentId);
 
     connect(m_categoryButton, &QToolButton::clicked, this, &GroupDetailPage::showCategoryMenu);
-    connect(m_categoryMenu, &QMenu::aboutToHide, this, [this]() {
+    connect(m_categoryMenu, &StyledActionMenu::aboutToHide, this, [this]() {
         m_categoryButton->setDown(false);
         static_cast<CategorySelectButton*>(m_categoryButton)->setMenuHoverSuppressed(true);
         m_categoryButton->update();
@@ -747,7 +747,7 @@ void GroupDetailPage::showCategoryMenu()
 
 void GroupDetailPage::rebuildCategoryMenu()
 {
-    QMenu* menu = m_categoryMenu;
+    StyledActionMenu* menu = m_categoryMenu;
     if (!menu) {
         return;
     }

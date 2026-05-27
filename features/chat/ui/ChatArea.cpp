@@ -36,6 +36,7 @@
 #include <QPushButton>
 #include <QLabel>
 #include <QVBoxLayout>
+#include <QVariant>
 
 namespace {
 
@@ -1631,7 +1632,7 @@ void ChatArea::showAvatarContextMenu(const QString& userId, const QPoint& global
         showFriendProfilePopup(userId, globalPos);
     });
 
-    connect(menu, &QMenu::aboutToHide, menu, [menu]() {
+    connect(menu, &StyledActionMenu::aboutToHide, menu, [menu]() {
         menu->deleteLater();
     });
     menu->popupWhenMouseReleased(globalPos);
@@ -1956,18 +1957,6 @@ void ChatArea::updateInputBarPosition() {
             return;
         }
 
-        if (m_systemFloatingBarsSuppressed) {
-            inputBar->hide();
-            if (referenceMessageNotifier) {
-                referenceMessageNotifier->hide();
-            }
-            if (bottomGapGradientOverlay) {
-                bottomGapGradientOverlay->hide();
-            }
-            adjustBottomSpace();
-            return;
-        }
-
         const int infoPanelWidth = visibleInfoPanelWidth();
         const QRect inputBarRect(
                 kInputBarSideMargin,
@@ -1978,6 +1967,22 @@ void ChatArea::updateInputBarPosition() {
         if (inputBar->isHidden()) {
             inputBar->show();
         }
+
+        if (m_systemFloatingBarsSuppressed) {
+            inputBar->setProperty("systemFloatingBarsSuppressed", true);
+            inputBar->setProperty("systemFloatingBarsSuppressedOpacity", 0.0);
+            inputBar->refreshPlatformAppearance();
+            if (referenceMessageNotifier) {
+                referenceMessageNotifier->hide();
+            }
+            if (bottomGapGradientOverlay) {
+                bottomGapGradientOverlay->hide();
+            }
+            updateHistoryUnreadNotifierPosition();
+            updateNewMessageNotifierPosition();
+            return;
+        }
+
         inputBar->raise();
         inputBar->scheduleLiquidGlassUpdate(0);
 
@@ -2866,15 +2871,15 @@ void ChatArea::setSystemFloatingBarsSuppressed(bool suppressed)
     }
 
     inputBar->setProperty("systemFloatingBarsSuppressed", suppressed);
+    inputBar->setProperty("systemFloatingBarsSuppressedOpacity", suppressed ? 0.0 : QVariant());
 
     if (m_systemFloatingBarsSuppressed == suppressed) {
         if (suppressed && !inputBar->isHidden()) {
             m_inputBarVisibleBeforeSystemSuppression = true;
-            inputBar->hide();
+            inputBar->refreshPlatformAppearance();
             if (bottomGapGradientOverlay) {
                 bottomGapGradientOverlay->hide();
             }
-            adjustBottomSpace();
         }
         return;
     }
@@ -2882,11 +2887,13 @@ void ChatArea::setSystemFloatingBarsSuppressed(bool suppressed)
     m_systemFloatingBarsSuppressed = suppressed;
     if (suppressed) {
         m_inputBarVisibleBeforeSystemSuppression = !inputBar->isHidden();
-        inputBar->hide();
+        inputBar->refreshPlatformAppearance();
         if (bottomGapGradientOverlay) {
             bottomGapGradientOverlay->hide();
         }
-        adjustBottomSpace();
+        updateReferenceMessageNotifier();
+        updateHistoryUnreadNotifierPosition();
+        updateNewMessageNotifierPosition();
         return;
     }
 
@@ -2897,13 +2904,11 @@ void ChatArea::setSystemFloatingBarsSuppressed(bool suppressed)
         inputBar->raise();
         updateHistoryUnreadNotifierPosition();
         updateNewMessageNotifierPosition();
-        adjustBottomSpace();
     } else if (!inputBar->isHidden()) {
         updateInputBarPosition();
         inputBar->refreshPlatformAppearance();
         inputBar->raise();
         updateHistoryUnreadNotifierPosition();
-        adjustBottomSpace();
     }
     m_inputBarVisibleBeforeSystemSuppression = false;
 }

@@ -678,9 +678,7 @@ void ImageCanvas::updateScrollBars()
 
 void ImageCanvas::updateScrollBarGeometry()
 {
-    const QRectF contentRect(contentTopLeft(), contentSize());
-    const QRectF visibleContentRect = contentRect.intersected(QRectF(rect()));
-    if (visibleContentRect.isEmpty()) {
+    if (width() <= 0 || height() <= 0) {
         return;
     }
 
@@ -690,10 +688,10 @@ void ImageCanvas::updateScrollBarGeometry()
             ? kScrollBarThickness + kScrollBarEdgeInset
             : 0;
 
-    const int verticalX = qRound(visibleContentRect.right()) - kScrollBarThickness - kScrollBarEdgeInset;
-    const int verticalY = qRound(visibleContentRect.top()) + kScrollBarEdgeInset;
+    const int verticalX = width() - kScrollBarThickness - kScrollBarEdgeInset;
+    const int verticalY = kScrollBarEdgeInset;
     const int verticalHeight = qMax(0,
-                                    qRound(visibleContentRect.height())
+                                    height()
                                             - kScrollBarEdgeInset * 2
                                             - cornerReserve);
     m_verticalScrollBar->setGeometry(verticalX,
@@ -701,10 +699,10 @@ void ImageCanvas::updateScrollBarGeometry()
                                      kScrollBarThickness,
                                      verticalHeight);
 
-    const int horizontalX = qRound(visibleContentRect.left()) + kScrollBarEdgeInset;
-    const int horizontalY = qRound(visibleContentRect.bottom()) - kScrollBarThickness - kScrollBarEdgeInset;
+    const int horizontalX = kScrollBarEdgeInset;
+    const int horizontalY = height() - kScrollBarThickness - kScrollBarEdgeInset;
     const int horizontalWidth = qMax(0,
-                                     qRound(visibleContentRect.width())
+                                     width()
                                              - kScrollBarEdgeInset * 2
                                              - cornerReserve);
     m_horizontalScrollBar->setGeometry(horizontalX,

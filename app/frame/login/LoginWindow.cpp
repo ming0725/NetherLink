@@ -880,17 +880,27 @@ void LoginWindow::setupUi()
     m_titleBar->setAttribute(Qt::WA_StyledBackground, false);
     setDragTitleBar(m_titleBar);
 
+#ifndef Q_OS_WIN
     auto* titleLayout = new QHBoxLayout(m_titleBar);
     titleLayout->setContentsMargins(14, 0, 0, 0);
     titleLayout->setSpacing(0);
 
     titleLayout->addStretch();
+#endif
 
 #ifdef Q_OS_WIN
     auto* minimizeButton = new WindowsWindowControlButton(WindowsWindowControlButton::Kind::Minimize, m_titleBar);
     auto* closeButton = new WindowsWindowControlButton(WindowsWindowControlButton::Kind::Close, m_titleBar);
-    titleLayout->addWidget(minimizeButton);
-    titleLayout->addWidget(closeButton);
+    closeButton->setGeometry(kWindowWidth - 2 - closeButton->width(),
+                             0,
+                             closeButton->width(),
+                             closeButton->height());
+    minimizeButton->setGeometry(closeButton->x() - minimizeButton->width(),
+                                0,
+                                minimizeButton->width(),
+                                minimizeButton->height());
+    minimizeButton->raise();
+    closeButton->raise();
     connect(minimizeButton, &QAbstractButton::clicked, this, &QWidget::showMinimized);
     connect(closeButton, &QAbstractButton::clicked, this, &QWidget::close);
 #elif !defined(Q_OS_MACOS)

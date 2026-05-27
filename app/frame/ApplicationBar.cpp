@@ -569,7 +569,7 @@ void ApplicationBar::showMoreOptionsMenu()
     connect(themeColorAction, &QAction::triggered, this, &ApplicationBar::appearanceSettingsRequested);
     connect(logoutAction, &QAction::triggered, this, &ApplicationBar::logoutRequested);
 
-    connect(menu, &QMenu::aboutToHide, this, [this, menu]() {
+    connect(menu, &StyledActionMenu::aboutToHide, this, [this, menu]() {
         if (moreOptionsItem) {
             moreOptionsItem->setSelected(false);
         }

@@ -410,7 +410,7 @@ FriendDetailPage::FriendDetailPage(QWidget* parent)
     connect(m_copyIdButton, &QToolButton::clicked, this, &FriendDetailPage::copyCurrentId);
 
     connect(m_groupButton, &QToolButton::clicked, this, &FriendDetailPage::showGroupMenu);
-    connect(m_groupMenu, &QMenu::aboutToHide, this, [this]() {
+    connect(m_groupMenu, &StyledActionMenu::aboutToHide, this, [this]() {
         m_groupButton->setDown(false);
         static_cast<GroupSelectButton*>(m_groupButton)->setMenuHoverSuppressed(true);
         m_groupButton->update();
@@ -704,7 +704,7 @@ void FriendDetailPage::showGroupMenu()
 
 void FriendDetailPage::rebuildGroupMenu()
 {
-    QMenu* menu = m_groupMenu;
+    StyledActionMenu* menu = m_groupMenu;
     if (!menu) {
         return;
     }

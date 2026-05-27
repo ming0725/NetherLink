@@ -1098,7 +1098,7 @@ void GroupConversationInfoPanel::showMemberContextMenu(const User& user, const Q
         });
     }
 
-    connect(menu, &QMenu::aboutToHide, menu, &QObject::deleteLater);
+    connect(menu, &StyledActionMenu::aboutToHide, menu, &QObject::deleteLater);
     menu->popupWhenMouseReleased(globalPos);
 }
 

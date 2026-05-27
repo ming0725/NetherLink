@@ -822,14 +822,14 @@ void AiChatFloatingInputBar::showPermissionMenu()
     addMenuAction(menu, QStringLiteral("Default permissions"), true);
     addMenuAction(menu, QStringLiteral("Ask every time"));
     addMenuAction(menu, QStringLiteral("Read-only"));
-    connect(menu, &QMenu::triggered, this, [this](QAction* action) {
+    connect(menu, &StyledActionMenu::triggered, this, [this](QAction* action) {
         if (!action || action->isSeparator()) {
             return;
         }
         setMenuButtonText(m_permissionButton, action->text());
         updateInputGeometry();
     });
-    connect(menu, &QMenu::aboutToHide, this, [this, menu]() {
+    connect(menu, &StyledActionMenu::aboutToHide, this, [this, menu]() {
         if (auto* button = dynamic_cast<MenuTextButton*>(m_permissionButton)) {
             button->setMenuOpen(false);
         }
@@ -908,7 +908,7 @@ void AiChatFloatingInputBar::showModelMenu()
         });
     }
 
-    connect(menu, &QMenu::aboutToHide, this, [this, menu]() {
+    connect(menu, &StyledActionMenu::aboutToHide, this, [this, menu]() {
         if (auto* button = dynamic_cast<MenuTextButton*>(m_modelButton)) {
             button->setMenuOpen(false);
         }

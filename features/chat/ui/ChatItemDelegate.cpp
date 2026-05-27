@@ -1758,7 +1758,7 @@ void ChatItemDelegate::showContextMenu(const QPoint& pos, const QModelIndex& ind
     });
 
     // 菜单关闭后自动删除，并取消选中状态
-    connect(menu, &QMenu::aboutToHide, menu, [menu, persistentIndex, model = const_cast<QAbstractItemModel*>(index.model())]() {
+    connect(menu, &StyledActionMenu::aboutToHide, menu, [menu, persistentIndex, model = const_cast<QAbstractItemModel*>(index.model())]() {
         if (persistentIndex.isValid()) {
             model->setData(persistentIndex, false, Qt::UserRole + 1);
         }

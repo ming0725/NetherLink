@@ -30,6 +30,10 @@
 #include "shared/ui/StatefulPushButton.h"
 #include "shared/ui/popup/InWindowPopupDialogs.h"
 
+#ifdef Q_OS_WIN
+#include "platform/windows/WindowsPopupChrome.h"
+#endif
+
 namespace {
 
 constexpr int kPopupWidth = 280;
@@ -152,7 +156,11 @@ private:
 } // namespace
 
 FriendProfilePopup::FriendProfilePopup(QWidget* parent)
-    : QWidget(parent, Qt::Popup | Qt::FramelessWindowHint)
+    : QWidget(parent, Qt::Popup | Qt::FramelessWindowHint
+#ifdef Q_OS_WIN
+              | Qt::NoDropShadowWindowHint
+#endif
+              )
     , m_contentWidget(new QWidget(this))
     , m_nameLabel(makeThemedLabel(ThemeColor::PrimaryText, 18, this))
     , m_idPrefixLabel(makeThemedLabel(ThemeColor::TertiaryText, 12, this))
@@ -172,6 +180,9 @@ FriendProfilePopup::FriendProfilePopup(QWidget* parent)
 {
     setFixedWidth(kPopupWidth);
     setAttribute(Qt::WA_TranslucentBackground);
+#ifdef Q_OS_WIN
+    setAttribute(Qt::WA_NoSystemBackground, true);
+#endif
     setFocusPolicy(Qt::StrongFocus);
     m_contentWidget->setAttribute(Qt::WA_TransparentForMouseEvents);
 
@@ -366,6 +377,9 @@ void FriendProfilePopup::resizeEvent(QResizeEvent* event)
 void FriendProfilePopup::showEvent(QShowEvent* event)
 {
     QWidget::showEvent(event);
+#ifdef Q_OS_WIN
+    WindowsPopupChrome::applyModernShadow(this);
+#endif
     layoutPopup();
     updateElidedTexts();
 }

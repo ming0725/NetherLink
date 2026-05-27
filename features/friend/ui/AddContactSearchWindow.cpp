@@ -451,7 +451,7 @@ QWidget* createRequestPopupContent(const QString& title,
         static_cast<PopupSelectButton*>(groupButton)->setMenuHoverSuppressed(true);
         groupButton->update();
     });
-    QObject::connect(groupMenu, &QMenu::aboutToHide, groupButton, [groupButton]() {
+    QObject::connect(groupMenu, &StyledActionMenu::aboutToHide, groupButton, [groupButton]() {
         static_cast<PopupSelectButton*>(groupButton)->setMenuHoverSuppressed(true);
         groupButton->update();
     });

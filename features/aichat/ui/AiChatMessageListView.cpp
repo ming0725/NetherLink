@@ -885,7 +885,7 @@ void AiChatMessageListView::showSelectionMenu(const QPoint& globalPos)
         copySelectionToClipboard();
     });
 
-    connect(menu, &QMenu::aboutToHide, menu, [menu]() {
+    connect(menu, &StyledActionMenu::aboutToHide, menu, [menu]() {
         menu->deleteLater();
     });
 
@@ -904,7 +904,7 @@ void AiChatMessageListView::showBubbleMenu(const QPoint& globalPos, const QModel
         }
     });
 
-    connect(menu, &QMenu::aboutToHide, menu, [this, menu]() {
+    connect(menu, &StyledActionMenu::aboutToHide, menu, [this, menu]() {
         m_delegate->clearBubbleSelection();
         viewport()->update();
         menu->deleteLater();
@@ -927,7 +927,7 @@ void AiChatMessageListView::showUrlMenu(const QPoint& globalPos, const QString& 
         openUrl(url);
     });
 
-    connect(menu, &QMenu::aboutToHide, menu, [menu]() {
+    connect(menu, &StyledActionMenu::aboutToHide, menu, [menu]() {
         menu->deleteLater();
     });
 

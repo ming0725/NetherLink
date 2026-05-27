@@ -242,7 +242,7 @@ FriendApplication::LeftPane::LeftPane(QWidget* parent)
             AddContactSearchWindow::open(AddContactSearchWindow::InitialMode::Groups, m_addButton);
         });
 
-        connect(menu, &QMenu::aboutToHide, this, [this, menu]() {
+        connect(menu, &StyledActionMenu::aboutToHide, this, [this, menu]() {
             m_addButton->setPressedVisual(false);
             menu->deleteLater();
         });

@@ -6,13 +6,54 @@
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
+#include <QPixmap>
 #include <QWidget>
+
+namespace {
+#ifdef Q_OS_WIN
+constexpr int kWindowControlButtonWidth = 32;
+constexpr int kWindowControlButtonHeight = 32;
+constexpr qreal kWindowControlIconScale = 0.5;
+constexpr qreal kMinimizeIconHalfWidth = 3.8;
+constexpr qreal kMinimizeIconYOffset = 2.5;
+constexpr qreal kMaximizeIconSize = 7.0;
+constexpr qreal kRestoreIconSize = 6.0;
+constexpr qreal kRestoreIconOffset = 2.2;
+constexpr qreal kCloseIconRadius = 3.8;
+#else
+constexpr int kWindowControlButtonWidth = 38;
+constexpr int kWindowControlButtonHeight = 32;
+constexpr qreal kMinimizeIconHalfWidth = 5.0;
+constexpr qreal kMinimizeIconYOffset = 3.0;
+constexpr qreal kMaximizeIconSize = 9.0;
+constexpr qreal kRestoreIconSize = 7.5;
+constexpr qreal kRestoreIconOffset = 2.5;
+constexpr qreal kCloseIconRadius = 4.5;
+#endif
+
+#ifdef Q_OS_WIN
+QString windowControlIconPath(WindowsWindowControlButton::Kind kind, bool hoveredOrPressed)
+{
+    switch (kind) {
+    case WindowsWindowControlButton::Kind::Minimize:
+        return QStringLiteral(":/resources/icon/minimize.png");
+    case WindowsWindowControlButton::Kind::Maximize:
+        return QStringLiteral(":/resources/icon/maximize.png");
+    case WindowsWindowControlButton::Kind::Close:
+        return hoveredOrPressed
+                ? QStringLiteral(":/resources/icon/hovered_close.png")
+                : QStringLiteral(":/resources/icon/close.png");
+    }
+    return {};
+}
+#endif
+}
 
 WindowsWindowControlButton::WindowsWindowControlButton(Kind kind, QWidget* parent)
     : QAbstractButton(parent)
     , m_kind(kind)
 {
-    setFixedSize(38, 32);
+    setFixedSize(kWindowControlButtonWidth, kWindowControlButtonHeight);
     setFocusPolicy(Qt::NoFocus);
     setCursor(Qt::PointingHandCursor);
     setAttribute(Qt::WA_StyledBackground, false);
@@ -81,7 +122,27 @@ void WindowsWindowControlButton::paintEvent(QPaintEvent* event)
     painter.setPen(QPen(iconColor, 1.5, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
     painter.setBrush(Qt::NoBrush);
 
+#ifdef Q_OS_WIN
+    const QPointF center(width() / 2.0, height() / 2.0);
+    const QPixmap icon(windowControlIconPath(m_kind, m_hovered || pressed));
+    if (!icon.isNull()) {
+        const qreal iconSize = qMin(width(), height()) * kWindowControlIconScale;
+        const qreal dpr = devicePixelRatioF();
+        const int targetPixelSize = qMax(1, qRound(iconSize * dpr));
+        QPixmap scaledIcon = icon.scaled(QSize(targetPixelSize, targetPixelSize),
+                                         Qt::KeepAspectRatio,
+                                         Qt::SmoothTransformation);
+        scaledIcon.setDevicePixelRatio(dpr);
+        const QSizeF logicalIconSize(scaledIcon.width() / dpr, scaledIcon.height() / dpr);
+        const QPointF iconTopLeft(center.x() - logicalIconSize.width() / 2.0,
+                                  center.y() - logicalIconSize.height() / 2.0);
+        painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
+        painter.drawPixmap(iconTopLeft, scaledIcon);
+        return;
+    }
+#else
     const QPointF center = rect().center();
+#endif
     switch (m_kind) {
     case Kind::Minimize:
         paintMinimizeIcon(painter, center);
@@ -101,19 +162,28 @@ void WindowsWindowControlButton::paintEvent(QPaintEvent* event)
 
 void WindowsWindowControlButton::paintMinimizeIcon(QPainter& painter, const QPointF& center) const
 {
-    painter.drawLine(QPointF(center.x() - 5.0, center.y() + 3.0),
-                     QPointF(center.x() + 5.0, center.y() + 3.0));
+    painter.drawLine(QPointF(center.x() - kMinimizeIconHalfWidth, center.y() + kMinimizeIconYOffset),
+                     QPointF(center.x() + kMinimizeIconHalfWidth, center.y() + kMinimizeIconYOffset));
 }
 
 void WindowsWindowControlButton::paintMaximizeIcon(QPainter& painter, const QPointF& center) const
 {
-    painter.drawRect(QRectF(center.x() - 4.5, center.y() - 4.5, 9.0, 9.0));
+    const qreal halfSize = kMaximizeIconSize / 2.0;
+    painter.drawRect(QRectF(center.x() - halfSize, center.y() - halfSize,
+                            kMaximizeIconSize, kMaximizeIconSize));
 }
 
 void WindowsWindowControlButton::paintRestoreIcon(QPainter& painter, const QPointF& center) const
 {
-    const QRectF backRect(center.x() - 2.5, center.y() - 5.0, 7.5, 7.5);
-    const QRectF frontRect(center.x() - 5.0, center.y() - 2.5, 7.5, 7.5);
+    const qreal halfSize = kRestoreIconSize / 2.0;
+    const QRectF backRect(center.x() - halfSize + kRestoreIconOffset,
+                          center.y() - halfSize - kRestoreIconOffset,
+                          kRestoreIconSize,
+                          kRestoreIconSize);
+    const QRectF frontRect(center.x() - halfSize - kRestoreIconOffset,
+                           center.y() - halfSize + kRestoreIconOffset,
+                           kRestoreIconSize,
+                           kRestoreIconSize);
     QPainterPath path;
     path.addRect(backRect);
     path.addRect(frontRect);
@@ -122,8 +192,8 @@ void WindowsWindowControlButton::paintRestoreIcon(QPainter& painter, const QPoin
 
 void WindowsWindowControlButton::paintCloseIcon(QPainter& painter, const QPointF& center) const
 {
-    painter.drawLine(QPointF(center.x() - 4.5, center.y() - 4.5),
-                     QPointF(center.x() + 4.5, center.y() + 4.5));
-    painter.drawLine(QPointF(center.x() + 4.5, center.y() - 4.5),
-                     QPointF(center.x() - 4.5, center.y() + 4.5));
+    painter.drawLine(QPointF(center.x() - kCloseIconRadius, center.y() - kCloseIconRadius),
+                     QPointF(center.x() + kCloseIconRadius, center.y() + kCloseIconRadius));
+    painter.drawLine(QPointF(center.x() + kCloseIconRadius, center.y() - kCloseIconRadius),
+                     QPointF(center.x() - kCloseIconRadius, center.y() + kCloseIconRadius));
 }

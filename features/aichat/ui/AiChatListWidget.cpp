@@ -490,7 +490,7 @@ void AiChatListWidget::showItemMenu(const QModelIndex& index, const QPoint& glob
         }
     });
 
-    connect(menu, &QMenu::aboutToHide, menu, &QObject::deleteLater);
+    connect(menu, &StyledActionMenu::aboutToHide, menu, &QObject::deleteLater);
     menu->popupWhenMouseReleased(globalPos);
 }
 
