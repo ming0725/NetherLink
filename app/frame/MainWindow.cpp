@@ -4,14 +4,15 @@
 #include "features/aichat/ui/AiChatApplication.h"
 #include "features/post/ui/PostApplication.h"
 #include "SettingsWindow.h"
+#include "platform/windows/WindowsWindowControlButton.h"
 #include "shared/ui/IconLineEdit.h"
 #include "shared/ui/FloatingInputBar.h"
-#include "shared/ui/InWindowPopupOverlay.h"
+#include "shared/ui/popup/InWindowPopupOverlay.h"
 #include "shared/theme/ThemeManager.h"
+#include <QAbstractButton>
 #include <QCloseEvent>
 #include <QHBoxLayout>
 #include <QLineEdit>
-#include <QPushButton>
 #include <QTextEdit>
 #include <QScreen>
 #include <QGuiApplication>
@@ -118,60 +119,18 @@ MainWindow::MainWindow(QWidget* parent)
     titleBar->setAttribute(Qt::WA_StyledBackground, false);
 
 #ifndef Q_OS_MACOS
-    btnMinimize = new QPushButton(titleBar);
-    btnMaximize = new QPushButton(titleBar);
-    btnClose = new QPushButton(titleBar);
-    iconClose = QIcon(":/resources/icon/close.png");
-    iconCloseHover = QIcon(":/resources/icon/hovered_close.png");
-    btnMinimize->setIcon(QIcon(":/resources/icon/minimize.png"));
-    btnMaximize->setIcon(QIcon(":/resources/icon/maximize.png"));
-
-    btnMinimize->setIconSize(QSize(16, 16));
-    btnMaximize->setIconSize(QSize(16, 16));
-    btnClose->setIconSize(QSize(16, 16));
-
+    btnMinimize = new WindowsWindowControlButton(WindowsWindowControlButton::Kind::Minimize, titleBar);
+    btnMaximize = new WindowsWindowControlButton(WindowsWindowControlButton::Kind::Maximize, titleBar);
+    btnClose = new WindowsWindowControlButton(WindowsWindowControlButton::Kind::Close, titleBar);
+#ifdef Q_OS_WIN
+    btnMinimize->setFixedSize(32, 24);
+    btnMaximize->setFixedSize(32, 24);
+    btnClose->setFixedSize(32, 24);
+#else
     btnMinimize->setFixedSize(32, 32);
     btnMaximize->setFixedSize(32, 32);
     btnClose->setFixedSize(32, 32);
-
-#ifdef Q_OS_WIN
-    auto btnStyle = R"(
-        QPushButton {
-            background-color: transparent;
-            border: none;
-        }
-        QPushButton:hover,
-        QPushButton[nativeHover="true"] {
-            background-color: palette(midlight);
-        }
-    )";
-#else
-    auto btnStyle = R"(
-        QPushButton {
-            background-color: transparent;
-            border: none;
-        }
-        QPushButton:hover {
-            background-color: palette(midlight);
-        }
-    )";
 #endif
-    btnMinimize->setStyleSheet(btnStyle);
-    btnMaximize->setStyleSheet(btnStyle);
-    const QString closeHoverColor = ThemeManager::instance().color(ThemeColor::WindowCloseHover).name();
-    btnClose->setStyleSheet(QStringLiteral(R"(
-    QPushButton {
-        background-color: transparent;
-        border: none;
-        qproperty-icon: url(:/resources/icon/close.png);
-    }
-    QPushButton:hover {
-        background-color: %1;
-        border: none;
-    }
-    )").arg(closeHoverColor));
-
-    btnClose->installEventFilter(this);
 
     auto hl = new QHBoxLayout(titleBar);
     hl->setContentsMargins(0,0,0,0);
@@ -181,8 +140,8 @@ MainWindow::MainWindow(QWidget* parent)
     hl->addWidget(btnClose);
     hl->setSpacing(0);
 
-    connect(btnMinimize, &QPushButton::clicked, this, &QWidget::showMinimized);
-    connect(btnMaximize, &QPushButton::clicked, this, [this]() {
+    connect(btnMinimize, &QAbstractButton::clicked, this, &QWidget::showMinimized);
+    connect(btnMaximize, &QAbstractButton::clicked, this, [this]() {
 #ifdef Q_OS_WIN
         toggleSystemMaximized();
 #else
@@ -193,7 +152,7 @@ MainWindow::MainWindow(QWidget* parent)
         }
 #endif
     });
-    connect(btnClose, &QPushButton::clicked, this, &QWidget::close);
+    connect(btnClose, &QAbstractButton::clicked, this, &QWidget::close);
 #ifdef Q_OS_WIN
     setSystemMaximizeButton(btnMaximize);
 #endif
@@ -480,14 +439,6 @@ bool MainWindow::eventFilter(QObject *watched, QEvent *ev) {
         }
     }
 
-    if (btnClose && watched == btnClose) {
-        if (ev->type() == QEvent::Enter) {
-            btnClose->setIcon(iconCloseHover);
-        }
-        else if (ev->type() == QEvent::Leave) {
-            btnClose->setIcon(iconClose);
-        }
-    }
     return SystemWindow::eventFilter(watched, ev);
 }
 

@@ -17,7 +17,8 @@
 #include "features/aichat/model/AiChatListModel.h"
 #include "features/aichat/ui/AiChatSessionController.h"
 #include "shared/theme/ThemeManager.h"
-#include "shared/ui/InWindowPopupOverlay.h"
+#include "shared/ui/popup/InWindowPopupDialogs.h"
+#include "shared/ui/popup/InWindowPopupOverlay.h"
 #include "shared/ui/StyledActionMenu.h"
 
 namespace {

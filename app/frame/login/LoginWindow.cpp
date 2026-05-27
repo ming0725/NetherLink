@@ -5,6 +5,9 @@
 #include "RegisterWindow.h"
 #include "app/state/CurrentUser.h"
 #include "app/state/CurrentUserProfileRepository.h"
+#ifdef Q_OS_WIN
+#include "platform/windows/WindowsWindowControlButton.h"
+#endif
 #include "shared/services/AppFonts.h"
 #include "shared/theme/ThemeManager.h"
 #include "shared/ui/FastGaussianBlur.h"
@@ -883,7 +886,14 @@ void LoginWindow::setupUi()
 
     titleLayout->addStretch();
 
-#ifndef Q_OS_MACOS
+#ifdef Q_OS_WIN
+    auto* minimizeButton = new WindowsWindowControlButton(WindowsWindowControlButton::Kind::Minimize, m_titleBar);
+    auto* closeButton = new WindowsWindowControlButton(WindowsWindowControlButton::Kind::Close, m_titleBar);
+    titleLayout->addWidget(minimizeButton);
+    titleLayout->addWidget(closeButton);
+    connect(minimizeButton, &QAbstractButton::clicked, this, &QWidget::showMinimized);
+    connect(closeButton, &QAbstractButton::clicked, this, &QWidget::close);
+#elif !defined(Q_OS_MACOS)
     auto* minimizeButton = new WindowControlButton(WindowControlButton::Kind::Minimize, m_titleBar);
     auto* closeButton = new WindowControlButton(WindowControlButton::Kind::Close, m_titleBar);
     titleLayout->addWidget(minimizeButton);

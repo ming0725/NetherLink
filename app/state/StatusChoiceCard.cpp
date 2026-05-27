@@ -1,6 +1,6 @@
-#include "app/frame/current_user/StatusChoiceCard.h"
+#include "app/state/StatusChoiceCard.h"
 
-#include "app/frame/current_user/CurrentUserPopupStyle.h"
+#include "app/state/CurrentUserPopupStyle.h"
 #include "shared/services/AppFonts.h"
 #include "shared/services/ImageService.h"
 #include "shared/theme/ThemeManager.h"

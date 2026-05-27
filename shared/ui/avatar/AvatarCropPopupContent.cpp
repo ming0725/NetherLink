@@ -1,13 +1,13 @@
-#include "app/frame/current_user/AvatarCropPopupContent.h"
+#include "shared/ui/avatar/AvatarCropPopupContent.h"
 
-#include "app/frame/current_user/AvatarCropCanvas.h"
-#include "app/frame/current_user/CurrentUserPopupStyle.h"
+#include "app/state/CurrentUserPopupStyle.h"
 #include "shared/services/AppFonts.h"
 #include "shared/services/AudioService.h"
 #include "shared/services/ImageService.h"
 #include "shared/theme/ThemeManager.h"
 #include "shared/ui/PaintedLabel.h"
 #include "shared/ui/StatefulPushButton.h"
+#include "shared/ui/avatar/AvatarCropCanvas.h"
 
 #include <QEvent>
 #include <QHBoxLayout>

@@ -1,6 +1,6 @@
-#include "app/frame/current_user/ProfileAvatarPreview.h"
+#include "app/state/ProfileAvatarPreview.h"
 
-#include "app/frame/current_user/CurrentUserPopupStyle.h"
+#include "app/state/CurrentUserPopupStyle.h"
 #include "shared/services/AudioService.h"
 #include "shared/services/ImageService.h"
 #include "shared/theme/ThemeManager.h"

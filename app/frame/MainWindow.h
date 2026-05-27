@@ -8,7 +8,7 @@
 #include <QMoveEvent>
 #include <QStackedWidget>
 
-class QPushButton;
+class QAbstractButton;
 class MessageApplication;
 class FriendApplication;
 class PostApplication;
@@ -48,10 +48,9 @@ private:
 
     ApplicationBar *appBar;
     QWidget *titleBar;
-    QPushButton *btnMinimize;
-    QPushButton *btnMaximize;
-    QPushButton *btnClose;
-    QIcon        iconClose, iconCloseHover;
+    QAbstractButton *btnMinimize;
+    QAbstractButton *btnMaximize;
+    QAbstractButton *btnClose;
     QStackedWidget* stack;
     MessageApplication* m_messageApp = nullptr;
     FriendApplication* m_friendApp = nullptr;

@@ -1,6 +1,9 @@
 #include "RegisterWindow.h"
 
 #include "LoginAccountRepository.h"
+#ifdef Q_OS_WIN
+#include "platform/windows/WindowsWindowControlButton.h"
+#endif
 #include "shared/services/AppFonts.h"
 #include "shared/theme/ThemeManager.h"
 #include "shared/ui/GlobalNotification.h"
@@ -448,7 +451,15 @@ void RegisterWindow::setupUi()
     m_titleBar->setAttribute(Qt::WA_StyledBackground, false);
     setDragTitleBar(m_titleBar);
 
-#ifndef Q_OS_MACOS
+#ifdef Q_OS_WIN
+    auto* minimizeButton = new WindowsWindowControlButton(WindowsWindowControlButton::Kind::Minimize, m_titleBar);
+    auto* closeButton = new WindowsWindowControlButton(WindowsWindowControlButton::Kind::Close, m_titleBar);
+    closeButton->setGeometry(m_titleBar->width() - closeButton->width(), 0, closeButton->width(), closeButton->height());
+    minimizeButton->setGeometry(closeButton->x() - minimizeButton->width(), 0,
+                                minimizeButton->width(), minimizeButton->height());
+    connect(minimizeButton, &QAbstractButton::clicked, this, &QWidget::showMinimized);
+    connect(closeButton, &QAbstractButton::clicked, this, &RegisterWindow::scheduleClose);
+#elif !defined(Q_OS_MACOS)
     auto* minimizeButton = new RegisterWindowControlButton(RegisterWindowControlButton::Kind::Minimize, m_titleBar);
     auto* closeButton = new RegisterWindowControlButton(RegisterWindowControlButton::Kind::Close, m_titleBar);
     closeButton->setGeometry(m_titleBar->width() - closeButton->width(), 0, closeButton->width(), closeButton->height());

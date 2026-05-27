@@ -1,4 +1,4 @@
-#include "app/frame/current_user/CurrentUserPopupStyle.h"
+#include "app/state/CurrentUserPopupStyle.h"
 
 #include "shared/services/AppFonts.h"
 #include "shared/ui/InlineEditableText.h"

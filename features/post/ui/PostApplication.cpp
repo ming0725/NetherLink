@@ -10,6 +10,7 @@
 #include "shared/theme/ThemeManager.h"
 #include "shared/ui/QtFallbackLiquidGlass.h"
 #include <QDateTime>
+#include <QPaintEvent>
 #include <QParallelAnimationGroup>
 #include <QPropertyAnimation>
 #include <QPainter>
@@ -21,6 +22,16 @@
 namespace {
 
 constexpr int kPostDetailLoadingMinDurationMs = 300;
+#ifdef Q_OS_MACOS
+constexpr int kFeedDividerWidth = 1;
+
+QColor feedDividerColor()
+{
+    return ThemeManager::instance().isDark()
+            ? QColor(0x60, 0x64, 0x6d)
+            : QColor(0xd6, 0xd6, 0xd6);
+}
+#endif
 
 class TransitionImageWidget final : public QWidget
 {
@@ -319,6 +330,21 @@ void PostApplication::setSystemFloatingBarsSuppressed(bool suppressed)
     updateLayerOrder();
 }
 
+void PostApplication::paintEvent(QPaintEvent* event)
+{
+    QWidget::paintEvent(event);
+
+#ifdef Q_OS_MACOS
+    const QRect dividerRect(0, 0, kFeedDividerWidth, height());
+    if (!dividerRect.intersects(event->rect())) {
+        return;
+    }
+
+    QPainter painter(this);
+    painter.fillRect(dividerRect, feedDividerColor());
+#endif
+}
+
 void PostApplication::resizeEvent(QResizeEvent* ev)
 {
     QWidget::resizeEvent(ev);
@@ -336,7 +362,14 @@ void PostApplication::resizeEvent(QResizeEvent* ev)
     const int stackHeight = qMax(0, h - kContentTopInset - stackBottomSafeInset);
 
     // macOS keeps the bar floating over the feed; other platforms can still reserve space.
+#ifdef Q_OS_MACOS
+    m_stack->setGeometry(kFeedDividerWidth,
+                         kContentTopInset,
+                         qMax(0, w - kFeedDividerWidth),
+                         stackHeight);
+#else
     m_stack->setGeometry(0, kContentTopInset, w, stackHeight);
+#endif
     const int x = (w - barW) / 2;
     const int y = h - barH - bottomMargin;
     m_bar->setGeometry(x, y, barW, barH);

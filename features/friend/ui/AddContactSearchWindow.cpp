@@ -7,7 +7,7 @@
 #include "shared/services/ImageService.h"
 #include "shared/theme/ThemeManager.h"
 #include "shared/ui/IconLineEdit.h"
-#include "shared/ui/InWindowPopupOverlay.h"
+#include "shared/ui/popup/InWindowPopupOverlay.h"
 #include "shared/ui/InlineEditableText.h"
 #include "shared/ui/OverlayScrollListView.h"
 #include "shared/ui/PaintedLabel.h"
@@ -16,6 +16,11 @@
 #include "shared/ui/StyledActionMenu.h"
 #include "shared/ui/TransparentTextEdit.h"
 
+#ifdef Q_OS_WIN
+#include "platform/windows/WindowsWindowControlButton.h"
+#endif
+
+#include <QAbstractButton>
 #include <QActionGroup>
 #include <QApplication>
 #include <QAbstractItemView>
@@ -1313,6 +1318,18 @@ AddContactSearchWindow::AddContactSearchWindow(InitialMode mode, QWidget* parent
     setCompactTrafficLightsEnabled(true);
     setDragTitleBar(m_content);
 
+#ifdef Q_OS_WIN
+    m_minimizeButton = new WindowsWindowControlButton(WindowsWindowControlButton::Kind::Minimize, m_content);
+    m_maximizeButton = new WindowsWindowControlButton(WindowsWindowControlButton::Kind::Maximize, m_content);
+    m_closeButton = new WindowsWindowControlButton(WindowsWindowControlButton::Kind::Close, m_content);
+    connect(m_minimizeButton, &QAbstractButton::clicked, this, &QWidget::showMinimized);
+    connect(m_maximizeButton, &QAbstractButton::clicked, this, [this]() {
+        toggleSystemMaximized();
+    });
+    connect(m_closeButton, &QAbstractButton::clicked, this, &QWidget::close);
+    setSystemMaximizeButton(m_maximizeButton);
+#endif
+
     m_titleLabel->setAlignment(Qt::AlignCenter);
     m_titleLabel->setAttribute(Qt::WA_TransparentForMouseEvents);
     m_titleLabel->setFont(AppFonts::applicationPixelWeightedFont(16, QFont::DemiBold));
@@ -1653,6 +1670,25 @@ void AddContactSearchWindow::updateLayout()
     const int resultY = dividerY + 1;
     m_resultView->setGeometry(0, resultY, width(), qMax(0, height() - resultY));
     m_modeBar->raise();
+#ifdef Q_OS_WIN
+    if (m_closeButton && m_maximizeButton && m_minimizeButton) {
+        m_closeButton->setGeometry(width() - m_closeButton->width(),
+                                   0,
+                                   m_closeButton->width(),
+                                   m_closeButton->height());
+        m_maximizeButton->setGeometry(m_closeButton->x() - m_maximizeButton->width(),
+                                      0,
+                                      m_maximizeButton->width(),
+                                      m_maximizeButton->height());
+        m_minimizeButton->setGeometry(m_maximizeButton->x() - m_minimizeButton->width(),
+                                      0,
+                                      m_minimizeButton->width(),
+                                      m_minimizeButton->height());
+        m_minimizeButton->raise();
+        m_maximizeButton->raise();
+        m_closeButton->raise();
+    }
+#endif
 }
 
 void AddContactSearchWindow::setMode(AddContactModeBar::Mode mode)

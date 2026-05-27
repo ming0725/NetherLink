@@ -10,6 +10,7 @@
 #include "shared/types/RepositoryTypes.h"
 
 class QParallelAnimationGroup;
+class QPaintEvent;
 class QStackedWidget;
 class QVariantAnimation;
 class PostFeedPage;
@@ -28,6 +29,7 @@ private slots:
     void onPostClickedWithGeometry(const PostSummary& summary, const QRect& sourceGeometry);
     void onCurrentPostDetailLoaded(const PostDetailData& detail);
 protected:
+    void paintEvent(QPaintEvent* event) override;
     void showEvent(QShowEvent* ev) override;
     void resizeEvent(QResizeEvent* ev) override;
     bool eventFilter(QObject* obj, QEvent* ev) override;

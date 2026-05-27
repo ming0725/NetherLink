@@ -18,7 +18,8 @@
 #include "features/friend/model/FriendListModel.h"
 #include "features/friend/ui/FriendSessionController.h"
 #include "shared/services/ImageService.h"
-#include "shared/ui/InWindowPopupOverlay.h"
+#include "shared/ui/popup/InWindowPopupDialogs.h"
+#include "shared/ui/popup/InWindowPopupOverlay.h"
 #include "shared/ui/StyledActionMenu.h"
 #include "shared/theme/ThemeManager.h"
 

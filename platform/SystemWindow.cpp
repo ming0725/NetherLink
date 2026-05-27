@@ -9,6 +9,8 @@
 #include <QWindow>
 
 #ifdef Q_OS_WIN
+#include "platform/windows/WindowsWindowControlButton.h"
+
 #include <QAbstractButton>
 #include <QStyle>
 #endif
@@ -310,6 +312,11 @@ bool SystemWindow::event(QEvent* event)
         if (maximized != m_isMaximized) {
             m_isMaximized = maximized;
             updateWindowMargins();
+#ifdef Q_OS_WIN
+            if (m_systemMaximizeButton) {
+                m_systemMaximizeButton->update();
+            }
+#endif
         }
     }
 
@@ -475,6 +482,13 @@ void SystemWindow::setSystemMaximizeButtonState(bool hovered, bool pressed)
     if (!m_systemMaximizeButton) {
         m_systemMaximizeButtonHovered = false;
         m_systemMaximizeButtonPressed = false;
+        return;
+    }
+
+    if (auto* button = qobject_cast<WindowsWindowControlButton*>(m_systemMaximizeButton.data())) {
+        m_systemMaximizeButtonHovered = hovered;
+        m_systemMaximizeButtonPressed = pressed;
+        button->setNativeState(hovered, pressed);
         return;
     }
 

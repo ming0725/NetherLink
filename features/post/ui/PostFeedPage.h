@@ -25,9 +25,6 @@ signals:
     void postClicked(const QString& postId);
     void postClickedWithGeometry(const PostSummary& summary, QRect globalGeometry);
 
-protected:
-    void paintEvent(QPaintEvent* event) override;
-
 private slots:
     void loadMore();
     void onPostActivated(const PostSummary& summary, const QRect& globalGeometry);

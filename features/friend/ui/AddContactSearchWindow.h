@@ -11,6 +11,7 @@
 
 class IconLineEdit;
 class QLabel;
+class QAbstractButton;
 class OverlayScrollListView;
 class QtFallbackLiquidGlassController;
 class QTimer;
@@ -191,6 +192,11 @@ private:
     OverlayScrollListView* m_resultView = nullptr;
     AddContactSearchModel* m_model = nullptr;
     AddContactModeBar* m_modeBar = nullptr;
+#ifdef Q_OS_WIN
+    QAbstractButton* m_minimizeButton = nullptr;
+    QAbstractButton* m_maximizeButton = nullptr;
+    QAbstractButton* m_closeButton = nullptr;
+#endif
     QTimer* m_debounceTimer = nullptr;
     AddContactModeBar::Mode m_mode = AddContactModeBar::Mode::Users;
     QVector<AddContactSearchItem> m_searchResults;

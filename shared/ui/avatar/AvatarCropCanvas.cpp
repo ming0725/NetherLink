@@ -1,4 +1,4 @@
-#include "app/frame/current_user/AvatarCropCanvas.h"
+#include "shared/ui/avatar/AvatarCropCanvas.h"
 
 #include "shared/theme/ThemeManager.h"
 
