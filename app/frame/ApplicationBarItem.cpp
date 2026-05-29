@@ -1,7 +1,7 @@
 #include "ApplicationBarItem.h"
 #include "shared/services/ImageService.h"
 #include "shared/theme/ThemeManager.h"
-#include "shared/ui/BadgeRenderer.h"
+#include "shared/ui/renderers/BadgeRenderer.h"
 #include <QPainter>
 #include <QPainterPath>
 #include <QPixmapCache>

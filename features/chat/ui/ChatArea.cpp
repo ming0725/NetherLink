@@ -13,6 +13,7 @@
 #include "shared/services/AudioService.h"
 #include "shared/services/ImageService.h"
 #include "shared/theme/ThemeManager.h"
+#include "shared/ui/BottomFadeOverlay.h"
 #include "shared/ui/popup/InWindowPopupDialogs.h"
 #include "shared/ui/popup/InWindowPopupOverlay.h"
 #include "shared/ui/PaintedLabel.h"
@@ -24,7 +25,6 @@
 #include <QAction>
 #include <QPainter>
 #include <QPalette>
-#include <QLinearGradient>
 #include <QHBoxLayout>
 #include <QScrollBar>
 #include <QTimer>
@@ -49,7 +49,6 @@ static constexpr int kChatListBottomSpacePadding = 10;
 static constexpr int kFloatingNotifierInputGap = 4;
 static constexpr int kFloatingNotifierHorizontalGap = 4;
 static constexpr int kInputBarBottomGradientFadeHeight = 32;
-static constexpr int kInputBarBottomGradientSolidAlpha = 192;
 static constexpr int kOlderMessagePageSize = 24;
 static constexpr int kFetchOlderTopThreshold = 8;
 #ifdef Q_OS_WIN
@@ -118,43 +117,6 @@ protected:
         for (int i = 0; i < 3; ++i) {
             painter.drawRect(startX + i * (dotSize + spacing), y, dotSize, dotSize);
         }
-    }
-};
-
-class BottomGapGradientOverlay : public QWidget
-{
-public:
-    explicit BottomGapGradientOverlay(QWidget* parent = nullptr)
-        : QWidget(parent)
-    {
-        setAttribute(Qt::WA_TransparentForMouseEvents);
-        setAttribute(Qt::WA_NoSystemBackground);
-        setAttribute(Qt::WA_TranslucentBackground);
-        hide();
-    }
-
-protected:
-    void paintEvent(QPaintEvent* event) override
-    {
-        QWidget::paintEvent(event);
-
-        QPainter painter(this);
-        painter.setRenderHint(QPainter::Antialiasing, true);
-        AppFonts::configurePainterForText(painter);
-
-        QLinearGradient gradient(rect().topLeft(), rect().bottomLeft());
-        const qreal fadeStop = rect().height() > 0
-                ? qBound(0.0,
-                         static_cast<qreal>(kInputBarBottomGradientFadeHeight) / rect().height(),
-                         1.0)
-                : 1.0;
-        QColor pageBackground = ThemeManager::instance().color(ThemeColor::PageBackground);
-        pageBackground.setAlpha(0);
-        gradient.setColorAt(0.0, pageBackground);
-        pageBackground.setAlpha(kInputBarBottomGradientSolidAlpha);
-        gradient.setColorAt(fadeStop, pageBackground);
-        gradient.setColorAt(1.0, pageBackground);
-        painter.fillRect(rect(), gradient);
     }
 };
 
@@ -324,7 +286,7 @@ ChatArea::ChatArea(QWidget *parent)
     referenceMessageNotifier = new ReferenceMessageNotifier(this);
     referenceMessageNotifier->hide();
 
-    bottomGapGradientOverlay = new BottomGapGradientOverlay(this);
+    bottomGapGradientOverlay = new BottomFadeOverlay(this);
     sessionController = new ChatSessionController(this);
     friendProfileController = new FriendSessionController(this);
     friendProfilePopup = new FriendProfilePopup(this);

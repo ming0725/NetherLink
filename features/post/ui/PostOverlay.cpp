@@ -1,7 +1,7 @@
 #include "PostOverlay.h"
 
 #include "shared/theme/ThemeManager.h"
-#include "shared/ui/FastGaussianBlur.h"
+#include "shared/ui/effects/FastGaussianBlur.h"
 
 #include <QFutureWatcher>
 #include <QPainter>

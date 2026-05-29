@@ -7,7 +7,7 @@
 #include "shared/services/AppFonts.h"
 #include "shared/services/ImageService.h"
 #include "shared/theme/ThemeManager.h"
-#include "shared/ui/LoadingSpinnerRenderer.h"
+#include "shared/ui/renderers/LoadingSpinnerRenderer.h"
 
 #include <QApplication>
 #include <QCache>

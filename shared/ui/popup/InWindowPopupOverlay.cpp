@@ -1,7 +1,7 @@
 #include "InWindowPopupOverlay.h"
 
 #include "shared/theme/ThemeManager.h"
-#include "shared/ui/FastGaussianBlur.h"
+#include "shared/ui/effects/FastGaussianBlur.h"
 #include "shared/ui/popup/widgets/InWindowPopupFrame.h"
 
 #ifdef Q_OS_MACOS

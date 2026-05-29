@@ -62,6 +62,8 @@ set(PROJECT_SOURCES
     ${PLATFORM_SOURCES}
 )
 
+source_group(TREE "${CMAKE_CURRENT_SOURCE_DIR}" FILES ${PROJECT_SOURCES})
+
 if(${QT_VERSION_MAJOR} GREATER_EQUAL 6)
     qt_add_executable(NetherLink-static
         MANUAL_FINALIZATION

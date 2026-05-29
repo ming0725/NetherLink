@@ -1,7 +1,4 @@
 #include "AiChatConversationWidget.h"
-#include "shared/services/AppFonts.h"
-
-#include <QLinearGradient>
 #include <QDateTime>
 #include <QLoggingCategory>
 #include <QModelIndex>
@@ -17,13 +14,11 @@
 #include "features/aichat/ui/AiChatSessionController.h"
 #include "features/chat/ui/NewMessageNotifier.h"
 #include "shared/theme/ThemeManager.h"
+#include "shared/ui/BottomFadeOverlay.h"
 #include "shared/ui/GlobalNotification.h"
 #include "shared/ui/PaintedLabel.h"
 
 namespace {
-
-constexpr int kBottomGradientFadeHeight = 32;
-constexpr int kBottomGradientSolidAlpha = 192;
 
 Q_LOGGING_CATEGORY(lcAiChatUnread, "netherlink.aichat.unread")
 
@@ -43,43 +38,6 @@ protected:
     }
 };
 
-class BottomGapGradientOverlay : public QWidget
-{
-public:
-    explicit BottomGapGradientOverlay(QWidget* parent = nullptr)
-        : QWidget(parent)
-    {
-        setAttribute(Qt::WA_TransparentForMouseEvents);
-        setAttribute(Qt::WA_NoSystemBackground);
-        setAttribute(Qt::WA_TranslucentBackground);
-        hide();
-    }
-
-protected:
-    void paintEvent(QPaintEvent* event) override
-    {
-        QWidget::paintEvent(event);
-
-        QPainter painter(this);
-        painter.setRenderHint(QPainter::Antialiasing, true);
-        AppFonts::configurePainterForText(painter);
-
-        QLinearGradient gradient(rect().topLeft(), rect().bottomLeft());
-        const qreal fadeStop = rect().height() > 0
-                ? qBound(0.0,
-                         static_cast<qreal>(kBottomGradientFadeHeight) / rect().height(),
-                         1.0)
-                : 1.0;
-        QColor pageBackground = ThemeManager::instance().color(ThemeColor::PanelBackground);
-        pageBackground.setAlpha(0);
-        gradient.setColorAt(0.0, pageBackground);
-        pageBackground.setAlpha(kBottomGradientSolidAlpha);
-        gradient.setColorAt(fadeStop, pageBackground);
-        gradient.setColorAt(1.0, pageBackground);
-        painter.fillRect(rect(), gradient);
-    }
-};
-
 } // namespace
 
 AiChatConversationWidget::AiChatConversationWidget(QWidget* parent)
@@ -89,13 +47,14 @@ AiChatConversationWidget::AiChatConversationWidget(QWidget* parent)
     , m_inputBar(new AiChatFloatingInputBar(this))
     , m_titleLabel(new PaintedLabel(this))
     , m_headerDivider(new ThemeDivider(this))
-    , m_bottomGapGradientOverlay(new BottomGapGradientOverlay(this))
+    , m_bottomGapGradientOverlay(new BottomFadeOverlay(this))
     , m_newMessageNotifier(new NewMessageNotifier(this))
     , m_emptyLabel(new PaintedLabel(QStringLiteral("今天需要做什么？"), this))
 {
     m_messageView->setModel(m_messageModel);
     m_newMessageNotifier->setDisplayMode(NewMessageNotifier::DisplayMode::IconOnly);
     m_newMessageNotifier->hide();
+    static_cast<BottomFadeOverlay*>(m_bottomGapGradientOverlay)->setBackgroundRole(ThemeColor::PanelBackground);
     m_titleLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
     m_emptyLabel->setAlignment(Qt::AlignCenter);
     m_emptyLabel->setAttribute(Qt::WA_TransparentForMouseEvents);

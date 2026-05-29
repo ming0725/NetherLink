@@ -10,7 +10,6 @@
 #include <QWidget>
 
 namespace {
-#ifdef Q_OS_WIN
 constexpr int kWindowControlButtonWidth = 32;
 constexpr int kWindowControlButtonHeight = 32;
 constexpr qreal kWindowControlIconScale = 0.5;
@@ -20,18 +19,7 @@ constexpr qreal kMaximizeIconSize = 7.0;
 constexpr qreal kRestoreIconSize = 6.0;
 constexpr qreal kRestoreIconOffset = 2.2;
 constexpr qreal kCloseIconRadius = 3.8;
-#else
-constexpr int kWindowControlButtonWidth = 38;
-constexpr int kWindowControlButtonHeight = 32;
-constexpr qreal kMinimizeIconHalfWidth = 5.0;
-constexpr qreal kMinimizeIconYOffset = 3.0;
-constexpr qreal kMaximizeIconSize = 9.0;
-constexpr qreal kRestoreIconSize = 7.5;
-constexpr qreal kRestoreIconOffset = 2.5;
-constexpr qreal kCloseIconRadius = 4.5;
-#endif
 
-#ifdef Q_OS_WIN
 QString windowControlIconPath(WindowsWindowControlButton::Kind kind, bool hoveredOrPressed)
 {
     switch (kind) {
@@ -46,7 +34,6 @@ QString windowControlIconPath(WindowsWindowControlButton::Kind kind, bool hovere
     }
     return {};
 }
-#endif
 }
 
 WindowsWindowControlButton::WindowsWindowControlButton(Kind kind, QWidget* parent)
@@ -122,7 +109,6 @@ void WindowsWindowControlButton::paintEvent(QPaintEvent* event)
     painter.setPen(QPen(iconColor, 1.5, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
     painter.setBrush(Qt::NoBrush);
 
-#ifdef Q_OS_WIN
     const QPointF center(width() / 2.0, height() / 2.0);
     const QPixmap icon(windowControlIconPath(m_kind, m_hovered || pressed));
     if (!icon.isNull()) {
@@ -140,9 +126,6 @@ void WindowsWindowControlButton::paintEvent(QPaintEvent* event)
         painter.drawPixmap(iconTopLeft, scaledIcon);
         return;
     }
-#else
-    const QPointF center = rect().center();
-#endif
     switch (m_kind) {
     case Kind::Minimize:
         paintMinimizeIcon(painter, center);

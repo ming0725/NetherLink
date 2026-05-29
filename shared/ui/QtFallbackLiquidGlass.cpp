@@ -1,7 +1,7 @@
 #include "QtFallbackLiquidGlass.h"
 
 #include "shared/theme/ThemeManager.h"
-#include "shared/ui/FastGaussianBlur.h"
+#include "shared/ui/effects/FastGaussianBlur.h"
 
 #include <QCoreApplication>
 #include <QEvent>

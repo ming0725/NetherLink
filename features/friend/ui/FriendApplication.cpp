@@ -1,6 +1,6 @@
 #include "FriendApplication.h"
 #include "shared/services/AppFonts.h"
-#include "shared/ui/BadgeRenderer.h"
+#include "shared/ui/renderers/BadgeRenderer.h"
 #include "shared/ui/StyledActionMenu.h"
 #include "shared/ui/TransparentSplitter.h"
 #include "shared/theme/ThemeManager.h"

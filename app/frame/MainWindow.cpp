@@ -11,7 +11,6 @@
 #include "shared/theme/ThemeManager.h"
 #include <QAbstractButton>
 #include <QCloseEvent>
-#include <QHBoxLayout>
 #include <QLineEdit>
 #include <QTextEdit>
 #include <QScreen>
@@ -122,23 +121,9 @@ MainWindow::MainWindow(QWidget* parent)
     btnMinimize = new WindowsWindowControlButton(WindowsWindowControlButton::Kind::Minimize, titleBar);
     btnMaximize = new WindowsWindowControlButton(WindowsWindowControlButton::Kind::Maximize, titleBar);
     btnClose = new WindowsWindowControlButton(WindowsWindowControlButton::Kind::Close, titleBar);
-#ifdef Q_OS_WIN
     btnMinimize->setFixedSize(28, 28);
     btnMaximize->setFixedSize(28, 28);
     btnClose->setFixedSize(28, 28);
-#else
-    btnMinimize->setFixedSize(32, 32);
-    btnMaximize->setFixedSize(32, 32);
-    btnClose->setFixedSize(32, 32);
-
-    auto hl = new QHBoxLayout(titleBar);
-    hl->setContentsMargins(0,0,0,0);
-    hl->addStretch();
-    hl->addWidget(btnMinimize);
-    hl->addWidget(btnMaximize);
-    hl->addWidget(btnClose);
-    hl->setSpacing(0);
-#endif
 
     connect(btnMinimize, &QAbstractButton::clicked, this, &QWidget::showMinimized);
     connect(btnMaximize, &QAbstractButton::clicked, this, [this]() {
@@ -474,7 +459,7 @@ void MainWindow::layoutWindow()
     titleBar->setGeometry(titleBarX, y, titleBarW, titleBar->height());
     titleBar->raise();
 
-#ifdef Q_OS_WIN
+#ifndef Q_OS_MACOS
     if (btnMinimize && btnMaximize && btnClose) {
         btnClose->setGeometry(titleBar->width() - btnClose->width(),
                               0,

@@ -5,16 +5,18 @@
 #include <QPainter>
 
 #include "features/friend/model/FriendNotificationListModel.h"
-#include "shared/services/ImageService.h"
 #include "shared/theme/ThemeManager.h"
+#include "shared/ui/renderers/NotificationDelegateRenderer.h"
 
 namespace {
 
 constexpr int kLineSpacing = 1;
 constexpr int kUnifiedFontSize = 12;
-constexpr qreal kButtonBorderWidth = 1.5;
-constexpr int kPendingDotSize = 4;
-constexpr int kPendingDotGap = 5;
+
+NotificationDelegateRenderer::CardMetrics cardMetrics()
+{
+    return {};
+}
 
 QFont nickFont()
 {
@@ -34,16 +36,6 @@ QFont buttonFont()
 QFontMetrics nickFm() { return AppFonts::applicationPixelWeightedMetrics(kUnifiedFontSize, QFont::Medium); }
 QFontMetrics textFm() { return AppFonts::applicationPixelWeightedMetrics(kUnifiedFontSize, QFont::Normal); }
 
-QString formatNotificationTime(const QDateTime& time)
-{
-    if (!time.isValid()) {
-        return {};
-    }
-    return time.date() == QDate::currentDate()
-            ? time.toString(QStringLiteral("HH:mm"))
-            : time.toString(QStringLiteral("yyyy/MM/dd"));
-}
-
 } // namespace
 
 FriendNotificationDelegate::FriendNotificationDelegate(QObject* parent)
@@ -55,36 +47,24 @@ FriendNotificationDelegate::FriendNotificationDelegate(QObject* parent)
 
 static QRect cardRect(const QStyleOptionViewItem& option)
 {
-    return QRect(option.rect.left() + FriendNotificationDelegate::kCardMarginH,
-                 option.rect.top() + FriendNotificationDelegate::kCardMarginV,
-                 option.rect.width() - 2 * FriendNotificationDelegate::kCardMarginH,
-                 option.rect.height() - 2 * FriendNotificationDelegate::kCardMarginV);
+    return NotificationDelegateRenderer::cardRect(option.rect, cardMetrics());
 }
 
 static QRect avatarRect(const QRect& card)
 {
-    const int y = card.top() + (card.height() - FriendNotificationDelegate::kAvatarSize) / 2;
-    return QRect(card.left() + FriendNotificationDelegate::kCardPaddingH, y,
-                 FriendNotificationDelegate::kAvatarSize,
-                 FriendNotificationDelegate::kAvatarSize);
+    return NotificationDelegateRenderer::avatarRect(card, cardMetrics());
 }
 
 static QRect contentBounds(const QRect& card)
 {
-    const int left = card.left() + FriendNotificationDelegate::kCardPaddingH
-                     + FriendNotificationDelegate::kAvatarSize
-                     + FriendNotificationDelegate::kAvatarToContentGap;
-    return QRect(left,
-                 card.top() + FriendNotificationDelegate::kCardPaddingV,
-                 card.right() - FriendNotificationDelegate::kCardPaddingH - left,
-                 card.height() - 2 * FriendNotificationDelegate::kCardPaddingV);
+    return NotificationDelegateRenderer::contentBounds(card, cardMetrics());
 }
 
 static int textLineHeight() { return textFm().height(); }
 static int line1Height() { return nickFm().height(); }
 static int line2Height()
 {
-    return qMax(textLineHeight(), FriendNotificationDelegate::kButtonHeight);
+    return qMax(textLineHeight(), cardMetrics().buttonHeight);
 }
 
 static int layoutTop(const QRect& content)
@@ -113,51 +93,28 @@ static QRect line3Rect(const QRect& content)
 
 static QRect acceptBtnRect(const QRect& card, const QRect& content)
 {
-    const int right = card.right() - FriendNotificationDelegate::kCardPaddingH;
     const QRect l2 = line2Rect(content);
-    const int y = l2.top() + (l2.height() - FriendNotificationDelegate::kButtonHeight) / 2;
-    return QRect(right - FriendNotificationDelegate::kButtonWidth * 2
-                     - FriendNotificationDelegate::kButtonGap,
-                 y,
-                 FriendNotificationDelegate::kButtonWidth,
-                 FriendNotificationDelegate::kButtonHeight);
+    const int y = l2.top() + (l2.height() - cardMetrics().buttonHeight) / 2;
+    return NotificationDelegateRenderer::acceptButtonRect(card, y, cardMetrics());
 }
 
 static QRect rejectBtnRect(const QRect& card, const QRect& content)
 {
-    const int right = card.right() - FriendNotificationDelegate::kCardPaddingH;
     const QRect l2 = line2Rect(content);
-    const int y = l2.top() + (l2.height() - FriendNotificationDelegate::kButtonHeight) / 2;
-    return QRect(right - FriendNotificationDelegate::kButtonWidth, y,
-                 FriendNotificationDelegate::kButtonWidth,
-                 FriendNotificationDelegate::kButtonHeight);
+    const int y = l2.top() + (l2.height() - cardMetrics().buttonHeight) / 2;
+    return NotificationDelegateRenderer::rejectButtonRect(card, y, cardMetrics());
 }
 
 static QRect actionRect(const QRect& card, const QRect& content)
 {
     const QRect accept = acceptBtnRect(card, content);
     const QRect reject = rejectBtnRect(card, content);
-    return QRect(accept.left(), accept.top(), reject.right() - accept.left() + 1, accept.height());
+    return NotificationDelegateRenderer::actionRect(accept, reject);
 }
 
 static int textRightBeforeAction(const QRect& line, const QRect& card, const QRect& content)
 {
-    return qMin(line.right(), actionRect(card, content).left() - FriendNotificationDelegate::kButtonGap);
-}
-
-void drawPendingDots(QPainter* painter, const QRect& rect)
-{
-    const int totalWidth = kPendingDotSize * 3 + kPendingDotGap * 2;
-    const int startX = rect.left() + (rect.width() - totalWidth) / 2;
-    const int y = rect.top() + (rect.height() - kPendingDotSize) / 2;
-    painter->setPen(Qt::NoPen);
-    painter->setBrush(ThemeManager::instance().color(ThemeColor::TertiaryText));
-    for (int i = 0; i < 3; ++i) {
-        painter->drawRect(QRect(startX + i * (kPendingDotSize + kPendingDotGap),
-                                y,
-                                kPendingDotSize,
-                                kPendingDotSize));
-    }
+    return qMin(line.right(), actionRect(card, content).left() - cardMetrics().buttonGap);
 }
 
 int FriendNotificationDelegate::buttonAt(const QStyleOptionViewItem& option,
@@ -198,25 +155,13 @@ void FriendNotificationDelegate::paint(QPainter* painter,
     const QRect c = contentBounds(card);
     const QRect avt = avatarRect(card);
 
-    // 2. Card
-    painter->setPen(Qt::NoPen);
-    painter->setBrush(ThemeManager::instance().color(ThemeColor::PanelBackground));
-    painter->drawRoundedRect(card, kCardRadius, kCardRadius);
+    NotificationDelegateRenderer::drawCard(painter, card, cardMetrics());
 
-    // 3. Avatar — vertically centered in card
-    const qreal dpr = painter->device()->devicePixelRatioF();
     const QString avPath = index.data(FriendNotificationListModel::AvatarPathRole).toString();
-    QPixmap av = ImageService::instance().circularAvatarPreview(avPath, kAvatarSize, dpr);
-    if (av.isNull()) {
-        painter->setPen(Qt::NoPen);
-        painter->setBrush(ThemeManager::instance().color(ThemeColor::ImagePlaceholder));
-        painter->drawEllipse(avt);
-    } else {
-        painter->drawPixmap(avt, av);
-    }
+    NotificationDelegateRenderer::drawAvatar(painter, avt, avPath, cardMetrics().avatarSize);
 
     const QString nick   = index.data(FriendNotificationListModel::DisplayNameRole).toString();
-    const QString date   = formatNotificationTime(
+    const QString date   = NotificationDelegateRenderer::formatTime(
         index.data(FriendNotificationListModel::RequestDateRole).toDateTime());
     const QString msg    = index.data(FriendNotificationListModel::MessageRole).toString();
     const QString src    = index.data(FriendNotificationListModel::SourceTextRole).toString();
@@ -307,33 +252,13 @@ void FriendNotificationDelegate::paint(QPainter* painter,
     if (pending && pendingActionsVisible) {
         const QRect accR = acceptBtnRect(card, c);
         const QRect rejR = rejectBtnRect(card, c);
-
-        painter->setFont(buttonFont());
-
-        // Accept
-        {
-            QColor bg = ThemeManager::instance().color(ThemeColor::Accent);
-            if (hovered == 0) bg = ThemeManager::instance().color(ThemeColor::AccentHover);
-            painter->setBrush(bg);
-            painter->setPen(QPen(bg, kButtonBorderWidth));
-            painter->drawRoundedRect(accR, kButtonRadius, kButtonRadius);
-            painter->setPen(ThemeManager::textColorOn(bg));
-            painter->drawText(accR, Qt::AlignCenter, QStringLiteral("同意"));
-        }
-
-        // Reject
-        {
-            const QColor border = ThemeManager::instance().color(ThemeColor::DangerText);
-            QColor bg = Qt::transparent;
-            if (hovered == 1) bg = ThemeManager::instance().color(ThemeColor::DangerControlHover);
-            painter->setBrush(bg);
-            painter->setPen(QPen(border, kButtonBorderWidth));
-            painter->drawRoundedRect(rejR, kButtonRadius, kButtonRadius);
-            painter->setPen(border);
-            painter->drawText(rejR, Qt::AlignCenter, QStringLiteral("拒绝"));
-        }
+        NotificationDelegateRenderer::drawActionButtons(
+            painter, accR, rejR, hovered, buttonFont(), cardMetrics());
     } else if (pending) {
-        drawPendingDots(painter, actionRect(card, c));
+        NotificationDelegateRenderer::drawPendingDots(
+            painter,
+            actionRect(card, c),
+            ThemeManager::instance().color(ThemeColor::TertiaryText));
     } else if (status == NotificationStatus::Accepted) {
         painter->setFont(buttonFont());
         painter->setPen(ThemeManager::instance().color(ThemeColor::SecondaryText));

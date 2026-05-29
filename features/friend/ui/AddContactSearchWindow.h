@@ -192,7 +192,7 @@ private:
     OverlayScrollListView* m_resultView = nullptr;
     AddContactSearchModel* m_model = nullptr;
     AddContactModeBar* m_modeBar = nullptr;
-#ifdef Q_OS_WIN
+#ifndef Q_OS_MACOS
     QAbstractButton* m_minimizeButton = nullptr;
     QAbstractButton* m_maximizeButton = nullptr;
     QAbstractButton* m_closeButton = nullptr;

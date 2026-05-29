@@ -60,6 +60,13 @@ public:
     void setAnimationDuration(int ms);
     int animationDuration() const;
 
+    bool isEnabled() const;
+    void setEnabled(bool enabled);
+    void setDisabled(bool disabled);
+
+    bool actionEnabled() const;
+    void setActionEnabled(bool enabled);
+
     void setPressedVisual(bool pressed);
 
     void setDefaultStyle();
@@ -80,6 +87,8 @@ protected:
 private:
     void initializeButton();
     void applyStateColor();
+    bool isInteractionEnabled() const;
+    void updateCursorForState();
     void updateHoverState(bool hovered);
     void updatePressState(bool pressed);
 
@@ -100,4 +109,5 @@ private:
     bool m_forcedPressedVisual;
     bool m_textColorFollowsBackground;
     QPropertyAnimation* m_colorAnimation;
+    bool m_actionEnabled = true;
 };

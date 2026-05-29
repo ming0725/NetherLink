@@ -5,12 +5,12 @@
 #include "RegisterWindow.h"
 #include "app/state/CurrentUser.h"
 #include "app/state/CurrentUserProfileRepository.h"
-#ifdef Q_OS_WIN
+#ifndef Q_OS_MACOS
 #include "platform/windows/WindowsWindowControlButton.h"
 #endif
 #include "shared/services/AppFonts.h"
 #include "shared/theme/ThemeManager.h"
-#include "shared/ui/FastGaussianBlur.h"
+#include "shared/ui/effects/FastGaussianBlur.h"
 #include "shared/ui/GlobalNotification.h"
 #include "shared/ui/StatefulPushButton.h"
 
@@ -727,100 +727,6 @@ private:
     bool m_hovered = false;
 };
 
-class WindowControlButton final : public QAbstractButton
-{
-public:
-    enum class Kind {
-        Minimize,
-        Close
-    };
-
-    explicit WindowControlButton(Kind kind, QWidget* parent = nullptr)
-        : QAbstractButton(parent)
-        , m_kind(kind)
-    {
-        setFixedSize(38, 32);
-        setFocusPolicy(Qt::NoFocus);
-        setCursor(Qt::PointingHandCursor);
-        setAttribute(Qt::WA_StyledBackground, false);
-    }
-
-protected:
-    void enterEvent(QEnterEvent* event) override
-    {
-        m_hovered = true;
-        update();
-        QAbstractButton::enterEvent(event);
-    }
-
-    void leaveEvent(QEvent* event) override
-    {
-        m_hovered = false;
-        m_pressed = false;
-        update();
-        QAbstractButton::leaveEvent(event);
-    }
-
-    void mousePressEvent(QMouseEvent* event) override
-    {
-        if (event->button() == Qt::LeftButton) {
-            m_pressed = true;
-            update();
-        }
-        QAbstractButton::mousePressEvent(event);
-    }
-
-    void mouseReleaseEvent(QMouseEvent* event) override
-    {
-        m_pressed = false;
-        update();
-        QAbstractButton::mouseReleaseEvent(event);
-    }
-
-    void paintEvent(QPaintEvent* event) override
-    {
-        Q_UNUSED(event);
-
-        QPainter painter(this);
-        painter.setRenderHint(QPainter::Antialiasing, true);
-
-        if (m_hovered) {
-            QColor fill = m_kind == Kind::Close
-                    ? ThemeManager::instance().color(ThemeColor::WindowCloseHover)
-                    : ThemeManager::instance().color(m_pressed ? ThemeColor::ControlPressed
-                                                               : ThemeColor::ControlHover);
-            if (m_pressed && m_kind == Kind::Close) {
-                fill = fill.darker(112);
-            }
-            painter.fillRect(rect(), fill);
-        }
-
-        QPen pen(m_kind == Kind::Close && m_hovered
-                 ? QColor(255, 255, 255)
-                 : ThemeManager::instance().color(ThemeColor::SecondaryText),
-                 1.5,
-                 Qt::SolidLine,
-                 Qt::RoundCap,
-                 Qt::RoundJoin);
-        painter.setPen(pen);
-        const QPointF center = rect().center();
-        if (m_kind == Kind::Minimize) {
-            painter.drawLine(QPointF(center.x() - 5.0, center.y() + 3.0),
-                             QPointF(center.x() + 5.0, center.y() + 3.0));
-        } else {
-            painter.drawLine(QPointF(center.x() - 4.5, center.y() - 4.5),
-                             QPointF(center.x() + 4.5, center.y() + 4.5));
-            painter.drawLine(QPointF(center.x() + 4.5, center.y() - 4.5),
-                             QPointF(center.x() - 4.5, center.y() + 4.5));
-        }
-    }
-
-private:
-    Kind m_kind;
-    bool m_hovered = false;
-    bool m_pressed = false;
-};
-
 QLabel* makeTextLabel(const QString& text, int pixelSize, ThemeColor color, QWidget* parent, int weight = QFont::Normal)
 {
     auto* label = new QLabel(text, parent);
@@ -880,15 +786,7 @@ void LoginWindow::setupUi()
     m_titleBar->setAttribute(Qt::WA_StyledBackground, false);
     setDragTitleBar(m_titleBar);
 
-#ifndef Q_OS_WIN
-    auto* titleLayout = new QHBoxLayout(m_titleBar);
-    titleLayout->setContentsMargins(14, 0, 0, 0);
-    titleLayout->setSpacing(0);
-
-    titleLayout->addStretch();
-#endif
-
-#ifdef Q_OS_WIN
+#ifndef Q_OS_MACOS
     auto* minimizeButton = new WindowsWindowControlButton(WindowsWindowControlButton::Kind::Minimize, m_titleBar);
     auto* closeButton = new WindowsWindowControlButton(WindowsWindowControlButton::Kind::Close, m_titleBar);
     closeButton->setGeometry(kWindowWidth - 2 - closeButton->width(),
@@ -901,13 +799,6 @@ void LoginWindow::setupUi()
                                 minimizeButton->height());
     minimizeButton->raise();
     closeButton->raise();
-    connect(minimizeButton, &QAbstractButton::clicked, this, &QWidget::showMinimized);
-    connect(closeButton, &QAbstractButton::clicked, this, &QWidget::close);
-#elif !defined(Q_OS_MACOS)
-    auto* minimizeButton = new WindowControlButton(WindowControlButton::Kind::Minimize, m_titleBar);
-    auto* closeButton = new WindowControlButton(WindowControlButton::Kind::Close, m_titleBar);
-    titleLayout->addWidget(minimizeButton);
-    titleLayout->addWidget(closeButton);
     connect(minimizeButton, &QAbstractButton::clicked, this, &QWidget::showMinimized);
     connect(closeButton, &QAbstractButton::clicked, this, &QWidget::close);
 #endif

@@ -273,15 +273,6 @@ QColor ThemeManager::color(ThemeColor role) const
     return isAccentColorRole(role) ? accentColor(role, dark) : fixedColor(role, dark);
 }
 
-QColor ThemeManager::postBarItemSelectedBackgroundColor() const
-{
-    QColor selected = color(ThemeColor::PostBarItemSelectedBackground);
-    if (postBarQtFallbackLiquidGlassEnabled()) {
-        selected.setAlpha(isDark() ? 230 : 42);
-    }
-    return selected;
-}
-
 QColor ThemeManager::fixedColor(ThemeColor role, bool dark) const
 {
     if (!dark) {
@@ -290,6 +281,8 @@ QColor ThemeManager::fixedColor(ThemeColor role, bool dark) const
             return QColor(0xf8, 0xf8, 0xfc);
         case ThemeColor::PageBackground:
             return QColor(0xf2, 0xf2, 0xf2);
+        case ThemeColor::AuthWindowBackground:
+            return QColor(Qt::white);
         case ThemeColor::PanelBackground:
             return QColor(0xff, 0xff, 0xff);
         case ThemeColor::PanelRaisedBackground:
@@ -308,6 +301,8 @@ QColor ThemeManager::fixedColor(ThemeColor role, bool dark) const
             return QColor(0xe9, 0xe9, 0xe9);
         case ThemeColor::ListHover:
             return QColor(0xf0, 0xf0, 0xf0);
+        case ThemeColor::ListNoticeSelected:
+            return QColor(0xe4, 0xe4, 0xe4);
         case ThemeColor::ListPinned:
             return QColor(0xec, 0xec, 0xec);
         case ThemeColor::ChatInfoPanelOverlay:
@@ -350,6 +345,8 @@ QColor ThemeManager::fixedColor(ThemeColor role, bool dark) const
             return QColor(0xff, 0xff, 0xff);
         case ThemeColor::DangerText:
             return QColor(0xd9, 0x36, 0x36);
+        case ThemeColor::ValidationSuccessText:
+            return QColor(0x18, 0x8d, 0x48);
         case ThemeColor::DangerControlHover:
             return QColor(0xff, 0xf4, 0xf4);
         case ThemeColor::DangerControlPressed:
@@ -360,6 +357,9 @@ QColor ThemeManager::fixedColor(ThemeColor role, bool dark) const
             return QColor(0xd8, 0xd8, 0xd8);
         case ThemeColor::PostBarItemSelectedBackground:
             return QColor(0, 0, 0, 32);
+        case ThemeColor::FloatingSegmentSelectedBackground:
+            return m_postBarQtFallbackLiquidGlassEnabled ? QColor(0, 0, 0, 42)
+                                                         : QColor(0, 0, 0, 32);
         case ThemeColor::ImagePlaceholder:
             return QColor(0xf2, 0xf2, 0xf2);
         case ThemeColor::LoadingPlaceholderBase:
@@ -448,6 +448,10 @@ QColor ThemeManager::fixedColor(ThemeColor role, bool dark) const
             return QColor(248, 248, 252, 92);
         case ThemeColor::WindowCloseHover:
             return QColor(0xc4, 0x2b, 0x1c);
+        case ThemeColor::WindowClosePressed:
+            return QColor(0xaf, 0x26, 0x19);
+        case ThemeColor::WindowCloseIcon:
+            return QColor(0xff, 0xff, 0xff);
         case ThemeColor::OverlayStroke:
             return QColor(0, 0, 0, 150);
         case ThemeColor::InWindowPopupStroke:
@@ -462,6 +466,8 @@ QColor ThemeManager::fixedColor(ThemeColor role, bool dark) const
             return QColor(32, 32, 32, 132);
         case ThemeColor::PostOverlay:
             return QColor(0, 0, 0, 100);
+        case ThemeColor::PostFeedDivider:
+            return QColor(0xd6, 0xd6, 0xd6);
         case ThemeColor::ScrollThumb:
             return QColor(128, 128, 128, 80);
         default:
@@ -474,6 +480,8 @@ QColor ThemeManager::fixedColor(ThemeColor role, bool dark) const
         return QColor(0x18, 0x19, 0x1c);
     case ThemeColor::PageBackground:
         return QColor(0x1b, 0x1c, 0x20);
+    case ThemeColor::AuthWindowBackground:
+        return QColor(Qt::black);
     case ThemeColor::PanelBackground:
         return QColor(0x20, 0x21, 0x26);
     case ThemeColor::PanelRaisedBackground:
@@ -494,6 +502,8 @@ QColor ThemeManager::fixedColor(ThemeColor role, bool dark) const
         return QColor(0x36, 0x39, 0x40);
     case ThemeColor::ListHover:
         return QColor(0x2c, 0x2f, 0x36);
+    case ThemeColor::ListNoticeSelected:
+        return QColor(0x24, 0x27, 0x2e);
     case ThemeColor::ListPinned:
         return QColor(0x30, 0x33, 0x3a);
     case ThemeColor::ChatInfoPanelOverlay:
@@ -536,6 +546,8 @@ QColor ThemeManager::fixedColor(ThemeColor role, bool dark) const
         return QColor(0xf1, 0xf3, 0xf5);
     case ThemeColor::DangerText:
         return QColor(0xd9, 0x36, 0x36);
+    case ThemeColor::ValidationSuccessText:
+        return QColor(0x8f, 0xe0, 0xa5);
     case ThemeColor::DangerControlHover:
         return QColor(0x45, 0x2b, 0x2f);
     case ThemeColor::DangerControlPressed:
@@ -546,6 +558,9 @@ QColor ThemeManager::fixedColor(ThemeColor role, bool dark) const
         return QColor(0x3a, 0x3d, 0x44);
     case ThemeColor::PostBarItemSelectedBackground:
         return QColor(0x5a, 0x5d, 0x64, 200);
+    case ThemeColor::FloatingSegmentSelectedBackground:
+        return m_postBarQtFallbackLiquidGlassEnabled ? QColor(0x5a, 0x5d, 0x64, 230)
+                                                     : QColor(0x5a, 0x5d, 0x64, 200);
     case ThemeColor::ImagePlaceholder:
         return QColor(0x2b, 0x2d, 0x33);
     case ThemeColor::LoadingPlaceholderBase:
@@ -634,6 +649,10 @@ QColor ThemeManager::fixedColor(ThemeColor role, bool dark) const
         return QColor(24, 25, 28, 120);
     case ThemeColor::WindowCloseHover:
         return QColor(0xc4, 0x2b, 0x1c);
+    case ThemeColor::WindowClosePressed:
+        return QColor(0xaf, 0x26, 0x19);
+    case ThemeColor::WindowCloseIcon:
+        return QColor(0xff, 0xff, 0xff);
     case ThemeColor::OverlayStroke:
         return QColor(0, 0, 0, 150);
     case ThemeColor::InWindowPopupStroke:
@@ -648,6 +667,8 @@ QColor ThemeManager::fixedColor(ThemeColor role, bool dark) const
         return QColor(32, 32, 32, 132);
     case ThemeColor::PostOverlay:
         return QColor(0, 0, 0, 100);
+    case ThemeColor::PostFeedDivider:
+        return QColor(0x60, 0x64, 0x6d);
     case ThemeColor::ScrollThumb:
         return QColor(128, 128, 128, 96);
     default:

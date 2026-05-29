@@ -5,7 +5,7 @@
 #include <QPainter>
 
 #include "shared/services/ImageService.h"
-#include "shared/ui/BadgeRenderer.h"
+#include "shared/ui/renderers/ContactListDelegateRenderer.h"
 #include "features/friend/model/FriendListModel.h"
 #include "shared/types/User.h"
 #include "shared/theme/ThemeManager.h"
@@ -162,131 +162,42 @@ void FriendListDelegate::paint(QPainter* painter,
     const bool isNotice = index.data(FriendListModel::IsNoticeRole).toBool();
     if (isNotice) {
         const bool noticeSelected = index.data(FriendListModel::NoticeSelectedRole).toBool();
-
-        // Background: panel by default
-        painter->fillRect(option.rect, theme.panelBackground);
-
-        // Selected or hovered overlay: rounded rect (6px radius, margins 6/3/6/3)
         const bool hovered = option.state & QStyle::State_MouseOver;
-        const QRect overlayRect = option.rect.adjusted(6, 3, -6, -3);
-
-        if (noticeSelected) {
-            // Darker than hover: darken ListHover by a fixed delta
-            const QColor hoverColor = theme.listHover;
-            const int delta = theme.dark ? 8 : 12;
-            QColor selColor(qMax(0, hoverColor.red() - delta),
-                            qMax(0, hoverColor.green() - delta),
-                            qMax(0, hoverColor.blue() - delta));
-            painter->setRenderHint(QPainter::Antialiasing, true);
-            AppFonts::configurePainterForText(*painter);
-            painter->setBrush(selColor);
-            painter->setPen(Qt::NoPen);
-            painter->drawRoundedRect(overlayRect, 6, 6);
-        } else if (hovered) {
-            painter->setRenderHint(QPainter::Antialiasing, true);
-            AppFonts::configurePainterForText(*painter);
-            painter->setBrush(theme.listHover);
-            painter->setPen(Qt::NoPen);
-            painter->drawRoundedRect(overlayRect, 6, 6);
-        }
-
-        // Unread badge (left of arrow)
-        const int unreadCount = index.data(FriendListModel::NoticeUnreadCountRole).toInt();
-        const BadgeLayout badgeLayout = BadgeRenderer::layoutForUnreadCount(
-            unreadCount, false, noticeSelected, theme.dark);
-
-        const int arrowCenterX = option.rect.right() - kGroupCountRightPadding;
-        const int arrowCenterY = option.rect.center().y() + kNoticeArrowYOffset;
-
-        // Reserve space for badge + gap + arrow
-        int rightLimit = arrowCenterX - 12; // gap before arrow
-        if (badgeLayout.size.isValid()) {
-            const int badgeX = rightLimit - badgeLayout.size.width();
-            const int badgeY = arrowCenterY - badgeLayout.size.height() / 2;
-            const QRect badgeR(badgeX, badgeY,
-                               badgeLayout.size.width(), badgeLayout.size.height());
-            BadgeRenderer::drawBadge(painter, badgeR, badgeLayout, noticeSelected);
-            rightLimit = badgeX - 6;
-        }
-
-        painter->setFont(groupFont());
-        painter->setPen(theme.primaryText);
-        const QRect textRect(20, option.rect.top(),
-                             qMax(0, rightLimit - 20), option.rect.height());
-        painter->drawText(textRect,
-                          Qt::AlignLeft | Qt::AlignVCenter,
-                          groupMetrics().elidedText(index.data(FriendListModel::DisplayNameRole).toString(),
-                                                     Qt::ElideRight,
-                                                     textRect.width()));
-
-        QPen arrowPen(theme.secondaryText, 1.3, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin);
-        painter->setPen(arrowPen);
-        painter->drawLine(QPointF(arrowCenterX - 2.0, arrowCenterY - 4.0),
-                          QPointF(arrowCenterX + 2.0, arrowCenterY));
-        painter->drawLine(QPointF(arrowCenterX + 2.0, arrowCenterY),
-                          QPointF(arrowCenterX - 2.0, arrowCenterY + 4.0));
+        ContactListDelegateRenderer::drawNoticeRow(
+            painter,
+            option.rect,
+            index.data(FriendListModel::DisplayNameRole).toString(),
+            index.data(FriendListModel::NoticeUnreadCountRole).toInt(),
+            noticeSelected,
+            hovered,
+            kGroupCountRightPadding,
+            kNoticeArrowYOffset,
+            groupFont(),
+            groupMetrics(),
+            ContactListDelegateRenderer::currentPaintColors());
         painter->restore();
         return;
     }
 
     const bool isGroup = index.data(FriendListModel::IsGroupRole).toBool();
     if (isGroup) {
-        painter->fillRect(option.rect, theme.panelBackground);
-
         const bool hovered = option.state & QStyle::State_MouseOver;
-        if (hovered) {
-            const QRect hoverRect = option.rect.adjusted(6, 3, -6, -3);
-            painter->setRenderHint(QPainter::Antialiasing, true);
-            AppFonts::configurePainterForText(*painter);
-            painter->setBrush(theme.listHover);
-            painter->setPen(Qt::NoPen);
-            painter->drawRoundedRect(hoverRect, 6, 6);
-        }
-
-        const qreal progress = index.data(FriendListModel::GroupProgressRole).toReal();
-        const QRect arrowRect(option.rect.left() + kLeftPadding,
-                              option.rect.top() + (option.rect.height() - kGroupArrowSize) / 2
-                                      + kContactGroupArrowYOffset,
-                              kGroupArrowSize,
-                              kGroupArrowSize);
-
-        painter->save();
-        painter->setRenderHint(QPainter::Antialiasing, true);
-        AppFonts::configurePainterForText(*painter);
-        painter->translate(arrowRect.center());
-        painter->rotate(progress * 90.0);
-        QPen arrowPen(theme.tertiaryText,
-                      1.5,
-                      Qt::SolidLine,
-                      Qt::RoundCap,
-                      Qt::RoundJoin);
-        painter->setPen(arrowPen);
-        painter->drawLine(QPointF(-2.5, -4.0), QPointF(2.5, 0.0));
-        painter->drawLine(QPointF(2.5, 0.0), QPointF(-2.5, 4.0));
-        painter->restore();
-
-        const QString title = index.data(FriendListModel::GroupNameRole).toString();
-        const QString countText = QString::number(index.data(FriendListModel::GroupFriendCountRole).toInt());
-        const int titleLeft = arrowRect.right() + 8;
-        const int countWidth = groupCountMetrics().horizontalAdvance(countText);
-        const int rightEdge = option.rect.right() - kGroupCountRightPadding;
-        const QRect countRect(qMax(titleLeft, rightEdge - countWidth + 1),
-                              option.rect.top(),
-                              countWidth,
-                              option.rect.height());
-        const QRect titleRect(titleLeft,
-                              option.rect.top(),
-                              qMax(0, countRect.left() - titleLeft - 8),
-                              option.rect.height());
-
-        painter->setFont(groupFont());
-        painter->setPen(theme.secondaryText);
-        painter->drawText(titleRect,
-                          Qt::AlignLeft | Qt::AlignVCenter,
-                          groupMetrics().elidedText(title, Qt::ElideRight, titleRect.width()));
-        painter->setFont(groupCountFont());
-        painter->setPen(theme.tertiaryText);
-        painter->drawText(countRect, Qt::AlignRight | Qt::AlignVCenter, countText);
+        ContactListDelegateRenderer::drawSectionHeaderRow(
+            painter,
+            option.rect,
+            index.data(FriendListModel::GroupNameRole).toString(),
+            QString::number(index.data(FriendListModel::GroupFriendCountRole).toInt()),
+            index.data(FriendListModel::GroupProgressRole).toReal(),
+            hovered,
+            kLeftPadding,
+            kGroupCountRightPadding,
+            kGroupArrowSize,
+            kContactGroupArrowYOffset,
+            groupFont(),
+            groupMetrics(),
+            groupCountFont(),
+            groupCountMetrics(),
+            ContactListDelegateRenderer::currentPaintColors());
         painter->restore();
         return;
     }

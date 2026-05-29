@@ -1,6 +1,4 @@
 #include "GroupDetailPage.h"
-#include "shared/services/AppFonts.h"
-
 #include <QActionGroup>
 #include <QApplication>
 #include <QClipboard>
@@ -25,10 +23,12 @@
 #include "shared/ui/popup/InWindowPopupDialogs.h"
 #include "shared/ui/popup/InWindowPopupOverlay.h"
 #include "shared/ui/InlineEditableText.h"
+#include "shared/ui/CopyIdButton.h"
 #include "shared/ui/GlobalNotification.h"
 #include "shared/ui/PaintedLabel.h"
 #include "shared/ui/StatefulPushButton.h"
 #include "shared/ui/StyledActionMenu.h"
+#include "shared/ui/ThemedSelectButton.h"
 #include "shared/theme/ThemeManager.h"
 
 namespace {
@@ -102,93 +102,6 @@ void applyDangerOutlineButtonStyle(StatefulPushButton* button)
     button->setBorderWidth(1);
 }
 
-class CopyIdButton final : public QToolButton
-{
-public:
-    explicit CopyIdButton(QWidget* parent = nullptr)
-        : QToolButton(parent)
-    {
-        setFixedSize(26, 24);
-        setCursor(Qt::PointingHandCursor);
-        setFocusPolicy(Qt::NoFocus);
-        setIconSize(QSize(15, 15));
-        setToolTip(QStringLiteral("复制ID"));
-        setAccessibleName(QStringLiteral("复制ID"));
-    }
-
-protected:
-    bool event(QEvent* event) override
-    {
-        if (event->type() == QEvent::Enter) {
-            m_hovered = true;
-            update();
-        } else if (event->type() == QEvent::Leave) {
-            m_hovered = false;
-            update();
-        }
-        return QToolButton::event(event);
-    }
-
-    void paintEvent(QPaintEvent* event) override
-    {
-        Q_UNUSED(event);
-
-        QPainter painter(this);
-        painter.setRenderHint(QPainter::Antialiasing, true);
-
-        if (isDown() || m_hovered) {
-            painter.setPen(Qt::NoPen);
-            painter.setBrush(ThemeManager::instance().color(isDown()
-                    ? ThemeColor::ControlPressed
-                    : ThemeColor::ControlHover));
-            painter.drawRoundedRect(rect().adjusted(1, 1, -1, -1), 5, 5);
-        }
-
-        QPixmap icon = ImageService::instance().scaled(QStringLiteral(":/resources/icon/copy.svg"),
-                                                       iconSize(),
-                                                       Qt::KeepAspectRatio,
-                                                       devicePixelRatioF());
-        if (!icon.isNull()) {
-            if (ThemeManager::instance().isDark()) {
-                QImage image = icon.toImage().convertToFormat(QImage::Format_ARGB32_Premultiplied);
-                image.invertPixels(QImage::InvertRgb);
-                icon = QPixmap::fromImage(image);
-                icon.setDevicePixelRatio(devicePixelRatioF());
-            }
-            QRect target(QPoint(0, 0), iconSize());
-            target.moveCenter(rect().center());
-            painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
-            painter.drawPixmap(target, icon);
-            return;
-        }
-
-        const QColor iconColor = isEnabled()
-                ? ThemeManager::instance().color(m_hovered ? ThemeColor::PrimaryText : ThemeColor::TertiaryText)
-                : ThemeManager::instance().color(ThemeColor::PlaceholderText);
-        painter.setPen(QPen(iconColor, 1.5, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
-        painter.setBrush(Qt::NoBrush);
-
-        const QRect iconRect(QPoint(0, 0), QSize(16, 16));
-        QRect centeredIconRect = iconRect;
-        centeredIconRect.moveCenter(rect().center());
-        const QRectF backSheet(centeredIconRect.left() + 6,
-                               centeredIconRect.top() + 2,
-                               8,
-                               10);
-        const QRectF frontSheet(centeredIconRect.left() + 2,
-                                centeredIconRect.top() + 6,
-                                10,
-                                8);
-        painter.drawRoundedRect(backSheet, 2, 2);
-        painter.fillRect(frontSheet.adjusted(0, 0, 1, 1),
-                         ThemeManager::instance().color(ThemeColor::PageBackground));
-        painter.drawRoundedRect(frontSheet, 2, 2);
-    }
-
-private:
-    bool m_hovered = false;
-};
-
 const QStringList& editableCategoryOrder()
 {
     static const QStringList ids = {
@@ -202,97 +115,6 @@ const QStringList& editableCategoryOrder()
 
 } // namespace
 
-class CategorySelectButton : public QToolButton
-{
-public:
-    explicit CategorySelectButton(QWidget* parent = nullptr)
-        : QToolButton(parent)
-    {
-        setFixedSize(172, 34);
-        setCursor(Qt::PointingHandCursor);
-        setFocusPolicy(Qt::NoFocus);
-        setPopupMode(QToolButton::DelayedPopup);
-        setToolButtonStyle(Qt::ToolButtonTextOnly);
-    }
-
-    void setMenuHoverSuppressed(bool suppressed)
-    {
-        if (m_menuHoverSuppressed == suppressed) {
-            return;
-        }
-
-        m_menuHoverSuppressed = suppressed;
-        update();
-    }
-
-protected:
-    bool event(QEvent* event) override
-    {
-        if (event->type() == QEvent::Enter) {
-            m_hovered = true;
-            setMenuHoverSuppressed(false);
-            update();
-        } else if (event->type() == QEvent::Leave) {
-            m_hovered = false;
-            setMenuHoverSuppressed(false);
-            update();
-        } else if (event->type() == QEvent::MouseButtonPress) {
-            setMenuHoverSuppressed(false);
-        }
-        return QToolButton::event(event);
-    }
-
-    void paintEvent(QPaintEvent* event) override
-    {
-        Q_UNUSED(event);
-
-        QPainter painter(this);
-        painter.setRenderHint(QPainter::Antialiasing, true);
-        AppFonts::configurePainterForText(painter);
-        const QColor borderColor = isEnabled()
-                ? ThemeManager::instance().color(ThemeColor::Divider)
-                : ThemeManager::instance().color(ThemeColor::ListHover);
-        const QColor bgColor = isEnabled()
-                ? ((m_hovered && !m_menuHoverSuppressed)
-                   ? ThemeManager::instance().color(ThemeColor::ListHover)
-                   : ThemeManager::instance().color(ThemeColor::InputBackground))
-                : ThemeManager::instance().color(ThemeColor::PanelRaisedBackground);
-        painter.setPen(QPen(borderColor, 1));
-        painter.setBrush(bgColor);
-        painter.drawRoundedRect(rect().adjusted(0, 0, -1, -1), 5, 5);
-
-        QFont textFont = font();
-        textFont.setPixelSize(14);
-        painter.setFont(textFont);
-        painter.setPen(isEnabled()
-                       ? ThemeManager::instance().color(ThemeColor::PrimaryText)
-                       : ThemeManager::instance().color(ThemeColor::TertiaryText));
-        const QRect textRect = rect().adjusted(14, 0, -34, 0);
-        painter.drawText(textRect,
-                         Qt::AlignLeft | Qt::AlignVCenter,
-                         QFontMetrics(textFont).elidedText(text(), Qt::ElideRight, textRect.width()));
-
-        if (!isEnabled()) {
-            return;
-        }
-
-        const int centerX = width() - 19;
-        const int centerY = height() / 2;
-        QPen arrowPen(ThemeManager::instance().color(ThemeColor::TertiaryText),
-                      1.6,
-                      Qt::SolidLine,
-                      Qt::RoundCap,
-                      Qt::RoundJoin);
-        painter.setPen(arrowPen);
-        painter.drawLine(QPointF(centerX - 4.5, centerY - 2.0), QPointF(centerX, centerY + 2.5));
-        painter.drawLine(QPointF(centerX, centerY + 2.5), QPointF(centerX + 4.5, centerY - 2.0));
-    }
-
-private:
-    bool m_hovered = false;
-    bool m_menuHoverSuppressed = false;
-};
-
 GroupDetailPage::GroupDetailPage(QWidget* parent)
     : QWidget(parent)
     , m_contentWidget(new QWidget(this))
@@ -301,7 +123,7 @@ GroupDetailPage::GroupDetailPage(QWidget* parent)
     , m_idLabel(new PaintedLabel(this))
     , m_copyIdButton(new CopyIdButton(this))
     , m_remarkEdit(new InlineEditableText(this))
-    , m_categoryButton(new CategorySelectButton(this))
+    , m_categoryButton(new ThemedSelectButton(this))
     , m_categoryMenu(new StyledActionMenu(this))
     , m_introLabel(makeValueLabel(this))
     , m_announcementLabel(makeValueLabel(this))
@@ -434,7 +256,7 @@ GroupDetailPage::GroupDetailPage(QWidget* parent)
     connect(m_categoryButton, &QToolButton::clicked, this, &GroupDetailPage::showCategoryMenu);
     connect(m_categoryMenu, &StyledActionMenu::aboutToHide, this, [this]() {
         m_categoryButton->setDown(false);
-        static_cast<CategorySelectButton*>(m_categoryButton)->setMenuHoverSuppressed(true);
+        static_cast<ThemedSelectButton*>(m_categoryButton)->setMenuHoverSuppressed(true);
         m_categoryButton->update();
     });
     connect(&ThemeManager::instance(), &ThemeManager::themeChanged, this, [this]() {
@@ -736,12 +558,12 @@ void GroupDetailPage::showCategoryMenu()
         return;
     }
 
-    static_cast<CategorySelectButton*>(m_categoryButton)->setMenuHoverSuppressed(false);
+    static_cast<ThemedSelectButton*>(m_categoryButton)->setMenuHoverSuppressed(false);
     rebuildCategoryMenu();
     m_categoryMenu->setFixedWidth(m_categoryButton->width());
     m_categoryMenu->popup(m_categoryButton->mapToGlobal(QPoint(0, m_categoryButton->height())));
     m_categoryButton->setDown(false);
-    static_cast<CategorySelectButton*>(m_categoryButton)->setMenuHoverSuppressed(true);
+    static_cast<ThemedSelectButton*>(m_categoryButton)->setMenuHoverSuppressed(true);
     m_categoryButton->update();
 }
 

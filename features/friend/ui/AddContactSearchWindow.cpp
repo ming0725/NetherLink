@@ -14,9 +14,10 @@
 #include "shared/ui/QtFallbackLiquidGlass.h"
 #include "shared/ui/StatefulPushButton.h"
 #include "shared/ui/StyledActionMenu.h"
+#include "shared/ui/ThemedSelectButton.h"
 #include "shared/ui/TransparentTextEdit.h"
 
-#ifdef Q_OS_WIN
+#ifndef Q_OS_MACOS
 #include "platform/windows/WindowsWindowControlButton.h"
 #endif
 
@@ -196,84 +197,6 @@ private:
     QString m_source;
 };
 
-class PopupSelectButton final : public QToolButton
-{
-public:
-    explicit PopupSelectButton(QWidget* parent = nullptr)
-        : QToolButton(parent)
-    {
-        setFixedSize(172, kRequestPopupInputHeight);
-        setCursor(Qt::PointingHandCursor);
-        setFocusPolicy(Qt::NoFocus);
-        setPopupMode(QToolButton::DelayedPopup);
-        setToolButtonStyle(Qt::ToolButtonTextOnly);
-    }
-
-    void setMenuHoverSuppressed(bool suppressed)
-    {
-        if (m_menuHoverSuppressed == suppressed) {
-            return;
-        }
-        m_menuHoverSuppressed = suppressed;
-        update();
-    }
-
-protected:
-    bool event(QEvent* event) override
-    {
-        if (event->type() == QEvent::Enter) {
-            m_hovered = true;
-            setMenuHoverSuppressed(false);
-            update();
-        } else if (event->type() == QEvent::Leave) {
-            m_hovered = false;
-            setMenuHoverSuppressed(false);
-            update();
-        } else if (event->type() == QEvent::MouseButtonPress) {
-            setMenuHoverSuppressed(false);
-        }
-        return QToolButton::event(event);
-    }
-
-    void paintEvent(QPaintEvent* event) override
-    {
-        Q_UNUSED(event);
-
-        QPainter painter(this);
-        painter.setRenderHint(QPainter::Antialiasing, true);
-        AppFonts::configurePainterForText(painter);
-        painter.setPen(QPen(ThemeManager::instance().color(ThemeColor::Divider), 1));
-        painter.setBrush((m_hovered && !m_menuHoverSuppressed)
-                         ? ThemeManager::instance().color(ThemeColor::ListHover)
-                         : ThemeManager::instance().color(ThemeColor::InputBackground));
-        painter.drawRoundedRect(rect().adjusted(0, 0, -1, -1), 5, 5);
-
-        QFont textFont = font();
-        textFont.setPixelSize(14);
-        painter.setFont(textFont);
-        painter.setPen(ThemeManager::instance().color(ThemeColor::PrimaryText));
-        const QRect textRect = rect().adjusted(14, 0, -34, 0);
-        painter.drawText(textRect,
-                         Qt::AlignLeft | Qt::AlignVCenter,
-                         QFontMetrics(textFont).elidedText(text(), Qt::ElideRight, textRect.width()));
-
-        const int centerX = width() - 19;
-        const int centerY = height() / 2;
-        QPen arrowPen(ThemeManager::instance().color(ThemeColor::TertiaryText),
-                      1.6,
-                      Qt::SolidLine,
-                      Qt::RoundCap,
-                      Qt::RoundJoin);
-        painter.setPen(arrowPen);
-        painter.drawLine(QPointF(centerX - 4.5, centerY - 2.0), QPointF(centerX, centerY + 2.5));
-        painter.drawLine(QPointF(centerX, centerY + 2.5), QPointF(centerX + 4.5, centerY - 2.0));
-    }
-
-private:
-    bool m_hovered = false;
-    bool m_menuHoverSuppressed = false;
-};
-
 class RequestMessageBox final : public QWidget
 {
 public:
@@ -412,7 +335,7 @@ QWidget* createRequestPopupContent(const QString& title,
     auto* selectLayout = new QHBoxLayout(selectHost);
     selectLayout->setContentsMargins(0, 0, 0, 0);
     selectLayout->addStretch();
-    auto* groupButton = new PopupSelectButton(selectHost);
+    auto* groupButton = new ThemedSelectButton(selectHost);
     auto* groupMenu = new StyledActionMenu(groupButton);
     groupMenu->setItemHoverColor(ThemeManager::instance().color(ThemeColor::ContextMenuHover));
     result->groupId = currentGroupId;
@@ -443,16 +366,16 @@ QWidget* createRequestPopupContent(const QString& title,
         }
     };
     QObject::connect(groupButton, &QToolButton::clicked, content, [groupButton, groupMenu, rebuildMenu]() {
-        static_cast<PopupSelectButton*>(groupButton)->setMenuHoverSuppressed(false);
+        static_cast<ThemedSelectButton*>(groupButton)->setMenuHoverSuppressed(false);
         rebuildMenu();
         groupMenu->setFixedWidth(groupButton->width());
         groupMenu->popup(groupButton->mapToGlobal(QPoint(0, groupButton->height())));
         groupButton->setDown(false);
-        static_cast<PopupSelectButton*>(groupButton)->setMenuHoverSuppressed(true);
+        static_cast<ThemedSelectButton*>(groupButton)->setMenuHoverSuppressed(true);
         groupButton->update();
     });
     QObject::connect(groupMenu, &StyledActionMenu::aboutToHide, groupButton, [groupButton]() {
-        static_cast<PopupSelectButton*>(groupButton)->setMenuHoverSuppressed(true);
+        static_cast<ThemedSelectButton*>(groupButton)->setMenuHoverSuppressed(true);
         groupButton->update();
     });
 
@@ -1073,7 +996,7 @@ void AddContactModeBar::paintEvent(QPaintEvent*)
     }
 
     if (!m_selectedRect.isEmpty()) {
-        painter.setBrush(ThemeManager::instance().postBarItemSelectedBackgroundColor());
+        painter.setBrush(ThemeManager::instance().color(ThemeColor::FloatingSegmentSelectedBackground));
         painter.drawRoundedRect(m_selectedRect, 10, 10);
     }
 
@@ -1318,16 +1241,26 @@ AddContactSearchWindow::AddContactSearchWindow(InitialMode mode, QWidget* parent
     setCompactTrafficLightsEnabled(true);
     setDragTitleBar(m_content);
 
-#ifdef Q_OS_WIN
+#ifndef Q_OS_MACOS
     m_minimizeButton = new WindowsWindowControlButton(WindowsWindowControlButton::Kind::Minimize, m_content);
     m_maximizeButton = new WindowsWindowControlButton(WindowsWindowControlButton::Kind::Maximize, m_content);
     m_closeButton = new WindowsWindowControlButton(WindowsWindowControlButton::Kind::Close, m_content);
     connect(m_minimizeButton, &QAbstractButton::clicked, this, &QWidget::showMinimized);
     connect(m_maximizeButton, &QAbstractButton::clicked, this, [this]() {
+#ifdef Q_OS_WIN
         toggleSystemMaximized();
+#else
+        if (isMaximized()) {
+            showNormal();
+        } else {
+            showMaximized();
+        }
+#endif
     });
     connect(m_closeButton, &QAbstractButton::clicked, this, &QWidget::close);
+#ifdef Q_OS_WIN
     setSystemMaximizeButton(m_maximizeButton);
+#endif
 #endif
 
     m_titleLabel->setAlignment(Qt::AlignCenter);
@@ -1670,7 +1603,7 @@ void AddContactSearchWindow::updateLayout()
     const int resultY = dividerY + 1;
     m_resultView->setGeometry(0, resultY, width(), qMax(0, height() - resultY));
     m_modeBar->raise();
-#ifdef Q_OS_WIN
+#ifndef Q_OS_MACOS
     if (m_closeButton && m_maximizeButton && m_minimizeButton) {
         m_closeButton->setGeometry(width() - m_closeButton->width(),
                                    0,

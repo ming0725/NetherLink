@@ -1,7 +1,7 @@
 #include "RegisterWindow.h"
 
 #include "LoginAccountRepository.h"
-#ifdef Q_OS_WIN
+#ifndef Q_OS_MACOS
 #include "platform/windows/WindowsWindowControlButton.h"
 #endif
 #include "shared/services/AppFonts.h"
@@ -43,21 +43,6 @@ constexpr int kPasswordFieldToRulesSpacing = 4;
 constexpr int kPasswordRulesToRepeatSpacing = 2;
 constexpr int kRepeatRuleBottomSpacing = 4;
 constexpr int kErrorLabelHeight = 19;
-
-QColor registerBackgroundColor()
-{
-    return ThemeManager::instance().isDark() ? QColor(Qt::black) : QColor(Qt::white);
-}
-
-QColor successTextColor()
-{
-    return ThemeManager::instance().isDark() ? QColor(0x8f, 0xe0, 0xa5) : QColor(0x18, 0x8d, 0x48);
-}
-
-QColor disabledRuleColor()
-{
-    return ThemeManager::instance().color(ThemeColor::TertiaryText);
-}
 
 void applyDefaultRegisterButtonStyle(StatefulPushButton* button)
 {
@@ -262,7 +247,9 @@ protected:
 
         const QColor color = m_errorOnly
                 ? ThemeManager::instance().color(ThemeColor::DangerText)
-                : (m_passed ? successTextColor() : disabledRuleColor());
+                : ThemeManager::instance().color(m_passed
+                        ? ThemeColor::ValidationSuccessText
+                        : ThemeColor::TertiaryText);
         painter.setPen(QPen(color, 1.7, Qt::SolidLine, Qt::RoundCap, Qt::RoundJoin));
 
         const QRect iconRect(1, 4, 13, 13);
@@ -290,100 +277,6 @@ private:
     bool m_passed = false;
     bool m_errorOnly = false;
     bool m_contentVisible = true;
-};
-
-class RegisterWindowControlButton final : public QAbstractButton
-{
-public:
-    enum class Kind {
-        Minimize,
-        Close
-    };
-
-    explicit RegisterWindowControlButton(Kind kind, QWidget* parent = nullptr)
-        : QAbstractButton(parent)
-        , m_kind(kind)
-    {
-        setFixedSize(38, 32);
-        setFocusPolicy(Qt::NoFocus);
-        setCursor(Qt::PointingHandCursor);
-        setAttribute(Qt::WA_StyledBackground, false);
-    }
-
-protected:
-    void enterEvent(QEnterEvent* event) override
-    {
-        m_hovered = true;
-        update();
-        QAbstractButton::enterEvent(event);
-    }
-
-    void leaveEvent(QEvent* event) override
-    {
-        m_hovered = false;
-        m_pressed = false;
-        update();
-        QAbstractButton::leaveEvent(event);
-    }
-
-    void mousePressEvent(QMouseEvent* event) override
-    {
-        if (event->button() == Qt::LeftButton) {
-            m_pressed = true;
-            update();
-        }
-        QAbstractButton::mousePressEvent(event);
-    }
-
-    void mouseReleaseEvent(QMouseEvent* event) override
-    {
-        m_pressed = false;
-        update();
-        QAbstractButton::mouseReleaseEvent(event);
-    }
-
-    void paintEvent(QPaintEvent* event) override
-    {
-        Q_UNUSED(event);
-
-        QPainter painter(this);
-        painter.setRenderHint(QPainter::Antialiasing, true);
-
-        if (m_hovered) {
-            QColor fill = m_kind == Kind::Close
-                    ? ThemeManager::instance().color(ThemeColor::WindowCloseHover)
-                    : ThemeManager::instance().color(m_pressed ? ThemeColor::ControlPressed
-                                                               : ThemeColor::ControlHover);
-            if (m_pressed && m_kind == Kind::Close) {
-                fill = fill.darker(112);
-            }
-            painter.fillRect(rect(), fill);
-        }
-
-        QPen pen(m_kind == Kind::Close && m_hovered
-                 ? QColor(255, 255, 255)
-                 : ThemeManager::instance().color(ThemeColor::SecondaryText),
-                 1.5,
-                 Qt::SolidLine,
-                 Qt::RoundCap,
-                 Qt::RoundJoin);
-        painter.setPen(pen);
-        const QPointF center = rect().center();
-        if (m_kind == Kind::Minimize) {
-            painter.drawLine(QPointF(center.x() - 5.0, center.y() + 3.0),
-                             QPointF(center.x() + 5.0, center.y() + 3.0));
-        } else {
-            painter.drawLine(QPointF(center.x() - 4.5, center.y() - 4.5),
-                             QPointF(center.x() + 4.5, center.y() + 4.5));
-            painter.drawLine(QPointF(center.x() + 4.5, center.y() - 4.5),
-                             QPointF(center.x() - 4.5, center.y() + 4.5));
-        }
-    }
-
-private:
-    Kind m_kind;
-    bool m_hovered = false;
-    bool m_pressed = false;
 };
 
 QLabel* makeRegisterLabel(const QString& text, int pixelSize, ThemeColor color, QWidget* parent, int weight)
@@ -451,7 +344,7 @@ void RegisterWindow::setupUi()
     m_titleBar->setAttribute(Qt::WA_StyledBackground, false);
     setDragTitleBar(m_titleBar);
 
-#ifdef Q_OS_WIN
+#ifndef Q_OS_MACOS
     auto* minimizeButton = new WindowsWindowControlButton(WindowsWindowControlButton::Kind::Minimize, m_titleBar);
     auto* closeButton = new WindowsWindowControlButton(WindowsWindowControlButton::Kind::Close, m_titleBar);
     closeButton->setGeometry(m_titleBar->width() - closeButton->width(), 0, closeButton->width(), closeButton->height());
@@ -459,14 +352,6 @@ void RegisterWindow::setupUi()
                                 minimizeButton->width(), minimizeButton->height());
     minimizeButton->raise();
     closeButton->raise();
-    connect(minimizeButton, &QAbstractButton::clicked, this, &QWidget::showMinimized);
-    connect(closeButton, &QAbstractButton::clicked, this, &RegisterWindow::scheduleClose);
-#elif !defined(Q_OS_MACOS)
-    auto* minimizeButton = new RegisterWindowControlButton(RegisterWindowControlButton::Kind::Minimize, m_titleBar);
-    auto* closeButton = new RegisterWindowControlButton(RegisterWindowControlButton::Kind::Close, m_titleBar);
-    closeButton->setGeometry(m_titleBar->width() - closeButton->width(), 0, closeButton->width(), closeButton->height());
-    minimizeButton->setGeometry(closeButton->x() - minimizeButton->width(), 0,
-                                minimizeButton->width(), minimizeButton->height());
     connect(minimizeButton, &QAbstractButton::clicked, this, &QWidget::showMinimized);
     connect(closeButton, &QAbstractButton::clicked, this, &RegisterWindow::scheduleClose);
 #endif
@@ -673,7 +558,7 @@ void RegisterWindow::paintEvent(QPaintEvent* event)
     QPainter painter(this);
     painter.setRenderHint(QPainter::Antialiasing, true);
 
-    painter.fillRect(rect(), registerBackgroundColor());
+    painter.fillRect(rect(), ThemeManager::instance().color(ThemeColor::AuthWindowBackground));
 }
 
 void RegisterWindow::showEvent(QShowEvent* event)

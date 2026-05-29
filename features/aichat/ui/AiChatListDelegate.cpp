@@ -7,8 +7,8 @@
 
 #include "features/aichat/model/AiChatListModel.h"
 #include "shared/theme/ThemeManager.h"
-#include "shared/ui/BadgeRenderer.h"
-#include "shared/ui/LoadingSpinnerRenderer.h"
+#include "shared/ui/renderers/BadgeRenderer.h"
+#include "shared/ui/renderers/LoadingSpinnerRenderer.h"
 
 namespace {
 

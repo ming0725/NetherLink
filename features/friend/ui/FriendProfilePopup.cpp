@@ -24,6 +24,7 @@
 #include "shared/services/AppFonts.h"
 #include "shared/services/ImageService.h"
 #include "shared/theme/ThemeManager.h"
+#include "shared/ui/CopyIdButton.h"
 #include "shared/ui/GlobalNotification.h"
 #include "shared/ui/ImageViewer.h"
 #include "shared/ui/PaintedLabel.h"
@@ -88,70 +89,6 @@ void applyPrimaryButtonStyle(StatefulPushButton* button)
     button->setRadius(8);
     button->setPrimaryStyle();
 }
-
-class CopyIdButton final : public QToolButton
-{
-public:
-    explicit CopyIdButton(QWidget* parent = nullptr)
-        : QToolButton(parent)
-    {
-        setFixedSize(26, 24);
-        setCursor(Qt::PointingHandCursor);
-        setFocusPolicy(Qt::NoFocus);
-        setIconSize(QSize(15, 15));
-        setToolTip(QStringLiteral("复制ID"));
-        setAccessibleName(QStringLiteral("复制ID"));
-    }
-
-protected:
-    bool event(QEvent* event) override
-    {
-        if (event->type() == QEvent::Enter) {
-            m_hovered = true;
-            update();
-        } else if (event->type() == QEvent::Leave) {
-            m_hovered = false;
-            update();
-        }
-        return QToolButton::event(event);
-    }
-
-    void paintEvent(QPaintEvent* event) override
-    {
-        Q_UNUSED(event);
-
-        QPainter painter(this);
-        painter.setRenderHint(QPainter::Antialiasing, true);
-
-        if (isDown() || m_hovered) {
-            painter.setPen(Qt::NoPen);
-            painter.setBrush(ThemeManager::instance().color(isDown()
-                    ? ThemeColor::ControlPressed
-                    : ThemeColor::ControlHover));
-            painter.drawRoundedRect(rect().adjusted(1, 1, -1, -1), 5, 5);
-        }
-
-        QPixmap icon = ImageService::instance().scaled(QStringLiteral(":/resources/icon/copy.svg"),
-                                                       iconSize(),
-                                                       Qt::KeepAspectRatio,
-                                                       devicePixelRatioF());
-        if (!icon.isNull()) {
-            if (ThemeManager::instance().isDark()) {
-                QImage image = icon.toImage().convertToFormat(QImage::Format_ARGB32_Premultiplied);
-                image.invertPixels(QImage::InvertRgb);
-                icon = QPixmap::fromImage(image);
-                icon.setDevicePixelRatio(devicePixelRatioF());
-            }
-            QRect target(QPoint(0, 0), iconSize());
-            target.moveCenter(rect().center());
-            painter.setRenderHint(QPainter::SmoothPixmapTransform, true);
-            painter.drawPixmap(target, icon);
-        }
-    }
-
-private:
-    bool m_hovered = false;
-};
 
 } // namespace
 

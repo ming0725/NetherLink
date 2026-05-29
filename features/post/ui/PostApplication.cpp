@@ -24,13 +24,6 @@ namespace {
 constexpr int kPostDetailLoadingMinDurationMs = 300;
 #ifdef Q_OS_MACOS
 constexpr int kFeedDividerWidth = 1;
-
-QColor feedDividerColor()
-{
-    return ThemeManager::instance().isDark()
-            ? QColor(0x60, 0x64, 0x6d)
-            : QColor(0xd6, 0xd6, 0xd6);
-}
 #endif
 
 class TransitionImageWidget final : public QWidget
@@ -341,7 +334,7 @@ void PostApplication::paintEvent(QPaintEvent* event)
     }
 
     QPainter painter(this);
-    painter.fillRect(dividerRect, feedDividerColor());
+    painter.fillRect(dividerRect, ThemeManager::instance().color(ThemeColor::PostFeedDivider));
 #endif
 }
 

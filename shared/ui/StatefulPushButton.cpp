@@ -63,7 +63,7 @@ StatefulPushButton::~StatefulPushButton()
 void StatefulPushButton::initializeButton()
 {
     setMouseTracking(true);
-    setCursor(Qt::PointingHandCursor);
+    updateCursorForState();
     setAttribute(Qt::WA_Hover);
     setAttribute(Qt::WA_StyledBackground, false);
     setAutoFillBackground(false);
@@ -81,7 +81,7 @@ void StatefulPushButton::initializeButton()
 void StatefulPushButton::applyStateColor()
 {
     QColor target;
-    if (!isEnabled()) {
+    if (!isInteractionEnabled()) {
         target = m_disabledColor;
     } else if (m_isPressed || m_forcedPressedVisual) {
         target = m_pressColor;
@@ -97,6 +97,16 @@ void StatefulPushButton::applyStateColor()
 
     m_colorAnimation->stop();
     setCurrentColor(target);
+}
+
+bool StatefulPushButton::isInteractionEnabled() const
+{
+    return QPushButton::isEnabled() && m_actionEnabled;
+}
+
+void StatefulPushButton::updateCursorForState()
+{
+    setCursor(isInteractionEnabled() ? Qt::PointingHandCursor : Qt::ForbiddenCursor);
 }
 
 void StatefulPushButton::updateHoverState(bool hovered)
@@ -173,6 +183,45 @@ void StatefulPushButton::setAnimationDuration(int ms)
 
 int StatefulPushButton::animationDuration() const { return m_animationDuration; }
 
+bool StatefulPushButton::isEnabled() const
+{
+    return isInteractionEnabled();
+}
+
+void StatefulPushButton::setEnabled(bool enabled)
+{
+    if (enabled && !QPushButton::isEnabled()) {
+        QPushButton::setEnabled(true);
+    }
+    setActionEnabled(enabled);
+}
+
+void StatefulPushButton::setDisabled(bool disabled)
+{
+    setEnabled(!disabled);
+}
+
+bool StatefulPushButton::actionEnabled() const
+{
+    return m_actionEnabled;
+}
+
+void StatefulPushButton::setActionEnabled(bool enabled)
+{
+    if (m_actionEnabled == enabled) {
+        return;
+    }
+
+    m_actionEnabled = enabled;
+    if (!m_actionEnabled) {
+        m_isHovered = false;
+        m_isPressed = false;
+        m_forcedPressedVisual = false;
+    }
+    updateCursorForState();
+    applyStateColor();
+}
+
 void StatefulPushButton::setPressedVisual(bool pressed)
 {
     if (m_forcedPressedVisual == pressed) {
@@ -227,14 +276,14 @@ void StatefulPushButton::setDangerStyle() {
 
 void StatefulPushButton::enterEvent(QEnterEvent* e)
 {
-    if (!isEnabled()) return;
+    if (!isInteractionEnabled()) return;
     updateHoverState(true);
     QPushButton::enterEvent(e);
 }
 
 void StatefulPushButton::leaveEvent(QEvent* e)
 {
-    if (!isEnabled()) return;
+    if (!isInteractionEnabled()) return;
     updateHoverState(false);
     updatePressState(false);
     QPushButton::leaveEvent(e);
@@ -242,14 +291,14 @@ void StatefulPushButton::leaveEvent(QEvent* e)
 
 void StatefulPushButton::mouseMoveEvent(QMouseEvent* e)
 {
-    if (!isEnabled()) return;
+    if (!isInteractionEnabled()) return;
     updateHoverState(rect().contains(e->position().toPoint()));
     QPushButton::mouseMoveEvent(e);
 }
 
 void StatefulPushButton::mousePressEvent(QMouseEvent* e)
 {
-    if (!isEnabled()) return;
+    if (!isInteractionEnabled()) return;
     if (e->button() == Qt::LeftButton) {
         updateHoverState(rect().contains(e->position().toPoint()));
         updatePressState(rect().contains(e->position().toPoint()));
@@ -259,7 +308,7 @@ void StatefulPushButton::mousePressEvent(QMouseEvent* e)
 
 void StatefulPushButton::mouseReleaseEvent(QMouseEvent* e)
 {
-    if (!isEnabled()) return;
+    if (!isInteractionEnabled()) return;
     if (e->button() == Qt::LeftButton) {
         updateHoverState(rect().contains(e->position().toPoint()));
         updatePressState(false);
@@ -313,10 +362,10 @@ void StatefulPushButton::paintEvent(QPaintEvent* e)
 bool StatefulPushButton::event(QEvent* e)
 {
     if (e->type() == QEvent::HoverEnter) {
-        updateHoverState(true);
+        updateHoverState(isInteractionEnabled());
     } else if (e->type() == QEvent::HoverMove) {
         if (const auto* hoverEvent = static_cast<QHoverEvent*>(e)) {
-            updateHoverState(rect().contains(hoverEvent->position().toPoint()));
+            updateHoverState(isInteractionEnabled() && rect().contains(hoverEvent->position().toPoint()));
         }
     } else if (e->type() == QEvent::HoverLeave) {
         updateHoverState(false);
@@ -328,6 +377,9 @@ bool StatefulPushButton::event(QEvent* e)
         m_isPressed = false;
         if (e->type() == QEvent::EnabledChange || e->type() == QEvent::Hide) {
             m_forcedPressedVisual = false;
+        }
+        if (e->type() == QEvent::EnabledChange) {
+            updateCursorForState();
         }
         applyStateColor();
     }

@@ -27,6 +27,7 @@ enum class ThemeColor {
     // their own semantic color, not the user-selected theme color.
     WindowBackground,
     PageBackground,
+    AuthWindowBackground,
     PanelBackground,
     PanelRaisedBackground,
     InputBackground,
@@ -37,6 +38,7 @@ enum class ThemeColor {
     PlaceholderText,
     Divider,
     ListHover,
+    ListNoticeSelected,
     ListPinned,
     ChatInfoPanelOverlay,
     ChatInfoPanelFallbackBackground,
@@ -58,11 +60,13 @@ enum class ThemeColor {
     ChatInfoMemberListSecondaryText,
     ChatInfoMemberListHeaderText,
     DangerText,
+    ValidationSuccessText,
     DangerControlHover,
     DangerControlPressed,
     AppBarItemBackground,
     AppBarItemSelectedBackground,
     PostBarItemSelectedBackground,
+    FloatingSegmentSelectedBackground,
     ImagePlaceholder,
     LoadingPlaceholderBase,
     LoadingPlaceholderHighlight,
@@ -107,6 +111,8 @@ enum class ThemeColor {
     NotificationCloseIcon,
     WindowBackdropTint,
     WindowCloseHover,
+    WindowClosePressed,
+    WindowCloseIcon,
     OverlayStroke,
     InWindowPopupStroke,
     TooltipBackground,
@@ -114,6 +120,7 @@ enum class ThemeColor {
     MediaOverlayStart,
     MediaOverlayEnd,
     PostOverlay,
+    PostFeedDivider,
     ScrollThumb
 };
 
@@ -144,7 +151,6 @@ public:
     void setMode(Mode mode);
     bool isDark() const;
     QColor color(ThemeColor role) const;
-    QColor postBarItemSelectedBackgroundColor() const;
     QColor themeColor() const;
     void setThemeColor(const QColor& color);
     QtFallbackInputBarEffect qtFallbackInputBarEffect() const;
