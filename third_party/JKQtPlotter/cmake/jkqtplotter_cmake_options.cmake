@@ -1,3 +1,6 @@
+# Modified by NetherLink-static contributors on 2026-05-30.
+# Changes: adapted JKQtPlotter CMake options for the vendored NetherLink-static
+# build; see ../MODIFICATIONS.md.
 if(NOT DEFINED BUILD_SHARED_LIBS)
     option(BUILD_SHARED_LIBS "Build as shared library" ON)
 endif()

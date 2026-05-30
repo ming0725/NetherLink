@@ -1,3 +1,6 @@
+# Modified by NetherLink-static contributors on 2026-05-30.
+# Changes: adapted JKQtPlotter build/install macros for the vendored
+# NetherLink-static build; see ../MODIFICATIONS.md.
 include(CMakePackageConfigHelpers)
 
 function(jkqtplotter_add_library lib_name)

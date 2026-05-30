@@ -1,3 +1,6 @@
+# Modified by NetherLink-static contributors on 2026-05-30.
+# Changes: reduced library build to JKQTMathText and required common support;
+# see ../MODIFICATIONS.md.
 cmake_minimum_required(VERSION 3.23)
 
 message(STATUS)

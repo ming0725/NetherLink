@@ -1,6 +1,10 @@
 /*
     Copyright (c) 2008-2024 Jan W. Krieger (<jan@jkrieger.de>)
 
+    Modified by NetherLink-static contributors on 2026-05-30.
+    Changes: adjusted double-line brace rendering metrics; see
+    third_party/JKQtPlotter/MODIFICATIONS.md.
+
     
 
     This software is free software: you can redistribute it and/or modify

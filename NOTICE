@@ -1,0 +1,31 @@
+NetherLink-static third-party notices
+====================================
+
+NetherLink-static is licensed under the MIT License, except for third-party
+components that retain their own licenses.
+
+JKQtPlotter / JKQTMathText
+--------------------------
+
+This project includes a vendored, reduced, and modified copy of JKQtPlotter
+focused on JKQTMathText.
+
+Upstream project: https://github.com/jkriege2/JKQtPlotter
+License: GNU Lesser General Public License, version 2.1 or later
+License text: third_party/JKQtPlotter/LICENSE
+Local modifications: third_party/JKQtPlotter/MODIFICATIONS.md
+
+XITS fonts
+----------
+
+JKQTMathText resources include XITS fonts.
+
+License: SIL Open Font License, version 1.1
+License text: third_party/JKQtPlotter/lib/jkqtmathtext/resources/xits/OFL.txt
+
+miniaudio
+---------
+
+This project includes miniaudio.
+
+License text: third_party/miniaudio/LICENSE
