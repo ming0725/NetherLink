@@ -1,6 +1,5 @@
 #pragma once
 
-#include <QJsonArray>
 #include <QJsonObject>
 #include <QMutex>
 #include <QObject>
@@ -19,9 +18,6 @@ public:
     QString dataRootPath() const;
     bool isEncrypted() const;
     QString lastError() const;
-
-    QJsonArray seedArray(const QString& resourcePath) const;
-    QJsonObject seedObject(const QString& resourcePath) const;
 
     QVector<QJsonObject> values(const QString& domain);
     QJsonObject value(const QString& domain, const QString& key);

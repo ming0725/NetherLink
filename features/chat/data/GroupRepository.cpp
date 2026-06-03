@@ -6,7 +6,6 @@
 #include <QJsonObject>
 #include <QMetaObject>
 #include <QRunnable>
-#include <QSet>
 #include <QStringList>
 #include <QThread>
 #include <QThreadPool>
@@ -69,110 +68,6 @@ void appendListEntry(QVector<Group>& groups,
     normalized.listGroupId = categoryId;
     normalized.listGroupName = categoryName;
     groups.push_back(normalized);
-}
-
-void appendUniqueMember(QVector<QString>& members, QSet<QString>& seen, const QString& userId)
-{
-    if (userId.isEmpty() || seen.contains(userId)) {
-        return;
-    }
-
-    members.push_back(userId);
-    seen.insert(userId);
-}
-
-QVector<QString> sampleNonFriendMemberIds()
-{
-    const QStringList candidateIds = {
-            QStringLiteral("u101"),
-            QStringLiteral("u102"),
-            QStringLiteral("u103"),
-            QStringLiteral("u104"),
-            QStringLiteral("u105"),
-            QStringLiteral("u106"),
-            QStringLiteral("u107"),
-            QStringLiteral("u108"),
-            QStringLiteral("u109"),
-            QStringLiteral("u110"),
-            QStringLiteral("u111"),
-            QStringLiteral("u112"),
-            QStringLiteral("u113"),
-            QStringLiteral("u114"),
-            QStringLiteral("u115"),
-            QStringLiteral("u116"),
-            QStringLiteral("u117"),
-            QStringLiteral("u118"),
-            QStringLiteral("u119"),
-            QStringLiteral("u120"),
-            QStringLiteral("u121"),
-            QStringLiteral("u122"),
-            QStringLiteral("u123"),
-            QStringLiteral("u124"),
-            QStringLiteral("u125"),
-            QStringLiteral("u126"),
-            QStringLiteral("u127"),
-            QStringLiteral("u128"),
-            QStringLiteral("u129"),
-            QStringLiteral("u130"),
-            QStringLiteral("u131"),
-            QStringLiteral("u132"),
-            QStringLiteral("u133"),
-            QStringLiteral("u134"),
-            QStringLiteral("u135")
-    };
-
-    QVector<QString> userIds;
-    userIds.reserve(candidateIds.size());
-    for (const QString& userId : candidateIds) {
-        const User user = UserRepository::instance().requestUserDetail({userId});
-        if (!user.id.isEmpty() && !user.isFriend) {
-            userIds.push_back(user.id);
-        }
-    }
-    return userIds;
-}
-
-void appendRotatingMember(QVector<QString>& members,
-                          QSet<QString>& seen,
-                          const QVector<QString>& userIds,
-                          int start,
-                          int index)
-{
-    if (userIds.isEmpty()) {
-        return;
-    }
-    appendUniqueMember(members, seen, userIds.at((start + index) % userIds.size()));
-}
-
-void assignSampleMembers(Group& group,
-                         const QVector<QString>& friendUserIds,
-                         const QVector<QString>& nonFriendUserIds,
-                         int ordinal)
-{
-    QVector<QString> members;
-    QSet<QString> seen;
-    members.reserve(group.memberNum);
-
-    appendUniqueMember(members, seen, group.ownerId);
-    for (const QString& adminId : group.adminsID) {
-        appendUniqueMember(members, seen, adminId);
-    }
-
-    const int friendStart = friendUserIds.isEmpty() ? 0 : (ordinal * 11) % friendUserIds.size();
-    const int nonFriendStart = nonFriendUserIds.isEmpty() ? 0 : (ordinal * 5) % nonFriendUserIds.size();
-    appendRotatingMember(members, seen, nonFriendUserIds, nonFriendStart, 0);
-
-    const int totalCandidateCount = friendUserIds.size() + nonFriendUserIds.size();
-    for (int index = 0; members.size() < group.memberNum && index < totalCandidateCount * 2; ++index) {
-        if (index % 4 == 2 && !nonFriendUserIds.isEmpty()) {
-            appendRotatingMember(members, seen, nonFriendUserIds, nonFriendStart, index / 4 + 1);
-        } else {
-            appendRotatingMember(members, seen, friendUserIds, friendStart, index);
-        }
-    }
-
-    group.membersID = members;
-    group.memberNum = group.membersID.size();
 }
 
 QString effectiveCategoryIdFor(const Group& group)
@@ -406,35 +301,6 @@ private:
     QMap<QString, Group> m_groups;
 };
 
-Group makeGroup(const QString& groupId,
-                const QString& groupName,
-                int memberNum,
-                const QString& ownerId,
-                const QString& avatarPath,
-                const QString& listGroupId,
-                const QString& listGroupName,
-                const QString& remark = QString(),
-                bool isDnd = false,
-                QVector<QString> adminsID = {})
-{
-    Group group;
-    group.groupId = groupId;
-    group.groupName = groupName;
-    group.memberNum = memberNum;
-    group.ownerId = ownerId;
-    group.groupAvatarPath = avatarPath;
-    group.isDnd = isDnd;
-    group.adminsID = std::move(adminsID);
-    group.remark = remark;
-    group.introduction = QStringLiteral("%1，专注 Minecraft 创意建筑、红石机关、地图玩法和服务器协作。").arg(groupName);
-    group.announcement = QStringLiteral("欢迎来到%1，请用设计稿、坐标和截图友好交流。").arg(groupName);
-    group.currentUserNickname = CurrentUser::instance().getUserName();
-    group.memberNicknames.insert(CurrentUser::instance().getUserId(), group.currentUserNickname);
-    group.listGroupId = listGroupId;
-    group.listGroupName = listGroupName;
-    return group;
-}
-
 QJsonArray stringVectorToJson(const QVector<QString>& values)
 {
     QJsonArray array;
@@ -478,11 +344,12 @@ QMap<QString, QString> stringMapFromJson(const QJsonObject& object)
 Group groupFromJson(const QJsonObject& object)
 {
     Group group;
-    group.groupId = object.value(QStringLiteral("groupId")).toString();
-    group.groupName = object.value(QStringLiteral("groupName")).toString();
-    group.memberNum = object.value(QStringLiteral("memberNum")).toInt();
-    group.ownerId = object.value(QStringLiteral("ownerId")).toString();
-    group.groupAvatarPath = object.value(QStringLiteral("groupAvatarPath")).toString();
+    group.groupId = object.value(QStringLiteral("groupId")).toString(object.value(QStringLiteral("id")).toString());
+    group.groupName = object.value(QStringLiteral("groupName")).toString(object.value(QStringLiteral("name")).toString());
+    group.memberNum = object.value(QStringLiteral("memberNum")).toInt(object.value(QStringLiteral("memberCount")).toInt());
+    group.ownerId = object.value(QStringLiteral("ownerId")).toString(object.value(QStringLiteral("ownerUuid")).toString());
+    group.groupAvatarPath = object.value(QStringLiteral("groupAvatarPath")).toString(
+            object.value(QStringLiteral("avatarUrl")).toString());
     group.isDnd = object.value(QStringLiteral("isDnd")).toBool(false);
     group.adminsID = stringVectorFromJson(object.value(QStringLiteral("adminsID")).toArray());
     group.remark = object.value(QStringLiteral("remark")).toString();
@@ -526,49 +393,11 @@ GroupRepository::GroupRepository(QObject* parent)
         : QObject(parent)
 {
     LocalDataStore& store = LocalDataStore::instance();
-    if (!store.hasDomain(QStringLiteral("groups"))) {
-        const QJsonArray groups = store.seedArray(QStringLiteral(":/resources/data/groups.json"));
-        for (const QJsonValue& value : groups) {
-            Group group = groupFromJson(value.toObject());
-            if (!group.groupId.isEmpty()) {
-                if (group.introduction.isEmpty()) {
-                    group.introduction = QStringLiteral("%1，专注 Minecraft 创意建筑、红石机关、地图玩法和服务器协作。")
-                            .arg(group.groupName);
-                }
-                if (group.announcement.isEmpty()) {
-                    group.announcement = QStringLiteral("欢迎来到%1，请用设计稿、坐标和截图友好交流。")
-                            .arg(group.groupName);
-                }
-                if (group.currentUserNickname.isEmpty()) {
-                    group.currentUserNickname = CurrentUser::instance().getUserName();
-                }
-                store.upsertValue(QStringLiteral("groups"), group.groupId, groupToJson(group));
-            }
-        }
-    }
-
     for (const QJsonObject& object : store.values(QStringLiteral("groups"))) {
         const Group group = groupFromJson(object);
         if (!group.groupId.isEmpty()) {
             groupMap.insert(group.groupId, group);
         }
-    }
-
-    QVector<QString> friendUserIds;
-    const QVector<FriendSummary> friends = UserRepository::instance().requestFriendList();
-    friendUserIds.reserve(friends.size());
-    for (const FriendSummary& friendSummary : friends) {
-        friendUserIds.push_back(friendSummary.userId);
-    }
-    const QVector<QString> nonFriendUserIds = sampleNonFriendMemberIds();
-
-    int ordinal = 0;
-    for (Group& group : groupMap) {
-        if (group.membersID.isEmpty()) {
-            assignSampleMembers(group, friendUserIds, nonFriendUserIds, ordinal);
-            store.upsertValue(QStringLiteral("groups"), group.groupId, groupToJson(group));
-        }
-        ++ordinal;
     }
 }
 

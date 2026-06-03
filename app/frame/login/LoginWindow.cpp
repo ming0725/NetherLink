@@ -139,12 +139,6 @@ CurrentUserProfile profileFromLoginAccount(const LoginAccount& account)
     return profile;
 }
 
-bool shouldUseLocalLoginFallback(const NetworkError& error)
-{
-    return error.httpStatus == 0 || error.httpStatus == 502 || error.httpStatus == 503 || error.httpStatus == 504
-            || error.code == QStringLiteral("SERVICE_NOT_READY");
-}
-
 qreal wrapHue(qreal hue)
 {
     while (hue < 0.0) {
@@ -971,14 +965,6 @@ void LoginWindow::setupUi()
     connect(&NetworkService::instance(), &NetworkService::loginFailed, this, [this](const QString& requestId,
                                                                                    const NetworkError& error) {
         if (requestId != m_loginRequestId) {
-            return;
-        }
-
-        if (shouldUseLocalLoginFallback(error) &&
-            LoginAccountRepository::instance().validateCredentials(m_pendingLoginAccountId, m_pendingLoginPassword)) {
-            const LoginAccount account =
-                    LoginAccountRepository::instance().requestLoginAccount({m_pendingLoginAccountId});
-            finishLogin(account);
             return;
         }
 

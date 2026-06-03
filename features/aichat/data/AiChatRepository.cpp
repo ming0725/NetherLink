@@ -3,9 +3,7 @@
 #include "shared/data/LocalDataStore.h"
 #include "shared/data/RepositoryFunctionOperation.h"
 
-#include <QJsonArray>
 #include <QJsonObject>
-#include <QRandomGenerator>
 #include <QStringList>
 #include <QtMath>
 
@@ -26,18 +24,6 @@ QString normalizedAiMessageText(QString text)
     text.replace(QStringLiteral("\r\n"), QStringLiteral("\n"));
     text.replace(QLatin1Char('\r'), QLatin1Char('\n'));
     return text;
-}
-
-QStringList aiSeedStrings(const QString& key)
-{
-    QStringList result;
-    const QJsonArray array = LocalDataStore::instance()
-            .seedObject(QStringLiteral(":/resources/data/aichat_samples.json"))
-            .value(key).toArray();
-    for (const QJsonValue& value : array) {
-        result.append(value.toString());
-    }
-    return result;
 }
 
 QJsonObject aiChatEntryToJson(const AiChatListEntry& entry)
@@ -82,268 +68,6 @@ AiChatMessage aiChatMessageFromJson(const QJsonObject& object)
     };
 }
 
-QString markdownCapabilitySample()
-{
-    return QString::fromUtf8(R"MARKDOWN(# Markdown 能力演示
-这是一段用于 AI 聊天气泡的 Markdown 样例，目标是同时覆盖排版、代码、表格、列表、引用、链接、行内公式和块级公式。它不依赖 `Qt::setMarkdown()`，而是由本项目的渲染器拆成 block 后用 `QTextLayout` 与 `QPainter` 绘制。
-
-示例说明：这一屏先展示标题、段落和行内样式。你可以用它检查字号层级、段落间距、加粗粗细、斜体倾斜角度、删除线位置和行内代码背景是否稳定。
-
-## 1. 段落和行内元素
-段落支持 **加粗文本会明显变粗**、*斜体文本会保持可读性*、`inlineCode()`、~~删除线~~、[外部链接](https://www.qt.io) 和行内公式 $\Delta t = t_{end} - t_{start}$。如果一段文字很长，它会在气泡宽度内自然换行，并且不会挤压到头像或气泡边缘。
-
-示例说明：下面这条公式放在段落之后，用来检查公式块的上下留白是否和普通文本相邻时仍然自然。
-
-$$
-S_{paragraph}
-=
-\sum_{i=1}^{n}
-w_i x_i
-\quad
-\text{where}
-\quad
-\sum_{i=1}^{n} w_i = 1
-$$
-
-### 2. 引用和分隔线
-标题从 H1 到 H6 使用独立字号，避免不同平台自带 Markdown 样式不一致。引用块会保留语义，但不会把 `>` 符号直接画进正文，而是使用左侧引用线强调内容层级。
-
-> 设计备注：引用适合放结论、限制条件或用户原文摘录。渲染时需要保证多行引用的左侧线条高度、文字基线和上下间距都一致。
-
----
-
-示例说明：分隔线之后再插入公式，能观察数学 block 是否不会和水平线粘在一起。
-
-$$
-\operatorname{score}(q, d)
-=
-\frac{q \cdot d}{\lVert q \rVert \lVert d \rVert}
-$$
-
-#### 3. 列表排版
-无序列表用于展示并列能力点：
-
-- 第一项：列表符号和正文之间保留固定缩进。
-- 第二项：当文字很长时，会在列表文字区域自动换行，而不是压到项目符号下面；这条内容故意写得更长，用来观察换行后的第二行是否和第一行正文左侧对齐。
-  - 二级无序列表：缩进后仍支持 **加粗**、`行内代码` 和链接。
-  - 二级无序列表：也可以继续承载较长说明，便于检查嵌套列表的视觉密度。
-- 第三项：列表项之间的间距应该比普通段落更紧凑。
-
-有序列表用于展示流程：
-
-1. 收集用户输入，保留原始换行和 Markdown 标记。
-2. 解析为 block 列表，再为每个 block 计算尺寸。
-   1. 二级步骤：代码块、表格和数学公式会走专用测量逻辑。
-   2. 二级步骤：普通段落则交给文本布局处理换行。
-3. 绘制气泡背景、文本内容和可选的代码复制按钮。
-
-示例说明：列表后接一个矩阵公式，用来验证列表 block 与公式 block 之间不会显得拥挤。
-
-$$
-\begin{bmatrix}
-1 & 0 & 0 \\
-0 & \cos\theta & -\sin\theta \\
-0 & \sin\theta & \cos\theta
-\end{bmatrix}
-\begin{bmatrix}
-x \\
-y \\
-z
-\end{bmatrix}
-=
-\begin{bmatrix}
-x' \\
-y' \\
-z'
-\end{bmatrix}
-$$
-
-#### 4. 表格
-表格适合展示对比信息。下面的列分别使用左对齐、居中和右对齐，单元格内部也可以包含行内样式。
-
-| 功能 | 当前状态 | 说明 |
-| :--- | :---: | ---: |
-| 标题层级 | **支持** | H1 到 H6 独立字号 |
-| 表格渲染 | 支持 | 自动绘制边框、表头和单元格背景 |
-| 代码高亮 | `支持` | 支持复制按钮和等宽字体 |
-| 数学公式 | 支持 | 行内公式与块级公式分开布局 |
-| 链接命中 | 支持 | [GitHub](https://github.com) 可点击 |
-
-示例说明：表格后插入一个较短的损失函数，检查表格底部和公式顶部的距离。
-
-$$
-\mathcal{L}(\theta)
-=
--\frac{1}{m}
-\sum_{i=1}^{m}
-\left[
-y_i \log \hat{y}_i
-+
-(1-y_i)\log(1-\hat{y}_i)
-\right]
-$$
-
-##### 5. 代码块
-代码块使用独立背景、等宽字体和语言标签。下面的 C++ 示例故意包含模板、容器、lambda、异常处理和日志宏，用来测试高亮覆盖面。
-
-```cpp
-#include <algorithm>
-#include <iostream>
-#include <memory>
-#include <stdexcept>
-#include <string>
-#include <vector>
-
-#define LOG(x) std::cout << "[LOG] " << x << '\n'
-
-template <typename T>
-class Box {
-public:
-    explicit Box(T value)
-        : value_(std::make_unique<T>(std::move(value))) {}
-
-    const T& get() const noexcept {
-        return *value_;
-    }
-
-    void set(T value) {
-        *value_ = std::move(value);
-    }
-
-private:
-    std::unique_ptr<T> value_;
-};
-
-int main() {
-    std::vector<int> nums {1, 2, 3, 4, 5};
-    std::transform(nums.begin(), nums.end(), nums.begin(), [](int x) {
-        return x * x;
-    });
-
-    Box<std::string> message("Hello, C++ syntax highlighting!");
-    for (const int n : nums) {
-        LOG((n % 2 == 0 ? "even square: " : "odd square: ") << n);
-    }
-
-    try {
-        throw std::runtime_error(message.get());
-    } catch (const std::exception& e) {
-        std::cerr << "Caught exception: " << e.what() << std::endl;
-    }
-}
-```
-
-示例说明：代码块之后放一个递推公式，用来检查代码块底部留白、复制按钮区域和后续公式之间的视觉节奏。
-
-$$
-dp[i][j]
-=
-\min
-\begin{cases}
-dp[i-1][j] + c_{delete} \\
-dp[i][j-1] + c_{insert} \\
-dp[i-1][j-1] + c_{replace}
-\end{cases}
-$$
-
-###### 6. 更长的数学内容
-长公式不再连续堆在同一个区域，而是作为本节的压力样例出现。它用于验证复杂分式、积分、上下标、希腊字母、集合关系、极限、矩阵和盒选公式的绘制质量。
-
-示例说明：第一条是多项式长行，主要观察横向排版是否仍在气泡内处理得合理。
-
-$$
-f(x)
-=
-a_1x^{100}+a_2x^{99}+a_3x^{98}+a_4x^{97}+a_5x^{96}
-+a_6x^{95}+a_7x^{94}+a_8x^{93}+a_9x^{92}+a_{10}x^{91}
-$$
-
-示例说明：第二条是积分和级数混合，主要观察分式高度、根号范围和上下限。
-
-$$
-\int_{-\infty}^{+\infty}
-\frac{
-\left(
-\sum_{n=1}^{\infty}
-\frac{(-1)^n x^{2n+1}}{(2n+1)!}
-\right)^2
-}{
-\sqrt{
-1+
-\left(
-\frac{\partial^2 u}{\partial x^2}
-\right)^2
-}
-}
-\cdot e^{-x^2}\,dx
-=
-\frac{
-\Gamma\left(\frac12\right)\zeta(2)
-}{
-\displaystyle
-\lim_{n\to\infty}
-\left(1+\frac1n\right)^n
-}
-$$
-
-示例说明：最后一条集中覆盖符号族，但它被放在文档末尾，避免和前面的公式样例挤在一起。
-
-$$
-\begin{aligned}
-&
-\forall x \in \mathbb{R},
-\quad
-\exists y \in \mathbb{C},
-\quad
-\neg (x \approx y)
-\iff
-\sum_{n=0}^{\infty}\frac{(-1)^n}{n!}
-=
-e^{-1}
-\\
-&
-\alpha,\beta,\gamma,\Gamma,\Delta,\epsilon,\varepsilon,\theta,\lambda,
-\mu,\pi,\Pi,\sigma,\Sigma,\phi,\varphi,\omega,\Omega
-\\
-&
-\left\{
-\begin{matrix}
-a+b=c \\
-x^2+y^2=z^2
-\end{matrix}
-\right.
-\qquad
-\begin{bmatrix}
-1 & 2 \\
-3 & 4
-\end{bmatrix}
-\\
-&
-\nabla^2u
-=
-\frac{\partial^2 u}{\partial x^2}
-+
-\frac{\partial^2 u}{\partial y^2},
-\qquad
-\vec{F}=m\vec{a},
-\qquad
-\overrightarrow{AB}
-\\
-&
-A \subset B \subseteq C,
-\qquad
-a \le b \ge c \neq d,
-\qquad
-\lim_{x\to0}\frac{\sin x}{x}=1
-\\
-&
-\boxed{E = mc^2}
-\qquad
-\text{Hello\ LaTeX}
-\end{aligned}
-$$)MARKDOWN");
-}
-
 } // namespace
 
 AiChatRepository::AiChatRepository(QObject* parent)
@@ -368,7 +92,6 @@ AiChatRepository::AiChatRepository(QObject* parent)
             const AiChatMessage message = aiChatMessageFromJson(object);
             if (!message.conversationId.isEmpty() && !message.messageId.isEmpty()) {
                 m_messages[message.conversationId].push_back(message);
-                m_seededMessageConversationIds.insert(message.conversationId);
                 bool ok = false;
                 const int serial = message.messageId.mid(QStringLiteral("ai-message-").size()).toInt(&ok);
                 if (ok) {
@@ -378,50 +101,6 @@ AiChatRepository::AiChatRepository(QObject* parent)
         }
         m_nextConversationId = maxConversationSerial + 1;
         m_nextMessageId = maxMessageSerial + 1;
-        return;
-    }
-
-    QStringList sampleTitles = aiSeedStrings(QStringLiteral("titles"));
-    if (sampleTitles.isEmpty()) {
-        sampleTitles.append(QStringLiteral("新对话"));
-    }
-
-    const QDateTime now = QDateTime::currentDateTime();
-    m_entries.reserve(40);
-    for (int i = 0; i < 40; ++i) {
-        const int offsetDays = QRandomGenerator::global()->bounded(0, 18);
-        const int offsetMinutes = QRandomGenerator::global()->bounded(0, 24 * 60);
-        AiChatListEntry entry {
-                QStringLiteral("ai-chat-%1").arg(m_nextConversationId++),
-                QStringLiteral("%1 %2")
-                        .arg(sampleTitles.at(i % sampleTitles.size()))
-                        .arg(i + 1),
-                now.addDays(-offsetDays).addSecs(-offsetMinutes * 60)
-        };
-        m_entries.push_back(entry);
-    }
-
-    QVector<int> latestIndexes;
-    latestIndexes.reserve(m_entries.size());
-    for (int index = 0; index < m_entries.size(); ++index) {
-        latestIndexes.push_back(index);
-    }
-    std::sort(latestIndexes.begin(), latestIndexes.end(), [this](int lhs, int rhs) {
-        return m_entries.at(lhs).time > m_entries.at(rhs).time;
-    });
-
-    const int candidateCount = qMin(8, latestIndexes.size());
-    const int unreadDotCount = qMin(4, candidateCount);
-    QSet<int> selectedIndexes;
-    while (selectedIndexes.size() < unreadDotCount) {
-        selectedIndexes.insert(latestIndexes.at(QRandomGenerator::global()->bounded(candidateCount)));
-    }
-    for (int index : selectedIndexes) {
-        m_entries[index].hasUnreadDot = true;
-    }
-
-    for (const AiChatListEntry& entry : std::as_const(m_entries)) {
-        store.upsertValue(QStringLiteral("ai_chat_entries"), entry.conversationId, aiChatEntryToJson(entry));
     }
 }
 
@@ -457,15 +136,6 @@ QVector<AiChatMessage> AiChatRepository::requestAiChatMessages(const AiChatMessa
 {
     auto handler = [this](const AiChatMessagesRequest& request) {
         QMutexLocker locker(&m_mutex);
-        if (!m_seededMessageConversationIds.contains(request.conversationId)) {
-            for (int index = 0; index < m_entries.size(); ++index) {
-                if (m_entries.at(index).conversationId == request.conversationId) {
-                    appendInitialMessages(m_entries.at(index), index);
-                    m_seededMessageConversationIds.insert(request.conversationId);
-                    break;
-                }
-            }
-        }
         return m_messages.value(request.conversationId);
     };
 
@@ -484,16 +154,6 @@ AiChatContextUsage AiChatRepository::requestAiChatContextUsage(const AiChatConte
         QMutexLocker locker(&m_mutex);
         if (query.conversationId.isEmpty()) {
             return AiChatContextUsage{};
-        }
-
-        if (!m_seededMessageConversationIds.contains(query.conversationId)) {
-            for (int index = 0; index < m_entries.size(); ++index) {
-                if (m_entries.at(index).conversationId == query.conversationId) {
-                    appendInitialMessages(m_entries.at(index), index);
-                    m_seededMessageConversationIds.insert(query.conversationId);
-                    break;
-                }
-            }
         }
 
         const AiChatContextUsage usage = buildContextUsageLocked(query.conversationId);
@@ -521,7 +181,6 @@ QString AiChatRepository::createAiChatConversation(const QString& title, const Q
     const AiChatListEntry entry {conversationId, trimmedTitle, time, false};
     m_entries.push_back(entry);
     m_messages.insert(conversationId, {});
-    m_seededMessageConversationIds.insert(conversationId);
     LocalDataStore::instance().upsertValue(QStringLiteral("ai_chat_entries"),
                                            conversationId,
                                            aiChatEntryToJson(entry));
@@ -703,7 +362,6 @@ bool AiChatRepository::removeAiChatConversation(const QString& conversationId)
         hadUnreadDot = it->hasUnreadDot;
         m_entries.erase(it);
         const QVector<AiChatMessage> removedMessages = m_messages.take(conversationId);
-        m_seededMessageConversationIds.remove(conversationId);
         m_contextUsages.remove(conversationId);
         LocalDataStore::instance().removeValue(QStringLiteral("ai_chat_entries"), conversationId);
         for (const AiChatMessage& message : removedMessages) {
@@ -741,37 +399,4 @@ AiChatContextUsage AiChatRepository::buildContextUsageLocked(const QString& conv
     const int simulatedContentTokens = qCeil(static_cast<qreal>(characterCount) / 2.8);
     const int usedTokens = qBound(1, structuralTokens + simulatedContentTokens, maxTokens);
     return {conversationId, usedTokens, maxTokens, true};
-}
-
-void AiChatRepository::appendInitialMessages(const AiChatListEntry& entry, int sampleIndex) const
-{
-    QStringList prompts = aiSeedStrings(QStringLiteral("prompts"));
-    if (prompts.isEmpty()) {
-        prompts.append(QStringLiteral("帮我把这段需求拆成可执行的实现步骤。"));
-    }
-    const QString sampleReply = markdownCapabilitySample();
-    const QStringList replies = {sampleReply, sampleReply, sampleReply, sampleReply};
-
-    QVector<AiChatMessage>& messages = m_messages[entry.conversationId];
-    const QDateTime firstTime = entry.time.addSecs(-180);
-    messages.push_back({
-            QStringLiteral("ai-message-%1").arg(m_nextMessageId++),
-            entry.conversationId,
-            prompts.at(sampleIndex % prompts.size()),
-            true,
-            firstTime
-    });
-    LocalDataStore::instance().upsertValue(QStringLiteral("ai_chat_messages"),
-                                           messages.last().messageId,
-                                           aiChatMessageToJson(messages.last()));
-    messages.push_back({
-            QStringLiteral("ai-message-%1").arg(m_nextMessageId++),
-            entry.conversationId,
-            replies.at(sampleIndex % replies.size()),
-            false,
-            entry.time
-    });
-    LocalDataStore::instance().upsertValue(QStringLiteral("ai_chat_messages"),
-                                           messages.last().messageId,
-                                           aiChatMessageToJson(messages.last()));
 }

@@ -30,15 +30,7 @@ private:
         bool isLiked = false;
     };
 
-    PostComment buildCommentAt(const QString& postId, int index) const;
-    PostCommentReply buildReplyAt(const QString& postId,
-                                  const QString& commentId,
-                                  const QString& parentAuthorId,
-                                  int commentIndex,
-                                  int replyIndex) const;
-    int commentIndexForId(const QString& commentId) const;
-    int replyIndexForId(const QString& replyId) const;
-
+    QMap<QString, PostComment> m_comments;
     QMap<QString, LikeState> m_commentLikeStates;
     QMap<QString, LikeState> m_replyLikeStates;
     mutable QMutex m_mutex;

@@ -31,10 +31,9 @@ private:
         bool isLiked = false;
     };
 
-    Post buildPostAt(int index) const;
-    int postIndexForId(const QString& postId) const;
     PostSummary buildSummary(const Post& post) const;
 
+    QMap<QString, Post> m_posts;
     QMap<QString, PostLikeState> m_likeStates;
     QMap<QString, int> m_commentCountDeltas;
     mutable QMutex mutex;

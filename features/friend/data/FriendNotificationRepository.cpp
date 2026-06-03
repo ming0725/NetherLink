@@ -1,8 +1,8 @@
 #include "FriendNotificationRepository.h"
 
 #include <algorithm>
-#include <QJsonArray>
 #include <QJsonObject>
+#include <QStringList>
 
 #include "app/state/CurrentUser.h"
 #include "features/chat/data/GroupRepository.h"
@@ -16,7 +16,6 @@
 namespace {
 
 const QString kFriendRequestUnreadScope = QStringLiteral("friend_requests");
-constexpr int kInitialUnreadCount = 36;
 
 class NotificationListOperation final
     : public RepositoryTemplate<FriendNotificationListRequest, QVector<FriendNotification>>
@@ -43,42 +42,15 @@ private:
     FriendNotificationListRequest m_query;
 };
 
-QString userDisplayName(const QString& userId)
+QString firstString(const QJsonObject& object, const QStringList& keys)
 {
-    const User user = UserRepository::instance().requestUserDetail({userId});
-    return user.nick.isEmpty() ? userId : user.nick;
-}
-
-QString groupDisplayName(const Group& group)
-{
-    return group.remark.isEmpty() ? group.groupName : group.remark;
-}
-
-FriendNotification makeNotification(const QString& id,
-                                    const QString& fromUserId,
-                                    const QString& message,
-                                    int daysAgo,
-                                    NotificationSourceType sourceType,
-                                    const QString& groupId = {},
-                                    const QString& sourceFriendName = {})
-{
-    FriendNotification notification;
-    notification.id = id;
-    notification.fromUserId = fromUserId;
-    notification.message = message;
-    notification.requestDate = QDateTime::currentDateTime().addDays(-daysAgo);
-    notification.sourceType = sourceType;
-
-    if (sourceType == NotificationSourceType::GroupChat) {
-        const Group group = GroupRepository::instance().requestGroupDetail({groupId});
-        notification.sourceGroupId = group.groupId;
-        notification.sourceGroupName = groupDisplayName(group);
-        notification.sourceGroupMemberName = group.memberNicknames.value(fromUserId, userDisplayName(fromUserId));
-    } else if (sourceType == NotificationSourceType::FriendShare) {
-        notification.sourceFriendName = sourceFriendName;
+    for (const QString& key : keys) {
+        const QString value = object.value(key).toString();
+        if (!value.isEmpty()) {
+            return value;
+        }
     }
-
-    return notification;
+    return {};
 }
 
 QString notificationSourceTypeToString(NotificationSourceType type)
@@ -152,13 +124,21 @@ QJsonObject notificationToJson(const FriendNotification& notification)
 FriendNotification notificationFromJson(const QJsonObject& object)
 {
     FriendNotification notification;
-    notification.id = object.value(QStringLiteral("id")).toString();
-    notification.fromUserId = object.value(QStringLiteral("fromUserId")).toString();
+    notification.id = firstString(object, {QStringLiteral("id"),
+                                           QStringLiteral("requestId"),
+                                           QStringLiteral("notificationId"),
+                                           QStringLiteral("sourceId")});
+    notification.fromUserId = firstString(object, {QStringLiteral("fromUserId"),
+                                                   QStringLiteral("fromUserUuid"),
+                                                   QStringLiteral("actorUserId"),
+                                                   QStringLiteral("actorUuid")});
     notification.message = object.value(QStringLiteral("message")).toString();
-    notification.requestDate = QDateTime::fromString(object.value(QStringLiteral("requestDate")).toString(),
+    notification.requestDate = QDateTime::fromString(firstString(object, {QStringLiteral("requestDate"),
+                                                                          QStringLiteral("createdAt"),
+                                                                          QStringLiteral("updatedAt")}),
                                                      Qt::ISODateWithMs);
     notification.sourceType = notificationSourceTypeFromString(object.value(QStringLiteral("sourceType")).toString());
-    notification.unread = object.value(QStringLiteral("unread")).toBool(true);
+    notification.unread = object.value(QStringLiteral("unread")).toBool(object.value(QStringLiteral("readAt")).isNull());
     notification.sourceGroupId = object.value(QStringLiteral("sourceGroupId")).toString();
     notification.sourceGroupName = object.value(QStringLiteral("sourceGroupName")).toString();
     notification.sourceGroupMemberName = object.value(QStringLiteral("sourceGroupMemberName")).toString();
@@ -166,42 +146,6 @@ FriendNotification notificationFromJson(const QJsonObject& object)
     notification.sourceFriendName = object.value(QStringLiteral("sourceFriendName")).toString();
     notification.status = notificationStatusFromString(object.value(QStringLiteral("status")).toString());
     return notification;
-}
-
-QStringList stringsFromJsonArray(const QJsonArray& array)
-{
-    QStringList values;
-    for (const QJsonValue& value : array) {
-        values.append(value.toString());
-    }
-    return values;
-}
-
-QVector<FriendNotification> buildInitialNotifications()
-{
-    const QJsonObject seed = LocalDataStore::instance()
-            .seedObject(QStringLiteral(":/resources/data/friend_notifications.json"));
-    const QStringList userIds = stringsFromJsonArray(seed.value(QStringLiteral("userIds")).toArray());
-    const QStringList groupIds = stringsFromJsonArray(seed.value(QStringLiteral("groupIds")).toArray());
-    const QStringList shareNames = stringsFromJsonArray(seed.value(QStringLiteral("shareNames")).toArray());
-    const QStringList messages = stringsFromJsonArray(seed.value(QStringLiteral("messages")).toArray());
-
-    QVector<FriendNotification> notifications;
-    notifications.reserve(userIds.size());
-    for (int i = 0; i < userIds.size() && !groupIds.isEmpty() && !shareNames.isEmpty() && !messages.isEmpty(); ++i) {
-        const NotificationSourceType sourceType =
-                i % 3 == 0 ? NotificationSourceType::GroupChat
-              : i % 3 == 1 ? NotificationSourceType::FriendShare
-                            : NotificationSourceType::IdSearch;
-        notifications.push_back(makeNotification(QStringLiteral("fn_%1").arg(i + 1, 3, 10, QChar('0')),
-                                                 userIds.at(i),
-                                                 messages.at(i % messages.size()),
-                                                 i % 18,
-                                                 sourceType,
-                                                 groupIds.at(i % groupIds.size()),
-                                                 shareNames.at(i % shareNames.size())));
-    }
-    return notifications;
 }
 
 } // namespace
@@ -225,13 +169,6 @@ void FriendNotificationRepository::ensureLoaded() const
 
     auto* self = const_cast<FriendNotificationRepository*>(this);
     LocalDataStore& store = LocalDataStore::instance();
-    if (!store.hasDomain(QStringLiteral("friend_notifications"))) {
-        for (const FriendNotification& notification : buildInitialNotifications()) {
-            store.upsertValue(QStringLiteral("friend_notifications"),
-                              notification.id,
-                              notificationToJson(notification));
-        }
-    }
     for (const QJsonObject& object : store.values(QStringLiteral("friend_notifications"))) {
         const FriendNotification notification = notificationFromJson(object);
         if (!notification.id.isEmpty()) {
@@ -268,7 +205,7 @@ int FriendNotificationRepository::unreadCount() const
 {
     return m_loaded
             ? UnreadStateRepository::instance().unreadCount(kFriendRequestUnreadScope)
-            : kInitialUnreadCount;
+            : 0;
 }
 
 int FriendNotificationRepository::notificationCount() const

@@ -1,14 +1,11 @@
 #include "LoginAccountRepository.h"
 
-#include "app/state/CurrentUserProfileRepository.h"
-#include "features/friend/data/UserRepository.h"
 #include "shared/data/LocalDataStore.h"
 #include "shared/data/RepositoryFunctionOperation.h"
 #include "shared/types/RepositoryTypes.h"
 
 #include <QJsonObject>
 #include <QMutexLocker>
-#include <QRandomGenerator>
 
 #include <algorithm>
 #include <utility>
@@ -16,12 +13,6 @@
 namespace {
 
 const QString kDefaultLoginPassword(QStringLiteral("netherlink"));
-constexpr int kAvatarCount = 11;
-
-QString randomAvatarPath()
-{
-    return QStringLiteral(":/resources/avatar/%1.jpg").arg(QRandomGenerator::global()->bounded(kAvatarCount));
-}
 
 QVector<LoginAccount> sortedByRecentLogin(QVector<LoginAccount> accounts)
 {
@@ -42,34 +33,6 @@ int indexOfAccount(const QVector<LoginAccount>& accounts, const QString& account
         }
     }
     return -1;
-}
-
-LoginAccount accountFromProfile(const CurrentUserProfile& profile, qint64 lastLoginOrder)
-{
-    LoginAccount account;
-    account.accountId = profile.userId;
-    account.password = kDefaultLoginPassword;
-    account.displayName = profile.nickName;
-    account.avatarPath = profile.avatarPath;
-    account.status = profile.status;
-    account.signature = profile.signature;
-    account.region = profile.region;
-    account.lastLoginOrder = lastLoginOrder;
-    return account;
-}
-
-LoginAccount accountFromUser(const User& user, qint64 lastLoginOrder)
-{
-    LoginAccount account;
-    account.accountId = user.id;
-    account.password = kDefaultLoginPassword;
-    account.displayName = user.nick;
-    account.avatarPath = user.avatarPath;
-    account.status = user.status;
-    account.signature = user.signature;
-    account.region = user.region;
-    account.lastLoginOrder = lastLoginOrder;
-    return account;
 }
 
 QString statusToString(UserStatus status)
@@ -148,24 +111,7 @@ LoginAccountRepository::LoginAccountRepository(QObject* parent)
         return;
     }
 
-    const CurrentUserProfile defaultProfile =
-            CurrentUserProfileRepository::instance().requestCurrentUserProfile({QStringLiteral("u007")});
-    if (!defaultProfile.userId.isEmpty()) {
-        m_accounts.push_back(accountFromProfile(defaultProfile, 1));
-    }
-
-    const QVector<User> users = UserRepository::instance().requestAllUsers();
-    for (const User& user : users) {
-        if (user.id.isEmpty() || indexOfAccount(m_accounts, user.id) >= 0) {
-            continue;
-        }
-        m_accounts.push_back(accountFromUser(user, 0));
-    }
-
-    m_nextLoginOrder = 2;
-    for (const LoginAccount& account : std::as_const(m_accounts)) {
-        store.upsertValue(QStringLiteral("login_accounts"), account.accountId, accountToJson(account));
-    }
+    m_nextLoginOrder = 1;
 }
 
 LoginAccountRepository& LoginAccountRepository::instance()
@@ -208,83 +154,6 @@ int LoginAccountRepository::requestLoginAccountCount() const
 
     return RepositoryFunctionOperation<EmptyRequest, int, decltype(handler)>(handler)
             .request({});
-}
-
-bool LoginAccountRepository::validateCredentials(const LoginCredentialRequest& query) const
-{
-    auto handler = [this](const LoginCredentialRequest& request) {
-        QMutexLocker locker(&m_mutex);
-        const int index = indexOfAccount(m_accounts, request.accountId);
-        return index >= 0 && m_accounts.at(index).password == request.password;
-    };
-
-    return RepositoryFunctionOperation<LoginCredentialRequest, bool, decltype(handler)>(handler)
-            .request(query);
-}
-
-bool LoginAccountRepository::validateCredentials(const QString& accountId, const QString& password) const
-{
-    return validateCredentials({accountId, password});
-}
-
-bool LoginAccountRepository::registerAccount(const QString& email, const QString& password, const QString& displayName)
-{
-    const QString accountId = email.trimmed().toLower();
-    const QString nickname = displayName.trimmed();
-    if (accountId.isEmpty() || password.isEmpty() || nickname.isEmpty()) {
-        return false;
-    }
-    if (!UserRepository::instance().requestUserDetail({accountId}).id.isEmpty()) {
-        return false;
-    }
-
-    LoginAccount account;
-    account.accountId = accountId;
-    account.password = password;
-    account.displayName = nickname;
-    account.avatarPath = randomAvatarPath();
-    account.status = Online;
-    account.signature = QStringLiteral("刚刚注册 NetherLink 账号");
-    account.region = QString();
-
-    bool changed = false;
-    {
-        QMutexLocker locker(&m_mutex);
-        if (indexOfAccount(m_accounts, accountId) >= 0) {
-            return false;
-        }
-
-        account.lastLoginOrder = m_nextLoginOrder++;
-        m_accounts.push_back(account);
-        LocalDataStore::instance().upsertValue(QStringLiteral("login_accounts"),
-                                               account.accountId,
-                                               accountToJson(account));
-        changed = true;
-    }
-
-    User user;
-    user.id = account.accountId;
-    user.nick = account.displayName;
-    user.avatarPath = account.avatarPath;
-    user.status = account.status;
-    user.signature = account.signature;
-    user.isFriend = false;
-    user.region = account.region;
-    UserRepository::instance().saveUser(user);
-
-    CurrentUserProfile profile;
-    profile.userId = account.accountId;
-    profile.nickName = account.displayName;
-    profile.avatarPath = account.avatarPath;
-    profile.status = account.status;
-    profile.signature = account.signature;
-    profile.region = account.region;
-    CurrentUserProfileRepository::instance().saveCurrentUserProfile(profile);
-
-    if (changed) {
-        emit loginAccountsChanged();
-    }
-    return true;
 }
 
 void LoginAccountRepository::saveAuthenticatedAccount(const LoginAccount& account)

@@ -73,12 +73,6 @@ QString userIdFromEmail(const QString& email)
     return QStringLiteral("user_%1").arg(QUuid::createUuid().toString(QUuid::WithoutBraces).left(8));
 }
 
-bool shouldUseLocalRegisterFallback(const NetworkError& error)
-{
-    return error.httpStatus == 0 || error.httpStatus == 502 || error.httpStatus == 503 || error.httpStatus == 504
-            || error.code == QStringLiteral("SERVICE_NOT_READY");
-}
-
 class RegisterInputField final : public QWidget
 {
 public:
@@ -485,16 +479,6 @@ void RegisterWindow::setupUi()
     connect(&NetworkService::instance(), &NetworkService::registerFailed, this, [this](const QString& requestId,
                                                                                       const NetworkError& error) {
         if (requestId != m_registerRequestId) {
-            return;
-        }
-
-        if (shouldUseLocalRegisterFallback(error) &&
-            LoginAccountRepository::instance().registerAccount(m_pendingAccountId,
-                                                               m_pendingPassword,
-                                                               m_pendingNickname)) {
-            emit accountRegistered(m_pendingAccountId, m_pendingPassword);
-            GlobalNotification::showSuccess(parentWidget() ? parentWidget() : this, QStringLiteral("注册成功"));
-            scheduleClose();
             return;
         }
 

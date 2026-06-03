@@ -2,15 +2,14 @@
 
 ## 改动说明
 
-本次改动先把主要静态业务数据从 C++ 构造代码迁出，改为“资源 JSON 种子 + 本地 SQLite 快照”的过渡路径。下一阶段接入网络后，资源 JSON 只保留开发、测试和离线演示用途，生产登录态数据改为“服务端响应 + 本地快照”。
+当前本地存储只作为服务端数据快照、最近账号缓存、临时交互状态和事件游标使用。`resources/data` 静态业务种子已经删除，登录态数据必须来自服务端响应。
 
 - 新增 `shared/data/LocalDataStore.h/.cpp`，统一管理本地数据目录、SQLite 连接、基础 schema、JSON 记录读写。
 - `CMakeLists.txt` 增加 `Qt::Sql` 依赖。
-- 新增 `resources/data/*.json`，承载用户、群、当前用户、帖子样例、评论样例、通知样例、AI 聊天样例等开发种子数据。
-- `UserRepository`、`GroupRepository`、`CurrentUserProfileRepository`、`LoginAccountRepository`、`UnreadStateRepository` 改为启动时从 SQLite 读取；首次无数据时可从资源 JSON 导入开发种子，后续应由服务端刷新覆盖。
-- 帖子内容不做长期 SQLite 缓存，只把帖子/评论样例移到文件；点赞状态、评论数增量、评论点赞状态写入 SQLite。
-- 好友通知、群通知初始数据从 JSON 导入，处理状态和未读状态写入 SQLite。
-- AI 聊天会话、消息、未读点状态写入 SQLite；本地模拟流式回复类暂未改成网络实现。
+- `UserRepository`、`GroupRepository`、`CurrentUserProfileRepository`、`LoginAccountRepository`、`UnreadStateRepository` 启动时只从 SQLite 读取，不再从 qrc 种子导入。
+- 帖子、评论、好友通知、群通知、AI 会话列表均读取 SQLite 快照；空库时返回空列表，由 `RemoteDataBootstrapper` 登录后拉取服务端数据填充。
+- 点赞状态、评论数增量、评论点赞状态、未读状态、最近登录账号仍写入 SQLite，作为临时或用户交互状态。
+- AI 聊天本地新建/编辑能力仍会写入 SQLite；后续服务端 SSE 接入后再细化消息同步和冲突处理。
 
 ## 本地结构
 
@@ -55,22 +54,20 @@ friend_notifications
 group_notifications
 ai_chat_entries
 ai_chat_messages
+posts
+post_comments
+notifications
+conversations
+network_event_cursor
 ```
 
-资源数据文件：
+已删除的静态资源目录：
 
 ```text
-resources/data/users.json
-resources/data/groups.json
-resources/data/current_profiles.json
-resources/data/post_samples.json
-resources/data/comment_samples.json
-resources/data/friend_notifications.json
-resources/data/group_notifications.json
-resources/data/aichat_samples.json
+resources/data/
 ```
 
-这些资源文件是过渡层，不应继续扩展为完整业务数据库。接入后端后，新增业务场景优先补 API、同步协议和本地快照结构；只有纯演示数据或测试 fixture 才继续放进 `resources/data`。
+不要恢复该目录作为开发 fallback。测试 fixture 应放在测试目录，不进入运行时 qrc 资源。
 
 ## SQLCipher
 
@@ -127,11 +124,11 @@ Repository
 
 读流程：
 
-1. Repository 先读 SQLite，立即返回本地快照。
-2. 如果数据过期或页面要求刷新，后台调用 RemoteDataSource。
+1. Repository 先读 SQLite，立即返回本地快照或空列表。
+2. 登录/注册成功、`sync.required` 或页面刷新时，后台调用 `RemoteDataBootstrapper`/RemoteDataSource。
 3. 服务端返回 `version`、`etag` 或 `updated_at`。
 4. 无变化时只更新 `fetched_at`；有变化时覆盖 SQLite，并发出 model 刷新信号。
-5. 如果本地只有资源 JSON 种子，服务端返回后必须替换为服务端快照；不要把种子数据和真实账号数据混合合并。
+5. 不存在资源 JSON 种子 fallback；不要把演示数据和真实账号数据混合合并。
 
 写流程：
 

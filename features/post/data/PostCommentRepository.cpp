@@ -12,83 +12,119 @@
 
 #include "app/state/CurrentUser.h"
 #include "features/friend/data/UserRepository.h"
-#include "shared/data/RepositoryFunctionOperation.h"
 #include "shared/data/LocalDataStore.h"
+#include "shared/data/RepositoryFunctionOperation.h"
 
 namespace {
 
-constexpr int kSampleCommentCount = 72;
-
-const QStringList& commentSamples()
+QString firstString(const QJsonObject& object, const QStringList& keys)
 {
-    static const QStringList samples = []() {
-        QStringList result;
-        const QJsonArray array = LocalDataStore::instance()
-                .seedObject(QStringLiteral(":/resources/data/comment_samples.json"))
-                .value(QStringLiteral("comments")).toArray();
-        for (const QJsonValue& value : array) {
-            result.append(value.toString());
+    for (const QString& key : keys) {
+        const QString value = object.value(key).toString();
+        if (!value.isEmpty()) {
+            return value;
         }
-        return result.isEmpty() ? QStringList{QStringLiteral("评论内容")} : result;
-    }();
-    return samples;
-}
-
-const QStringList& replySamples()
-{
-    static const QStringList samples = []() {
-        QStringList result;
-        const QJsonArray array = LocalDataStore::instance()
-                .seedObject(QStringLiteral(":/resources/data/comment_samples.json"))
-                .value(QStringLiteral("replies")).toArray();
-        for (const QJsonValue& value : array) {
-            result.append(value.toString());
-        }
-        return result.isEmpty() ? QStringList{QStringLiteral("回复内容")} : result;
-    }();
-    return samples;
-}
-
-QStringList userIds()
-{
-    return {
-            QStringLiteral("u001"),
-            QStringLiteral("u002"),
-            QStringLiteral("u003"),
-            QStringLiteral("u004"),
-            QStringLiteral("u005"),
-            QStringLiteral("u006"),
-            QStringLiteral("u007"),
-            QStringLiteral("u008"),
-            QStringLiteral("u009"),
-            QStringLiteral("u010"),
-            QStringLiteral("u011"),
-            QStringLiteral("u012")
-    };
-}
-
-QString visibleName(const User& user)
-{
-    if (!user.remark.isEmpty()) {
-        return user.remark;
     }
-    return user.nick;
+    return {};
 }
 
-struct CommentUserIdentity {
-    QString visibleName;
-    QString avatarPath;
-};
-
-CommentUserIdentity commentUserIdentityForUserId(const QString& userId)
+QDateTime dateTimeFromJson(const QJsonObject& object, const QStringList& keys)
 {
-    const CurrentUser& currentUser = CurrentUser::instance();
-    if (currentUser.isCurrentUserId(userId)) {
-        return {currentUser.getUserName(), currentUser.getAvatarPath()};
+    return QDateTime::fromString(firstString(object, keys), Qt::ISODateWithMs);
+}
+
+QString visibleName(const QString& userId)
+{
+    if (CurrentUser::instance().isCurrentUserId(userId)) {
+        return CurrentUser::instance().getUserName();
     }
 
     const User user = UserRepository::instance().requestUserDetail({userId});
-    return {visibleName(user), user.avatarPath};
+    if (!user.remark.isEmpty()) {
+        return user.remark;
+    }
+    return user.nick.isEmpty() ? userId : user.nick;
+}
+
+QString avatarPath(const QString& userId)
+{
+    if (CurrentUser::instance().isCurrentUserId(userId)) {
+        return CurrentUser::instance().getAvatarPath();
+    }
+    return UserRepository::instance().requestUserAvatarPath(userId);
+}
+
+PostCommentReply replyFromJson(const QString& postId,
+                               const QString& commentId,
+                               const QJsonObject& object)
+{
+    PostCommentReply reply;
+    reply.replyId = firstString(object, {QStringLiteral("replyId"),
+                                         QStringLiteral("commentId"),
+                                         QStringLiteral("id")});
+    reply.commentId = commentId;
+    reply.postId = firstString(object, {QStringLiteral("postId")});
+    if (reply.postId.isEmpty()) {
+        reply.postId = postId;
+    }
+    reply.authorId = firstString(object, {QStringLiteral("authorId"),
+                                          QStringLiteral("authorUserId"),
+                                          QStringLiteral("senderUuid"),
+                                          QStringLiteral("userId")});
+    reply.authorName = firstString(object, {QStringLiteral("authorName"), QStringLiteral("nickName")});
+    if (reply.authorName.isEmpty()) {
+        reply.authorName = visibleName(reply.authorId);
+    }
+    reply.authorAvatarPath = firstString(object, {QStringLiteral("authorAvatarPath"),
+                                                  QStringLiteral("avatarUrl")});
+    if (reply.authorAvatarPath.isEmpty()) {
+        reply.authorAvatarPath = avatarPath(reply.authorId);
+    }
+    reply.targetUserId = firstString(object, {QStringLiteral("targetUserId"), QStringLiteral("replyToUserId")});
+    reply.targetUserName = firstString(object, {QStringLiteral("targetUserName"), QStringLiteral("replyToUserName")});
+    if (reply.targetUserName.isEmpty() && !reply.targetUserId.isEmpty()) {
+        reply.targetUserName = visibleName(reply.targetUserId);
+    }
+    reply.targetReplyId = firstString(object, {QStringLiteral("targetReplyId"), QStringLiteral("parentReplyId")});
+    reply.content = firstString(object, {QStringLiteral("content"), QStringLiteral("text")});
+    reply.createdAt = dateTimeFromJson(object, {QStringLiteral("createdAt"), QStringLiteral("updatedAt")});
+    reply.likeCount = object.value(QStringLiteral("likeCount")).toInt(object.value(QStringLiteral("likes")).toInt());
+    reply.isLiked = object.value(QStringLiteral("isLiked")).toBool(false);
+    return reply;
+}
+
+PostComment commentFromJson(const QJsonObject& object)
+{
+    PostComment comment;
+    comment.commentId = firstString(object, {QStringLiteral("commentId"), QStringLiteral("id")});
+    comment.postId = firstString(object, {QStringLiteral("postId")});
+    comment.authorId = firstString(object, {QStringLiteral("authorId"),
+                                            QStringLiteral("authorUserId"),
+                                            QStringLiteral("senderUuid"),
+                                            QStringLiteral("userId")});
+    comment.authorName = firstString(object, {QStringLiteral("authorName"), QStringLiteral("nickName")});
+    if (comment.authorName.isEmpty()) {
+        comment.authorName = visibleName(comment.authorId);
+    }
+    comment.authorAvatarPath = firstString(object, {QStringLiteral("authorAvatarPath"),
+                                                    QStringLiteral("avatarUrl")});
+    if (comment.authorAvatarPath.isEmpty()) {
+        comment.authorAvatarPath = avatarPath(comment.authorId);
+    }
+    comment.content = firstString(object, {QStringLiteral("content"), QStringLiteral("text")});
+    comment.createdAt = dateTimeFromJson(object, {QStringLiteral("createdAt"), QStringLiteral("updatedAt")});
+    comment.likeCount = object.value(QStringLiteral("likeCount")).toInt(object.value(QStringLiteral("likes")).toInt());
+    comment.isLiked = object.value(QStringLiteral("isLiked")).toBool(false);
+
+    const QJsonArray replies = object.value(QStringLiteral("replies")).toArray();
+    for (const QJsonValue& value : replies) {
+        const PostCommentReply reply = replyFromJson(comment.postId, comment.commentId, value.toObject());
+        if (!reply.replyId.isEmpty()) {
+            comment.replies.push_back(reply);
+        }
+    }
+    comment.totalReplyCount = object.value(QStringLiteral("totalReplyCount")).toInt(comment.replies.size());
+    return comment;
 }
 
 } // namespace
@@ -96,6 +132,13 @@ CommentUserIdentity commentUserIdentityForUserId(const QString& userId)
 PostCommentRepository::PostCommentRepository(QObject* parent)
     : QObject(parent)
 {
+    for (const QJsonObject& object : LocalDataStore::instance().values(QStringLiteral("post_comments"))) {
+        const PostComment comment = commentFromJson(object);
+        if (!comment.commentId.isEmpty()) {
+            m_comments.insert(comment.commentId, comment);
+        }
+    }
+
     for (const QJsonObject& object : LocalDataStore::instance().values(QStringLiteral("comment_like_states"))) {
         const QString id = object.value(QStringLiteral("id")).toString();
         if (!id.isEmpty()) {
@@ -130,18 +173,41 @@ PostCommentsPage PostCommentRepository::requestPostComments(const PostCommentsRe
         PostCommentsPage page;
         page.postId = request.postId;
         page.offset = qMax(0, request.offset);
-        page.totalCount = kSampleCommentCount;
-        if (request.postId.isEmpty() || request.limit <= 0 || page.offset >= kSampleCommentCount) {
-            page.hasMore = false;
+        if (request.postId.isEmpty() || request.limit <= 0) {
             return page;
         }
 
-        const int end = qMin(kSampleCommentCount, page.offset + request.limit);
-        page.comments.reserve(end - page.offset);
-        for (int index = page.offset; index < end; ++index) {
-            page.comments.append(buildCommentAt(request.postId, index));
+        QVector<PostComment> comments;
+        for (PostComment comment : m_comments) {
+            if (comment.postId != request.postId) {
+                continue;
+            }
+            if (const auto likeIt = m_commentLikeStates.constFind(comment.commentId);
+                likeIt != m_commentLikeStates.constEnd()) {
+                comment.likeCount = likeIt->likes;
+                comment.isLiked = likeIt->isLiked;
+            }
+            for (PostCommentReply& reply : comment.replies) {
+                if (const auto likeIt = m_replyLikeStates.constFind(reply.replyId);
+                    likeIt != m_replyLikeStates.constEnd()) {
+                    reply.likeCount = likeIt->likes;
+                    reply.isLiked = likeIt->isLiked;
+                }
+            }
+            comments.push_back(comment);
         }
-        page.hasMore = end < kSampleCommentCount;
+
+        std::sort(comments.begin(), comments.end(), [](const PostComment& lhs, const PostComment& rhs) {
+            return lhs.createdAt > rhs.createdAt;
+        });
+
+        page.totalCount = comments.size();
+        if (page.offset >= comments.size()) {
+            return page;
+        }
+
+        page.comments = comments.mid(page.offset, qMax(0, request.limit));
+        page.hasMore = page.offset + page.comments.size() < page.totalCount;
         return page;
     };
 
@@ -169,12 +235,11 @@ QString PostCommentRepository::requestPostCommentsAsync(const PostCommentsReques
 bool PostCommentRepository::setCommentLiked(const QString& commentId, bool liked)
 {
     QMutexLocker locker(&m_mutex);
-    const int index = commentIndexForId(commentId);
-    if (index < 0) {
+    if (!m_comments.contains(commentId)) {
         return false;
     }
 
-    const int baseLikes = (index * 31 + 19) % 300;
+    const int baseLikes = m_comments.value(commentId).likeCount;
     LikeState state = m_commentLikeStates.value(commentId, {baseLikes, false});
     if (state.isLiked != liked) {
         state.isLiked = liked;
@@ -192,12 +257,19 @@ bool PostCommentRepository::setCommentLiked(const QString& commentId, bool liked
 bool PostCommentRepository::setReplyLiked(const QString& replyId, bool liked)
 {
     QMutexLocker locker(&m_mutex);
-    const int index = replyIndexForId(replyId);
-    if (index < 0) {
+    int baseLikes = -1;
+    for (const PostComment& comment : m_comments) {
+        for (const PostCommentReply& reply : comment.replies) {
+            if (reply.replyId == replyId) {
+                baseLikes = reply.likeCount;
+                break;
+            }
+        }
+    }
+    if (baseLikes < 0) {
         return false;
     }
 
-    const int baseLikes = (index * 13 + 7) % 80;
     LikeState state = m_replyLikeStates.value(replyId, {baseLikes, false});
     if (state.isLiked != liked) {
         state.isLiked = liked;
@@ -210,103 +282,4 @@ bool PostCommentRepository::setReplyLiked(const QString& replyId, bool liked)
                                                 {QStringLiteral("isLiked"), state.isLiked}});
     }
     return true;
-}
-
-PostComment PostCommentRepository::buildCommentAt(const QString& postId, int index) const
-{
-    const QStringList ids = userIds();
-    const QString authorId = ids.at((index * 5 + 2) % ids.size());
-    const CommentUserIdentity author = commentUserIdentityForUserId(authorId);
-    const QString commentId = QStringLiteral("%1-c%2").arg(postId).arg(index + 1, 3, 10, QChar('0'));
-    const int baseLikes = (index * 31 + 19) % 300;
-
-    PostComment comment;
-    comment.commentId = commentId;
-    comment.postId = postId;
-    comment.authorId = authorId;
-    comment.authorName = author.visibleName;
-    comment.authorAvatarPath = author.avatarPath;
-    comment.content = commentSamples().at(index % commentSamples().size());
-    comment.createdAt = QDateTime::fromString(QStringLiteral("2024-05-22T12:00:00"), Qt::ISODate)
-                                .addSecs(-index * 430);
-    comment.likeCount = baseLikes;
-    comment.isLiked = false;
-    comment.totalReplyCount = (index * 7 + 3) % 6;
-
-    if (const auto likeIt = m_commentLikeStates.constFind(commentId);
-        likeIt != m_commentLikeStates.constEnd()) {
-        comment.likeCount = likeIt->likes;
-        comment.isLiked = likeIt->isLiked;
-    }
-
-    for (int replyIndex = 0; replyIndex < comment.totalReplyCount; ++replyIndex) {
-        comment.replies.append(buildReplyAt(postId, commentId, authorId, index, replyIndex));
-    }
-    return comment;
-}
-
-PostCommentReply PostCommentRepository::buildReplyAt(const QString& postId,
-                                                     const QString& commentId,
-                                                     const QString& parentAuthorId,
-                                                     int commentIndex,
-                                                     int replyIndex) const
-{
-    const QStringList ids = userIds();
-    const QString authorId = ids.at((commentIndex * 3 + replyIndex * 2 + 5) % ids.size());
-    const QString targetUserId = replyIndex == 0
-            ? parentAuthorId
-            : ids.at((commentIndex * 3 + replyIndex * 2 + 3) % ids.size());
-    const CommentUserIdentity author = commentUserIdentityForUserId(authorId);
-    const CommentUserIdentity target = commentUserIdentityForUserId(targetUserId);
-    const QString replyId = QStringLiteral("%1-r%2").arg(commentId).arg(replyIndex + 1, 2, 10, QChar('0'));
-    const int baseLikes = ((commentIndex + 1) * (replyIndex + 3) * 13 + 7) % 80;
-
-    PostCommentReply reply;
-    reply.replyId = replyId;
-    reply.commentId = commentId;
-    reply.postId = postId;
-    reply.authorId = authorId;
-    reply.authorName = author.visibleName;
-    reply.authorAvatarPath = author.avatarPath;
-    reply.targetUserId = targetUserId;
-    reply.targetUserName = target.visibleName;
-    if (replyIndex > 0) {
-        reply.targetReplyId = QStringLiteral("%1-r%2").arg(commentId).arg(replyIndex, 2, 10, QChar('0'));
-    }
-    reply.content = replySamples().at((commentIndex + replyIndex) % replySamples().size());
-    reply.createdAt = QDateTime::fromString(QStringLiteral("2024-05-22T12:30:00"), Qt::ISODate)
-                              .addSecs(-(commentIndex * 430 + replyIndex * 83));
-    reply.likeCount = baseLikes;
-    reply.isLiked = false;
-
-    if (const auto likeIt = m_replyLikeStates.constFind(replyId);
-        likeIt != m_replyLikeStates.constEnd()) {
-        reply.likeCount = likeIt->likes;
-        reply.isLiked = likeIt->isLiked;
-    }
-    return reply;
-}
-
-int PostCommentRepository::commentIndexForId(const QString& commentId) const
-{
-    const int cPos = commentId.lastIndexOf(QStringLiteral("-c"));
-    if (cPos < 0) {
-        return -1;
-    }
-
-    bool ok = false;
-    const int serial = commentId.mid(cPos + 2, 3).toInt(&ok);
-    return ok && serial > 0 && serial <= kSampleCommentCount ? serial - 1 : -1;
-}
-
-int PostCommentRepository::replyIndexForId(const QString& replyId) const
-{
-    const int rPos = replyId.lastIndexOf(QStringLiteral("-r"));
-    if (rPos < 0) {
-        return -1;
-    }
-
-    bool ok = false;
-    const int serial = replyId.mid(rPos + 2, 2).toInt(&ok);
-    return ok && serial > 0 ? serial - 1 : -1;
 }

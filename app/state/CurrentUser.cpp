@@ -5,8 +5,6 @@
 CurrentUser::CurrentUser(QObject* parent)
     : QObject(parent)
 {
-    m_userId = QStringLiteral("u007");
-    refreshIdentity();
     connect(&CurrentUserProfileRepository::instance(),
             &CurrentUserProfileRepository::currentUserProfileChanged,
             this,

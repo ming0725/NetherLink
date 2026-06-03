@@ -17,8 +17,6 @@
 
 namespace {
 
-constexpr int kSamplePostCount = 160;
-
 struct AuthorIdentity {
     QString name;
     QString avatarPath;
@@ -35,67 +33,21 @@ AuthorIdentity authorIdentityForUserId(const QString& userId)
     return {author.nick, author.avatarPath};
 }
 
-const QStringList& postTitleSamples()
+QString firstString(const QJsonObject& object, const QStringList& keys)
 {
-    static const QStringList samples = []() {
-        QStringList result;
-        const QJsonArray array = LocalDataStore::instance()
-                .seedObject(QStringLiteral(":/resources/data/post_samples.json"))
-                .value(QStringLiteral("titles")).toArray();
-        for (const QJsonValue& value : array) {
-            result.append(value.toString());
+    for (const QString& key : keys) {
+        const QString value = object.value(key).toString();
+        if (!value.isEmpty()) {
+            return value;
         }
-        return result.isEmpty() ? QStringList{QStringLiteral("新帖子")} : result;
-    }();
-    return samples;
+    }
+    return {};
 }
 
-const QStringList& postContentSamples()
+QDateTime dateTimeFromJson(const QJsonObject& object, const QStringList& keys)
 {
-    static const QStringList samples = []() {
-        QStringList result;
-        const QJsonArray array = LocalDataStore::instance()
-                .seedObject(QStringLiteral(":/resources/data/post_samples.json"))
-                .value(QStringLiteral("contents")).toArray();
-        for (const QJsonValue& value : array) {
-            result.append(value.toString());
-        }
-        return result.isEmpty() ? QStringList{QStringLiteral("帖子内容")} : result;
-    }();
-    return samples;
-}
-
-const QStringList& weightedPostAuthorIds()
-{
-    static const QStringList authorIds = []() {
-        QStringList ids;
-        const auto add = [&ids](const QString& userId, int count) {
-            for (int i = 0; i < count; ++i) {
-                ids.append(userId);
-            }
-        };
-
-        const QJsonObject weights = LocalDataStore::instance()
-                .seedObject(QStringLiteral(":/resources/data/post_samples.json"))
-                .value(QStringLiteral("authorWeights")).toObject();
-        for (auto it = weights.constBegin(); it != weights.constEnd(); ++it) {
-            add(it.key(), qMax(1, it.value().toInt(1)));
-        }
-        if (ids.isEmpty()) {
-            add(QStringLiteral("u001"), 1);
-        }
-        return ids;
-    }();
-    return authorIds;
-}
-
-QJsonObject postLikeStateToJson(const QString& postId, int likes, bool isLiked)
-{
-    return {
-            {QStringLiteral("postId"), postId},
-            {QStringLiteral("likes"), likes},
-            {QStringLiteral("isLiked"), isLiked}
-    };
+    const QString value = firstString(object, keys);
+    return QDateTime::fromString(value, Qt::ISODateWithMs);
 }
 
 QSize imageSizeForSource(const QString& source)
@@ -109,11 +61,92 @@ QSize imageSizeForSource(const QString& source)
     return reader.size();
 }
 
+QVector<QString> mediaUrlsFromJson(const QJsonObject& object)
+{
+    QVector<QString> urls;
+    const QJsonArray pictures = object.value(QStringLiteral("picturesPath")).toArray();
+    for (const QJsonValue& value : pictures) {
+        const QString url = value.toString();
+        if (!url.isEmpty()) {
+            urls.push_back(url);
+        }
+    }
+
+    const QJsonArray media = object.value(QStringLiteral("media")).toArray();
+    for (const QJsonValue& value : media) {
+        const QJsonObject mediaObject = value.toObject();
+        const QString url = firstString(mediaObject, {QStringLiteral("url"),
+                                                      QStringLiteral("thumbnailUrl"),
+                                                      QStringLiteral("fileUrl")});
+        if (!url.isEmpty()) {
+            urls.push_back(url);
+        }
+    }
+    return urls;
+}
+
+Post postFromJson(const QJsonObject& object)
+{
+    Post post;
+    post.postID = firstString(object, {QStringLiteral("postID"),
+                                       QStringLiteral("postId"),
+                                       QStringLiteral("id")});
+    post.title = object.value(QStringLiteral("title")).toString();
+    post.content = object.value(QStringLiteral("content")).toString();
+    post.likes = object.value(QStringLiteral("likes")).toInt(
+            object.value(QStringLiteral("likeCount")).toInt());
+    post.commentCount = object.value(QStringLiteral("commentCount")).toInt(
+            object.value(QStringLiteral("commentsCount")).toInt());
+
+    const QJsonObject author = object.value(QStringLiteral("author")).toObject();
+    post.authorID = firstString(object, {QStringLiteral("authorID"),
+                                         QStringLiteral("authorId"),
+                                         QStringLiteral("authorUserId"),
+                                         QStringLiteral("authorUuid")});
+    if (post.authorID.isEmpty()) {
+        post.authorID = firstString(author, {QStringLiteral("userId"),
+                                             QStringLiteral("id"),
+                                             QStringLiteral("userUuid")});
+    }
+
+    post.createdAt = dateTimeFromJson(object, {QStringLiteral("createdAt"),
+                                               QStringLiteral("updatedAt")});
+    post.contentCreatedAt = dateTimeFromJson(object, {QStringLiteral("contentCreatedAt"),
+                                                      QStringLiteral("createdAt")});
+    post.thumbnailPath = firstString(object, {QStringLiteral("thumbnailPath"),
+                                              QStringLiteral("thumbnailUrl"),
+                                              QStringLiteral("coverUrl")});
+    post.picturesPath = mediaUrlsFromJson(object);
+    if (post.thumbnailPath.isEmpty() && !post.picturesPath.isEmpty()) {
+        post.thumbnailPath = post.picturesPath.first();
+    }
+    post.thumbnailSize = imageSizeForSource(post.thumbnailPath);
+    post.isLiked = object.value(QStringLiteral("isLiked")).toBool(false);
+    post.isFollowedAuthor = object.value(QStringLiteral("isFollowedAuthor")).toBool(false);
+    return post;
+}
+
+QJsonObject postLikeStateToJson(const QString& postId, int likes, bool isLiked)
+{
+    return {
+            {QStringLiteral("postId"), postId},
+            {QStringLiteral("likes"), likes},
+            {QStringLiteral("isLiked"), isLiked}
+    };
+}
+
 } // namespace
 
 PostRepository::PostRepository(QObject* parent)
         : QObject(parent)
 {
+    for (const QJsonObject& object : LocalDataStore::instance().values(QStringLiteral("posts"))) {
+        const Post post = postFromJson(object);
+        if (!post.postID.isEmpty()) {
+            m_posts.insert(post.postID, post);
+        }
+    }
+
     for (const QJsonObject& object : LocalDataStore::instance().values(QStringLiteral("post_like_states"))) {
         const QString postId = object.value(QStringLiteral("postId")).toString();
         if (!postId.isEmpty()) {
@@ -147,10 +180,13 @@ QVector<PostSummary> PostRepository::requestPostFeed(const PostFeedRequest& quer
             return result;
         }
 
-        result.reserve(request.limit);
+        QVector<Post> posts = QVector<Post>::fromList(m_posts.values());
+        std::sort(posts.begin(), posts.end(), [](const Post& lhs, const Post& rhs) {
+            return lhs.createdAt > rhs.createdAt;
+        });
+
         int skipped = 0;
-        for (int index = 0; index < kSamplePostCount && result.size() < request.limit; ++index) {
-            const Post post = buildPostAt(index);
+        for (Post post : posts) {
             if (request.followOnly && !post.isFollowedAuthor) {
                 continue;
             }
@@ -171,12 +207,17 @@ PostDetailData PostRepository::requestPostDetail(const PostDetailRequest& query)
 {
     auto handler = [this](const PostDetailRequest& request) {
         QMutexLocker locker(&mutex);
-        const int index = postIndexForId(request.postId);
-        if (index < 0) {
+        Post post = m_posts.value(request.postId);
+        if (post.postID.isEmpty()) {
             return PostDetailData{};
         }
 
-        const Post post = buildPostAt(index);
+        if (const auto likeIt = m_likeStates.constFind(post.postID);
+            likeIt != m_likeStates.constEnd()) {
+            post.likes = likeIt->likes;
+            post.isLiked = likeIt->isLiked;
+        }
+        post.commentCount = qMax(0, post.commentCount + m_commentCountDeltas.value(post.postID, 0));
         const AuthorIdentity author = authorIdentityForUserId(post.authorID);
         return PostDetailData{
                 post.postID,
@@ -222,12 +263,11 @@ bool PostRepository::setPostLiked(const QString& postId, bool liked)
 
     {
         QMutexLocker locker(&mutex);
-        const int index = postIndexForId(postId);
-        if (index < 0) {
+        Post post = m_posts.value(postId);
+        if (post.postID.isEmpty()) {
             return false;
         }
 
-        Post post = buildPostAt(index);
         if (post.isLiked != liked) {
             post.isLiked = liked;
             post.likes = qMax(0, post.likes + (liked ? 1 : -1));
@@ -252,12 +292,11 @@ bool PostRepository::adjustPostCommentCount(const QString& postId, int delta)
     PostSummary summary;
     {
         QMutexLocker locker(&mutex);
-        const int index = postIndexForId(postId);
-        if (index < 0) {
+        Post post = m_posts.value(postId);
+        if (post.postID.isEmpty()) {
             return false;
         }
 
-        Post post = buildPostAt(index);
         const int nextCount = qMax(0, post.commentCount + delta);
         m_commentCountDeltas.insert(postId,
                                     m_commentCountDeltas.value(postId, 0) + nextCount - post.commentCount);
@@ -282,9 +321,14 @@ void PostRepository::refreshAuthorFollowState(const QString& authorId)
     QVector<PostSummary> updatedPosts;
     {
         QMutexLocker locker(&mutex);
-        for (int index = 0; index < kSamplePostCount; ++index) {
-            const Post post = buildPostAt(index);
+        for (Post post : m_posts) {
             if (post.authorID == authorId) {
+                if (const auto likeIt = m_likeStates.constFind(post.postID);
+                    likeIt != m_likeStates.constEnd()) {
+                    post.likes = likeIt->likes;
+                    post.isLiked = likeIt->isLiked;
+                }
+                post.commentCount = qMax(0, post.commentCount + m_commentCountDeltas.value(post.postID, 0));
                 updatedPosts.push_back(buildSummary(post));
             }
         }
@@ -293,57 +337,6 @@ void PostRepository::refreshAuthorFollowState(const QString& authorId)
     for (const PostSummary& summary : updatedPosts) {
         emit postUpdated(summary);
     }
-}
-
-Post PostRepository::buildPostAt(int index) const
-{
-    if (index < 0 || index >= kSamplePostCount) {
-        return {};
-    }
-
-    const QDateTime baseTime = QDateTime::fromString("2024-05-21T18:00:00", Qt::ISODate);
-    const QStringList& authorIDs = weightedPostAuthorIds();
-
-    Post post;
-    post.postID = QString("p%1").arg(index + 1, 3, 10, QChar('0'));
-    post.title = postTitleSamples().at((index * 5 + 2) % postTitleSamples().size());
-    post.content = postContentSamples().at((index * 7 + 1) % postContentSamples().size());
-    post.likes = (index * 137 + 211) % 1000;
-    post.commentCount = (index * 29 + 17) % 200;
-    post.authorID = authorIDs.at((index * 17 + index / 3) % authorIDs.size());
-    post.isFollowedAuthor = UserRepository::instance().isFriend(post.authorID);
-    post.createdAt = baseTime.addSecs(-index * 1800);
-    post.contentCreatedAt = post.createdAt;
-    const int imageSeed = (index * 7 + 3) % 10;
-    const QString imagePath = QString(":/resources/post/%1.jpg").arg(imageSeed);
-    post.thumbnailPath = imagePath;
-    post.thumbnailSize = imageSizeForSource(imagePath);
-    const int pictureCount = 2 + (index % 3);
-    post.picturesPath.reserve(pictureCount);
-    for (int pictureIndex = 0; pictureIndex < pictureCount; ++pictureIndex) {
-        post.picturesPath.append(QString(":/resources/post/%1.jpg")
-                                         .arg((imageSeed + pictureIndex * 3) % 10));
-    }
-
-    const auto likeIt = m_likeStates.constFind(post.postID);
-    if (likeIt != m_likeStates.constEnd()) {
-        post.likes = likeIt->likes;
-        post.isLiked = likeIt->isLiked;
-    }
-    post.commentCount = qMax(0, post.commentCount + m_commentCountDeltas.value(post.postID, 0));
-    return post;
-}
-
-int PostRepository::postIndexForId(const QString& postId) const
-{
-    if (!postId.startsWith(QLatin1Char('p'))) {
-        return -1;
-    }
-
-    bool ok = false;
-    const int serial = postId.mid(1).toInt(&ok);
-    const int index = serial - 1;
-    return ok && index >= 0 && index < kSamplePostCount ? index : -1;
 }
 
 PostSummary PostRepository::buildSummary(const Post& post) const

@@ -2,7 +2,7 @@
 
 ## 整个需求
 
-根据 `frontend-api-guide.md` 中的后端契约，为当前 Qt 前端先搭建网络基础设施，不急于改写登录、聊天、好友、群组、动态、AI 等业务流程。
+根据 `frontend-api-guide.md` 中的后端契约，为当前 Qt 前端先搭建网络基础设施，先明确网络边界，再逐步把登录、聊天、好友、群组、动态、AI 等已有业务流程接到后端。
 
 本阶段目标是让项目具备清晰的网络接入边界：
 
@@ -12,7 +12,8 @@
 - 实时事件通过 WebSocket 统一连接、心跳、断线重连、事件恢复游标和事件分发。
 - 上传、SSE 流式响应预留独立客户端，后续业务可以逐步接入。
 - 事件分发要做到解耦：网络层只发布标准事件，业务模块自行订阅对应 event type。
-- 当前不编写具体业务 API 调用流程，不替换现有本地数据仓库。
+- repository 继续作为业务入口、本地缓存、临时状态和事件游标承载层，但 API 对接不能依赖静态样例数据 fallback；`resources/data` 已删除。
+- 当前 AI 的模拟流式输出不是静态数据，后续应保留流式 UI 体验并用后端 SSE 替换输出源。
 
 ## 已实现需求
 
@@ -61,12 +62,12 @@
   - 请求 `POST /api/v1/auth/login`。
   - 自动携带 `deviceId`、`deviceName`。
   - 成功后解析 `authResponse`，调用 `AuthSession::setTokens`。
-  - `NetworkService` 收到登录成功后调用 `startRealtime()`。
+  - `NetworkService` 收到登录成功后调用 `RemoteDataBootstrapper::syncAll()` 并启动实时连接。
 - `NetworkService::registerAccount(email, password, displayName, userId)`
   - 请求 `POST /api/v1/auth/register`。
   - 当前 Qt 注册窗口没有性别输入，固定传 `gender=unspecified`。
   - `userId` 由邮箱本地部分派生。
-  - 成功后调用 `AuthSession::setTokens`，并把账号写入本地最近账号缓存。
+  - 成功后调用 `AuthSession::setTokens`，触发远程数据 bootstrap，同步启动实时连接，并把账号写入本地最近账号缓存。
 - `NetworkService::logout()`
   - 请求 `POST /api/v1/auth/logout`，body 带当前 `refreshToken`。
   - 回调后停止 `RealtimeClient` 并清理 `AuthSession`。
@@ -75,8 +76,31 @@
 
 - 登录先走 `/auth/login`，成功后更新 `CurrentUserProfileRepository`、`CurrentUser` 和最近账号缓存。
 - 注册先走 `/auth/register`，成功后缓存账号并回填登录窗口。
-- 当开发后端未启动、网络错误或后端返回 `502/503/504/SERVICE_NOT_READY` 时，保留现有本地账号 fallback，方便无后端时继续调试 UI。
-- `401`、`409` 等明确业务错误不走本地 fallback。
+- `LoginAccountRepository` 仅作为最近登录账号缓存；当开发后端未启动、网络错误或后端返回 `502/503/504/SERVICE_NOT_READY` 时，展示网络错误或重试入口，不回退到本地账号仓库。
+- `401`、`409` 等明确业务错误按后端错误处理，不回退到本地 fallback。
+
+### 远程数据 Bootstrap
+
+已新增 `shared/network/RemoteDataBootstrapper.h/.cpp`：
+
+- 触发时机：
+  - 登录成功后调用 `syncAll()`。
+  - 注册成功后调用 `syncAll()`。
+  - 收到 `AppEventBus::fullSyncRequired` 后再次调用 `syncAll()`。
+- 通过现有 `HttpClient` 拉取当前账号可见的首屏/分页快照，并写入 `LocalDataStore`。
+- 当前 bootstrap 覆盖或追加的 domain：
+  - `current_profiles`：`GET /me`
+  - `users`：`GET /users`、`GET /friends`
+  - `groups`：`GET /groups`
+  - `friend_notifications`：`GET /friend-requests`
+  - `group_notifications`：`GET /group-notifications`
+  - `notifications`：`GET /notifications`
+  - `posts`：`GET /posts`
+  - `ai_chat_entries`：`GET /ai/conversations`
+  - `conversations`：`GET /conversations`
+- 支持 `limit=100&offset=...` 分页续拉；响应字段可为契约数组名、`items`、`data` 或 `results`。
+- 会对常见后端字段做轻量归一化，例如 `userId/nickName/avatarUrl` 到当前 repository 可读的 `id/nick/avatarPath`。
+- 业务写流程、列表刷新信号和更细粒度 remote data source 尚未完成；当前目标是去除静态数据并建立远程快照入口。
 
 ### HTTP Client
 
@@ -173,12 +197,19 @@
 
 建议按以下顺序接入业务，避免一次性重写导致边界混乱：
 
+总体约束：
+
+- 只接入已有 UI、模型和交互能承载的 API；不要因为后端已有接口就新增前端功能。
+- 删除静态样例数据依赖。repository 可保留为业务入口和缓存层，但真实业务数据以远程接口为准；`resources/data` 不再存在。
+- 网络不可用时显示错误、重试或空状态，不回退到静态本地数据。
+- AI 模拟流式输出要正常改造成后端 SSE 流式输出，保留分片追加、停止生成和完成替换等现有交互。
+
 1. 当前用户与偏好
    - 接入 `/me`、`/me/preferences`。
    - 将 ETag、version 写入业务模型，后续 PATCH 使用 `If-Match` 或 `expectedVersion`。
 
 2. 实时连接全量同步
-   - 在 `AppEventBus::fullSyncRequired` 上挂全量同步任务。
+   - `AppEventBus::fullSyncRequired` 已挂到 `RemoteDataBootstrapper::syncAll()`。
    - 针对登录后 `RealtimeClient` 连接失败、token 刷新失败补 UI 提示或重试入口。
 
 3. 聊天和通知事件
@@ -187,17 +218,19 @@
    - 如后续需要严格异步 handler 完成语义，可把 dispatcher 改为 handler ack 模式。
 
 4. 文件上传
-   - 先使用 `UploadClient::uploadFile` 接入头像、聊天图片、动态图片。
-   - 后续再补预签名 PUT 和多段上传，避免大文件占用主流程。
+   - 只在已有入口使用 `UploadClient::uploadFile`，例如头像和聊天图片。
+   - 动态模块当前以远程列表、详情和图片展示为主；没有发布器时不要新增动态图片/视频上传。
+   - 不接入预签名 PUT、多段上传、聊天文件、聊天音频、聊天视频、帖子视频、直播媒体和 AI 文件上传。
 
 5. AI SSE
-   - 用 `SseClient` 替换当前本地模拟流式输出。
+   - 用 `SseClient` 替换当前本地模拟流式输出，保留现有流式追加、停止生成和完成态 UI。
    - 发送请求时强制生成并复用 `clientMessageId`。
    - 对 `ai.stream.chunk` 拼接 delta，对 `ai.stream.done` 用服务端消息替换临时消息。
+   - `aiFileIds` 固定为空数组或省略，不实现 AI 文件上传、绑定、解析轮询和引用文件回答。
 
 6. 业务 API 封装
    - 每个 feature 增加独立 remote data source，例如 `ChatRemoteDataSource`、`FriendRemoteDataSource`。
-   - repository 保留统一业务入口，可在本地数据和远程数据之间切换。
+   - repository 保留统一业务入口，但不再以静态样例数据作为 fallback；本地只保留缓存、临时 pending 状态、游标和必要的 UI 状态。
    - UI 层只观察 repository/model，不直接调用网络 client。
 
 7. 配置和安全存储

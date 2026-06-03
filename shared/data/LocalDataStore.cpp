@@ -3,9 +3,7 @@
 #include <QCoreApplication>
 #include <QDateTime>
 #include <QDir>
-#include <QFile>
 #include <QJsonDocument>
-#include <QJsonParseError>
 #include <QSqlDatabase>
 #include <QSqlError>
 #include <QSqlQuery>
@@ -23,24 +21,6 @@ QString writableRootPath()
     }
     QDir().mkpath(root);
     return root;
-}
-
-QJsonDocument readJsonDocument(const QString& path, QString* error)
-{
-    QFile file(path);
-    if (!file.open(QIODevice::ReadOnly)) {
-        if (error) {
-            *error = file.errorString();
-        }
-        return {};
-    }
-
-    QJsonParseError parseError;
-    const QJsonDocument document = QJsonDocument::fromJson(file.readAll(), &parseError);
-    if (parseError.error != QJsonParseError::NoError && error) {
-        *error = parseError.errorString();
-    }
-    return document;
 }
 
 QByteArray sqlCipherKey()
@@ -83,26 +63,6 @@ QString LocalDataStore::lastError() const
 {
     QMutexLocker locker(&m_mutex);
     return m_lastError;
-}
-
-QJsonArray LocalDataStore::seedArray(const QString& resourcePath) const
-{
-    QString error;
-    const QJsonDocument document = readJsonDocument(resourcePath, &error);
-    if (!error.isEmpty()) {
-        setLastError(QStringLiteral("%1: %2").arg(resourcePath, error));
-    }
-    return document.isArray() ? document.array() : document.object().value(QStringLiteral("items")).toArray();
-}
-
-QJsonObject LocalDataStore::seedObject(const QString& resourcePath) const
-{
-    QString error;
-    const QJsonDocument document = readJsonDocument(resourcePath, &error);
-    if (!error.isEmpty()) {
-        setLastError(QStringLiteral("%1: %2").arg(resourcePath, error));
-    }
-    return document.object();
 }
 
 QVector<QJsonObject> LocalDataStore::values(const QString& domain)

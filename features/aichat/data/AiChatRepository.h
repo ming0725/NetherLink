@@ -3,7 +3,6 @@
 #include <QObject>
 #include <QHash>
 #include <QMutex>
-#include <QSet>
 #include <QVector>
 
 #include "shared/types/RepositoryTypes.h"
@@ -41,13 +40,11 @@ private:
     explicit AiChatRepository(QObject* parent = nullptr);
     Q_DISABLE_COPY(AiChatRepository)
 
-    void appendInitialMessages(const AiChatListEntry& entry, int sampleIndex) const;
     AiChatContextUsage buildContextUsageLocked(const QString& conversationId) const;
 
     mutable QMutex m_mutex;
     QVector<AiChatListEntry> m_entries;
     mutable QHash<QString, QVector<AiChatMessage>> m_messages;
-    mutable QSet<QString> m_seededMessageConversationIds;
     mutable QHash<QString, AiChatContextUsage> m_contextUsages;
     int m_nextConversationId = 1;
     mutable int m_nextMessageId = 1;

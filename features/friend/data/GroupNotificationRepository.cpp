@@ -1,10 +1,10 @@
 #include "GroupNotificationRepository.h"
 
 #include <algorithm>
-#include <QJsonArray>
 #include <QJsonObject>
 #include <QSharedPointer>
 #include <QSet>
+#include <QStringList>
 
 #include "app/state/CurrentUser.h"
 #include "features/chat/data/GroupRepository.h"
@@ -17,7 +17,6 @@
 namespace {
 
 const QString kGroupNotificationUnreadScope = QStringLiteral("group_notifications");
-constexpr int kInitialUnreadCount = 28;
 
 class GroupNotificationListOperation final
     : public RepositoryTemplate<GroupNotificationListRequest, QVector<GroupNotification>>
@@ -87,27 +86,15 @@ QString groupJoinDisplayName(const QString& groupId, const QString& userId)
     return userId;
 }
 
-GroupNotification makeNotification(const QString& id,
-                                   GroupNotificationType type,
-                                   const QString& groupId,
-                                   const QString& actorUserId,
-                                   int daysAgo,
-                                   const QString& message = {},
-                                   GroupNotificationStatus status = GroupNotificationStatus::None,
-                                   const QString& operatorUserId = {})
+QString firstString(const QJsonObject& object, const QStringList& keys)
 {
-    const Group group = GroupRepository::instance().requestGroupDetail({groupId});
-    GroupNotification notification;
-    notification.id = id;
-    notification.type = type;
-    notification.groupId = groupId;
-    notification.actorUserId = actorUserId;
-    notification.operatorUserId = operatorUserId;
-    notification.message = message;
-    notification.status = status;
-    notification.createdAt = QDateTime::currentDateTime().addDays(-daysAgo);
-    notification.actorRole = roleForUser(group, actorUserId);
-    return notification;
+    for (const QString& key : keys) {
+        const QString value = object.value(key).toString();
+        if (!value.isEmpty()) {
+            return value;
+        }
+    }
+    return {};
 }
 
 QString groupNotificationTypeToString(GroupNotificationType type)
@@ -188,42 +175,27 @@ QJsonObject groupNotificationToJson(const GroupNotification& notification)
 GroupNotification groupNotificationFromJson(const QJsonObject& object)
 {
     GroupNotification notification;
-    notification.id = object.value(QStringLiteral("id")).toString();
+    notification.id = firstString(object, {QStringLiteral("id"),
+                                           QStringLiteral("requestId"),
+                                           QStringLiteral("notificationId"),
+                                           QStringLiteral("sourceId")});
     notification.type = groupNotificationTypeFromString(object.value(QStringLiteral("type")).toString());
     notification.status = groupNotificationStatusFromString(object.value(QStringLiteral("status")).toString());
     notification.groupId = object.value(QStringLiteral("groupId")).toString();
-    notification.actorUserId = object.value(QStringLiteral("actorUserId")).toString();
-    notification.operatorUserId = object.value(QStringLiteral("operatorUserId")).toString();
+    notification.actorUserId = firstString(object, {QStringLiteral("actorUserId"),
+                                                    QStringLiteral("actorUuid"),
+                                                    QStringLiteral("fromUserId"),
+                                                    QStringLiteral("fromUserUuid")});
+    notification.operatorUserId = firstString(object, {QStringLiteral("operatorUserId"),
+                                                       QStringLiteral("operatorUuid")});
     notification.message = object.value(QStringLiteral("message")).toString();
-    notification.createdAt = QDateTime::fromString(object.value(QStringLiteral("createdAt")).toString(),
+    notification.createdAt = QDateTime::fromString(firstString(object, {QStringLiteral("createdAt"),
+                                                                        QStringLiteral("updatedAt")}),
                                                    Qt::ISODateWithMs);
-    notification.unread = object.value(QStringLiteral("unread")).toBool(true);
+    notification.unread = object.value(QStringLiteral("unread")).toBool(object.value(QStringLiteral("readAt")).isNull());
     notification.actorRole = roleForUser(GroupRepository::instance().requestGroupDetail({notification.groupId}),
                                          notification.actorUserId);
     return notification;
-}
-
-QVector<GroupNotification> buildInitialNotifications()
-{
-    QVector<GroupNotification> notifications;
-    const QJsonArray array = LocalDataStore::instance()
-            .seedArray(QStringLiteral(":/resources/data/group_notifications.json"));
-    for (const QJsonValue& value : array) {
-        const QJsonObject object = value.toObject();
-        GroupNotification notification = makeNotification(
-                object.value(QStringLiteral("id")).toString(),
-                groupNotificationTypeFromString(object.value(QStringLiteral("type")).toString()),
-                object.value(QStringLiteral("groupId")).toString(),
-                object.value(QStringLiteral("actorUserId")).toString(),
-                object.value(QStringLiteral("daysAgo")).toInt(),
-                object.value(QStringLiteral("message")).toString(),
-                groupNotificationStatusFromString(object.value(QStringLiteral("status")).toString()),
-                object.value(QStringLiteral("operatorUserId")).toString());
-        if (!notification.id.isEmpty()) {
-            notifications.push_back(notification);
-        }
-    }
-    return notifications;
 }
 
 } // namespace
@@ -247,13 +219,6 @@ void GroupNotificationRepository::ensureLoaded() const
 
     auto* self = const_cast<GroupNotificationRepository*>(this);
     LocalDataStore& store = LocalDataStore::instance();
-    if (!store.hasDomain(QStringLiteral("group_notifications"))) {
-        for (const GroupNotification& notification : buildInitialNotifications()) {
-            store.upsertValue(QStringLiteral("group_notifications"),
-                              notification.id,
-                              groupNotificationToJson(notification));
-        }
-    }
     for (const QJsonObject& object : store.values(QStringLiteral("group_notifications"))) {
         const GroupNotification notification = groupNotificationFromJson(object);
         if (!notification.id.isEmpty()) {
@@ -290,7 +255,7 @@ int GroupNotificationRepository::unreadCount() const
 {
     return m_loaded
             ? UnreadStateRepository::instance().unreadCount(kGroupNotificationUnreadScope)
-            : kInitialUnreadCount;
+            : 0;
 }
 
 int GroupNotificationRepository::notificationCount() const

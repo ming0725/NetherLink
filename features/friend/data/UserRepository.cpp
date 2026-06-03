@@ -2,7 +2,6 @@
 
 #include <QCollator>
 #include <QImageReader>
-#include <QJsonArray>
 #include <QJsonObject>
 #include <QMetaObject>
 #include <QRunnable>
@@ -115,10 +114,13 @@ UserStatus userStatusFromString(const QString& value)
 User userFromJson(const QJsonObject& object)
 {
     User user;
-    user.id = object.value(QStringLiteral("id")).toString();
-    user.nick = object.value(QStringLiteral("nick")).toString();
+    user.id = object.value(QStringLiteral("id")).toString(
+            object.value(QStringLiteral("userId")).toString(object.value(QStringLiteral("userUuid")).toString()));
+    user.nick = object.value(QStringLiteral("nick")).toString(
+            object.value(QStringLiteral("nickName")).toString(object.value(QStringLiteral("displayName")).toString()));
     user.remark = object.value(QStringLiteral("remark")).toString();
-    user.avatarPath = object.value(QStringLiteral("avatarPath")).toString();
+    user.avatarPath = object.value(QStringLiteral("avatarPath")).toString(
+            object.value(QStringLiteral("avatarUrl")).toString());
     user.status = userStatusFromString(object.value(QStringLiteral("status")).toString());
     user.signature = object.value(QStringLiteral("signature")).toString();
     user.isDnd = object.value(QStringLiteral("isDnd")).toBool(false);
@@ -322,16 +324,6 @@ UserRepository::UserRepository(QObject* parent)
     : QObject(parent)
 {
     LocalDataStore& store = LocalDataStore::instance();
-    if (!store.hasDomain(QStringLiteral("users"))) {
-        const QJsonArray users = store.seedArray(QStringLiteral(":/resources/data/users.json"));
-        for (const QJsonValue& value : users) {
-            const User user = userFromJson(value.toObject());
-            if (!user.id.isEmpty()) {
-                store.upsertValue(QStringLiteral("users"), user.id, userToJson(user));
-            }
-        }
-    }
-
     for (const QJsonObject& object : store.values(QStringLiteral("users"))) {
         const User user = userFromJson(object);
         if (!user.id.isEmpty()) {

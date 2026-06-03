@@ -4,7 +4,6 @@
 #include "shared/data/RepositoryTemplate.h"
 #include "shared/services/ImageService.h"
 
-#include <QJsonArray>
 #include <QJsonObject>
 #include <utility>
 
@@ -62,9 +61,12 @@ UserStatus statusFromString(const QString& value)
 CurrentUserProfile profileFromJson(const QJsonObject& object)
 {
     CurrentUserProfile profile;
-    profile.userId = object.value(QStringLiteral("userId")).toString();
-    profile.nickName = object.value(QStringLiteral("nickName")).toString();
-    profile.avatarPath = object.value(QStringLiteral("avatarPath")).toString(QString::fromLatin1(kDefaultAvatarPath));
+    profile.userId = object.value(QStringLiteral("userId")).toString(
+            object.value(QStringLiteral("id")).toString(object.value(QStringLiteral("userUuid")).toString()));
+    profile.nickName = object.value(QStringLiteral("nickName")).toString(
+            object.value(QStringLiteral("nick")).toString(object.value(QStringLiteral("displayName")).toString()));
+    profile.avatarPath = object.value(QStringLiteral("avatarPath")).toString(
+            object.value(QStringLiteral("avatarUrl")).toString(QString::fromLatin1(kDefaultAvatarPath)));
     profile.status = statusFromString(object.value(QStringLiteral("status")).toString());
     profile.signature = object.value(QStringLiteral("signature")).toString();
     profile.region = object.value(QStringLiteral("region")).toString();
@@ -123,16 +125,6 @@ CurrentUserProfileRepository::CurrentUserProfileRepository(QObject* parent)
     : QObject(parent)
 {
     LocalDataStore& store = LocalDataStore::instance();
-    if (!store.hasDomain(QStringLiteral("current_profiles"))) {
-        const QJsonArray profiles = store.seedArray(QStringLiteral(":/resources/data/current_profiles.json"));
-        for (const QJsonValue& value : profiles) {
-            const CurrentUserProfile profile = profileFromJson(value.toObject());
-            if (!profile.userId.isEmpty()) {
-                store.upsertValue(QStringLiteral("current_profiles"), profile.userId, profileToJson(profile));
-            }
-        }
-    }
-
     for (const QJsonObject& object : store.values(QStringLiteral("current_profiles"))) {
         const CurrentUserProfile profile = profileFromJson(object);
         if (!profile.userId.isEmpty()) {

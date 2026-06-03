@@ -3,6 +3,7 @@
 #include "AuthSession.h"
 #include "HttpClient.h"
 #include "RealtimeClient.h"
+#include "RemoteDataBootstrapper.h"
 #include "UploadClient.h"
 
 NetworkService& NetworkService::instance()
@@ -19,13 +20,18 @@ NetworkService::NetworkService(QObject* parent)
     connect(&AuthApiClient::instance(), &AuthApiClient::loginSucceeded, this, [this](const QString& requestId,
                                                                                     const AuthResult& result) {
         emit loginSucceeded(requestId, result);
+        RemoteDataBootstrapper::instance().syncAll();
         startRealtime();
     });
     connect(&AuthApiClient::instance(), &AuthApiClient::loginFailed, this, &NetworkService::loginFailed);
     connect(&AuthApiClient::instance(),
             &AuthApiClient::registerSucceeded,
             this,
-            &NetworkService::registerSucceeded);
+            [this](const QString& requestId, const AuthResult& result) {
+                emit registerSucceeded(requestId, result);
+                RemoteDataBootstrapper::instance().syncAll();
+                startRealtime();
+            });
     connect(&AuthApiClient::instance(), &AuthApiClient::registerFailed, this, &NetworkService::registerFailed);
     connect(&AuthApiClient::instance(), &AuthApiClient::logoutFinished, this, [this](const QString& requestId,
                                                                                     bool success,
