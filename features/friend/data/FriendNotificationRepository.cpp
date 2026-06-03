@@ -1,11 +1,14 @@
 #include "FriendNotificationRepository.h"
 
 #include <algorithm>
+#include <QJsonArray>
+#include <QJsonObject>
 
 #include "app/state/CurrentUser.h"
 #include "features/chat/data/GroupRepository.h"
 #include "features/chat/data/MessageRepository.h"
 #include "features/friend/data/UserRepository.h"
+#include "shared/data/LocalDataStore.h"
 #include "shared/data/RepositoryTemplate.h"
 #include "shared/data/UnreadStateRepository.h"
 #include "shared/types/ChatMessage.h"
@@ -78,42 +81,114 @@ FriendNotification makeNotification(const QString& id,
     return notification;
 }
 
+QString notificationSourceTypeToString(NotificationSourceType type)
+{
+    switch (type) {
+    case NotificationSourceType::GroupChat:
+        return QStringLiteral("group_chat");
+    case NotificationSourceType::FriendShare:
+        return QStringLiteral("friend_share");
+    case NotificationSourceType::IdSearch:
+    default:
+        return QStringLiteral("id_search");
+    }
+}
+
+NotificationSourceType notificationSourceTypeFromString(const QString& value)
+{
+    const QString normalized = value.trimmed().toLower();
+    if (normalized == QStringLiteral("group_chat")) {
+        return NotificationSourceType::GroupChat;
+    }
+    if (normalized == QStringLiteral("friend_share")) {
+        return NotificationSourceType::FriendShare;
+    }
+    return NotificationSourceType::IdSearch;
+}
+
+QString notificationStatusToString(NotificationStatus status)
+{
+    switch (status) {
+    case NotificationStatus::Accepted:
+        return QStringLiteral("accepted");
+    case NotificationStatus::Rejected:
+        return QStringLiteral("rejected");
+    case NotificationStatus::Pending:
+    default:
+        return QStringLiteral("pending");
+    }
+}
+
+NotificationStatus notificationStatusFromString(const QString& value)
+{
+    const QString normalized = value.trimmed().toLower();
+    if (normalized == QStringLiteral("accepted")) {
+        return NotificationStatus::Accepted;
+    }
+    if (normalized == QStringLiteral("rejected")) {
+        return NotificationStatus::Rejected;
+    }
+    return NotificationStatus::Pending;
+}
+
+QJsonObject notificationToJson(const FriendNotification& notification)
+{
+    return {
+            {QStringLiteral("id"), notification.id},
+            {QStringLiteral("fromUserId"), notification.fromUserId},
+            {QStringLiteral("message"), notification.message},
+            {QStringLiteral("requestDate"), notification.requestDate.toString(Qt::ISODateWithMs)},
+            {QStringLiteral("sourceType"), notificationSourceTypeToString(notification.sourceType)},
+            {QStringLiteral("unread"), notification.unread},
+            {QStringLiteral("sourceGroupId"), notification.sourceGroupId},
+            {QStringLiteral("sourceGroupName"), notification.sourceGroupName},
+            {QStringLiteral("sourceGroupMemberName"), notification.sourceGroupMemberName},
+            {QStringLiteral("sourceFriendId"), notification.sourceFriendId},
+            {QStringLiteral("sourceFriendName"), notification.sourceFriendName},
+            {QStringLiteral("status"), notificationStatusToString(notification.status)}
+    };
+}
+
+FriendNotification notificationFromJson(const QJsonObject& object)
+{
+    FriendNotification notification;
+    notification.id = object.value(QStringLiteral("id")).toString();
+    notification.fromUserId = object.value(QStringLiteral("fromUserId")).toString();
+    notification.message = object.value(QStringLiteral("message")).toString();
+    notification.requestDate = QDateTime::fromString(object.value(QStringLiteral("requestDate")).toString(),
+                                                     Qt::ISODateWithMs);
+    notification.sourceType = notificationSourceTypeFromString(object.value(QStringLiteral("sourceType")).toString());
+    notification.unread = object.value(QStringLiteral("unread")).toBool(true);
+    notification.sourceGroupId = object.value(QStringLiteral("sourceGroupId")).toString();
+    notification.sourceGroupName = object.value(QStringLiteral("sourceGroupName")).toString();
+    notification.sourceGroupMemberName = object.value(QStringLiteral("sourceGroupMemberName")).toString();
+    notification.sourceFriendId = object.value(QStringLiteral("sourceFriendId")).toString();
+    notification.sourceFriendName = object.value(QStringLiteral("sourceFriendName")).toString();
+    notification.status = notificationStatusFromString(object.value(QStringLiteral("status")).toString());
+    return notification;
+}
+
+QStringList stringsFromJsonArray(const QJsonArray& array)
+{
+    QStringList values;
+    for (const QJsonValue& value : array) {
+        values.append(value.toString());
+    }
+    return values;
+}
+
 QVector<FriendNotification> buildInitialNotifications()
 {
-    const QVector<QString> userIds = {
-        QStringLiteral("u101"), QStringLiteral("u102"), QStringLiteral("u103"),
-        QStringLiteral("u104"), QStringLiteral("u105"), QStringLiteral("u106"),
-        QStringLiteral("u107"), QStringLiteral("u108"), QStringLiteral("u109"),
-        QStringLiteral("u110"), QStringLiteral("u111"), QStringLiteral("u112"),
-        QStringLiteral("u113"), QStringLiteral("u114"), QStringLiteral("u115"),
-        QStringLiteral("u116"), QStringLiteral("u117"), QStringLiteral("u118"),
-        QStringLiteral("u119"), QStringLiteral("u120"), QStringLiteral("u121"),
-        QStringLiteral("u122"), QStringLiteral("u123"), QStringLiteral("u124"),
-        QStringLiteral("u125"), QStringLiteral("u126"), QStringLiteral("u127"),
-        QStringLiteral("u128"), QStringLiteral("u129"), QStringLiteral("u130"),
-        QStringLiteral("u131"), QStringLiteral("u132"), QStringLiteral("u133"),
-        QStringLiteral("u134"), QStringLiteral("u135"), QStringLiteral("u136"),
-    };
-    const QVector<QString> groupIds = {
-        QStringLiteral("g004"), QStringLiteral("g005"), QStringLiteral("g011"),
-        QStringLiteral("g012"), QStringLiteral("g013"), QStringLiteral("g014")
-    };
-    const QVector<QString> shareNames = {
-        QStringLiteral("桃木匠"), QStringLiteral("中继器同学"), QStringLiteral("指令哥"),
-        QStringLiteral("创意服群友"), QStringLiteral("红石群友"), QStringLiteral("共建队友")
-    };
-    const QVector<QString> messages = {
-        QStringLiteral("看到你在创意服分享的建筑设计稿，想加好友继续交流。"),
-        QStringLiteral("你做的红石机关很有启发，方便加好友吗？"),
-        QStringLiteral("朋友把你的作品名片发给我了，想认识一下。"),
-        QStringLiteral("通过主城坐标搜索找到你，想参观你的工坊。"),
-        QStringLiteral("后续想请教地形笔刷和配色，方便通过一下。"),
-        QStringLiteral("我们在同一个 Minecraft 群里聊过建造，想继续交流。")
-    };
+    const QJsonObject seed = LocalDataStore::instance()
+            .seedObject(QStringLiteral(":/resources/data/friend_notifications.json"));
+    const QStringList userIds = stringsFromJsonArray(seed.value(QStringLiteral("userIds")).toArray());
+    const QStringList groupIds = stringsFromJsonArray(seed.value(QStringLiteral("groupIds")).toArray());
+    const QStringList shareNames = stringsFromJsonArray(seed.value(QStringLiteral("shareNames")).toArray());
+    const QStringList messages = stringsFromJsonArray(seed.value(QStringLiteral("messages")).toArray());
 
     QVector<FriendNotification> notifications;
     notifications.reserve(userIds.size());
-    for (int i = 0; i < userIds.size(); ++i) {
+    for (int i = 0; i < userIds.size() && !groupIds.isEmpty() && !shareNames.isEmpty() && !messages.isEmpty(); ++i) {
         const NotificationSourceType sourceType =
                 i % 3 == 0 ? NotificationSourceType::GroupChat
               : i % 3 == 1 ? NotificationSourceType::FriendShare
@@ -149,7 +224,20 @@ void FriendNotificationRepository::ensureLoaded() const
     }
 
     auto* self = const_cast<FriendNotificationRepository*>(this);
-    self->m_notifications = buildInitialNotifications();
+    LocalDataStore& store = LocalDataStore::instance();
+    if (!store.hasDomain(QStringLiteral("friend_notifications"))) {
+        for (const FriendNotification& notification : buildInitialNotifications()) {
+            store.upsertValue(QStringLiteral("friend_notifications"),
+                              notification.id,
+                              notificationToJson(notification));
+        }
+    }
+    for (const QJsonObject& object : store.values(QStringLiteral("friend_notifications"))) {
+        const FriendNotification notification = notificationFromJson(object);
+        if (!notification.id.isEmpty()) {
+            self->m_notifications.push_back(notification);
+        }
+    }
     for (const FriendNotification& notification : self->m_notifications) {
         if (notification.unread) {
             UnreadStateRepository::instance().setUnread(kFriendRequestUnreadScope,
@@ -210,6 +298,9 @@ bool FriendNotificationRepository::acceptRequest(const QString& notificationId,
 
         const QDateTime acceptedAt = QDateTime::currentDateTime();
         notification.status = NotificationStatus::Accepted;
+        LocalDataStore::instance().upsertValue(QStringLiteral("friend_notifications"),
+                                               notification.id,
+                                               notificationToJson(notification));
         User user = UserRepository::instance().requestUserDetail({notification.fromUserId});
         if (!user.id.isEmpty()) {
             user.isFriend = true;
@@ -245,6 +336,9 @@ bool FriendNotificationRepository::rejectRequest(const QString& notificationId)
         }
 
         notification.status = NotificationStatus::Rejected;
+        LocalDataStore::instance().upsertValue(QStringLiteral("friend_notifications"),
+                                               notification.id,
+                                               notificationToJson(notification));
         emit notificationListChanged();
         return true;
     }

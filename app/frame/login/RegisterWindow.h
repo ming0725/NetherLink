@@ -2,6 +2,8 @@
 
 #include "platform/SystemWindow.h"
 
+#include <QString>
+
 class QLabel;
 class QShowEvent;
 class RegisterInputField;
@@ -30,6 +32,7 @@ private:
     void updateBackdropTheme();
     void updateValidationState();
     void attemptRegister();
+    void resetRegisterPending();
     void requestVerificationCode();
     void scheduleClose();
     void centerOnOwnerOrScreen();
@@ -62,4 +65,9 @@ private:
     StatefulPushButton* m_codeButton = nullptr;
     StatefulPushButton* m_cancelButton = nullptr;
     StatefulPushButton* m_registerButton = nullptr;
+    QString m_registerRequestId;
+    QString m_pendingAccountId;
+    QString m_pendingPassword;
+    QString m_pendingNickname;
+    bool m_registerPending = false;
 };

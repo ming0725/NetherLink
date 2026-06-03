@@ -1,4 +1,4 @@
-# 📦 NetherLink‑static
+# 📦 NetherLink
 
 > 基于 Qt 的聊天社交客户端静态演示，Minecraft 风格，展现群聊/私聊、帖子中心、AI 对话等功能的美化界面与动画效果。
 
@@ -6,7 +6,7 @@
 
 ## 📖 项目介绍
 
-NetherLink‑static 是一款基于 Qt 的聊天社交客户端静态原型，专注于呈现完整的 UI 视觉与交互动效，不包含后端逻辑。项目提供登录、注册及主界面完整演示流程，所有页面、控件和操作反馈均为静态演示，方便体验和评审界面设计思路。
+NetherLink 是一款基于 Qt 的聊天社交客户端静态原型，专注于呈现完整的 UI 视觉与交互动效，不包含后端逻辑。项目提供登录、注册及主界面完整演示流程，所有页面、控件和操作反馈均为静态演示，方便体验和评审界面设计思路。
 
 ---
 
@@ -39,22 +39,22 @@ NetherLink‑static 是一款基于 Qt 的聊天社交客户端静态原型，�
 
 > 以下为示例截图，展示主要页面风格。
 
-<img src="https://github.com/ming0725/NetherLink-static/blob/master/doc/images/1.png?raw=true" alt="聊天界面" width="240"/>
+<img src="https://github.com/ming0725/NetherLink/blob/master/doc/images/1.png?raw=true" alt="聊天界面" width="240"/>
 
-<img src="https://github.com/ming0725/NetherLink-static/blob/master/doc/images/3.png?raw=true" alt="帖子界面" width="600"/>
+<img src="https://github.com/ming0725/NetherLink/blob/master/doc/images/3.png?raw=true" alt="帖子界面" width="600"/>
 
-<img src="https://github.com/ming0725/NetherLink-static/blob/master/doc/images/4.png?raw=true" alt="好友更多页面" width="600"/>
+<img src="https://github.com/ming0725/NetherLink/blob/master/doc/images/4.png?raw=true" alt="好友更多页面" width="600"/>
 
-<img src="https://github.com/ming0725/NetherLink-static/blob/master/doc/images/5.png?raw=true" alt="群聊更多页面" width="600"/>
+<img src="https://github.com/ming0725/NetherLink/blob/master/doc/images/5.png?raw=true" alt="群聊更多页面" width="600"/>
 
-<img src="https://github.com/ming0725/NetherLink-static/blob/master/doc/images/7.png?raw=true" alt="好友通知界面" width="600"/>
+<img src="https://github.com/ming0725/NetherLink/blob/master/doc/images/7.png?raw=true" alt="好友通知界面" width="600"/>
 
-<img src="https://github.com/ming0725/NetherLink-static/blob/master/doc/images/9.png?raw=true" alt="帖子详情界面" width="600"/>
+<img src="https://github.com/ming0725/NetherLink/blob/master/doc/images/9.png?raw=true" alt="帖子详情界面" width="600"/>
 
-<img src="https://github.com/ming0725/NetherLink-static/blob/master/doc/images/11.png?raw=true" alt="AI 对话界面" width="600"/>
+<img src="https://github.com/ming0725/NetherLink/blob/master/doc/images/11.png?raw=true" alt="AI 对话界面" width="600"/>
 
 <p>
-  <a href="https://github.com/ming0725/NetherLink-static/blob/master/doc/preview.md"><kbd>更多预览</kbd></a>
+  <a href="https://github.com/ming0725/NetherLink/blob/master/doc/preview.md"><kbd>更多预览</kbd></a>
 </p>
 
 ---

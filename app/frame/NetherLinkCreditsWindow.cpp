@@ -220,7 +220,7 @@ void NetherLinkCreditsWindow::buildCredits()
     addSpacer(44);
     addYellow(QStringLiteral("========================"));
     addYellow(QStringLiteral("NetherLink"));
-    addYellowSmall(QStringLiteral("https://github.com/ming0725/NetherLink-static"));
+    addYellowSmall(QStringLiteral("https://github.com/ming0725/NetherLink"));
     addYellow(QStringLiteral("========================"));
     addYellow(QStringLiteral("鸣谢名单"));
     addYellow(QStringLiteral("愿下界之门始终保持连接"));

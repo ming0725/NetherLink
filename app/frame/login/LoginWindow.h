@@ -7,6 +7,7 @@
 #include <QImage>
 #include <QPointF>
 #include <QPointer>
+#include <QString>
 #include <QVector>
 
 class QLabel;
@@ -16,6 +17,7 @@ class QAbstractButton;
 class QCloseEvent;
 class StatefulPushButton;
 class QTimer;
+struct LoginAccount;
 template <typename T>
 class QFutureWatcher;
 
@@ -59,6 +61,8 @@ private:
     void updateAutoLoginRules();
     void updateAvatarForAccount(const QString& accountId);
     void attemptLogin();
+    void finishLogin(const LoginAccount& account);
+    void resetLoginPending(const QString& buttonText = QString());
     void showRegisterWindow();
     void closeRegisterWindow();
     void showAccountPopup();
@@ -84,6 +88,9 @@ private:
     qint64 m_lastBackgroundTick = 0;
     QVector<BackgroundLight> m_backgroundLights;
     QImage m_blurredBackgroundLayer;
+    QString m_loginRequestId;
+    QString m_pendingLoginAccountId;
+    QString m_pendingLoginPassword;
     QFutureWatcher<QImage>* m_backgroundLayerWatcher = nullptr;
     qint64 m_lastBackgroundLayerRequest = -1000;
     int m_backgroundLayerGeneration = 0;

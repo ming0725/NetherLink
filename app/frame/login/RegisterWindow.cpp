@@ -5,6 +5,7 @@
 #include "platform/windows/WindowsWindowControlButton.h"
 #endif
 #include "shared/services/AppFonts.h"
+#include "shared/network/NetworkService.h"
 #include "shared/theme/ThemeManager.h"
 #include "shared/ui/GlobalNotification.h"
 #include "shared/ui/StatefulPushButton.h"
@@ -22,6 +23,7 @@
 #include <QResizeEvent>
 #include <QScreen>
 #include <QTimer>
+#include <QUuid>
 
 constexpr int kWindowWidth = 460;
 constexpr int kWindowHeight = 660;
@@ -58,6 +60,23 @@ void applyDefaultRegisterButtonStyle(StatefulPushButton* button)
 bool containsMatch(const QString& text, const QString& pattern)
 {
     return QRegularExpression(pattern).match(text).hasMatch();
+}
+
+QString userIdFromEmail(const QString& email)
+{
+    QString base = email.section(QLatin1Char('@'), 0, 0).trimmed().toLower();
+    base.replace(QRegularExpression(QStringLiteral("[^a-z0-9_.-]")), QStringLiteral("_"));
+    base = base.left(48);
+    if (!base.isEmpty()) {
+        return base;
+    }
+    return QStringLiteral("user_%1").arg(QUuid::createUuid().toString(QUuid::WithoutBraces).left(8));
+}
+
+bool shouldUseLocalRegisterFallback(const NetworkError& error)
+{
+    return error.httpStatus == 0 || error.httpStatus == 502 || error.httpStatus == 503 || error.httpStatus == 504
+            || error.code == QStringLiteral("SERVICE_NOT_READY");
 }
 
 class RegisterInputField final : public QWidget
@@ -442,6 +461,49 @@ void RegisterWindow::setupUi()
     connect(m_codeButton, &QPushButton::clicked, this, &RegisterWindow::requestVerificationCode);
     connect(m_cancelButton, &QPushButton::clicked, this, &RegisterWindow::scheduleClose);
     connect(m_registerButton, &QPushButton::clicked, this, &RegisterWindow::attemptRegister);
+    connect(&NetworkService::instance(), &NetworkService::registerSucceeded, this, [this](const QString& requestId,
+                                                                                          const AuthResult& result) {
+        if (requestId != m_registerRequestId) {
+            return;
+        }
+
+        const QString accountId = result.user.userId.isEmpty() ? m_pendingAccountId : result.user.userId;
+        LoginAccount account;
+        account.accountId = accountId;
+        account.password = m_pendingPassword;
+        account.displayName = result.user.nickName.isEmpty() ? m_pendingNickname : result.user.nickName;
+        account.avatarPath = result.user.avatarPath;
+        account.status = Online;
+        account.signature = result.user.signature;
+        account.region = result.user.region;
+        LoginAccountRepository::instance().saveAuthenticatedAccount(account);
+
+        emit accountRegistered(account.accountId, account.password);
+        GlobalNotification::showSuccess(parentWidget() ? parentWidget() : this, QStringLiteral("注册成功"));
+        scheduleClose();
+    });
+    connect(&NetworkService::instance(), &NetworkService::registerFailed, this, [this](const QString& requestId,
+                                                                                      const NetworkError& error) {
+        if (requestId != m_registerRequestId) {
+            return;
+        }
+
+        if (shouldUseLocalRegisterFallback(error) &&
+            LoginAccountRepository::instance().registerAccount(m_pendingAccountId,
+                                                               m_pendingPassword,
+                                                               m_pendingNickname)) {
+            emit accountRegistered(m_pendingAccountId, m_pendingPassword);
+            GlobalNotification::showSuccess(parentWidget() ? parentWidget() : this, QStringLiteral("注册成功"));
+            scheduleClose();
+            return;
+        }
+
+        resetRegisterPending();
+        setErrorText(error.httpStatus == 409 || error.code == QStringLiteral("CONFLICT")
+                             ? QStringLiteral("该邮箱已经注册")
+                             : QStringLiteral("注册服务暂不可用"));
+        GlobalNotification::showFailure(this, QStringLiteral("注册失败"));
+    });
 
     updateValidationState();
 }
@@ -596,7 +658,8 @@ void RegisterWindow::updateValidationState()
     m_passwordSymbolRule->setPassed(passwordSymbolValid());
     m_repeatRule->setPassed(repeatPasswordValid());
     if (m_registerButton) {
-        m_registerButton->setEnabled(emailValid()
+        m_registerButton->setEnabled(!m_registerPending
+                                     && emailValid()
                                      && verificationCodeValid()
                                      && nicknameValid()
                                      && passwordLengthValid()
@@ -610,6 +673,10 @@ void RegisterWindow::updateValidationState()
 
 void RegisterWindow::attemptRegister()
 {
+    if (m_registerPending) {
+        return;
+    }
+
     updateValidationState();
     if (!m_registerButton->isEnabled()) {
         setErrorText(QStringLiteral("请先完成所有格式要求"));
@@ -619,15 +686,30 @@ void RegisterWindow::attemptRegister()
     const QString accountId = m_emailField->text().trimmed().toLower();
     const QString password = m_passwordField->text();
     const QString nickname = m_nicknameField->text().trimmed();
-    if (!LoginAccountRepository::instance().registerAccount(accountId, password, nickname)) {
-        setErrorText(QStringLiteral("该邮箱已经注册"));
-        GlobalNotification::showFailure(this, QStringLiteral("注册失败"));
-        return;
-    }
+    m_registerPending = true;
+    m_pendingAccountId = accountId;
+    m_pendingPassword = password;
+    m_pendingNickname = nickname;
+    setErrorText(QString());
+    m_registerButton->setEnabled(false);
+    m_registerButton->setText(QStringLiteral("正在注册"));
+    m_registerRequestId = NetworkService::instance().registerAccount(accountId,
+                                                                     password,
+                                                                     nickname,
+                                                                     userIdFromEmail(accountId));
+}
 
-    emit accountRegistered(accountId, password);
-    GlobalNotification::showSuccess(parentWidget() ? parentWidget() : this, QStringLiteral("注册成功"));
-    scheduleClose();
+void RegisterWindow::resetRegisterPending()
+{
+    m_registerPending = false;
+    m_registerRequestId.clear();
+    m_pendingAccountId.clear();
+    m_pendingPassword.clear();
+    m_pendingNickname.clear();
+    if (m_registerButton) {
+        m_registerButton->setText(QStringLiteral("完成注册"));
+    }
+    updateValidationState();
 }
 
 void RegisterWindow::requestVerificationCode()

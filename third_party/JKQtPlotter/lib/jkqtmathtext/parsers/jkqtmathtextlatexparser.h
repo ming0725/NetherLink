@@ -2,7 +2,7 @@
     Copyright (c) 2008-2024 Jan W. Krieger (<jan@jkrieger.de>)
     with contributions from: Razi Alavizadeh
 
-    Modified by NetherLink-static contributors on 2026-05-30.
+    Modified by NetherLink contributors on 2026-05-30.
     Changes: declared single-token math argument parsing helper; see
     third_party/JKQtPlotter/MODIFICATIONS.md.
 

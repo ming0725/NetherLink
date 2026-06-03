@@ -15,6 +15,7 @@ public:
     static AiChatRepository& instance();
 
     QVector<AiChatListEntry> requestAiChatList(const AiChatListRequest& query = {}) const;
+    QVector<AiChatMessage> requestAiChatMessages(const AiChatMessagesRequest& query) const;
     QVector<AiChatMessage> requestAiChatMessages(const QString& conversationId) const;
     AiChatContextUsage requestAiChatContextUsage(const AiChatContextUsageRequest& request) const;
     QString createAiChatConversation(const QString& title,

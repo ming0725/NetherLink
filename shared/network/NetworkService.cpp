@@ -1,0 +1,78 @@
+#include "NetworkService.h"
+
+#include "AuthSession.h"
+#include "HttpClient.h"
+#include "RealtimeClient.h"
+#include "UploadClient.h"
+
+NetworkService& NetworkService::instance()
+{
+    static NetworkService service;
+    return service;
+}
+
+NetworkService::NetworkService(QObject* parent)
+    : QObject(parent)
+{
+    configure(m_environment);
+
+    connect(&AuthApiClient::instance(), &AuthApiClient::loginSucceeded, this, [this](const QString& requestId,
+                                                                                    const AuthResult& result) {
+        emit loginSucceeded(requestId, result);
+        startRealtime();
+    });
+    connect(&AuthApiClient::instance(), &AuthApiClient::loginFailed, this, &NetworkService::loginFailed);
+    connect(&AuthApiClient::instance(),
+            &AuthApiClient::registerSucceeded,
+            this,
+            &NetworkService::registerSucceeded);
+    connect(&AuthApiClient::instance(), &AuthApiClient::registerFailed, this, &NetworkService::registerFailed);
+    connect(&AuthApiClient::instance(), &AuthApiClient::logoutFinished, this, [this](const QString& requestId,
+                                                                                    bool success,
+                                                                                    const NetworkError& error) {
+        stopRealtime();
+        AuthSession::instance().clear();
+        emit logoutFinished(requestId, success, error);
+    });
+}
+
+BackendEnvironment NetworkService::environment() const
+{
+    return m_environment;
+}
+
+void NetworkService::configure(const BackendEnvironment& environment)
+{
+    m_environment = environment;
+    HttpClient::instance().setEnvironment(environment);
+    RealtimeClient::instance().setEnvironment(environment);
+    UploadClient::instance().setEnvironment(environment);
+}
+
+QString NetworkService::login(const QString& account, const QString& password)
+{
+    return AuthApiClient::instance().login(account, password);
+}
+
+QString NetworkService::registerAccount(const QString& email,
+                                        const QString& password,
+                                        const QString& displayName,
+                                        const QString& userId)
+{
+    return AuthApiClient::instance().registerAccount(email, password, displayName, userId);
+}
+
+QString NetworkService::logout()
+{
+    return AuthApiClient::instance().logout();
+}
+
+void NetworkService::startRealtime()
+{
+    RealtimeClient::instance().connectToServer();
+}
+
+void NetworkService::stopRealtime()
+{
+    RealtimeClient::instance().disconnectFromServer();
+}

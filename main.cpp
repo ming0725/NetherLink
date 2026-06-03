@@ -2,6 +2,9 @@
 #include <QTimer>
 #include "app/frame/login/LoginWindow.h"
 #include "app/frame/MainWindow.h"
+#include "app/state/CurrentUser.h"
+#include "shared/network/AuthSession.h"
+#include "shared/network/NetworkService.h"
 #include "shared/services/AudioService.h"
 #include "shared/theme/ThemeManager.h"
 
@@ -52,7 +55,7 @@ int main(int argc, char *argv[])
         auto* window = new MainWindow;
         mainWindow = window;
 
-        QObject::connect(window, &MainWindow::logoutRequested, window, [&]() {
+        auto completeLogout = [&]() {
             MainWindow* loggedOutMainWindow = mainWindow;
             mainWindow = nullptr;
             if (loggedOutMainWindow) {
@@ -63,6 +66,28 @@ int main(int argc, char *argv[])
                 if (!loginWindow && !mainWindow) {
                     showLoginWindow();
                 }
+            });
+        };
+
+        QObject::connect(window, &MainWindow::logoutRequested, window, [&, completeLogout]() {
+            if (!AuthSession::instance().hasAccessToken() && !AuthSession::instance().hasRefreshToken()) {
+                NetworkService::instance().stopRealtime();
+                AuthSession::instance().clear();
+                CurrentUser::instance().clear();
+                completeLogout();
+                return;
+            }
+
+            const QString logoutRequestId = NetworkService::instance().logout();
+            QObject::connect(&NetworkService::instance(),
+                             &NetworkService::logoutFinished,
+                             window,
+                             [&, logoutRequestId, completeLogout](const QString& requestId, bool, const NetworkError&) {
+                if (requestId != logoutRequestId) {
+                    return;
+                }
+                CurrentUser::instance().clear();
+                completeLogout();
             });
         });
         QObject::connect(window, &QObject::destroyed, &a, [&, window]() {

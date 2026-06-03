@@ -1,6 +1,8 @@
 #include "GroupNotificationRepository.h"
 
 #include <algorithm>
+#include <QJsonArray>
+#include <QJsonObject>
 #include <QSharedPointer>
 #include <QSet>
 
@@ -8,6 +10,7 @@
 #include "features/chat/data/GroupRepository.h"
 #include "features/chat/data/MessageRepository.h"
 #include "features/friend/data/UserRepository.h"
+#include "shared/data/LocalDataStore.h"
 #include "shared/data/RepositoryTemplate.h"
 #include "shared/data/UnreadStateRepository.h"
 
@@ -107,134 +110,119 @@ GroupNotification makeNotification(const QString& id,
     return notification;
 }
 
+QString groupNotificationTypeToString(GroupNotificationType type)
+{
+    switch (type) {
+    case GroupNotificationType::MemberExited:
+        return QStringLiteral("member_exited");
+    case GroupNotificationType::AdminAssigned:
+        return QStringLiteral("admin_assigned");
+    case GroupNotificationType::OwnerTransferred:
+        return QStringLiteral("owner_transferred");
+    case GroupNotificationType::JoinRequest:
+    default:
+        return QStringLiteral("join_request");
+    }
+}
+
+GroupNotificationType groupNotificationTypeFromString(const QString& value)
+{
+    const QString normalized = value.trimmed().toLower();
+    if (normalized == QStringLiteral("member_exited")) {
+        return GroupNotificationType::MemberExited;
+    }
+    if (normalized == QStringLiteral("admin_assigned")) {
+        return GroupNotificationType::AdminAssigned;
+    }
+    if (normalized == QStringLiteral("owner_transferred")) {
+        return GroupNotificationType::OwnerTransferred;
+    }
+    return GroupNotificationType::JoinRequest;
+}
+
+QString groupNotificationStatusToString(GroupNotificationStatus status)
+{
+    switch (status) {
+    case GroupNotificationStatus::Pending:
+        return QStringLiteral("pending");
+    case GroupNotificationStatus::Accepted:
+        return QStringLiteral("accepted");
+    case GroupNotificationStatus::Rejected:
+        return QStringLiteral("rejected");
+    case GroupNotificationStatus::None:
+    default:
+        return QStringLiteral("none");
+    }
+}
+
+GroupNotificationStatus groupNotificationStatusFromString(const QString& value)
+{
+    const QString normalized = value.trimmed().toLower();
+    if (normalized == QStringLiteral("pending")) {
+        return GroupNotificationStatus::Pending;
+    }
+    if (normalized == QStringLiteral("accepted")) {
+        return GroupNotificationStatus::Accepted;
+    }
+    if (normalized == QStringLiteral("rejected")) {
+        return GroupNotificationStatus::Rejected;
+    }
+    return GroupNotificationStatus::None;
+}
+
+QJsonObject groupNotificationToJson(const GroupNotification& notification)
+{
+    return {
+            {QStringLiteral("id"), notification.id},
+            {QStringLiteral("type"), groupNotificationTypeToString(notification.type)},
+            {QStringLiteral("status"), groupNotificationStatusToString(notification.status)},
+            {QStringLiteral("groupId"), notification.groupId},
+            {QStringLiteral("actorUserId"), notification.actorUserId},
+            {QStringLiteral("operatorUserId"), notification.operatorUserId},
+            {QStringLiteral("message"), notification.message},
+            {QStringLiteral("createdAt"), notification.createdAt.toString(Qt::ISODateWithMs)},
+            {QStringLiteral("unread"), notification.unread}
+    };
+}
+
+GroupNotification groupNotificationFromJson(const QJsonObject& object)
+{
+    GroupNotification notification;
+    notification.id = object.value(QStringLiteral("id")).toString();
+    notification.type = groupNotificationTypeFromString(object.value(QStringLiteral("type")).toString());
+    notification.status = groupNotificationStatusFromString(object.value(QStringLiteral("status")).toString());
+    notification.groupId = object.value(QStringLiteral("groupId")).toString();
+    notification.actorUserId = object.value(QStringLiteral("actorUserId")).toString();
+    notification.operatorUserId = object.value(QStringLiteral("operatorUserId")).toString();
+    notification.message = object.value(QStringLiteral("message")).toString();
+    notification.createdAt = QDateTime::fromString(object.value(QStringLiteral("createdAt")).toString(),
+                                                   Qt::ISODateWithMs);
+    notification.unread = object.value(QStringLiteral("unread")).toBool(true);
+    notification.actorRole = roleForUser(GroupRepository::instance().requestGroupDetail({notification.groupId}),
+                                         notification.actorUserId);
+    return notification;
+}
+
 QVector<GroupNotification> buildInitialNotifications()
 {
-    QVector<Group> groups = GroupRepository::instance().requestGroupList();
-    QSet<QString> seen;
-    QVector<Group> manageableGroups;
-    for (const Group& group : std::as_const(groups)) {
-        if (seen.contains(group.groupId) || !canManageGroup(group)) {
-            continue;
-        }
-        seen.insert(group.groupId);
-        manageableGroups.push_back(group);
-    }
-
-    const QVector<QString> requestUsers = {
-        QStringLiteral("u101"), QStringLiteral("u102"), QStringLiteral("u103"),
-        QStringLiteral("u104"), QStringLiteral("u105"), QStringLiteral("u106"),
-        QStringLiteral("u107"), QStringLiteral("u108"), QStringLiteral("u109"),
-        QStringLiteral("u110"), QStringLiteral("u111"), QStringLiteral("u112"),
-        QStringLiteral("u113"), QStringLiteral("u114"), QStringLiteral("u115"),
-        QStringLiteral("u116"), QStringLiteral("u117"), QStringLiteral("u118")
-    };
-    const QVector<QString> messages = {
-        QStringLiteral("想加入群聊，一起做 Minecraft 创意建造。"),
-        QStringLiteral("朋友推荐我来这个群参观建筑设计，想申请加入。"),
-        QStringLiteral("之前关注过群里的红石/建筑内容，希望通过一下。"),
-        QStringLiteral("想加入后续服务器活动和共建讨论。")
-    };
-
     QVector<GroupNotification> notifications;
-    notifications.reserve(34);
-    int serial = 1;
-    for (int i = 0; i < requestUsers.size() && !manageableGroups.isEmpty(); ++i) {
-        const Group& group = manageableGroups.at(i % manageableGroups.size());
-        notifications.push_back(makeNotification(
-            QStringLiteral("gn_%1").arg(serial++, 3, 10, QChar('0')),
-            GroupNotificationType::JoinRequest,
-            group.groupId,
-            requestUsers.at(i),
-            i % 12,
-            messages.at(i % messages.size()),
-            GroupNotificationStatus::Pending));
-    }
-
-    auto addAcceptedJoinRequest = [&](const QString& groupId,
-                                      const QString& actorUserId,
-                                      const QString& operatorUserId,
-                                      int daysAgo,
-                                      const QString& message) {
-        const auto it = std::find_if(manageableGroups.cbegin(),
-                                     manageableGroups.cend(),
-                                     [&](const Group& group) {
-                                         return group.groupId == groupId;
-                                     });
-        if (it == manageableGroups.cend()) {
-            return;
+    const QJsonArray array = LocalDataStore::instance()
+            .seedArray(QStringLiteral(":/resources/data/group_notifications.json"));
+    for (const QJsonValue& value : array) {
+        const QJsonObject object = value.toObject();
+        GroupNotification notification = makeNotification(
+                object.value(QStringLiteral("id")).toString(),
+                groupNotificationTypeFromString(object.value(QStringLiteral("type")).toString()),
+                object.value(QStringLiteral("groupId")).toString(),
+                object.value(QStringLiteral("actorUserId")).toString(),
+                object.value(QStringLiteral("daysAgo")).toInt(),
+                object.value(QStringLiteral("message")).toString(),
+                groupNotificationStatusFromString(object.value(QStringLiteral("status")).toString()),
+                object.value(QStringLiteral("operatorUserId")).toString());
+        if (!notification.id.isEmpty()) {
+            notifications.push_back(notification);
         }
-
-        notifications.push_back(makeNotification(
-            QStringLiteral("gn_%1").arg(serial++, 3, 10, QChar('0')),
-            GroupNotificationType::JoinRequest,
-            groupId,
-            actorUserId,
-            daysAgo,
-            message,
-            GroupNotificationStatus::Accepted,
-            operatorUserId));
-    };
-
-    addAcceptedJoinRequest(QStringLiteral("g001"),
-                           QStringLiteral("u119"),
-                           QStringLiteral("u001"),
-                           0,
-                           QStringLiteral("想参观主城规划，也带了一份广场设计稿。"));
-    addAcceptedJoinRequest(QStringLiteral("g010"),
-                           QStringLiteral("u120"),
-                           QStringLiteral("u002"),
-                           1,
-                           QStringLiteral("参与创意服维护值班，申请加入。"));
-    addAcceptedJoinRequest(QStringLiteral("g004"),
-                           QStringLiteral("u121"),
-                           QStringLiteral("u002"),
-                           1,
-                           QStringLiteral("想加入红石课堂，学习活塞门布线。"));
-    addAcceptedJoinRequest(QStringLiteral("g005"),
-                           QStringLiteral("u122"),
-                           QStringLiteral("u007"),
-                           2,
-                           QStringLiteral("希望加入工坊交流建筑结构和材质搭配。"));
-    addAcceptedJoinRequest(QStringLiteral("g012"),
-                           QStringLiteral("u123"),
-                           QStringLiteral("u005"),
-                           2,
-                           QStringLiteral("想一起交流像素美术。"));
-    addAcceptedJoinRequest(QStringLiteral("g014"),
-                           QStringLiteral("u124"),
-                           QStringLiteral("u007"),
-                           3,
-                           QStringLiteral("朋友邀请我周末一起开荒创意地图。"));
-
-    for (int i = 0; i < manageableGroups.size(); ++i) {
-        const Group& group = manageableGroups.at(i);
-        QString actor = group.membersID.isEmpty() ? QStringLiteral("u101") : group.membersID.last();
-        if (isCurrentUserOwner(group) && !group.adminsID.isEmpty() && i % 2 == 0) {
-            actor = group.adminsID.first();
-        } else if (!isCurrentUserOwner(group) && group.adminsID.contains(actor)) {
-            actor = group.membersID.value(qMax(0, group.membersID.size() - 2), QStringLiteral("u102"));
-        }
-        notifications.push_back(makeNotification(
-            QStringLiteral("gn_%1").arg(serial++, 3, 10, QChar('0')),
-            GroupNotificationType::MemberExited,
-            group.groupId,
-            actor,
-            (i + 3) % 15));
     }
-
-    for (int i = 0; i < manageableGroups.size(); ++i) {
-        const Group& group = manageableGroups.at(i);
-        notifications.push_back(makeNotification(
-            QStringLiteral("gn_%1").arg(serial++, 3, 10, QChar('0')),
-            i % 2 == 0 ? GroupNotificationType::AdminAssigned : GroupNotificationType::OwnerTransferred,
-            group.groupId,
-            CurrentUser::instance().getUserId(),
-            (i + 5) % 16,
-            {},
-            GroupNotificationStatus::None,
-            group.ownerId));
-    }
-
     return notifications;
 }
 
@@ -258,7 +246,20 @@ void GroupNotificationRepository::ensureLoaded() const
     }
 
     auto* self = const_cast<GroupNotificationRepository*>(this);
-    self->m_notifications = buildInitialNotifications();
+    LocalDataStore& store = LocalDataStore::instance();
+    if (!store.hasDomain(QStringLiteral("group_notifications"))) {
+        for (const GroupNotification& notification : buildInitialNotifications()) {
+            store.upsertValue(QStringLiteral("group_notifications"),
+                              notification.id,
+                              groupNotificationToJson(notification));
+        }
+    }
+    for (const QJsonObject& object : store.values(QStringLiteral("group_notifications"))) {
+        const GroupNotification notification = groupNotificationFromJson(object);
+        if (!notification.id.isEmpty()) {
+            self->m_notifications.push_back(notification);
+        }
+    }
     for (const GroupNotification& notification : self->m_notifications) {
         if (notification.unread) {
             UnreadStateRepository::instance().setUnread(kGroupNotificationUnreadScope,
@@ -321,6 +322,9 @@ bool GroupNotificationRepository::acceptJoinRequest(const QString& notificationI
         const QDateTime acceptedAt = QDateTime::currentDateTime();
         notification.status = GroupNotificationStatus::Accepted;
         notification.operatorUserId = CurrentUser::instance().getUserId();
+        LocalDataStore::instance().upsertValue(QStringLiteral("group_notifications"),
+                                               notification.id,
+                                               groupNotificationToJson(notification));
         GroupRepository::instance().addMember(notification.groupId, notification.actorUserId);
         Group group = GroupRepository::instance().requestGroupDetail({notification.groupId});
         if (!group.groupId.isEmpty()) {
@@ -354,6 +358,9 @@ bool GroupNotificationRepository::rejectJoinRequest(const QString& notificationI
 
         notification.status = GroupNotificationStatus::Rejected;
         notification.operatorUserId = CurrentUser::instance().getUserId();
+        LocalDataStore::instance().upsertValue(QStringLiteral("group_notifications"),
+                                               notification.id,
+                                               groupNotificationToJson(notification));
         emit notificationListChanged();
         return true;
     }

@@ -9,6 +9,7 @@
 #include "platform/windows/WindowsWindowControlButton.h"
 #endif
 #include "shared/services/AppFonts.h"
+#include "shared/network/NetworkService.h"
 #include "shared/theme/ThemeManager.h"
 #include "shared/ui/effects/FastGaussianBlur.h"
 #include "shared/ui/GlobalNotification.h"
@@ -96,6 +97,52 @@ QString loginAccountDisplayText(const LoginAccount& account)
         return account.accountId;
     }
     return QStringLiteral("%1 (%2)").arg(account.displayName, account.accountId);
+}
+
+UserStatus statusFromAuthStatus(const QString& value)
+{
+    const QString normalized = value.trimmed().toLower();
+    if (normalized == QStringLiteral("active") || normalized == QStringLiteral("online")) {
+        return Online;
+    }
+    if (normalized == QStringLiteral("mining")) {
+        return Mining;
+    }
+    if (normalized == QStringLiteral("flying")) {
+        return Flying;
+    }
+    return normalized.isEmpty() ? Online : Offline;
+}
+
+LoginAccount loginAccountFromAuthResult(const AuthResult& result, const QString& password)
+{
+    LoginAccount account;
+    account.accountId = result.user.userId.isEmpty() ? result.user.userUuid : result.user.userId;
+    account.password = password;
+    account.displayName = result.user.nickName.isEmpty() ? account.accountId : result.user.nickName;
+    account.avatarPath = result.user.avatarPath;
+    account.status = statusFromAuthStatus(result.user.status);
+    account.signature = result.user.signature;
+    account.region = result.user.region;
+    return account;
+}
+
+CurrentUserProfile profileFromLoginAccount(const LoginAccount& account)
+{
+    CurrentUserProfile profile;
+    profile.userId = account.accountId;
+    profile.nickName = account.displayName.isEmpty() ? account.accountId : account.displayName;
+    profile.avatarPath = account.avatarPath;
+    profile.status = account.status;
+    profile.signature = account.signature;
+    profile.region = account.region;
+    return profile;
+}
+
+bool shouldUseLocalLoginFallback(const NetworkError& error)
+{
+    return error.httpStatus == 0 || error.httpStatus == 502 || error.httpStatus == 503 || error.httpStatus == 504
+            || error.code == QStringLiteral("SERVICE_NOT_READY");
 }
 
 qreal wrapHue(qreal hue)
@@ -904,6 +951,43 @@ void LoginWindow::setupUi()
     connect(m_passwordField->lineEdit(), &QLineEdit::returnPressed, this, &LoginWindow::attemptLogin);
     connect(m_loginButton, &QPushButton::clicked, this, &LoginWindow::attemptLogin);
     connect(registerButton, &QAbstractButton::clicked, this, &LoginWindow::showRegisterWindow);
+    connect(&NetworkService::instance(), &NetworkService::loginSucceeded, this, [this](const QString& requestId,
+                                                                                       const AuthResult& result) {
+        if (requestId != m_loginRequestId) {
+            return;
+        }
+
+        LoginAccount account = loginAccountFromAuthResult(result, m_pendingLoginPassword);
+        if (account.accountId.isEmpty()) {
+            resetLoginPending();
+            m_errorLabel->setText(QStringLiteral("登录响应缺少用户信息"));
+            GlobalNotification::showFailure(this, QStringLiteral("登录失败"));
+            return;
+        }
+
+        LoginAccountRepository::instance().saveAuthenticatedAccount(account);
+        finishLogin(account);
+    });
+    connect(&NetworkService::instance(), &NetworkService::loginFailed, this, [this](const QString& requestId,
+                                                                                   const NetworkError& error) {
+        if (requestId != m_loginRequestId) {
+            return;
+        }
+
+        if (shouldUseLocalLoginFallback(error) &&
+            LoginAccountRepository::instance().validateCredentials(m_pendingLoginAccountId, m_pendingLoginPassword)) {
+            const LoginAccount account =
+                    LoginAccountRepository::instance().requestLoginAccount({m_pendingLoginAccountId});
+            finishLogin(account);
+            return;
+        }
+
+        resetLoginPending();
+        m_errorLabel->setText(error.isAuthFailure()
+                                      ? QStringLiteral("账号或密码不正确")
+                                      : QStringLiteral("登录服务暂不可用"));
+        GlobalNotification::showFailure(this, QStringLiteral("登录失败"));
+    });
 
     auto updateThemeLabels = [this]() {
         updateLabelColor(m_errorLabel, ThemeColor::DangerText);
@@ -1009,33 +1093,55 @@ void LoginWindow::attemptLogin()
     updateAutoLoginRules();
     const QString accountId = m_accountField->text().trimmed();
     const QString password = m_passwordField->text();
-    const bool credentialsMatch = LoginAccountRepository::instance().validateCredentials(accountId, password);
-    if (!credentialsMatch) {
-        m_errorLabel->setText(QStringLiteral("账号或密码不正确"));
+    if (accountId.isEmpty() || password.isEmpty()) {
+        m_errorLabel->setText(QStringLiteral("请输入账号和密码"));
         GlobalNotification::showFailure(this, QStringLiteral("登录失败"));
         return;
     }
 
     m_errorLabel->clear();
     m_loginPending = true;
+    m_pendingLoginAccountId = accountId;
+    m_pendingLoginPassword = password;
     m_loginButton->setEnabled(false);
-    m_loginButton->setText(QStringLiteral("等待主窗口出现"));
-    LoginAccountRepository::instance().recordSuccessfulLogin(accountId, password);
-    const LoginAccount account = LoginAccountRepository::instance().requestLoginAccount({accountId});
-    CurrentUserProfile profile;
-    profile.userId = account.accountId;
-    profile.nickName = account.displayName.isEmpty() ? account.accountId : account.displayName;
-    profile.avatarPath = account.avatarPath;
-    profile.status = account.status;
-    profile.signature = account.signature;
-    profile.region = account.region;
+    m_loginButton->setText(QStringLiteral("正在登录"));
+    m_loginRequestId = NetworkService::instance().login(accountId, password);
+}
+
+void LoginWindow::finishLogin(const LoginAccount& account)
+{
+    if (account.accountId.isEmpty()) {
+        resetLoginPending();
+        m_errorLabel->setText(QStringLiteral("账号信息不存在"));
+        GlobalNotification::showFailure(this, QStringLiteral("登录失败"));
+        return;
+    }
+
+    m_loginRequestId.clear();
+    LoginAccountRepository::instance().recordSuccessfulLogin(account.accountId, account.password);
+    const CurrentUserProfile profile = profileFromLoginAccount(account);
     CurrentUserProfileRepository::instance().saveCurrentUserProfile(profile);
     CurrentUser::instance().setUserInfo(profile.userId);
     GlobalNotification::showSuccess(this, QStringLiteral("登录成功"));
+    if (m_loginButton) {
+        m_loginButton->setText(QStringLiteral("等待主窗口出现"));
+    }
 
     QTimer::singleShot(kShowMainWindowDelayMs, this, [this]() {
         emit loginAccepted();
     });
+}
+
+void LoginWindow::resetLoginPending(const QString& buttonText)
+{
+    m_loginPending = false;
+    m_loginRequestId.clear();
+    m_pendingLoginAccountId.clear();
+    m_pendingLoginPassword.clear();
+    if (m_loginButton) {
+        m_loginButton->setEnabled(true);
+        m_loginButton->setText(buttonText.isEmpty() ? QStringLiteral("登录") : buttonText);
+    }
 }
 
 void LoginWindow::showRegisterWindow()

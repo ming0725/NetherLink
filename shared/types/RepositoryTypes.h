@@ -194,6 +194,10 @@ struct AiChatContextUsageRequest {
     QString conversationId;
 };
 
+struct AiChatMessagesRequest {
+    QString conversationId;
+};
+
 struct AiChatContextUsage {
     QString conversationId;
     int usedTokens = 0;

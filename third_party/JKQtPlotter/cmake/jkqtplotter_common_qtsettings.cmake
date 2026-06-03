@@ -1,5 +1,5 @@
-# Modified by NetherLink-static contributors on 2026-05-30.
-# Changes: adapted Qt settings for the vendored NetherLink-static build;
+# Modified by NetherLink contributors on 2026-05-30.
+# Changes: adapted Qt settings for the vendored NetherLink build;
 # see ../MODIFICATIONS.md.
 
 # Instruct CMake to run moc+rcc+uic automatically when needed.

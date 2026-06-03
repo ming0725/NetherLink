@@ -1,6 +1,8 @@
 #include "PostCommentRepository.h"
 
 #include <QDateTime>
+#include <QJsonArray>
+#include <QJsonObject>
 #include <QMetaObject>
 #include <QRunnable>
 #include <QStringList>
@@ -10,6 +12,8 @@
 
 #include "app/state/CurrentUser.h"
 #include "features/friend/data/UserRepository.h"
+#include "shared/data/RepositoryFunctionOperation.h"
+#include "shared/data/LocalDataStore.h"
 
 namespace {
 
@@ -17,63 +21,31 @@ constexpr int kSampleCommentCount = 72;
 
 const QStringList& commentSamples()
 {
-    static const QStringList samples = {
-            QStringLiteral("这个开局点可以啊，平原加村庄基本就是养老档标配。先插火把，别问我怎么知道的 🔥"),
-            QStringLiteral("苦力怕贴脸真的经典，前期最贵的方块不是钻石，是刚摆好的箱子和熔炉。"),
-            QStringLiteral("村民交易所建议先做防僵尸隔离，门口再放铁傀儡，不然一晚上回来全员打折失败。"),
-            QStringLiteral("经验修补刷出来就毕业一半了，剩下就是把每个村民的职业方块锁好，别让他们乱认 📚"),
-            QStringLiteral("这个樱花山谷很适合做主城，山腰建仓库，河边做码头，晚上挂灯会特别好看。"),
-            QStringLiteral("下界合金套可以去打龙了，记得带水桶和慢落药水，末地岛边缘真的很容易出事故 🐉"),
-            QStringLiteral("红石背面像炒面太真实了，只要正面门能开，服务器里就没人会追究线路美观。"),
-            QStringLiteral("刷铁机上线之后就舒服了，铁砧、漏斗、铁轨都不用抠抠搜搜算材料。"),
-            QStringLiteral("蓝冰下界交通建议每段都放牌子，不然新人第一次进来真的会坐船坐到别人家仓库 🚇"),
-            QStringLiteral("末地城开到鞘翅那一下最爽，回主城第一件事就是从最高的塔上跳下来试飞。"),
-            QStringLiteral("远古残骸这东西就是越找越没有，准备回家了反而在脚边刷两个，老 Minecraft 了。"),
-            QStringLiteral("模组清单可以加 JEI、小地图和一键整理，新人开荒体验会好很多 🧰"),
-            QStringLiteral("光影确实能改变存档气质，但我电脑一开光影风扇就开始合成飞机音效。"),
-            QStringLiteral("海底神殿排水属于看别人做很治愈，自己做十分钟就想去挖沙子的工程。"),
-            QStringLiteral("建议把出生点附近的洞口都封一下，很多新档不是被怪打崩，是被家门口小黑屋偷袭崩的。"),
-            QStringLiteral(
-                    "长评论测试：这个帖子很有国服生存社区那味。\n"
-                    "\n"
-                    "先开荒。\n"
-                    "再修家。\n"
-                    "然后开始做刷铁机、村民交易所、刷怪塔。\n"
-                    "\n"
-                    "等这些机器都跑起来之后，大家又会开始嫌主城不好看。\n"
-                    "于是拆了重建。\n"
-                    "重建一半去打龙。\n"
-                    "打完龙去找鞘翅。\n"
-                    "找到鞘翅又回来继续修路。\n"
-                    "\n"
-                    "这就是服务器循环。")
-    };
+    static const QStringList samples = []() {
+        QStringList result;
+        const QJsonArray array = LocalDataStore::instance()
+                .seedObject(QStringLiteral(":/resources/data/comment_samples.json"))
+                .value(QStringLiteral("comments")).toArray();
+        for (const QJsonValue& value : array) {
+            result.append(value.toString());
+        }
+        return result.isEmpty() ? QStringList{QStringLiteral("评论内容")} : result;
+    }();
     return samples;
 }
 
 const QStringList& replySamples()
 {
-    static const QStringList samples = {
-            QStringLiteral("先睡觉，别让幻翼出来团建 🛏️"),
-            QStringLiteral("村民要用命名牌吗？我之前被僵尸清过一次档。"),
-            QStringLiteral("蓝冰太贵的话前期可以先用普通冰过渡。"),
-            QStringLiteral("慢落药水真的要带，别相信自己的搭桥手法 🪂"),
-            QStringLiteral("红石能跑就行，别看背面，看了就想重做。"),
-            QStringLiteral("刷铁机记得离村庄远一点，不然判定容易乱。"),
-            QStringLiteral("这个种子适合开养老服，建筑党应该会很喜欢。"),
-            QStringLiteral("鞘翅拿到之后建议第一时间附耐久和经验修补 ✨"),
-            QStringLiteral("我一般先做临时仓库，不然开荒两天箱子就开始满地长。"),
-            QStringLiteral("下界施工一定要带金头盔，猪灵比岩浆还烦。"),
-            QStringLiteral("光影截图好看，真正挖矿我还是关掉，不然看不清矿。"),
-            QStringLiteral(
-                    "回复长文本测试：服务器前期最容易吵起来的不是资源分配，\n"
-                    "是主城到底用什么风格。\n"
-                    "\n"
-                    "有人想中式。\n"
-                    "有人想日式。\n"
-                    "有人想蒸汽朋克。\n"
-                    "最后大家一起住火柴盒。")
-    };
+    static const QStringList samples = []() {
+        QStringList result;
+        const QJsonArray array = LocalDataStore::instance()
+                .seedObject(QStringLiteral(":/resources/data/comment_samples.json"))
+                .value(QStringLiteral("replies")).toArray();
+        for (const QJsonValue& value : array) {
+            result.append(value.toString());
+        }
+        return result.isEmpty() ? QStringList{QStringLiteral("回复内容")} : result;
+    }();
     return samples;
 }
 
@@ -124,6 +96,24 @@ CommentUserIdentity commentUserIdentityForUserId(const QString& userId)
 PostCommentRepository::PostCommentRepository(QObject* parent)
     : QObject(parent)
 {
+    for (const QJsonObject& object : LocalDataStore::instance().values(QStringLiteral("comment_like_states"))) {
+        const QString id = object.value(QStringLiteral("id")).toString();
+        if (!id.isEmpty()) {
+            m_commentLikeStates.insert(id, {
+                    object.value(QStringLiteral("likes")).toInt(),
+                    object.value(QStringLiteral("isLiked")).toBool(false)
+            });
+        }
+    }
+    for (const QJsonObject& object : LocalDataStore::instance().values(QStringLiteral("reply_like_states"))) {
+        const QString id = object.value(QStringLiteral("id")).toString();
+        if (!id.isEmpty()) {
+            m_replyLikeStates.insert(id, {
+                    object.value(QStringLiteral("likes")).toInt(),
+                    object.value(QStringLiteral("isLiked")).toBool(false)
+            });
+        }
+    }
 }
 
 PostCommentRepository& PostCommentRepository::instance()
@@ -134,24 +124,29 @@ PostCommentRepository& PostCommentRepository::instance()
 
 PostCommentsPage PostCommentRepository::requestPostComments(const PostCommentsRequest& query) const
 {
-    QMutexLocker locker(&m_mutex);
+    auto handler = [this](const PostCommentsRequest& request) {
+        QMutexLocker locker(&m_mutex);
 
-    PostCommentsPage page;
-    page.postId = query.postId;
-    page.offset = qMax(0, query.offset);
-    page.totalCount = kSampleCommentCount;
-    if (query.postId.isEmpty() || query.limit <= 0 || page.offset >= kSampleCommentCount) {
-        page.hasMore = false;
+        PostCommentsPage page;
+        page.postId = request.postId;
+        page.offset = qMax(0, request.offset);
+        page.totalCount = kSampleCommentCount;
+        if (request.postId.isEmpty() || request.limit <= 0 || page.offset >= kSampleCommentCount) {
+            page.hasMore = false;
+            return page;
+        }
+
+        const int end = qMin(kSampleCommentCount, page.offset + request.limit);
+        page.comments.reserve(end - page.offset);
+        for (int index = page.offset; index < end; ++index) {
+            page.comments.append(buildCommentAt(request.postId, index));
+        }
+        page.hasMore = end < kSampleCommentCount;
         return page;
-    }
+    };
 
-    const int end = qMin(kSampleCommentCount, page.offset + query.limit);
-    page.comments.reserve(end - page.offset);
-    for (int index = page.offset; index < end; ++index) {
-        page.comments.append(buildCommentAt(query.postId, index));
-    }
-    page.hasMore = end < kSampleCommentCount;
-    return page;
+    return RepositoryFunctionOperation<PostCommentsRequest, PostCommentsPage, decltype(handler)>(handler)
+            .request(query);
 }
 
 QString PostCommentRepository::requestPostCommentsAsync(const PostCommentsRequest& query, int delayMs)
@@ -185,6 +180,11 @@ bool PostCommentRepository::setCommentLiked(const QString& commentId, bool liked
         state.isLiked = liked;
         state.likes = qMax(0, state.likes + (liked ? 1 : -1));
         m_commentLikeStates.insert(commentId, state);
+        LocalDataStore::instance().upsertValue(QStringLiteral("comment_like_states"),
+                                               commentId,
+                                               {{QStringLiteral("id"), commentId},
+                                                {QStringLiteral("likes"), state.likes},
+                                                {QStringLiteral("isLiked"), state.isLiked}});
     }
     return true;
 }
@@ -203,6 +203,11 @@ bool PostCommentRepository::setReplyLiked(const QString& replyId, bool liked)
         state.isLiked = liked;
         state.likes = qMax(0, state.likes + (liked ? 1 : -1));
         m_replyLikeStates.insert(replyId, state);
+        LocalDataStore::instance().upsertValue(QStringLiteral("reply_like_states"),
+                                               replyId,
+                                               {{QStringLiteral("id"), replyId},
+                                                {QStringLiteral("likes"), state.likes},
+                                                {QStringLiteral("isLiked"), state.isLiked}});
     }
     return true;
 }

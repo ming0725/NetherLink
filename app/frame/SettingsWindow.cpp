@@ -1288,7 +1288,7 @@ void SettingsWindow::createAboutPage()
     auto* licenseToggle = createToggleButton(QStringLiteral("开源协议"), QStringList{QStringLiteral("MIT")}, 0, page);
     auto* githubBtn = createMenuButton(QStringLiteral("打开 GitHub"), page);
     connect(githubBtn, &QPushButton::clicked, this, []() {
-        QDesktopServices::openUrl(QUrl(QStringLiteral("https://github.com/ming0725/NetherLink-static")));
+        QDesktopServices::openUrl(QUrl(QStringLiteral("https://github.com/ming0725/NetherLink")));
     });
     auto* creditsBtn = createMenuButton(QStringLiteral("鸣谢名单"), page);
     connect(creditsBtn, &QPushButton::clicked, this, &SettingsWindow::openCreditsWindow);

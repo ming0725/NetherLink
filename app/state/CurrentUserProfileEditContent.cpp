@@ -33,7 +33,7 @@ QString saveAvatarImageToAppData(const QImage& image, const QString& userId)
 
     QString root = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
     if (root.isEmpty()) {
-        root = QDir::tempPath() + QStringLiteral("/NetherLink-static");
+        root = QDir::tempPath() + QStringLiteral("/NetherLink");
     }
 
     const QString avatarDirPath = root + QStringLiteral("/avatars");

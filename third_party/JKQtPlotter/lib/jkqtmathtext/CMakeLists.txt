@@ -1,6 +1,6 @@
-# Modified by NetherLink-static contributors on 2026-05-30.
+# Modified by NetherLink contributors on 2026-05-30.
 # Changes: adapted JKQTMathText target sources and resources for the vendored
-# NetherLink-static build; see ../../MODIFICATIONS.md.
+# NetherLink build; see ../../MODIFICATIONS.md.
 cmake_minimum_required(VERSION 3.23)
 
 set(libBaseName JKQTMathText)

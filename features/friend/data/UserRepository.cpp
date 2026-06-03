@@ -2,6 +2,8 @@
 
 #include <QCollator>
 #include <QImageReader>
+#include <QJsonArray>
+#include <QJsonObject>
 #include <QMetaObject>
 #include <QRunnable>
 #include <QSet>
@@ -13,6 +15,7 @@
 #include <algorithm>
 
 #include "shared/services/ImageService.h"
+#include "shared/data/LocalDataStore.h"
 #include "shared/data/RepositoryTemplate.h"
 
 namespace {
@@ -77,6 +80,70 @@ bool matchesUserSearchKeyword(const User& user, const QString& keyword)
     return user.id.contains(keyword, Qt::CaseInsensitive) ||
            user.nick.contains(keyword, Qt::CaseInsensitive) ||
            user.remark.contains(keyword, Qt::CaseInsensitive);
+}
+
+QString userStatusToString(UserStatus status)
+{
+    switch (status) {
+    case Online:
+        return QStringLiteral("online");
+    case Mining:
+        return QStringLiteral("mining");
+    case Flying:
+        return QStringLiteral("flying");
+    case Offline:
+    default:
+        return QStringLiteral("offline");
+    }
+}
+
+UserStatus userStatusFromString(const QString& value)
+{
+    const QString normalized = value.trimmed().toLower();
+    if (normalized == QStringLiteral("online")) {
+        return Online;
+    }
+    if (normalized == QStringLiteral("mining")) {
+        return Mining;
+    }
+    if (normalized == QStringLiteral("flying")) {
+        return Flying;
+    }
+    return Offline;
+}
+
+User userFromJson(const QJsonObject& object)
+{
+    User user;
+    user.id = object.value(QStringLiteral("id")).toString();
+    user.nick = object.value(QStringLiteral("nick")).toString();
+    user.remark = object.value(QStringLiteral("remark")).toString();
+    user.avatarPath = object.value(QStringLiteral("avatarPath")).toString();
+    user.status = userStatusFromString(object.value(QStringLiteral("status")).toString());
+    user.signature = object.value(QStringLiteral("signature")).toString();
+    user.isDnd = object.value(QStringLiteral("isDnd")).toBool(false);
+    user.isFriend = object.value(QStringLiteral("isFriend")).toBool(true);
+    user.friendGroupId = object.value(QStringLiteral("friendGroupId")).toString(QStringLiteral("default"));
+    user.friendGroupName = object.value(QStringLiteral("friendGroupName")).toString(QStringLiteral("默认分组"));
+    user.region = object.value(QStringLiteral("region")).toString();
+    return user;
+}
+
+QJsonObject userToJson(const User& user)
+{
+    return {
+            {QStringLiteral("id"), user.id},
+            {QStringLiteral("nick"), user.nick},
+            {QStringLiteral("remark"), user.remark},
+            {QStringLiteral("avatarPath"), user.avatarPath},
+            {QStringLiteral("status"), userStatusToString(user.status)},
+            {QStringLiteral("signature"), user.signature},
+            {QStringLiteral("isDnd"), user.isDnd},
+            {QStringLiteral("isFriend"), user.isFriend},
+            {QStringLiteral("friendGroupId"), user.friendGroupId},
+            {QStringLiteral("friendGroupName"), user.friendGroupName},
+            {QStringLiteral("region"), user.region}
+    };
 }
 
 FriendSummary makeFriendSummary(const User& user)
@@ -254,118 +321,23 @@ private:
 UserRepository::UserRepository(QObject* parent)
     : QObject(parent)
 {
-    // Current user is owned by CurrentUserProfileRepository, not seeded as a friend/user row here.
-    const QVector<User> users = {
-            {"u001", "方块诗人", "桃木匠", ":/resources/avatar/1.jpg", Online, "今天的灵感从一块草方块开始", false, true, "g001", "建筑搭子", "上海"},
-            {"u002", "烈焰建筑师", "", ":/resources/avatar/0.jpg", Mining, "用下界砖搭一座会发光的门厅", false, true, "g001", "建筑搭子", ""},
-            {"u003", "红石逻辑师", "中继器同学", ":/resources/avatar/3.jpg", Online, "每条线路都要留一个观察者", false, true, "g001", "建筑搭子", "北京"},
-            {"u004", "云杉小屋设计师", "", ":/resources/avatar/5.jpg", Online, "屋檐再低一格就有冒险感", false, true, "g002", "红石同伴", "杭州"},
-            {"u005", "玻璃穹顶匠", "穹顶许愿池", ":/resources/avatar/4.jpg", Offline, "把星光封进彩色玻璃", false, true, "g002", "红石同伴", ""},
-            {"u006", "海晶灯调色员", "", ":/resources/avatar/2.jpg", Online, "给主城调一盏柔和的灯", false, true, "g002", "红石同伴", "广州"},
-            {"u008", "指令方块导演", "指令哥", ":/resources/avatar/7.jpg", Mining, "用一行命令点亮整座剧场", false, true, "g003", "服务器伙伴", "深圳"},
-            {"u009", "蘑菇岛园艺师", "", ":/resources/avatar/8.jpg", Offline, "菌丝地也能开出花园", false, true, "g003", "服务器伙伴", ""},
-            {"u010", "鞘翅巡景员", "", ":/resources/avatar/9.jpg", Flying, "从高空检查每一条屋脊", false, true, "g003", "服务器伙伴", "成都"},
-            {"u011", "樱花庭院师", "临时设计稿", ":/resources/avatar/10.jpg", Online, "今天把庭院水渠改成心形", false, true, "g004", "临时设计稿", ""},
-            {"u012", "刷怪塔调试员", "", ":/resources/avatar/0.jpg", Offline, "让怪物掉落，也让结构好看", false, true, "g004", "临时设计稿", "武汉"},
-            {"u013", "下界砖雕刻师", "", ":/resources/avatar/3.jpg", Mining, "岩浆旁边最适合找配色", false, true, "g004", "临时设计稿", ""},
-            {"u014", "信标灯塔守望者", "", ":/resources/avatar/7.jpg", Online, "收到请发一束信标光", false, true, "g005", "最近来访", "南京"},
-            {"u015", "地图墙收藏家", "新建造好友", ":/resources/avatar/6.jpg", Flying, "刚刚交换了一张主城地图", false, true, "g005", "最近来访", ""},
-            {"u016", "末地船修复师", "", ":/resources/avatar/2.jpg", Offline, "晚点在末地船坞碰头", false, true, "g005", "最近来访", "重庆"},
-            {"u101", "创意服向导", "", ":/resources/avatar/10.jpg", Online, "验证来自创意建筑服", false, false, "default", "默认分组", "上海"},
-            {"u102", "红石课堂同学", "", ":/resources/avatar/3.jpg", Mining, "一起调过隐藏门", false, false, "default", "默认分组", "北京"},
-            {"u103", "方块花园旅人", "", ":/resources/avatar/5.jpg", Online, "朋友推荐我来参观你的工坊", false, false, "default", "默认分组", "杭州"},
-            {"u104", "坐标寻路员", "", ":/resources/avatar/2.jpg", Offline, "通过建筑坐标搜索找到你", false, false, "default", "默认分组", "西安"},
-            {"u105", "设计稿交换员", "", ":/resources/avatar/8.jpg", Flying, "来自作品集名片", false, false, "default", "默认分组", "深圳"},
-    };
-
-    for (const User& user : users) {
-        userMap.insert(user.id, user);
+    LocalDataStore& store = LocalDataStore::instance();
+    if (!store.hasDomain(QStringLiteral("users"))) {
+        const QJsonArray users = store.seedArray(QStringLiteral(":/resources/data/users.json"));
+        for (const QJsonValue& value : users) {
+            const User user = userFromJson(value.toObject());
+            if (!user.id.isEmpty()) {
+                store.upsertValue(QStringLiteral("users"), user.id, userToJson(user));
+            }
+        }
     }
 
-    const QStringList requestNames = {
-            QStringLiteral("空岛规划师"),
-            QStringLiteral("苔石园丁"),
-            QStringLiteral("红石剧场助手"),
-            QStringLiteral("像素雕像匠"),
-            QStringLiteral("地形笔刷练习生"),
-            QStringLiteral("主城道路测绘员"),
-            QStringLiteral("村民交易所设计师"),
-            QStringLiteral("海底基地灯光师"),
-            QStringLiteral("末地花园访客"),
-            QStringLiteral("命令方块实习生"),
-            QStringLiteral("下界大厅铺砖工"),
-            QStringLiteral("樱花塔楼摄影师")
-    };
-    const QVector<UserStatus> requestStatuses = {Online, Mining, Offline, Flying};
-    const QStringList requestRegions = {
-            QStringLiteral("上海"),
-            QStringLiteral("北京"),
-            QStringLiteral("杭州"),
-            QStringLiteral("广州"),
-            QStringLiteral("深圳"),
-            QStringLiteral("成都"),
-            QStringLiteral("武汉"),
-            QStringLiteral("南京"),
-            QStringLiteral("重庆"),
-            QStringLiteral("西安")
-    };
-    for (int index = 5; index < 36; ++index) {
-        const int serial = 101 + index;
-        User user;
-        user.id = QStringLiteral("u%1").arg(serial);
-        user.nick = QStringLiteral("%1 %2").arg(requestNames.at(index % requestNames.size())).arg(index + 1);
-        user.avatarPath = QStringLiteral(":/resources/avatar/%1.jpg").arg(index % 11);
-        user.status = requestStatuses.at(index % requestStatuses.size());
-        user.signature = QStringLiteral("正在准备击败 %1 次凋零").arg(index + 1);
-        user.isFriend = false;
-        user.region = requestRegions.at(index % requestRegions.size());
-        userMap.insert(user.id, user);
-    }
-
-    auto addPerformanceGroup = [this](const QString& groupId,
-                                      const QString& groupName,
-                                      int count,
-                                      int idOffset) {
-        const QStringList names = {
-                "石砖街区设计师",
-                "红石电梯测试员",
-                "橡木屋顶匠",
-                "海底玻璃师",
-                "末地桥梁师",
-                "苔藓洞穴园丁",
-                "信标广场策展人",
-                "沙漠神殿修缮员"
-        };
-        const QVector<UserStatus> statuses = {
-                Online,
-                Mining,
-                Offline,
-                Flying
-        };
-
-        for (int index = 0; index < count; ++index) {
-            const int serial = idOffset + index;
-            User user{
-                    QString("perf_%1").arg(serial, 4, 10, QChar('0')),
-                    QString("%1 %2").arg(names.at(index % names.size())).arg(index + 1),
-                    (index % 9 == 0) ? QString("红石搭子 %1").arg(index + 1) : QString(),
-                    QString(":/resources/avatar/%1.jpg").arg(index % 11),
-                    statuses.at(index % statuses.size()),
-                    QString("创意服长列表样本 %1").arg(index + 1),
-                    false,
-                    true,
-                    groupId,
-                    groupName,
-                    index % 3 == 0 ? QStringLiteral("杭州") :
-                    (index % 3 == 1 ? QString() : QStringLiteral("深圳"))
-            };
+    for (const QJsonObject& object : store.values(QStringLiteral("users"))) {
+        const User user = userFromJson(object);
+        if (!user.id.isEmpty()) {
             userMap.insert(user.id, user);
         }
-    };
-
-    addPerformanceGroup("g101", "性能测试 20+", 24, 1000);
-    addPerformanceGroup("g102", "性能测试 100+", 128, 2000);
-    addPerformanceGroup("g103", "性能测试 500+", 560, 3000);
+    }
 }
 
 UserRepository& UserRepository::instance()
@@ -524,6 +496,7 @@ void UserRepository::saveUser(const User& user)
             || userMap.value(user.id).region != user.region;
     userMap[user.id] = user;
     locker.unlock();
+    LocalDataStore::instance().upsertValue(QStringLiteral("users"), user.id, userToJson(user));
 
     if (!oldAvatarPath.isEmpty() && oldAvatarPath != user.avatarPath) {
         ImageService::instance().invalidateSource(oldAvatarPath);
@@ -561,6 +534,7 @@ void UserRepository::addFriend(const QString& userId,
         it->isFriend = true;
         it->friendGroupId = groupId.isEmpty() ? QStringLiteral("default") : groupId;
         it->friendGroupName = groupName.isEmpty() ? QStringLiteral("默认分组") : groupName;
+        LocalDataStore::instance().upsertValue(QStringLiteral("users"), it->id, userToJson(*it));
     }
 
     if (changed) {
@@ -577,6 +551,7 @@ void UserRepository::removeUser(const QString& userID)
         if (it != userMap.end() && it->isFriend) {
             it->isFriend = false;
             it->remark.clear();
+            LocalDataStore::instance().upsertValue(QStringLiteral("users"), it->id, userToJson(*it));
             changed = true;
         }
     }

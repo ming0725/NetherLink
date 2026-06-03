@@ -1,10 +1,16 @@
 #include "AiChatRepository.h"
 
+#include "shared/data/LocalDataStore.h"
+#include "shared/data/RepositoryFunctionOperation.h"
+
+#include <QJsonArray>
+#include <QJsonObject>
 #include <QRandomGenerator>
 #include <QStringList>
 #include <QtMath>
 
 #include <algorithm>
+#include <utility>
 
 namespace {
 
@@ -20,6 +26,60 @@ QString normalizedAiMessageText(QString text)
     text.replace(QStringLiteral("\r\n"), QStringLiteral("\n"));
     text.replace(QLatin1Char('\r'), QLatin1Char('\n'));
     return text;
+}
+
+QStringList aiSeedStrings(const QString& key)
+{
+    QStringList result;
+    const QJsonArray array = LocalDataStore::instance()
+            .seedObject(QStringLiteral(":/resources/data/aichat_samples.json"))
+            .value(key).toArray();
+    for (const QJsonValue& value : array) {
+        result.append(value.toString());
+    }
+    return result;
+}
+
+QJsonObject aiChatEntryToJson(const AiChatListEntry& entry)
+{
+    return {
+            {QStringLiteral("conversationId"), entry.conversationId},
+            {QStringLiteral("title"), entry.title},
+            {QStringLiteral("time"), entry.time.toString(Qt::ISODateWithMs)},
+            {QStringLiteral("hasUnreadDot"), entry.hasUnreadDot}
+    };
+}
+
+AiChatListEntry aiChatEntryFromJson(const QJsonObject& object)
+{
+    return {
+            object.value(QStringLiteral("conversationId")).toString(),
+            object.value(QStringLiteral("title")).toString(),
+            QDateTime::fromString(object.value(QStringLiteral("time")).toString(), Qt::ISODateWithMs),
+            object.value(QStringLiteral("hasUnreadDot")).toBool(false)
+    };
+}
+
+QJsonObject aiChatMessageToJson(const AiChatMessage& message)
+{
+    return {
+            {QStringLiteral("messageId"), message.messageId},
+            {QStringLiteral("conversationId"), message.conversationId},
+            {QStringLiteral("text"), message.text},
+            {QStringLiteral("isFromUser"), message.isFromUser},
+            {QStringLiteral("time"), message.time.toString(Qt::ISODateWithMs)}
+    };
+}
+
+AiChatMessage aiChatMessageFromJson(const QJsonObject& object)
+{
+    return {
+            object.value(QStringLiteral("messageId")).toString(),
+            object.value(QStringLiteral("conversationId")).toString(),
+            object.value(QStringLiteral("text")).toString(),
+            object.value(QStringLiteral("isFromUser")).toBool(false),
+            QDateTime::fromString(object.value(QStringLiteral("time")).toString(), Qt::ISODateWithMs)
+    };
 }
 
 QString markdownCapabilitySample()
@@ -289,16 +349,42 @@ $$)MARKDOWN");
 AiChatRepository::AiChatRepository(QObject* parent)
     : QObject(parent)
 {
-    const QStringList sampleTitles = {
-        QStringLiteral("深度研究助理"),
-        QStringLiteral("界面重构草案"),
-        QStringLiteral("插件调试记录"),
-        QStringLiteral("多代理协作实验"),
-        QStringLiteral("日报自动整理"),
-        QStringLiteral("提示词优化备份"),
-        QStringLiteral("模型切换对照"),
-        QStringLiteral("前端交互验证")
-    };
+    LocalDataStore& store = LocalDataStore::instance();
+    if (store.hasDomain(QStringLiteral("ai_chat_entries"))) {
+        int maxConversationSerial = 0;
+        int maxMessageSerial = 0;
+        for (const QJsonObject& object : store.values(QStringLiteral("ai_chat_entries"))) {
+            const AiChatListEntry entry = aiChatEntryFromJson(object);
+            if (!entry.conversationId.isEmpty()) {
+                m_entries.push_back(entry);
+                bool ok = false;
+                const int serial = entry.conversationId.mid(QStringLiteral("ai-chat-").size()).toInt(&ok);
+                if (ok) {
+                    maxConversationSerial = qMax(maxConversationSerial, serial);
+                }
+            }
+        }
+        for (const QJsonObject& object : store.values(QStringLiteral("ai_chat_messages"))) {
+            const AiChatMessage message = aiChatMessageFromJson(object);
+            if (!message.conversationId.isEmpty() && !message.messageId.isEmpty()) {
+                m_messages[message.conversationId].push_back(message);
+                m_seededMessageConversationIds.insert(message.conversationId);
+                bool ok = false;
+                const int serial = message.messageId.mid(QStringLiteral("ai-message-").size()).toInt(&ok);
+                if (ok) {
+                    maxMessageSerial = qMax(maxMessageSerial, serial);
+                }
+            }
+        }
+        m_nextConversationId = maxConversationSerial + 1;
+        m_nextMessageId = maxMessageSerial + 1;
+        return;
+    }
+
+    QStringList sampleTitles = aiSeedStrings(QStringLiteral("titles"));
+    if (sampleTitles.isEmpty()) {
+        sampleTitles.append(QStringLiteral("新对话"));
+    }
 
     const QDateTime now = QDateTime::currentDateTime();
     m_entries.reserve(40);
@@ -333,6 +419,10 @@ AiChatRepository::AiChatRepository(QObject* parent)
     for (int index : selectedIndexes) {
         m_entries[index].hasUnreadDot = true;
     }
+
+    for (const AiChatListEntry& entry : std::as_const(m_entries)) {
+        store.upsertValue(QStringLiteral("ai_chat_entries"), entry.conversationId, aiChatEntryToJson(entry));
+    }
 }
 
 AiChatRepository& AiChatRepository::instance()
@@ -343,60 +433,80 @@ AiChatRepository& AiChatRepository::instance()
 
 QVector<AiChatListEntry> AiChatRepository::requestAiChatList(const AiChatListRequest& query) const
 {
-    QMutexLocker locker(&m_mutex);
-    if (query.limit <= 0 || query.offset < 0 || query.offset >= m_entries.size()) {
-        return {};
-    }
+    auto handler = [this](const AiChatListRequest& request) {
+        QMutexLocker locker(&m_mutex);
+        if (request.limit <= 0 || request.offset < 0 || request.offset >= m_entries.size()) {
+            return QVector<AiChatListEntry>{};
+        }
 
-    QVector<AiChatListEntry> sortedEntries = m_entries;
-    std::sort(sortedEntries.begin(), sortedEntries.end(), [](const AiChatListEntry& lhs, const AiChatListEntry& rhs) {
-        return lhs.time > rhs.time;
-    });
+        QVector<AiChatListEntry> sortedEntries = m_entries;
+        std::sort(sortedEntries.begin(), sortedEntries.end(), [](const AiChatListEntry& lhs, const AiChatListEntry& rhs) {
+            return lhs.time > rhs.time;
+        });
 
-    const int offset = qBound(0, query.offset, sortedEntries.size());
-    const int limit = qMax(0, query.limit);
-    return sortedEntries.mid(offset, limit);
+        const int offset = qBound(0, request.offset, sortedEntries.size());
+        const int limit = qMax(0, request.limit);
+        return sortedEntries.mid(offset, limit);
+    };
+
+    return RepositoryFunctionOperation<AiChatListRequest, QVector<AiChatListEntry>, decltype(handler)>(handler)
+            .request(query);
+}
+
+QVector<AiChatMessage> AiChatRepository::requestAiChatMessages(const AiChatMessagesRequest& query) const
+{
+    auto handler = [this](const AiChatMessagesRequest& request) {
+        QMutexLocker locker(&m_mutex);
+        if (!m_seededMessageConversationIds.contains(request.conversationId)) {
+            for (int index = 0; index < m_entries.size(); ++index) {
+                if (m_entries.at(index).conversationId == request.conversationId) {
+                    appendInitialMessages(m_entries.at(index), index);
+                    m_seededMessageConversationIds.insert(request.conversationId);
+                    break;
+                }
+            }
+        }
+        return m_messages.value(request.conversationId);
+    };
+
+    return RepositoryFunctionOperation<AiChatMessagesRequest, QVector<AiChatMessage>, decltype(handler)>(handler)
+            .request(query);
 }
 
 QVector<AiChatMessage> AiChatRepository::requestAiChatMessages(const QString& conversationId) const
 {
-    QMutexLocker locker(&m_mutex);
-    if (!m_seededMessageConversationIds.contains(conversationId)) {
-        for (int index = 0; index < m_entries.size(); ++index) {
-            if (m_entries.at(index).conversationId == conversationId) {
-                appendInitialMessages(m_entries.at(index), index);
-                m_seededMessageConversationIds.insert(conversationId);
-                break;
-            }
-        }
-    }
-    return m_messages.value(conversationId);
+    return requestAiChatMessages({conversationId});
 }
 
 AiChatContextUsage AiChatRepository::requestAiChatContextUsage(const AiChatContextUsageRequest& request) const
 {
-    QMutexLocker locker(&m_mutex);
-    if (request.conversationId.isEmpty()) {
-        return {};
-    }
+    auto handler = [this](const AiChatContextUsageRequest& query) {
+        QMutexLocker locker(&m_mutex);
+        if (query.conversationId.isEmpty()) {
+            return AiChatContextUsage{};
+        }
 
-    if (!m_seededMessageConversationIds.contains(request.conversationId)) {
-        for (int index = 0; index < m_entries.size(); ++index) {
-            if (m_entries.at(index).conversationId == request.conversationId) {
-                appendInitialMessages(m_entries.at(index), index);
-                m_seededMessageConversationIds.insert(request.conversationId);
-                break;
+        if (!m_seededMessageConversationIds.contains(query.conversationId)) {
+            for (int index = 0; index < m_entries.size(); ++index) {
+                if (m_entries.at(index).conversationId == query.conversationId) {
+                    appendInitialMessages(m_entries.at(index), index);
+                    m_seededMessageConversationIds.insert(query.conversationId);
+                    break;
+                }
             }
         }
-    }
 
-    const AiChatContextUsage usage = buildContextUsageLocked(request.conversationId);
-    if (usage.available) {
-        m_contextUsages.insert(request.conversationId, usage);
-    } else {
-        m_contextUsages.remove(request.conversationId);
-    }
-    return usage;
+        const AiChatContextUsage usage = buildContextUsageLocked(query.conversationId);
+        if (usage.available) {
+            m_contextUsages.insert(query.conversationId, usage);
+        } else {
+            m_contextUsages.remove(query.conversationId);
+        }
+        return usage;
+    };
+
+    return RepositoryFunctionOperation<AiChatContextUsageRequest, AiChatContextUsage, decltype(handler)>(handler)
+            .request(request);
 }
 
 QString AiChatRepository::createAiChatConversation(const QString& title, const QDateTime& time)
@@ -412,6 +522,9 @@ QString AiChatRepository::createAiChatConversation(const QString& title, const Q
     m_entries.push_back(entry);
     m_messages.insert(conversationId, {});
     m_seededMessageConversationIds.insert(conversationId);
+    LocalDataStore::instance().upsertValue(QStringLiteral("ai_chat_entries"),
+                                           conversationId,
+                                           aiChatEntryToJson(entry));
     return conversationId;
 }
 
@@ -442,6 +555,9 @@ AiChatMessage AiChatRepository::addAiChatMessage(const QString& conversationId,
     };
     m_messages[conversationId].push_back(message);
     m_contextUsages.remove(conversationId);
+    LocalDataStore::instance().upsertValue(QStringLiteral("ai_chat_messages"),
+                                           message.messageId,
+                                           aiChatMessageToJson(message));
     return message;
 }
 
@@ -466,6 +582,9 @@ bool AiChatRepository::updateAiChatMessageText(const QString& conversationId,
             message.text = messageText;
             message.time = time;
             m_contextUsages.remove(conversationId);
+            LocalDataStore::instance().upsertValue(QStringLiteral("ai_chat_messages"),
+                                                   message.messageId,
+                                                   aiChatMessageToJson(message));
             return true;
         }
     }
@@ -492,6 +611,9 @@ bool AiChatRepository::setConversationUnreadDot(const QString& conversationId, b
             }
 
             entry.hasUnreadDot = unread;
+            LocalDataStore::instance().upsertValue(QStringLiteral("ai_chat_entries"),
+                                                   entry.conversationId,
+                                                   aiChatEntryToJson(entry));
             changed = true;
             break;
         }
@@ -535,6 +657,7 @@ bool AiChatRepository::removeAiChatMessage(const QString& conversationId, const 
 
         messages.removeAt(row);
         m_contextUsages.remove(conversationId);
+        LocalDataStore::instance().removeValue(QStringLiteral("ai_chat_messages"), messageId);
         return true;
     }
 
@@ -552,6 +675,9 @@ bool AiChatRepository::renameAiChatConversation(const QString& conversationId, c
     for (AiChatListEntry& entry : m_entries) {
         if (entry.conversationId == conversationId) {
             entry.title = trimmedTitle;
+            LocalDataStore::instance().upsertValue(QStringLiteral("ai_chat_entries"),
+                                                   entry.conversationId,
+                                                   aiChatEntryToJson(entry));
             return true;
         }
     }
@@ -576,9 +702,13 @@ bool AiChatRepository::removeAiChatConversation(const QString& conversationId)
 
         hadUnreadDot = it->hasUnreadDot;
         m_entries.erase(it);
-        m_messages.remove(conversationId);
+        const QVector<AiChatMessage> removedMessages = m_messages.take(conversationId);
         m_seededMessageConversationIds.remove(conversationId);
         m_contextUsages.remove(conversationId);
+        LocalDataStore::instance().removeValue(QStringLiteral("ai_chat_entries"), conversationId);
+        for (const AiChatMessage& message : removedMessages) {
+            LocalDataStore::instance().removeValue(QStringLiteral("ai_chat_messages"), message.messageId);
+        }
     }
 
     if (hadUnreadDot) {
@@ -615,12 +745,10 @@ AiChatContextUsage AiChatRepository::buildContextUsageLocked(const QString& conv
 
 void AiChatRepository::appendInitialMessages(const AiChatListEntry& entry, int sampleIndex) const
 {
-    const QStringList prompts = {
-        QStringLiteral("帮我把这段需求拆成可执行的实现步骤。"),
-        QStringLiteral("分析一下这个界面交互有没有明显问题。"),
-        QStringLiteral("给出一个更稳妥的重构方案。"),
-        QStringLiteral("整理一下今天的调试结论。")
-    };
+    QStringList prompts = aiSeedStrings(QStringLiteral("prompts"));
+    if (prompts.isEmpty()) {
+        prompts.append(QStringLiteral("帮我把这段需求拆成可执行的实现步骤。"));
+    }
     const QString sampleReply = markdownCapabilitySample();
     const QStringList replies = {sampleReply, sampleReply, sampleReply, sampleReply};
 
@@ -633,6 +761,9 @@ void AiChatRepository::appendInitialMessages(const AiChatListEntry& entry, int s
             true,
             firstTime
     });
+    LocalDataStore::instance().upsertValue(QStringLiteral("ai_chat_messages"),
+                                           messages.last().messageId,
+                                           aiChatMessageToJson(messages.last()));
     messages.push_back({
             QStringLiteral("ai-message-%1").arg(m_nextMessageId++),
             entry.conversationId,
@@ -640,4 +771,7 @@ void AiChatRepository::appendInitialMessages(const AiChatListEntry& entry, int s
             false,
             entry.time
     });
+    LocalDataStore::instance().upsertValue(QStringLiteral("ai_chat_messages"),
+                                           messages.last().messageId,
+                                           aiChatMessageToJson(messages.last()));
 }

@@ -1,8 +1,11 @@
 #include "CurrentUserProfileRepository.h"
 
+#include "shared/data/LocalDataStore.h"
 #include "shared/data/RepositoryTemplate.h"
 #include "shared/services/ImageService.h"
 
+#include <QJsonArray>
+#include <QJsonObject>
 #include <utility>
 
 namespace {
@@ -24,6 +27,60 @@ CurrentUserProfile identityOnly(CurrentUserProfile profile)
     profile.signature.clear();
     profile.region.clear();
     return profile;
+}
+
+QString statusToString(UserStatus status)
+{
+    switch (status) {
+    case Online:
+        return QStringLiteral("online");
+    case Mining:
+        return QStringLiteral("mining");
+    case Flying:
+        return QStringLiteral("flying");
+    case Offline:
+    default:
+        return QStringLiteral("offline");
+    }
+}
+
+UserStatus statusFromString(const QString& value)
+{
+    const QString normalized = value.trimmed().toLower();
+    if (normalized == QStringLiteral("online")) {
+        return Online;
+    }
+    if (normalized == QStringLiteral("mining")) {
+        return Mining;
+    }
+    if (normalized == QStringLiteral("flying")) {
+        return Flying;
+    }
+    return Offline;
+}
+
+CurrentUserProfile profileFromJson(const QJsonObject& object)
+{
+    CurrentUserProfile profile;
+    profile.userId = object.value(QStringLiteral("userId")).toString();
+    profile.nickName = object.value(QStringLiteral("nickName")).toString();
+    profile.avatarPath = object.value(QStringLiteral("avatarPath")).toString(QString::fromLatin1(kDefaultAvatarPath));
+    profile.status = statusFromString(object.value(QStringLiteral("status")).toString());
+    profile.signature = object.value(QStringLiteral("signature")).toString();
+    profile.region = object.value(QStringLiteral("region")).toString();
+    return profile;
+}
+
+QJsonObject profileToJson(const CurrentUserProfile& profile)
+{
+    return {
+            {QStringLiteral("userId"), profile.userId},
+            {QStringLiteral("nickName"), profile.nickName},
+            {QStringLiteral("avatarPath"), profile.avatarPath},
+            {QStringLiteral("status"), statusToString(profile.status)},
+            {QStringLiteral("signature"), profile.signature},
+            {QStringLiteral("region"), profile.region}
+    };
 }
 
 class CurrentUserIdentityRequestOperation final
@@ -65,14 +122,23 @@ private:
 CurrentUserProfileRepository::CurrentUserProfileRepository(QObject* parent)
     : QObject(parent)
 {
-    CurrentUserProfile profile;
-    profile.userId = QStringLiteral("u007");
-    profile.nickName = QStringLiteral("wbbb");
-    profile.avatarPath = QString::fromLatin1(kDefaultAvatarPath);
-    profile.status = Online;
-    profile.signature = QStringLiteral("主城地基施工中，看到我在挖方块就是在线");
-    profile.region = QStringLiteral("上海");
-    m_profiles.insert(profile.userId, profile);
+    LocalDataStore& store = LocalDataStore::instance();
+    if (!store.hasDomain(QStringLiteral("current_profiles"))) {
+        const QJsonArray profiles = store.seedArray(QStringLiteral(":/resources/data/current_profiles.json"));
+        for (const QJsonValue& value : profiles) {
+            const CurrentUserProfile profile = profileFromJson(value.toObject());
+            if (!profile.userId.isEmpty()) {
+                store.upsertValue(QStringLiteral("current_profiles"), profile.userId, profileToJson(profile));
+            }
+        }
+    }
+
+    for (const QJsonObject& object : store.values(QStringLiteral("current_profiles"))) {
+        const CurrentUserProfile profile = profileFromJson(object);
+        if (!profile.userId.isEmpty()) {
+            m_profiles.insert(profile.userId, profile);
+        }
+    }
 }
 
 CurrentUserProfileRepository& CurrentUserProfileRepository::instance()
@@ -115,6 +181,10 @@ void CurrentUserProfileRepository::saveCurrentUserProfile(const CurrentUserProfi
                 || previous.region != profile.region;
         m_profiles.insert(profile.userId, profile);
     }
+
+    LocalDataStore::instance().upsertValue(QStringLiteral("current_profiles"),
+                                           profile.userId,
+                                           profileToJson(profile));
 
     if (!oldAvatarPath.isEmpty() && oldAvatarPath != profile.avatarPath) {
         ImageService::instance().invalidateSource(oldAvatarPath);

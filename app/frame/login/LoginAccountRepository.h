@@ -26,6 +26,11 @@ struct LoginAccountDetailRequest {
     QString accountId;
 };
 
+struct LoginCredentialRequest {
+    QString accountId;
+    QString password;
+};
+
 class LoginAccountRepository : public QObject
 {
     Q_OBJECT
@@ -35,9 +40,11 @@ public:
     QVector<LoginAccount> requestLoginAccounts(const LoginAccountListRequest& query = {}) const;
     LoginAccount requestLoginAccount(const LoginAccountDetailRequest& query) const;
     int requestLoginAccountCount() const;
+    bool validateCredentials(const LoginCredentialRequest& query) const;
     bool validateCredentials(const QString& accountId, const QString& password) const;
 
     bool registerAccount(const QString& email, const QString& password, const QString& displayName);
+    void saveAuthenticatedAccount(const LoginAccount& account);
     void recordSuccessfulLogin(const QString& accountId, const QString& password);
     void removeLoginAccount(const QString& accountId);
 

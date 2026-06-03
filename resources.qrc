@@ -105,6 +105,14 @@
         <file>resources/post/7.jpg</file>
         <file>resources/post/8.jpg</file>
         <file>resources/post/9.jpg</file>
+        <file>resources/data/users.json</file>
+        <file>resources/data/groups.json</file>
+        <file>resources/data/current_profiles.json</file>
+        <file>resources/data/post_samples.json</file>
+        <file>resources/data/comment_samples.json</file>
+        <file>resources/data/friend_notifications.json</file>
+        <file>resources/data/group_notifications.json</file>
+        <file>resources/data/aichat_samples.json</file>
         <file>resources/audio/portal.wav</file>
         <file>resources/audio/portal2.wav</file>
         <file>resources/audio/successful_hit.wav</file>

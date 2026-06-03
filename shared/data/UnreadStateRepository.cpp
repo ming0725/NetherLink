@@ -1,8 +1,49 @@
 #include "UnreadStateRepository.h"
 
+#include "shared/data/LocalDataStore.h"
+
+#include <QJsonArray>
+#include <QJsonObject>
+
+namespace {
+
+constexpr auto kUnreadDomain = "unread_state";
+
+QJsonObject unreadScopeToJson(const QString& scope, const QSet<QString>& items)
+{
+    QJsonArray array;
+    for (const QString& itemId : items) {
+        array.append(itemId);
+    }
+    return {
+            {QStringLiteral("scope"), scope},
+            {QStringLiteral("items"), array}
+    };
+}
+
+QSet<QString> unreadScopeFromJson(const QJsonObject& object)
+{
+    QSet<QString> result;
+    for (const QJsonValue& value : object.value(QStringLiteral("items")).toArray()) {
+        const QString itemId = value.toString();
+        if (!itemId.isEmpty()) {
+            result.insert(itemId);
+        }
+    }
+    return result;
+}
+
+} // namespace
+
 UnreadStateRepository::UnreadStateRepository(QObject* parent)
     : QObject(parent)
 {
+    for (const QJsonObject& object : LocalDataStore::instance().values(QString::fromLatin1(kUnreadDomain))) {
+        const QString scope = object.value(QStringLiteral("scope")).toString();
+        if (!scope.isEmpty()) {
+            m_unreadByScope.insert(scope, unreadScopeFromJson(object));
+        }
+    }
 }
 
 UnreadStateRepository& UnreadStateRepository::instance()
@@ -38,6 +79,9 @@ void UnreadStateRepository::setUnread(const QString& scope, const QString& itemI
     } else {
         items.remove(itemId);
     }
+    LocalDataStore::instance().upsertValue(QString::fromLatin1(kUnreadDomain),
+                                           scope,
+                                           unreadScopeToJson(scope, items));
     emit unreadCountChanged(scope, items.size());
 }
 
@@ -49,5 +93,8 @@ void UnreadStateRepository::markAllRead(const QString& scope)
     }
 
     it->clear();
+    LocalDataStore::instance().upsertValue(QString::fromLatin1(kUnreadDomain),
+                                           scope,
+                                           unreadScopeToJson(scope, *it));
     emit unreadCountChanged(scope, 0);
 }

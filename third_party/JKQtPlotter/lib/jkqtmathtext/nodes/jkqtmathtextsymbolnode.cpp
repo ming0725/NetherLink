@@ -1,7 +1,7 @@
 /*
     Copyright (c) 2008-2024 Jan W. Krieger (<jan@jkrieger.de>)
 
-    Modified by NetherLink-static contributors on 2026-05-30.
+    Modified by NetherLink contributors on 2026-05-30.
     Changes: adjusted integral-like symbol rendering properties; see
     third_party/JKQtPlotter/MODIFICATIONS.md.
 

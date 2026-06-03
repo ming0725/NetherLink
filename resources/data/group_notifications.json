@@ -1,0 +1,10 @@
+[
+  {"id":"gn_001","type":"join_request","groupId":"g004","actorUserId":"u101","daysAgo":0,"message":"想加入群聊，一起做 Minecraft 创意建造。","status":"pending"},
+  {"id":"gn_002","type":"join_request","groupId":"g005","actorUserId":"u102","daysAgo":1,"message":"朋友推荐我来这个群参观建筑设计，想申请加入。","status":"pending"},
+  {"id":"gn_003","type":"join_request","groupId":"g010","actorUserId":"u103","daysAgo":2,"message":"之前关注过群里的红石/建筑内容，希望通过一下。","status":"pending"},
+  {"id":"gn_004","type":"join_request","groupId":"g012","actorUserId":"u104","daysAgo":3,"message":"想加入后续服务器活动和共建讨论。","status":"pending"},
+  {"id":"gn_005","type":"join_request","groupId":"g001","actorUserId":"u105","operatorUserId":"u001","daysAgo":4,"message":"想参观主城规划，也带了一份广场设计稿。","status":"accepted"},
+  {"id":"gn_006","type":"member_exited","groupId":"g005","actorUserId":"u106","daysAgo":5,"message":"","status":"none"},
+  {"id":"gn_007","type":"admin_assigned","groupId":"g004","actorUserId":"u007","operatorUserId":"u002","daysAgo":6,"message":"","status":"none"},
+  {"id":"gn_008","type":"owner_transferred","groupId":"g009","actorUserId":"u007","operatorUserId":"u007","daysAgo":7,"message":"","status":"none"}
+]

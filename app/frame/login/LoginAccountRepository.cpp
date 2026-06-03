@@ -2,11 +2,16 @@
 
 #include "app/state/CurrentUserProfileRepository.h"
 #include "features/friend/data/UserRepository.h"
+#include "shared/data/LocalDataStore.h"
+#include "shared/data/RepositoryFunctionOperation.h"
+#include "shared/types/RepositoryTypes.h"
 
+#include <QJsonObject>
 #include <QMutexLocker>
 #include <QRandomGenerator>
 
 #include <algorithm>
+#include <utility>
 
 namespace {
 
@@ -67,11 +72,82 @@ LoginAccount accountFromUser(const User& user, qint64 lastLoginOrder)
     return account;
 }
 
+QString statusToString(UserStatus status)
+{
+    switch (status) {
+    case Online:
+        return QStringLiteral("online");
+    case Mining:
+        return QStringLiteral("mining");
+    case Flying:
+        return QStringLiteral("flying");
+    case Offline:
+    default:
+        return QStringLiteral("offline");
+    }
+}
+
+UserStatus statusFromString(const QString& value)
+{
+    const QString normalized = value.trimmed().toLower();
+    if (normalized == QStringLiteral("online")) {
+        return Online;
+    }
+    if (normalized == QStringLiteral("mining")) {
+        return Mining;
+    }
+    if (normalized == QStringLiteral("flying")) {
+        return Flying;
+    }
+    return Offline;
+}
+
+LoginAccount accountFromJson(const QJsonObject& object)
+{
+    LoginAccount account;
+    account.accountId = object.value(QStringLiteral("accountId")).toString();
+    account.password = object.value(QStringLiteral("password")).toString(kDefaultLoginPassword);
+    account.displayName = object.value(QStringLiteral("displayName")).toString();
+    account.avatarPath = object.value(QStringLiteral("avatarPath")).toString();
+    account.status = statusFromString(object.value(QStringLiteral("status")).toString());
+    account.signature = object.value(QStringLiteral("signature")).toString();
+    account.region = object.value(QStringLiteral("region")).toString();
+    account.lastLoginOrder = static_cast<qint64>(object.value(QStringLiteral("lastLoginOrder")).toDouble());
+    return account;
+}
+
+QJsonObject accountToJson(const LoginAccount& account)
+{
+    return {
+            {QStringLiteral("accountId"), account.accountId},
+            {QStringLiteral("password"), account.password},
+            {QStringLiteral("displayName"), account.displayName},
+            {QStringLiteral("avatarPath"), account.avatarPath},
+            {QStringLiteral("status"), statusToString(account.status)},
+            {QStringLiteral("signature"), account.signature},
+            {QStringLiteral("region"), account.region},
+            {QStringLiteral("lastLoginOrder"), static_cast<double>(account.lastLoginOrder)}
+    };
+}
+
 } // namespace
 
 LoginAccountRepository::LoginAccountRepository(QObject* parent)
     : QObject(parent)
 {
+    LocalDataStore& store = LocalDataStore::instance();
+    if (store.hasDomain(QStringLiteral("login_accounts"))) {
+        for (const QJsonObject& object : store.values(QStringLiteral("login_accounts"))) {
+            const LoginAccount account = accountFromJson(object);
+            if (account.accountId.isEmpty()) {
+                continue;
+            }
+            m_accounts.push_back(account);
+            m_nextLoginOrder = qMax(m_nextLoginOrder, account.lastLoginOrder + 1);
+        }
+        return;
+    }
+
     const CurrentUserProfile defaultProfile =
             CurrentUserProfileRepository::instance().requestCurrentUserProfile({QStringLiteral("u007")});
     if (!defaultProfile.userId.isEmpty()) {
@@ -83,10 +159,13 @@ LoginAccountRepository::LoginAccountRepository(QObject* parent)
         if (user.id.isEmpty() || indexOfAccount(m_accounts, user.id) >= 0) {
             continue;
         }
-        m_accounts.push_back(accountFromUser(user, user.id.startsWith(QStringLiteral("perf_")) ? -1 : 0));
+        m_accounts.push_back(accountFromUser(user, 0));
     }
 
     m_nextLoginOrder = 2;
+    for (const LoginAccount& account : std::as_const(m_accounts)) {
+        store.upsertValue(QStringLiteral("login_accounts"), account.accountId, accountToJson(account));
+    }
 }
 
 LoginAccountRepository& LoginAccountRepository::instance()
@@ -97,30 +176,55 @@ LoginAccountRepository& LoginAccountRepository::instance()
 
 QVector<LoginAccount> LoginAccountRepository::requestLoginAccounts(const LoginAccountListRequest& query) const
 {
-    QMutexLocker locker(&m_mutex);
-    QVector<LoginAccount> result = sortedByRecentLogin(m_accounts);
-    const int limit = query.limit < 0 ? result.size() : qMax(0, query.limit);
-    return result.mid(0, limit);
+    auto handler = [this](const LoginAccountListRequest& request) {
+        QMutexLocker locker(&m_mutex);
+        QVector<LoginAccount> result = sortedByRecentLogin(m_accounts);
+        const int limit = request.limit < 0 ? result.size() : qMax(0, request.limit);
+        return result.mid(0, limit);
+    };
+
+    return RepositoryFunctionOperation<LoginAccountListRequest, QVector<LoginAccount>, decltype(handler)>(handler)
+            .request(query);
 }
 
 LoginAccount LoginAccountRepository::requestLoginAccount(const LoginAccountDetailRequest& query) const
 {
-    QMutexLocker locker(&m_mutex);
-    const int index = indexOfAccount(m_accounts, query.accountId);
-    return index >= 0 ? m_accounts.at(index) : LoginAccount{};
+    auto handler = [this](const LoginAccountDetailRequest& request) {
+        QMutexLocker locker(&m_mutex);
+        const int index = indexOfAccount(m_accounts, request.accountId);
+        return index >= 0 ? m_accounts.at(index) : LoginAccount{};
+    };
+
+    return RepositoryFunctionOperation<LoginAccountDetailRequest, LoginAccount, decltype(handler)>(handler)
+            .request(query);
 }
 
 int LoginAccountRepository::requestLoginAccountCount() const
 {
-    QMutexLocker locker(&m_mutex);
-    return m_accounts.size();
+    auto handler = [this](const EmptyRequest&) {
+        QMutexLocker locker(&m_mutex);
+        return m_accounts.size();
+    };
+
+    return RepositoryFunctionOperation<EmptyRequest, int, decltype(handler)>(handler)
+            .request({});
+}
+
+bool LoginAccountRepository::validateCredentials(const LoginCredentialRequest& query) const
+{
+    auto handler = [this](const LoginCredentialRequest& request) {
+        QMutexLocker locker(&m_mutex);
+        const int index = indexOfAccount(m_accounts, request.accountId);
+        return index >= 0 && m_accounts.at(index).password == request.password;
+    };
+
+    return RepositoryFunctionOperation<LoginCredentialRequest, bool, decltype(handler)>(handler)
+            .request(query);
 }
 
 bool LoginAccountRepository::validateCredentials(const QString& accountId, const QString& password) const
 {
-    QMutexLocker locker(&m_mutex);
-    const int index = indexOfAccount(m_accounts, accountId);
-    return index >= 0 && m_accounts.at(index).password == password;
+    return validateCredentials({accountId, password});
 }
 
 bool LoginAccountRepository::registerAccount(const QString& email, const QString& password, const QString& displayName)
@@ -152,6 +256,9 @@ bool LoginAccountRepository::registerAccount(const QString& email, const QString
 
         account.lastLoginOrder = m_nextLoginOrder++;
         m_accounts.push_back(account);
+        LocalDataStore::instance().upsertValue(QStringLiteral("login_accounts"),
+                                               account.accountId,
+                                               accountToJson(account));
         changed = true;
     }
 
@@ -180,6 +287,35 @@ bool LoginAccountRepository::registerAccount(const QString& email, const QString
     return true;
 }
 
+void LoginAccountRepository::saveAuthenticatedAccount(const LoginAccount& account)
+{
+    if (account.accountId.trimmed().isEmpty()) {
+        return;
+    }
+
+    LoginAccount normalized = account;
+    normalized.accountId = normalized.accountId.trimmed();
+    bool changed = false;
+    {
+        QMutexLocker locker(&m_mutex);
+        const int index = indexOfAccount(m_accounts, normalized.accountId);
+        normalized.lastLoginOrder = m_nextLoginOrder++;
+        if (index >= 0) {
+            m_accounts[index] = normalized;
+        } else {
+            m_accounts.push_back(normalized);
+        }
+        LocalDataStore::instance().upsertValue(QStringLiteral("login_accounts"),
+                                               normalized.accountId,
+                                               accountToJson(normalized));
+        changed = true;
+    }
+
+    if (changed) {
+        emit loginAccountsChanged();
+    }
+}
+
 void LoginAccountRepository::recordSuccessfulLogin(const QString& accountId, const QString& password)
 {
     bool changed = false;
@@ -191,6 +327,9 @@ void LoginAccountRepository::recordSuccessfulLogin(const QString& accountId, con
         }
 
         m_accounts[index].lastLoginOrder = m_nextLoginOrder++;
+        LocalDataStore::instance().upsertValue(QStringLiteral("login_accounts"),
+                                               m_accounts[index].accountId,
+                                               accountToJson(m_accounts[index]));
         changed = true;
     }
 
@@ -210,6 +349,7 @@ void LoginAccountRepository::removeLoginAccount(const QString& accountId)
         }
 
         m_accounts.removeAt(index);
+        LocalDataStore::instance().removeValue(QStringLiteral("login_accounts"), accountId);
         changed = true;
     }
 

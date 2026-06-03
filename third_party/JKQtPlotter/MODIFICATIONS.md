@@ -1,7 +1,7 @@
 # JKQtPlotter Local Modifications
 
 This directory contains a vendored, reduced, and modified copy of JKQtPlotter
-for NetherLink-static.
+for NetherLink.
 
 Upstream project: https://github.com/jkriege2/JKQtPlotter
 
@@ -26,7 +26,7 @@ Modified files compared with the upstream reference:
 Summary of changes:
 
 - Reduced the vendored tree to the JKQTMathText equation renderer and the
-  support code needed by NetherLink-static.
+  support code needed by NetherLink.
 - Adapted CMake files for the local vendored build, Qt integration, install
   behavior, and selected build options.
 - Adjusted math rendering behavior for double-line braces, integral-like

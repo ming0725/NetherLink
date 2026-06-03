@@ -1,6 +1,6 @@
-# Modified by NetherLink-static contributors on 2026-05-30.
+# Modified by NetherLink contributors on 2026-05-30.
 # Changes: reduced vendored JKQtPlotter to the JKQTMathText build needed by
-# NetherLink-static; see MODIFICATIONS.md.
+# NetherLink; see MODIFICATIONS.md.
 cmake_minimum_required(VERSION 3.23)
 
 # Project Name and Version
