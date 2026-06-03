@@ -1,6 +1,8 @@
 #include "RegisterWindow.h"
 
 #include "LoginAccountRepository.h"
+#include "app/state/CurrentUserPreferencesRepository.h"
+#include "app/state/CurrentUserProfileRepository.h"
 #ifndef Q_OS_MACOS
 #include "platform/windows/WindowsWindowControlButton.h"
 #endif
@@ -471,6 +473,22 @@ void RegisterWindow::setupUi()
         account.signature = result.user.signature;
         account.region = result.user.region;
         LoginAccountRepository::instance().saveAuthenticatedAccount(account);
+        if (!result.user.userId.isEmpty() || !result.user.userUuid.isEmpty()) {
+            CurrentUserProfile profile;
+            profile.userUuid = result.user.userUuid;
+            profile.userId = result.user.userId.isEmpty() ? result.user.userUuid : result.user.userId;
+            profile.nickName = result.user.nickName.isEmpty() ? account.displayName : result.user.nickName;
+            profile.avatarPath = result.user.avatarPath;
+            profile.status = Online;
+            profile.signature = result.user.signature;
+            profile.region = result.user.region;
+            profile.version = result.user.version;
+            profile.etag = result.user.etag;
+            CurrentUserProfileRepository::instance().saveCurrentUserProfile(profile);
+        }
+        if (!result.preferences.isEmpty()) {
+            CurrentUserPreferencesRepository::instance().saveCurrentUserPreferencesObject(result.preferences);
+        }
 
         emit accountRegistered(account.accountId, account.password);
         GlobalNotification::showSuccess(parentWidget() ? parentWidget() : this, QStringLiteral("注册成功"));

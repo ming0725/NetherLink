@@ -415,6 +415,8 @@ type Preferences = {
 };
 ```
 
+当前 Qt 前端已建立 `CurrentUserPreferences` 业务模型和本地缓存，保存 `themeColor`、`fontMode`、`inputEffects`、`settings`、`version`、`etag`。设置页控件到这些字段的完整枚举映射尚未完成，因此本节仍保留底部偏好 schema 待补充指令。
+
 ### 3.3 File
 
 ```ts
@@ -554,6 +556,15 @@ PATCH 请求：
 
 返回 `User`。
 
+当前 Qt 前端接入状态：
+
+- 已新增 `app/state/CurrentUserRemoteDataSource` 封装 `GET /me` 与 `PATCH /me`。
+- 登录/注册响应和 `/me` 响应会写入 `CurrentUserProfileRepository`，并保留 `userUuid`、`version`、`etag`。
+- `CurrentUser::setUserInfo()` 会主动拉取 `/me`；资料编辑保存会调用 `PATCH /me`。
+- PATCH 使用模型内 `etag` 生成 `If-Match`，使用模型内 `version` 生成 `expectedVersion`。
+- 当前资料编辑 UI 只发送已有的昵称、签名、地区字段。头像上传仍属于后续文件上传阶段，不通过 `/me` PATCH 传本地头像路径；左侧头像状态属于本地呈现状态，等待 presence 契约明确后再接后端。
+- `VERSION_CONFLICT` 等保存失败会显示全局失败通知，不写入静态 fallback。
+
 ### 4.5 公开 ID
 
 ```http
@@ -599,6 +610,14 @@ PATCH：
 ```
 
 返回 `Preferences`。
+
+当前 Qt 前端接入状态：
+
+- 已新增 `CurrentUserPreferences` 与 `CurrentUserPreferencesRepository`，缓存 `themeColor`、`fontMode`、`inputEffects`、`settings`、`version`、`etag`。
+- 已新增 `CurrentUserRemoteDataSource::fetchPreferences()` 与 `updatePreferences()` 封装 `GET/PATCH /me/preferences`。
+- 登录/注册响应中的 `preferences` 会写入本地偏好缓存；`CurrentUser::setUserInfo()` 和 `RemoteDataBootstrapper::syncAll()` 也会拉取 `/me/preferences`。
+- PATCH 使用模型内 `etag` 生成 `If-Match`，使用模型内 `version` 生成 `expectedVersion`。
+- 设置页控件到远程偏好的完整读写映射尚未完成。
 
 ## 5. 文件和上传 API
 

@@ -10,6 +10,7 @@
 #include "features/friend/ui/FriendSessionController.h"
 #include "app/state/CurrentUserProfileEditContent.h"
 #include "app/state/CurrentUser.h"
+#include "shared/network/NetworkTypes.h"
 #include "shared/services/AudioService.h"
 #include "shared/services/ImageService.h"
 #include "shared/theme/ThemeManager.h"
@@ -18,6 +19,7 @@
 #include "shared/ui/popup/InWindowPopupOverlay.h"
 #include "shared/ui/PaintedLabel.h"
 #include "shared/ui/QtFallbackLiquidGlass.h"
+#include "shared/ui/GlobalNotification.h"
 #include "shared/ui/StyledActionMenu.h"
 #ifdef Q_OS_MACOS
 #include "platform/macos/MacFloatingInputBarBridge_p.h"
@@ -1544,7 +1546,11 @@ void ChatArea::showCurrentUserEditProfilePopup()
     }
 
     content->saveRequested = [this](const CurrentUserProfile& editedProfile) {
-        CurrentUser::instance().saveProfile(editedProfile);
+        const QString requestId = CurrentUser::instance().saveProfile(editedProfile);
+        if (requestId.isEmpty()) {
+            GlobalNotification::showFailure(this, QStringLiteral("资料保存失败"));
+            return;
+        }
         if (currentUserEditProfilePopup) {
             currentUserEditProfilePopup->closePopup(InWindowPopupOverlay::DismissReason::Accepted);
         }

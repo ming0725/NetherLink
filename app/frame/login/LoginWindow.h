@@ -1,6 +1,7 @@
 #pragma once
 
 #include "platform/SystemWindow.h"
+#include "app/state/CurrentUserProfile.h"
 
 #include <QColor>
 #include <QElapsedTimer>
@@ -61,7 +62,7 @@ private:
     void updateAutoLoginRules();
     void updateAvatarForAccount(const QString& accountId);
     void attemptLogin();
-    void finishLogin(const LoginAccount& account);
+    void finishLogin(const LoginAccount& account, const CurrentUserProfile& authenticatedProfile = {});
     void resetLoginPending(const QString& buttonText = QString());
     void showRegisterWindow();
     void closeRegisterWindow();

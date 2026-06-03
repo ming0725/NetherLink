@@ -7,10 +7,13 @@
 #include "features/friend/data/FriendNotificationRepository.h"
 #include "features/friend/data/GroupNotificationRepository.h"
 #include "features/friend/ui/FriendProfilePopup.h"
+#include "app/state/CurrentUserProfileRepository.h"
+#include "shared/network/NetworkTypes.h"
 #include "shared/services/AppFonts.h"
 #include "shared/services/ImageService.h"
 #include "shared/ui/popup/InWindowPopupOverlay.h"
 #include "shared/ui/StyledActionMenu.h"
+#include "shared/ui/GlobalNotification.h"
 #include "shared/theme/ThemeManager.h"
 #include "app/state/CurrentUser.h"
 #include <QHBoxLayout>
@@ -44,6 +47,15 @@ ApplicationBar::ApplicationBar(QWidget* parent)
         setAvatarSource(CurrentUser::instance().getAvatarPath());
         update();
     });
+    connect(&CurrentUser::instance(),
+            &CurrentUser::profileSaveFailed,
+            this,
+            [this](const QString&, const NetworkError& error) {
+                GlobalNotification::showFailure(this,
+                                                error.code == QStringLiteral("VERSION_CONFLICT")
+                                                        ? QStringLiteral("资料已更新，请重新打开后再保存")
+                                                        : QStringLiteral("资料保存失败"));
+            });
 
     messageItem = new ApplicationBarItem(
             ":/resources/icon/unselected_message.png",
@@ -439,7 +451,11 @@ void ApplicationBar::showCurrentUserEditProfilePopup()
     }
 
     content->saveRequested = [this](const CurrentUserProfile& editedProfile) {
-        CurrentUser::instance().saveProfile(editedProfile);
+        const QString requestId = CurrentUser::instance().saveProfile(editedProfile);
+        if (requestId.isEmpty()) {
+            GlobalNotification::showFailure(this, QStringLiteral("资料保存失败"));
+            return;
+        }
         if (currentUserEditProfilePopup) {
             currentUserEditProfilePopup->closePopup(InWindowPopupOverlay::DismissReason::Accepted);
         }
@@ -531,7 +547,7 @@ void ApplicationBar::setAvatarStatusChoiceIndex(int index)
     CurrentUserProfile profile = CurrentUser::instance().profile();
     if (profile.isValid() && profile.status != status) {
         profile.status = status;
-        CurrentUser::instance().saveProfile(profile);
+        CurrentUserProfileRepository::instance().saveCurrentUserProfile(profile);
     }
     update();
 }

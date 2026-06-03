@@ -1,6 +1,7 @@
 #include "CurrentUser.h"
 
 #include "CurrentUserProfileRepository.h"
+#include "CurrentUserRemoteDataSource.h"
 
 CurrentUser::CurrentUser(QObject* parent)
     : QObject(parent)
@@ -15,6 +16,26 @@ CurrentUser::CurrentUser(QObject* parent)
                     } else {
                         refreshIdentity();
                     }
+                }
+            });
+    connect(&CurrentUserRemoteDataSource::instance(),
+            &CurrentUserRemoteDataSource::profileUpdated,
+            this,
+            [this](const QString& requestId, const CurrentUserProfile& profile) {
+                if (!m_pendingProfileSaveRequests.remove(requestId)) {
+                    return;
+                }
+                if (isCurrentUserId(profile.userId)) {
+                    applyProfile(profile, ProfileLoadLevel::Full);
+                }
+                emit profileSaveSucceeded(requestId);
+            });
+    connect(&CurrentUserRemoteDataSource::instance(),
+            &CurrentUserRemoteDataSource::profileUpdateFailed,
+            this,
+            [this](const QString& requestId, const NetworkError& error) {
+                if (m_pendingProfileSaveRequests.remove(requestId)) {
+                    emit profileSaveFailed(requestId, error);
                 }
             });
 }
@@ -38,6 +59,8 @@ void CurrentUser::setUserInfo(const QString& userId, const QString& userName, co
     }
 
     refreshIdentity();
+    CurrentUserRemoteDataSource::instance().fetchProfile();
+    CurrentUserRemoteDataSource::instance().fetchPreferences();
     if (!userName.isEmpty()) {
         m_profile.nickName = userName;
     }
@@ -118,13 +141,16 @@ void CurrentUser::refreshProfile()
                  ProfileLoadLevel::Full);
 }
 
-void CurrentUser::saveProfile(const CurrentUserProfile& profile)
+QString CurrentUser::saveProfile(const CurrentUserProfile& profile)
 {
     if (m_userId.isEmpty() || profile.userId != m_userId) {
-        return;
+        return {};
     }
-    CurrentUserProfileRepository::instance().saveCurrentUserProfile(profile);
-    applyProfile(profile, ProfileLoadLevel::Full);
+    const QString requestId = CurrentUserRemoteDataSource::instance().updateProfile(profile);
+    if (!requestId.isEmpty()) {
+        m_pendingProfileSaveRequests.insert(requestId);
+    }
+    return requestId;
 }
 
 void CurrentUser::clear()

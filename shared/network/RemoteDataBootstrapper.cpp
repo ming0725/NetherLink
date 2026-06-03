@@ -115,8 +115,16 @@ QJsonObject profileObject(QJsonObject object)
                                                                 QStringLiteral("avatarUrl")})},
             {QStringLiteral("status"), object.value(QStringLiteral("status")).toString(QStringLiteral("online"))},
             {QStringLiteral("signature"), object.value(QStringLiteral("signature")).toString()},
-            {QStringLiteral("region"), object.value(QStringLiteral("region")).toString()}
+            {QStringLiteral("region"), object.value(QStringLiteral("region")).toString()},
+            {QStringLiteral("version"), object.value(QStringLiteral("version")).toInt()},
+            {QStringLiteral("etag"), object.value(QStringLiteral("etag")).toString()}
     };
+}
+
+QJsonObject preferencesObject(QJsonObject object)
+{
+    object.insert(QStringLiteral("id"), QStringLiteral("current"));
+    return object;
 }
 
 QJsonObject groupObject(QJsonObject object)
@@ -201,6 +209,9 @@ QJsonObject normalizeForDomain(const QString& domain, const QJsonObject& object)
     if (domain == QStringLiteral("current_profiles")) {
         return profileObject(object);
     }
+    if (domain == QStringLiteral("current_preferences")) {
+        return preferencesObject(object);
+    }
     if (domain == QStringLiteral("groups")) {
         return groupObject(object);
     }
@@ -219,6 +230,7 @@ QVector<RemoteDataBootstrapper::FetchSpec> defaultFetchSpecs()
 {
     return {
             {QStringLiteral("current_profiles"), QStringLiteral("/me"), {}, {QStringLiteral("userId"), QStringLiteral("id"), QStringLiteral("userUuid")}, {}, true, false},
+            {QStringLiteral("current_preferences"), QStringLiteral("/me/preferences"), {}, {QStringLiteral("id")}, {}, true, false},
             {QStringLiteral("users"), QStringLiteral("/users"), QStringLiteral("users"), {QStringLiteral("id"), QStringLiteral("userId"), QStringLiteral("userUuid")}, {{QStringLiteral("limit"), kPageLimit}, {QStringLiteral("offset"), 0}}, true, true},
             {QStringLiteral("users"), QStringLiteral("/friends"), QStringLiteral("friends"), {QStringLiteral("id"), QStringLiteral("userId"), QStringLiteral("userUuid"), QStringLiteral("friendUserUuid")}, {{QStringLiteral("limit"), kPageLimit}, {QStringLiteral("offset"), 0}}, false, true},
             {QStringLiteral("groups"), QStringLiteral("/groups"), QStringLiteral("groups"), {QStringLiteral("groupId"), QStringLiteral("id")}, {{QStringLiteral("limit"), kPageLimit}, {QStringLiteral("offset"), 0}}, true, true},

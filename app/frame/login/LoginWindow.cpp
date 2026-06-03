@@ -4,6 +4,7 @@
 #include "LoginInputField.h"
 #include "RegisterWindow.h"
 #include "app/state/CurrentUser.h"
+#include "app/state/CurrentUserPreferencesRepository.h"
 #include "app/state/CurrentUserProfileRepository.h"
 #ifndef Q_OS_MACOS
 #include "platform/windows/WindowsWindowControlButton.h"
@@ -136,6 +137,21 @@ CurrentUserProfile profileFromLoginAccount(const LoginAccount& account)
     profile.status = account.status;
     profile.signature = account.signature;
     profile.region = account.region;
+    return profile;
+}
+
+CurrentUserProfile profileFromAuthResult(const AuthResult& result)
+{
+    CurrentUserProfile profile;
+    profile.userUuid = result.user.userUuid;
+    profile.userId = result.user.userId.isEmpty() ? result.user.userUuid : result.user.userId;
+    profile.nickName = result.user.nickName.isEmpty() ? profile.userId : result.user.nickName;
+    profile.avatarPath = result.user.avatarPath;
+    profile.status = statusFromAuthStatus(result.user.status);
+    profile.signature = result.user.signature;
+    profile.region = result.user.region;
+    profile.version = result.user.version;
+    profile.etag = result.user.etag;
     return profile;
 }
 
@@ -960,7 +976,10 @@ void LoginWindow::setupUi()
         }
 
         LoginAccountRepository::instance().saveAuthenticatedAccount(account);
-        finishLogin(account);
+        if (!result.preferences.isEmpty()) {
+            CurrentUserPreferencesRepository::instance().saveCurrentUserPreferencesObject(result.preferences);
+        }
+        finishLogin(account, profileFromAuthResult(result));
     });
     connect(&NetworkService::instance(), &NetworkService::loginFailed, this, [this](const QString& requestId,
                                                                                    const NetworkError& error) {
@@ -1094,7 +1113,7 @@ void LoginWindow::attemptLogin()
     m_loginRequestId = NetworkService::instance().login(accountId, password);
 }
 
-void LoginWindow::finishLogin(const LoginAccount& account)
+void LoginWindow::finishLogin(const LoginAccount& account, const CurrentUserProfile& authenticatedProfile)
 {
     if (account.accountId.isEmpty()) {
         resetLoginPending();
@@ -1105,7 +1124,9 @@ void LoginWindow::finishLogin(const LoginAccount& account)
 
     m_loginRequestId.clear();
     LoginAccountRepository::instance().recordSuccessfulLogin(account.accountId, account.password);
-    const CurrentUserProfile profile = profileFromLoginAccount(account);
+    const CurrentUserProfile profile = authenticatedProfile.isValid()
+            ? authenticatedProfile
+            : profileFromLoginAccount(account);
     CurrentUserProfileRepository::instance().saveCurrentUserProfile(profile);
     CurrentUser::instance().setUserInfo(profile.userId);
     GlobalNotification::showSuccess(this, QStringLiteral("登录成功"));

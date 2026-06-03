@@ -1,9 +1,11 @@
 #pragma once
 
 #include <QObject>
+#include <QSet>
 #include <QString>
 
 #include "CurrentUserProfile.h"
+#include "shared/network/NetworkTypes.h"
 
 class CurrentUser : public QObject {
     Q_OBJECT
@@ -24,12 +26,14 @@ public:
     bool isCurrentUserId(const QString& userId) const { return !m_userId.isEmpty() && userId == m_userId; }
     void refreshIdentity();
     void refreshProfile();
-    void saveProfile(const CurrentUserProfile& profile);
+    QString saveProfile(const CurrentUserProfile& profile);
     void clear();
 
 signals:
     void identityChanged();
     void profileChanged();
+    void profileSaveSucceeded(const QString& requestId);
+    void profileSaveFailed(const QString& requestId, const NetworkError& error);
 
 private:
     enum class ProfileLoadLevel {
@@ -47,4 +51,5 @@ private:
     QString m_userId;
     mutable CurrentUserProfile m_profile;
     mutable ProfileLoadLevel m_profileLoadLevel = ProfileLoadLevel::None;
+    QSet<QString> m_pendingProfileSaveRequests;
 };

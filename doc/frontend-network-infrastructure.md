@@ -75,9 +75,24 @@
 登录窗口和注册窗口已改为网络优先：
 
 - 登录先走 `/auth/login`，成功后更新 `CurrentUserProfileRepository`、`CurrentUser` 和最近账号缓存。
-- 注册先走 `/auth/register`，成功后缓存账号并回填登录窗口。
+- 登录响应中的 `user.version/user.etag` 和 `preferences.version/preferences.etag` 会写入当前用户资料与偏好缓存。
+- 注册先走 `/auth/register`，成功后缓存账号、当前用户资料、偏好并回填登录窗口。
 - `LoginAccountRepository` 仅作为最近登录账号缓存；当开发后端未启动、网络错误或后端返回 `502/503/504/SERVICE_NOT_READY` 时，展示网络错误或重试入口，不回退到本地账号仓库。
 - `401`、`409` 等明确业务错误按后端错误处理，不回退到本地 fallback。
+
+### 当前用户与偏好 API
+
+已新增 `app/state/CurrentUserRemoteDataSource.h/.cpp`：
+
+- `fetchProfile()` 请求 `GET /api/v1/me`，成功后写入 `CurrentUserProfileRepository`。
+- `updateProfile(profile)` 请求 `PATCH /api/v1/me`，body 发送当前 UI 已有的昵称、签名和地区字段；若模型内有 `etag`，请求带 `If-Match`；若模型内有 `version`，body 带 `expectedVersion`。
+- `fetchPreferences()` 请求 `GET /api/v1/me/preferences`，成功后写入 `CurrentUserPreferencesRepository`。
+- `updatePreferences(preferences)` 请求 `PATCH /api/v1/me/preferences`，同样使用 `If-Match` 与 `expectedVersion` 做版本条件。
+- `CurrentUserProfile` 已保留 `userUuid`、`version`、`etag`；`CurrentUserPreferences` 已保留 `themeColor`、`fontMode`、`inputEffects`、`settings`、`version`、`etag`。
+- `CurrentUser::setUserInfo()` 会在本地身份建立后主动拉取 `/me` 和 `/me/preferences`。
+- 资料编辑入口调用 `CurrentUser::saveProfile()` 后由远程 PATCH 成功结果更新本地 repository；`VERSION_CONFLICT` 等失败会通过现有全局通知提示。
+
+当前头像专用上传尚未接入；资料 PATCH 不把本地头像文件路径当作后端头像更新。左侧头像状态仍是本地呈现状态，不映射到后端当前仅表示账号可用性的 `User.status`。
 
 ### 远程数据 Bootstrap
 
@@ -90,6 +105,7 @@
 - 通过现有 `HttpClient` 拉取当前账号可见的首屏/分页快照，并写入 `LocalDataStore`。
 - 当前 bootstrap 覆盖或追加的 domain：
   - `current_profiles`：`GET /me`
+  - `current_preferences`：`GET /me/preferences`
   - `users`：`GET /users`、`GET /friends`
   - `groups`：`GET /groups`
   - `friend_notifications`：`GET /friend-requests`
@@ -99,8 +115,8 @@
   - `ai_chat_entries`：`GET /ai/conversations`
   - `conversations`：`GET /conversations`
 - 支持 `limit=100&offset=...` 分页续拉；响应字段可为契约数组名、`items`、`data` 或 `results`。
-- 会对常见后端字段做轻量归一化，例如 `userId/nickName/avatarUrl` 到当前 repository 可读的 `id/nick/avatarPath`。
-- 业务写流程、列表刷新信号和更细粒度 remote data source 尚未完成；当前目标是去除静态数据并建立远程快照入口。
+- 会对常见后端字段做轻量归一化，例如 `userId/nickName/avatarUrl` 到当前 repository 可读的 `id/nick/avatarPath`，并保留当前用户 `version/etag`。
+- 当前用户资料和偏好已具备独立 remote data source；其他业务写流程、列表刷新信号和更细粒度 remote data source 尚未完成。
 
 ### HTTP Client
 
@@ -204,36 +220,32 @@
 - 网络不可用时显示错误、重试或空状态，不回退到静态本地数据。
 - AI 模拟流式输出要正常改造成后端 SSE 流式输出，保留分片追加、停止生成和完成替换等现有交互。
 
-1. 当前用户与偏好
-   - 接入 `/me`、`/me/preferences`。
-   - 将 ETag、version 写入业务模型，后续 PATCH 使用 `If-Match` 或 `expectedVersion`。
-
-2. 实时连接全量同步
+1. 实时连接全量同步
    - `AppEventBus::fullSyncRequired` 已挂到 `RemoteDataBootstrapper::syncAll()`。
    - 针对登录后 `RealtimeClient` 连接失败、token 刷新失败补 UI 提示或重试入口。
 
-3. 聊天和通知事件
+2. 聊天和通知事件
    - 为 `chat.message.created`、好友通知、群通知等 event type 建立业务 handler。
    - handler 完成内存/本地状态更新后，再依赖 `EventCursorStore` 推进游标。
    - 如后续需要严格异步 handler 完成语义，可把 dispatcher 改为 handler ack 模式。
 
-4. 文件上传
+3. 文件上传
    - 只在已有入口使用 `UploadClient::uploadFile`，例如头像和聊天图片。
    - 动态模块当前以远程列表、详情和图片展示为主；没有发布器时不要新增动态图片/视频上传。
    - 不接入预签名 PUT、多段上传、聊天文件、聊天音频、聊天视频、帖子视频、直播媒体和 AI 文件上传。
 
-5. AI SSE
+4. AI SSE
    - 用 `SseClient` 替换当前本地模拟流式输出，保留现有流式追加、停止生成和完成态 UI。
    - 发送请求时强制生成并复用 `clientMessageId`。
    - 对 `ai.stream.chunk` 拼接 delta，对 `ai.stream.done` 用服务端消息替换临时消息。
    - `aiFileIds` 固定为空数组或省略，不实现 AI 文件上传、绑定、解析轮询和引用文件回答。
 
-6. 业务 API 封装
+5. 业务 API 封装
    - 每个 feature 增加独立 remote data source，例如 `ChatRemoteDataSource`、`FriendRemoteDataSource`。
    - repository 保留统一业务入口，但不再以静态样例数据作为 fallback；本地只保留缓存、临时 pending 状态、游标和必要的 UI 状态。
    - UI 层只观察 repository/model，不直接调用网络 client。
 
-7. 配置和安全存储
+6. 配置和安全存储
    - 将 base URL、代理、超时接入设置页。
    - access token 保持内存优先。
    - refresh token 是否落盘需结合 macOS Keychain、Windows Credential Manager 或 Qt 平台能力再实现。

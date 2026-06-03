@@ -46,7 +46,7 @@ QString statusToString(UserStatus status)
 UserStatus statusFromString(const QString& value)
 {
     const QString normalized = value.trimmed().toLower();
-    if (normalized == QStringLiteral("online")) {
+    if (normalized == QStringLiteral("active") || normalized == QStringLiteral("online")) {
         return Online;
     }
     if (normalized == QStringLiteral("mining")) {
@@ -58,11 +58,16 @@ UserStatus statusFromString(const QString& value)
     return Offline;
 }
 
-CurrentUserProfile profileFromJson(const QJsonObject& object)
+CurrentUserProfile profileFromJson(QJsonObject object, const QString& responseEtag = {})
 {
+    if (object.value(QStringLiteral("user")).isObject()) {
+        object = object.value(QStringLiteral("user")).toObject();
+    }
+
     CurrentUserProfile profile;
+    profile.userUuid = object.value(QStringLiteral("userUuid")).toString();
     profile.userId = object.value(QStringLiteral("userId")).toString(
-            object.value(QStringLiteral("id")).toString(object.value(QStringLiteral("userUuid")).toString()));
+            object.value(QStringLiteral("id")).toString(profile.userUuid));
     profile.nickName = object.value(QStringLiteral("nickName")).toString(
             object.value(QStringLiteral("nick")).toString(object.value(QStringLiteral("displayName")).toString()));
     profile.avatarPath = object.value(QStringLiteral("avatarPath")).toString(
@@ -70,19 +75,30 @@ CurrentUserProfile profileFromJson(const QJsonObject& object)
     profile.status = statusFromString(object.value(QStringLiteral("status")).toString());
     profile.signature = object.value(QStringLiteral("signature")).toString();
     profile.region = object.value(QStringLiteral("region")).toString();
+    profile.version = object.value(QStringLiteral("version")).toInt();
+    profile.etag = object.value(QStringLiteral("etag")).toString(responseEtag);
+    if (profile.etag.isEmpty()) {
+        profile.etag = responseEtag;
+    }
     return profile;
 }
 
 QJsonObject profileToJson(const CurrentUserProfile& profile)
 {
-    return {
+    QJsonObject object{
+            {QStringLiteral("userUuid"), profile.userUuid},
             {QStringLiteral("userId"), profile.userId},
             {QStringLiteral("nickName"), profile.nickName},
             {QStringLiteral("avatarPath"), profile.avatarPath},
             {QStringLiteral("status"), statusToString(profile.status)},
             {QStringLiteral("signature"), profile.signature},
-            {QStringLiteral("region"), profile.region}
+            {QStringLiteral("region"), profile.region},
+            {QStringLiteral("version"), profile.version}
     };
+    if (!profile.etag.isEmpty()) {
+        object.insert(QStringLiteral("etag"), profile.etag);
+    }
+    return object;
 }
 
 class CurrentUserIdentityRequestOperation final
@@ -165,12 +181,15 @@ void CurrentUserProfileRepository::saveCurrentUserProfile(const CurrentUserProfi
         QMutexLocker locker(&m_mutex);
         const CurrentUserProfile previous = m_profiles.value(profile.userId);
         oldAvatarPath = previous.avatarPath;
-        changed = previous.userId != profile.userId
+        changed = previous.userUuid != profile.userUuid
+                || previous.userId != profile.userId
                 || previous.nickName != profile.nickName
                 || previous.avatarPath != profile.avatarPath
                 || previous.status != profile.status
                 || previous.signature != profile.signature
-                || previous.region != profile.region;
+                || previous.region != profile.region
+                || previous.version != profile.version
+                || previous.etag != profile.etag;
         m_profiles.insert(profile.userId, profile);
     }
 
@@ -184,4 +203,10 @@ void CurrentUserProfileRepository::saveCurrentUserProfile(const CurrentUserProfi
     if (changed) {
         emit currentUserProfileChanged(profile.userId);
     }
+}
+
+void CurrentUserProfileRepository::saveCurrentUserProfileObject(const QJsonObject& object,
+                                                               const QString& responseEtag)
+{
+    saveCurrentUserProfile(profileFromJson(object, responseEtag));
 }
