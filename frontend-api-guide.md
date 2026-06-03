@@ -266,6 +266,13 @@ Authorization: Bearer <accessToken>
 - 重连时带上 `lastEventSeq`。
 - 收到 `sync.required` 表示事件 backlog 不足，前端必须重新拉取会话、通知、好友、群组等关键列表做全量同步。
 
+当前 Qt 前端实现状态：
+
+- `RealtimeClient` 已按上述规则连接、心跳、重连和携带恢复游标。
+- `NetworkService` 会把实时连接状态转发给应用壳；连接失败时主窗口提示正在重试，恢复 ready 后提示已恢复。
+- token 刷新失败会清空内存会话，停止实时连接，并回到登录窗；refresh token 仍不落 SQLite。
+- `sync.required` 已触发 `RemoteDataBootstrapper::syncAll()`；聊天、好友通知、群通知等业务级 event handler 仍是下一阶段工作。
+
 ### 2.3 WebSocket 心跳
 
 后端支持应用层 ping：

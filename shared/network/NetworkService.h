@@ -2,6 +2,7 @@
 
 #include "AuthApiClient.h"
 #include "NetworkTypes.h"
+#include "RealtimeClient.h"
 
 #include <QObject>
 #include <QString>
@@ -32,10 +33,14 @@ signals:
     void registerSucceeded(const QString& requestId, const AuthResult& result);
     void registerFailed(const QString& requestId, const NetworkError& error);
     void logoutFinished(const QString& requestId, bool success, const NetworkError& error);
+    void realtimeStateChanged(RealtimeClient::State state);
+    void realtimeConnectionError(const QString& message);
+    void sessionExpired(const NetworkError& error);
 
 private:
     explicit NetworkService(QObject* parent = nullptr);
     Q_DISABLE_COPY(NetworkService)
 
     BackendEnvironment m_environment;
+    bool m_sessionExpiryNotified = false;
 };

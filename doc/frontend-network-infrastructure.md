@@ -209,6 +209,20 @@
   - key：`global`
   - 只保存 `eventSeq > 0` 的最大值。
 
+### 网络状态 UI 汇总
+
+`NetworkService` 已把底层网络状态汇总为 UI 可消费信号：
+
+- `RealtimeClient::connectionError` 会转发为 `NetworkService::realtimeConnectionError`。
+- `RealtimeClient::stateChanged` 会转发为 `NetworkService::realtimeStateChanged`。
+- `HttpClient::authRefreshFailed` 会停止实时连接，并通过 `NetworkService::sessionExpired` 通知应用壳层。
+
+主窗口当前处理：
+
+- 登录后实时连接失败或进入 stale/reconnecting 时，显示节流后的“实时连接失败，正在重试”全局通知；底层继续按既有退避策略自动重连。
+- 实时连接恢复到 ready，且此前出现过连接失败时，显示“实时连接已恢复”。
+- token 刷新失败时，当前用户状态会被清理，主窗口提示“登录状态已过期”，随后回到登录窗。
+
 ## 下一步
 
 建议按以下顺序接入业务，避免一次性重写导致边界混乱：
@@ -220,32 +234,28 @@
 - 网络不可用时显示错误、重试或空状态，不回退到静态本地数据。
 - AI 模拟流式输出要正常改造成后端 SSE 流式输出，保留分片追加、停止生成和完成替换等现有交互。
 
-1. 实时连接全量同步
-   - `AppEventBus::fullSyncRequired` 已挂到 `RemoteDataBootstrapper::syncAll()`。
-   - 针对登录后 `RealtimeClient` 连接失败、token 刷新失败补 UI 提示或重试入口。
-
-2. 聊天和通知事件
+1. 聊天和通知事件
    - 为 `chat.message.created`、好友通知、群通知等 event type 建立业务 handler。
    - handler 完成内存/本地状态更新后，再依赖 `EventCursorStore` 推进游标。
    - 如后续需要严格异步 handler 完成语义，可把 dispatcher 改为 handler ack 模式。
 
-3. 文件上传
+2. 文件上传
    - 只在已有入口使用 `UploadClient::uploadFile`，例如头像和聊天图片。
    - 动态模块当前以远程列表、详情和图片展示为主；没有发布器时不要新增动态图片/视频上传。
    - 不接入预签名 PUT、多段上传、聊天文件、聊天音频、聊天视频、帖子视频、直播媒体和 AI 文件上传。
 
-4. AI SSE
+3. AI SSE
    - 用 `SseClient` 替换当前本地模拟流式输出，保留现有流式追加、停止生成和完成态 UI。
    - 发送请求时强制生成并复用 `clientMessageId`。
    - 对 `ai.stream.chunk` 拼接 delta，对 `ai.stream.done` 用服务端消息替换临时消息。
    - `aiFileIds` 固定为空数组或省略，不实现 AI 文件上传、绑定、解析轮询和引用文件回答。
 
-5. 业务 API 封装
+4. 业务 API 封装
    - 每个 feature 增加独立 remote data source，例如 `ChatRemoteDataSource`、`FriendRemoteDataSource`。
    - repository 保留统一业务入口，但不再以静态样例数据作为 fallback；本地只保留缓存、临时 pending 状态、游标和必要的 UI 状态。
    - UI 层只观察 repository/model，不直接调用网络 client。
 
-6. 配置和安全存储
+5. 配置和安全存储
    - 将 base URL、代理、超时接入设置页。
    - access token 保持内存优先。
    - refresh token 是否落盘需结合 macOS Keychain、Windows Credential Manager 或 Qt 平台能力再实现。

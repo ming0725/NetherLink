@@ -10,6 +10,7 @@
 - 帖子、评论、好友通知、群通知、AI 会话列表均读取 SQLite 快照；空库时返回空列表，由 `RemoteDataBootstrapper` 登录后拉取服务端数据填充。
 - 点赞状态、评论数增量、评论点赞状态、未读状态、最近登录账号仍写入 SQLite，作为临时或用户交互状态。
 - AI 聊天本地新建/编辑能力仍会写入 SQLite；后续服务端 SSE 接入后再细化消息同步和冲突处理。
+- 认证 token 仍只保存在 `AuthSession` 内存态；token 刷新失败后由 `NetworkService::sessionExpired` 通知应用壳清理当前用户并回到登录窗，不写入 SQLite。
 
 ## 本地结构
 
@@ -60,6 +61,8 @@ notifications
 conversations
 network_event_cursor
 ```
+
+`network_event_cursor` 只记录已成功处理的实时事件游标，不保存 access token、refresh token 或 WebSocket 连接状态。
 
 已删除的静态资源目录：
 

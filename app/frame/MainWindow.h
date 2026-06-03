@@ -3,6 +3,8 @@
 #include "DefaultPage.h"
 #include "ApplicationBar.h"
 #include "platform/SystemWindow.h"
+#include "shared/network/RealtimeClient.h"
+#include <QElapsedTimer>
 #include <QPointer>
 #include <QMouseEvent>
 #include <QMoveEvent>
@@ -45,6 +47,8 @@ private:
     void closeSettingsWindow();
     void setSystemFloatingBarsSuppressed(bool suppressed);
     void layoutWindow();
+    void showRealtimeFailureNotice(const QString& message);
+    void handleRealtimeStateChanged(RealtimeClient::State state);
 
     ApplicationBar *appBar;
     QWidget *titleBar;
@@ -59,5 +63,7 @@ private:
     DefaultPage* m_defaultPage = nullptr;
     QPointer<SettingsWindow> m_settingsWindow;
     QPointer<QWidget> m_pendingFocusClear;
+    QElapsedTimer m_realtimeNoticeClock;
+    bool m_realtimeHadFailure = false;
     bool m_systemFloatingBarsSuppressed = false;
 };

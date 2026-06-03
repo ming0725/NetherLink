@@ -19,6 +19,7 @@ NetworkService::NetworkService(QObject* parent)
 
     connect(&AuthApiClient::instance(), &AuthApiClient::loginSucceeded, this, [this](const QString& requestId,
                                                                                     const AuthResult& result) {
+        m_sessionExpiryNotified = false;
         emit loginSucceeded(requestId, result);
         RemoteDataBootstrapper::instance().syncAll();
         startRealtime();
@@ -28,6 +29,7 @@ NetworkService::NetworkService(QObject* parent)
             &AuthApiClient::registerSucceeded,
             this,
             [this](const QString& requestId, const AuthResult& result) {
+                m_sessionExpiryNotified = false;
                 emit registerSucceeded(requestId, result);
                 RemoteDataBootstrapper::instance().syncAll();
                 startRealtime();
@@ -39,6 +41,16 @@ NetworkService::NetworkService(QObject* parent)
         stopRealtime();
         AuthSession::instance().clear();
         emit logoutFinished(requestId, success, error);
+    });
+    connect(&RealtimeClient::instance(), &RealtimeClient::stateChanged, this, &NetworkService::realtimeStateChanged);
+    connect(&RealtimeClient::instance(), &RealtimeClient::connectionError, this, &NetworkService::realtimeConnectionError);
+    connect(&HttpClient::instance(), &HttpClient::authRefreshFailed, this, [this](const NetworkError& error) {
+        stopRealtime();
+        if (m_sessionExpiryNotified) {
+            return;
+        }
+        m_sessionExpiryNotified = true;
+        emit sessionExpired(error);
     });
 }
 

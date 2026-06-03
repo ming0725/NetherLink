@@ -7,6 +7,7 @@
 #include "shared/network/NetworkService.h"
 #include "shared/services/AudioService.h"
 #include "shared/theme/ThemeManager.h"
+#include "shared/ui/GlobalNotification.h"
 
 #include <QPointer>
 
@@ -88,6 +89,21 @@ int main(int argc, char *argv[])
                 }
                 CurrentUser::instance().clear();
                 completeLogout();
+            });
+        });
+        QObject::connect(&NetworkService::instance(),
+                         &NetworkService::sessionExpired,
+                         window,
+                         [&, window, completeLogout](const NetworkError&) {
+            if (mainWindow != window) {
+                return;
+            }
+            CurrentUser::instance().clear();
+            GlobalNotification::showFailure(window, QStringLiteral("登录状态已过期"));
+            QTimer::singleShot(900, window, [&, window, completeLogout]() {
+                if (mainWindow == window) {
+                    completeLogout();
+                }
             });
         });
         QObject::connect(window, &QObject::destroyed, &a, [&, window]() {

@@ -5,8 +5,10 @@
 #include "features/post/ui/PostApplication.h"
 #include "SettingsWindow.h"
 #include "platform/windows/WindowsWindowControlButton.h"
+#include "shared/network/NetworkService.h"
 #include "shared/ui/IconLineEdit.h"
 #include "shared/ui/FloatingInputBar.h"
+#include "shared/ui/GlobalNotification.h"
 #include "shared/ui/popup/InWindowPopupOverlay.h"
 #include "shared/theme/ThemeManager.h"
 #include <QAbstractButton>
@@ -20,6 +22,7 @@
 namespace {
 
 constexpr int kMainWindowMinimumWidth = 820;
+constexpr qint64 kRealtimeNoticeThrottleMs = 15000;
 
 IconLineEdit* iconLineEditForWidget(QWidget* widget)
 {
@@ -164,6 +167,10 @@ MainWindow::MainWindow(QWidget* parent)
             this, &MainWindow::openAppearanceSettingsWindow);
     connect(appBar, &ApplicationBar::logoutRequested,
             this, &MainWindow::logoutRequested);
+    connect(&NetworkService::instance(), &NetworkService::realtimeConnectionError,
+            this, &MainWindow::showRealtimeFailureNotice);
+    connect(&NetworkService::instance(), &NetworkService::realtimeStateChanged,
+            this, &MainWindow::handleRealtimeStateChanged);
 
     QScreen* screen = QGuiApplication::primaryScreen();
     if (screen) {
@@ -381,6 +388,37 @@ void MainWindow::setSystemFloatingBarsSuppressed(bool suppressed)
         m_postApp->setSystemFloatingBarsSuppressed(suppressed);
     }
 #endif
+}
+
+void MainWindow::showRealtimeFailureNotice(const QString& message)
+{
+    Q_UNUSED(message);
+
+    m_realtimeHadFailure = true;
+    if (m_realtimeNoticeClock.isValid() && m_realtimeNoticeClock.elapsed() < kRealtimeNoticeThrottleMs) {
+        return;
+    }
+
+    if (!m_realtimeNoticeClock.isValid()) {
+        m_realtimeNoticeClock.start();
+    } else {
+        m_realtimeNoticeClock.restart();
+    }
+    GlobalNotification::showFailure(this, QStringLiteral("实时连接失败，正在重试"));
+}
+
+void MainWindow::handleRealtimeStateChanged(RealtimeClient::State state)
+{
+    if (state == RealtimeClient::State::Stale || state == RealtimeClient::State::Reconnecting) {
+        showRealtimeFailureNotice(QString());
+        return;
+    }
+
+    if (state == RealtimeClient::State::Ready && m_realtimeHadFailure) {
+        m_realtimeHadFailure = false;
+        m_realtimeNoticeClock.invalidate();
+        GlobalNotification::showSuccess(this, QStringLiteral("实时连接已恢复"));
+    }
 }
 
 void MainWindow::openConversationFromContacts(const QString& conversationId)
