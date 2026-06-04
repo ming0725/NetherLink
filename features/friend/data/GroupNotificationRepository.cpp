@@ -13,6 +13,7 @@
 #include "shared/data/LocalDataStore.h"
 #include "shared/data/RepositoryTemplate.h"
 #include "shared/data/UnreadStateRepository.h"
+#include "shared/network/AppEventBus.h"
 
 namespace {
 
@@ -209,6 +210,90 @@ GroupNotificationRepository& GroupNotificationRepository::instance()
 GroupNotificationRepository::GroupNotificationRepository(QObject* parent)
     : QObject(parent)
 {
+    connect(&LocalDataStore::instance(),
+            &LocalDataStore::activeAccountChanged,
+            this,
+            [this](const QString&) {
+                reloadFromStore();
+            });
+    connect(&LocalDataStore::instance(),
+            &LocalDataStore::domainChanged,
+            this,
+            [this](const QString& domain) {
+                if (domain == QStringLiteral("group_notifications")) {
+                    reloadFromStore();
+                }
+            },
+            Qt::QueuedConnection);
+    connect(&AppEventBus::instance(),
+            &AppEventBus::typedEventReceived,
+            this,
+            [this](const QString& type, const QJsonObject& payload, const RealtimeEvent&) {
+                if (type != QStringLiteral("group.notification.created") &&
+                    !type.startsWith(QStringLiteral("group.join_request."))) {
+                    return;
+                }
+
+                QJsonObject object = payload.value(QStringLiteral("notification")).toObject();
+                if (object.isEmpty()) {
+                    object = payload.value(QStringLiteral("request")).toObject();
+                }
+                if (object.isEmpty()) {
+                    object = payload;
+                }
+                GroupNotification notification = groupNotificationFromJson(object);
+                if (notification.id.isEmpty()) {
+                    return;
+                }
+
+                ensureLoaded();
+                for (const GroupNotification& previous : m_notifications) {
+                    if (previous.id != notification.id) {
+                        continue;
+                    }
+                    if (notification.groupId.isEmpty()) {
+                        notification.groupId = previous.groupId;
+                    }
+                    if (notification.actorUserId.isEmpty()) {
+                        notification.actorUserId = previous.actorUserId;
+                    }
+                    if (notification.operatorUserId.isEmpty()) {
+                        notification.operatorUserId = previous.operatorUserId;
+                    }
+                    if (notification.message.isEmpty()) {
+                        notification.message = previous.message;
+                    }
+                    if (!notification.createdAt.isValid()) {
+                        notification.createdAt = previous.createdAt;
+                    }
+                    notification.actorRole = previous.actorRole;
+                    break;
+                }
+                if (!notification.createdAt.isValid()) {
+                    notification.createdAt = QDateTime::currentDateTime();
+                }
+                if (type.endsWith(QStringLiteral(".accepted"))) {
+                    notification.status = GroupNotificationStatus::Accepted;
+                    notification.unread = false;
+                } else if (type.endsWith(QStringLiteral(".rejected"))) {
+                    notification.status = GroupNotificationStatus::Rejected;
+                    notification.unread = false;
+                } else if (type == QStringLiteral("group.notification.created") ||
+                           type.endsWith(QStringLiteral(".created"))) {
+                    if (notification.status == GroupNotificationStatus::None) {
+                        notification.status = GroupNotificationStatus::Pending;
+                    }
+                    notification.unread = true;
+                }
+
+                LocalDataStore::instance().upsertValue(QStringLiteral("group_notifications"),
+                                                       notification.id,
+                                                       groupNotificationToJson(notification));
+                UnreadStateRepository::instance().setUnread(kGroupNotificationUnreadScope,
+                                                            notification.id,
+                                                            notification.unread);
+                reloadFromStore();
+            });
 }
 
 void GroupNotificationRepository::ensureLoaded() const
@@ -233,6 +318,14 @@ void GroupNotificationRepository::ensureLoaded() const
         }
     }
     self->m_loaded = true;
+}
+
+void GroupNotificationRepository::reloadFromStore()
+{
+    m_notifications.clear();
+    m_loaded = false;
+    ensureLoaded();
+    emit notificationListChanged();
 }
 
 QVector<GroupNotification> GroupNotificationRepository::requestNotificationList(

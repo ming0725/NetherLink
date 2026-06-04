@@ -271,7 +271,11 @@ Authorization: Bearer <accessToken>
 - `RealtimeClient` 已按上述规则连接、心跳、重连和携带恢复游标。
 - `NetworkService` 会把实时连接状态转发给应用壳；连接失败时主窗口提示正在重试，恢复 ready 后提示已恢复。
 - token 刷新失败会清空内存会话，停止实时连接，并回到登录窗；refresh token 仍不落 SQLite。
-- `sync.required` 已触发 `RemoteDataBootstrapper::syncAll()`；聊天、好友通知、群通知等业务级 event handler 仍是下一阶段工作。
+- `sync.required` 已触发 `RemoteDataBootstrapper::syncAll()`。
+- `MessageRepository` 已接入 `chat.message.created`、`chat.message.sent`、`chat.conversation.updated`、`chat.conversation.sync.updated`、`chat.read.updated` 的同步缓存 handler，会把消息写入 `chat_messages`、把会话状态写入 `conversations`，并从这两个 domain 重建会话列表。
+- `FriendNotificationRepository` 已接入 `friend.request.*`，会更新 `friend_notifications` 和 `friend_requests` 未读 scope。
+- `GroupNotificationRepository` 已接入 `group.notification.created` 与 `group.join_request.*`，会更新 `group_notifications` domain 和同名未读 scope。
+- 当前业务 handler 都是同步本地缓存写入；`RealtimeEventDispatcher` 在 `AppEventBus::publish()` 返回后推进游标。后续若 handler 需要等待异步补拉，再升级为 ack 模式。
 
 ### 2.3 WebSocket 心跳
 
@@ -1525,6 +1529,8 @@ POST /api/v1/ai/messages/{messageId}/feedback
 | `presence.updated` | 更新好友在线状态 |
 | `sync.required` | 全量重新拉取关键列表 |
 | `client.error` | 根据 `payload.requestType` 和 `payload.code` 处理失败命令 |
+
+当前 Qt 前端已落地 `chat.message.created`、`chat.message.sent`、`chat.conversation.updated`、`chat.conversation.sync.updated`、`chat.read.updated`、`friend.request.*`、`group.notification.created`、`group.join_request.*` 的同步缓存处理。尚未接入的事件继续安全忽略或由已有 `profile.updated`、`group.updated` 等局部 handler 消费。
 
 ## 12. 前端实现建议
 

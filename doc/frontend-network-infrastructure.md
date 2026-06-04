@@ -209,6 +209,27 @@
   - key：`global`
   - 只保存 `eventSeq > 0` 的最大值。
 
+### 聊天和通知实时事件
+
+已在现有 repository 层接入首批业务实时事件 handler：
+
+- `MessageRepository`
+  - 监听 `chat.message.created` 和 `chat.message.sent`。
+  - 将后端 `Message` payload 转成现有 `TextMessage`、`ImageMessage` 或撤回占位消息。
+  - 按 `messageId` 去重后写入内存消息列表，并同步持久化到 `LocalDataStore` 的 `chat_messages` domain。
+  - 监听 `chat.conversation.updated`、`chat.conversation.sync.updated`、`chat.read.updated`，把会话状态写入 `conversations` domain。
+  - 启动、切换账号或本地缓存变化时，会从 `conversations` 和 `chat_messages` 重建会话列表、未读数、置顶、免打扰和首批消息。
+- `FriendNotificationRepository`
+  - 监听 `friend.request.*`。
+  - 将请求创建、同意、拒绝事件写入 `friend_notifications` domain。
+  - 同步更新 `UnreadStateRepository` 中 `friend_requests` scope 的未读状态。
+- `GroupNotificationRepository`
+  - 监听 `group.notification.created` 和 `group.join_request.*`。
+  - 将群通知创建、同意、拒绝事件写入 `group_notifications` domain。
+  - 同步更新 `UnreadStateRepository` 中 `group_notifications` scope 的未读状态。
+
+当前 handler 均为同步缓存更新；`RealtimeEventDispatcher` 在 `AppEventBus::publish()` 返回后推进 `EventCursorStore` 游标，因此这些已接入的同步 handler 完成后才会保存 `eventSeq`。若后续接入需要等待 HTTP 补拉或异步写入的 handler，再把 dispatcher 升级为 handler ack 模式。
+
 ### 网络状态 UI 汇总
 
 `NetworkService` 已把底层网络状态汇总为 UI 可消费信号：
@@ -234,28 +255,23 @@
 - 网络不可用时显示错误、重试或空状态，不回退到静态本地数据。
 - AI 模拟流式输出要正常改造成后端 SSE 流式输出，保留分片追加、停止生成和完成替换等现有交互。
 
-1. 聊天和通知事件
-   - 为 `chat.message.created`、好友通知、群通知等 event type 建立业务 handler。
-   - handler 完成内存/本地状态更新后，再依赖 `EventCursorStore` 推进游标。
-   - 如后续需要严格异步 handler 完成语义，可把 dispatcher 改为 handler ack 模式。
-
-2. 文件上传
+1. 文件上传
    - 只在已有入口使用 `UploadClient::uploadFile`，例如头像和聊天图片。
    - 动态模块当前以远程列表、详情和图片展示为主；没有发布器时不要新增动态图片/视频上传。
    - 不接入预签名 PUT、多段上传、聊天文件、聊天音频、聊天视频、帖子视频、直播媒体和 AI 文件上传。
 
-3. AI SSE
+2. AI SSE
    - 用 `SseClient` 替换当前本地模拟流式输出，保留现有流式追加、停止生成和完成态 UI。
    - 发送请求时强制生成并复用 `clientMessageId`。
    - 对 `ai.stream.chunk` 拼接 delta，对 `ai.stream.done` 用服务端消息替换临时消息。
    - `aiFileIds` 固定为空数组或省略，不实现 AI 文件上传、绑定、解析轮询和引用文件回答。
 
-4. 业务 API 封装
+3. 业务 API 封装
    - 每个 feature 增加独立 remote data source，例如 `ChatRemoteDataSource`、`FriendRemoteDataSource`。
    - repository 保留统一业务入口，但不再以静态样例数据作为 fallback；本地只保留缓存、临时 pending 状态、游标和必要的 UI 状态。
    - UI 层只观察 repository/model，不直接调用网络 client。
 
-5. 配置和安全存储
+4. 配置和安全存储
    - 将 base URL、代理、超时接入设置页。
    - access token 保持内存优先。
    - refresh token 是否落盘需结合 macOS Keychain、Windows Credential Manager 或 Qt 平台能力再实现。

@@ -11,6 +11,7 @@
 #include "shared/data/LocalDataStore.h"
 #include "shared/data/RepositoryTemplate.h"
 #include "shared/data/UnreadStateRepository.h"
+#include "shared/network/AppEventBus.h"
 #include "shared/types/ChatMessage.h"
 
 namespace {
@@ -159,6 +160,88 @@ FriendNotificationRepository& FriendNotificationRepository::instance()
 FriendNotificationRepository::FriendNotificationRepository(QObject* parent)
     : QObject(parent)
 {
+    connect(&LocalDataStore::instance(),
+            &LocalDataStore::activeAccountChanged,
+            this,
+            [this](const QString&) {
+                reloadFromStore();
+            });
+    connect(&LocalDataStore::instance(),
+            &LocalDataStore::domainChanged,
+            this,
+            [this](const QString& domain) {
+                if (domain == QStringLiteral("friend_notifications")) {
+                    reloadFromStore();
+                }
+            },
+            Qt::QueuedConnection);
+    connect(&AppEventBus::instance(),
+            &AppEventBus::typedEventReceived,
+            this,
+            [this](const QString& type, const QJsonObject& payload, const RealtimeEvent&) {
+                if (!type.startsWith(QStringLiteral("friend.request."))) {
+                    return;
+                }
+
+                QJsonObject object = payload.value(QStringLiteral("request")).toObject();
+                if (object.isEmpty()) {
+                    object = payload.value(QStringLiteral("notification")).toObject();
+                }
+                if (object.isEmpty()) {
+                    object = payload;
+                }
+                FriendNotification notification = notificationFromJson(object);
+                if (notification.id.isEmpty()) {
+                    return;
+                }
+
+                ensureLoaded();
+                for (const FriendNotification& previous : m_notifications) {
+                    if (previous.id != notification.id) {
+                        continue;
+                    }
+                    if (notification.fromUserId.isEmpty()) {
+                        notification.fromUserId = previous.fromUserId;
+                    }
+                    if (notification.message.isEmpty()) {
+                        notification.message = previous.message;
+                    }
+                    if (!notification.requestDate.isValid()) {
+                        notification.requestDate = previous.requestDate;
+                    }
+                    if (notification.sourceGroupId.isEmpty()) {
+                        notification.sourceGroupId = previous.sourceGroupId;
+                        notification.sourceGroupName = previous.sourceGroupName;
+                        notification.sourceGroupMemberName = previous.sourceGroupMemberName;
+                    }
+                    if (notification.sourceFriendId.isEmpty()) {
+                        notification.sourceFriendId = previous.sourceFriendId;
+                        notification.sourceFriendName = previous.sourceFriendName;
+                    }
+                    break;
+                }
+                if (!notification.requestDate.isValid()) {
+                    notification.requestDate = QDateTime::currentDateTime();
+                }
+                if (type.endsWith(QStringLiteral(".accepted"))) {
+                    notification.status = NotificationStatus::Accepted;
+                    notification.unread = false;
+                } else if (type.endsWith(QStringLiteral(".rejected"))) {
+                    notification.status = NotificationStatus::Rejected;
+                    notification.unread = false;
+                } else if (type.endsWith(QStringLiteral(".created"))) {
+                    notification.status = NotificationStatus::Pending;
+                    notification.unread = true;
+                }
+
+                LocalDataStore::instance().upsertValue(QStringLiteral("friend_notifications"),
+                                                       notification.id,
+                                                       notificationToJson(notification));
+                UnreadStateRepository::instance().setUnread(kFriendRequestUnreadScope,
+                                                            notification.id,
+                                                            notification.unread);
+                reloadFromStore();
+            });
 }
 
 void FriendNotificationRepository::ensureLoaded() const
@@ -183,6 +266,14 @@ void FriendNotificationRepository::ensureLoaded() const
         }
     }
     self->m_loaded = true;
+}
+
+void FriendNotificationRepository::reloadFromStore()
+{
+    m_notifications.clear();
+    m_loaded = false;
+    ensureLoaded();
+    emit notificationListChanged();
 }
 
 QVector<FriendNotification> FriendNotificationRepository::requestNotificationList(

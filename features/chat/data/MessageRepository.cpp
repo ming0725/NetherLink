@@ -1,6 +1,8 @@
 #include "MessageRepository.h"
 
 #include <QMetaObject>
+#include <QJsonArray>
+#include <QJsonObject>
 #include <QRunnable>
 #include <QSet>
 #include <QThreadPool>
@@ -11,7 +13,9 @@
 #include <random>
 
 #include "features/chat/data/GroupRepository.h"
+#include "shared/data/LocalDataStore.h"
 #include "shared/data/RepositoryTemplate.h"
+#include "shared/network/AppEventBus.h"
 #include "features/friend/data/UserRepository.h"
 #include "app/state/CurrentUser.h"
 
@@ -361,6 +365,260 @@ QDateTime dateTimeAt(const QDate& date, int hour, int minute)
     return QDateTime(date, QTime(hour, minute));
 }
 
+QString firstString(const QJsonObject& object, const QStringList& keys)
+{
+    for (const QString& key : keys) {
+        const QString value = object.value(key).toString();
+        if (!value.isEmpty()) {
+            return value;
+        }
+    }
+    return {};
+}
+
+QDateTime firstDateTime(const QJsonObject& object, const QStringList& keys)
+{
+    for (const QString& key : keys) {
+        const QString text = object.value(key).toString();
+        if (text.isEmpty()) {
+            continue;
+        }
+        QDateTime value = QDateTime::fromString(text, Qt::ISODateWithMs);
+        if (!value.isValid()) {
+            value = QDateTime::fromString(text, Qt::ISODate);
+        }
+        if (value.isValid()) {
+            return value;
+        }
+    }
+    return {};
+}
+
+QString conversationIdFromMessageObject(const QJsonObject& object)
+{
+    return firstString(object, {QStringLiteral("conversationId"),
+                                QStringLiteral("conversationID"),
+                                QStringLiteral("chatId"),
+                                QStringLiteral("roomId")});
+}
+
+QString messageIdFromObject(const QJsonObject& object)
+{
+    return firstString(object, {QStringLiteral("messageId"),
+                                QStringLiteral("id"),
+                                QStringLiteral("clientMessageId")});
+}
+
+QString chatMessageCacheKey(const QString& conversationId, const QString& messageId)
+{
+    if (conversationId.isEmpty() || messageId.isEmpty()) {
+        return {};
+    }
+    return conversationId + QLatin1Char(':') + messageId;
+}
+
+QString messageTypeToString(MessageType type)
+{
+    switch (type) {
+    case MessageType::Image:
+        return QStringLiteral("image");
+    case MessageType::Recall:
+        return QStringLiteral("recall");
+    case MessageType::GroupMemberJoined:
+        return QStringLiteral("group_member_joined");
+    case MessageType::GroupSystemEvent:
+        return QStringLiteral("group_system_event");
+    case MessageType::File:
+        return QStringLiteral("file");
+    case MessageType::Voice:
+        return QStringLiteral("voice");
+    case MessageType::Text:
+    default:
+        return QStringLiteral("text");
+    }
+}
+
+QString textContentFromMessageObject(const QJsonObject& object)
+{
+    const QJsonObject content = object.value(QStringLiteral("content")).toObject();
+    const QString nestedText = content.value(QStringLiteral("text")).toString();
+    if (!nestedText.isEmpty()) {
+        return nestedText;
+    }
+    return firstString(object, {QStringLiteral("text"),
+                                QStringLiteral("message"),
+                                QStringLiteral("body"),
+                                QStringLiteral("previewText")});
+}
+
+QString imageSourceFromMessageObject(const QJsonObject& object)
+{
+    const QJsonArray attachments = object.value(QStringLiteral("attachments")).toArray();
+    for (const QJsonValue& value : attachments) {
+        const QJsonObject attachment = value.toObject();
+        const QString source = firstString(attachment, {QStringLiteral("url"),
+                                                        QStringLiteral("fileUrl"),
+                                                        QStringLiteral("thumbnailUrl"),
+                                                        QStringLiteral("fileId")});
+        if (!source.isEmpty()) {
+            return source;
+        }
+    }
+    const QJsonObject content = object.value(QStringLiteral("content")).toObject();
+    return firstString(content, {QStringLiteral("url"),
+                                 QStringLiteral("imageUrl"),
+                                 QStringLiteral("fileId")});
+}
+
+GroupRole groupRoleForSender(const QString& conversationId, const QString& senderId)
+{
+    if (conversationId.isEmpty() || senderId.isEmpty()) {
+        return GroupRole::Member;
+    }
+    const Group group = GroupRepository::instance().requestGroupDetail({conversationId});
+    return group.groupId.isEmpty() ? GroupRole::Member : groupRoleForUser(group, senderId);
+}
+
+QSharedPointer<ChatMessage> chatMessageFromJson(const QJsonObject& object)
+{
+    const QString messageId = messageIdFromObject(object);
+    const QString conversationId = conversationIdFromMessageObject(object);
+    const QString senderId = firstString(object, {QStringLiteral("senderId"),
+                                                  QStringLiteral("senderUuid"),
+                                                  QStringLiteral("senderUserId"),
+                                                  QStringLiteral("fromUserId"),
+                                                  QStringLiteral("fromUserUuid"),
+                                                  QStringLiteral("actorUserId"),
+                                                  QStringLiteral("actorUuid")});
+    const CurrentUser& currentUser = CurrentUser::instance();
+    const bool isFromMe = !senderId.isEmpty() && currentUser.isCurrentUserId(senderId);
+    const bool isGroupChat = object.value(QStringLiteral("isGroupChat")).toBool(GroupRepository::instance().contains(conversationId));
+    QString senderName = firstString(object, {QStringLiteral("senderName"),
+                                              QStringLiteral("senderNickName"),
+                                              QStringLiteral("senderNickname"),
+                                              QStringLiteral("fromUserName"),
+                                              QStringLiteral("actorName")});
+    if (senderName.isEmpty()) {
+        senderName = userNameForIdentity(senderId);
+    }
+    const GroupRole role = isGroupChat ? groupRoleForSender(conversationId, senderId) : GroupRole::Member;
+
+    QSharedPointer<ChatMessage> message;
+    const QString type = object.value(QStringLiteral("type")).toString(QStringLiteral("text")).trimmed().toLower();
+    if (type == QStringLiteral("image")) {
+        message = QSharedPointer<ChatMessage>(new ImageMessage(imageSourceFromMessageObject(object),
+                                                               isFromMe,
+                                                               senderId,
+                                                               isGroupChat,
+                                                               senderName,
+                                                               role));
+    } else if (type == QStringLiteral("recall") || object.contains(QStringLiteral("recalledAt"))) {
+        const QString displayText = firstString(object, {QStringLiteral("displayText"),
+                                                         QStringLiteral("recallText")});
+        message = QSharedPointer<ChatMessage>(new RecallMessage(displayText.isEmpty()
+                                                                        ? QStringLiteral("消息已撤回")
+                                                                        : displayText,
+                                                                textContentFromMessageObject(object),
+                                                                false,
+                                                                isFromMe,
+                                                                senderId,
+                                                                isGroupChat,
+                                                                senderName,
+                                                                role));
+    } else {
+        message = QSharedPointer<ChatMessage>(new TextMessage(textContentFromMessageObject(object),
+                                                              isFromMe,
+                                                              senderId,
+                                                              isGroupChat,
+                                                              senderName,
+                                                              role));
+    }
+
+    if (!messageId.isEmpty()) {
+        message->setMessageId(messageId);
+    }
+    const QDateTime timestamp = firstDateTime(object, {QStringLiteral("createdAt"),
+                                                       QStringLiteral("serverReceivedAt"),
+                                                       QStringLiteral("clientSentAt"),
+                                                       QStringLiteral("timestamp")});
+    if (timestamp.isValid()) {
+        message->setTimestamp(timestamp.toLocalTime());
+    }
+    message->setReferencedMessageId(firstString(object, {QStringLiteral("referencedMessageId"),
+                                                         QStringLiteral("replyToMessageId")}));
+    return message;
+}
+
+QJsonObject chatMessageToJson(const QString& conversationId, const QSharedPointer<ChatMessage>& message)
+{
+    if (conversationId.isEmpty() || message.isNull()) {
+        return {};
+    }
+
+    QJsonObject content;
+    if (message->getType() == MessageType::Text) {
+        content.insert(QStringLiteral("text"), static_cast<const TextMessage*>(message.data())->getText());
+    } else if (message->getType() == MessageType::Image) {
+        content.insert(QStringLiteral("url"), static_cast<const ImageMessage*>(message.data())->getImageSource());
+    } else if (message->getType() == MessageType::Recall) {
+        content.insert(QStringLiteral("text"), static_cast<const RecallMessage*>(message.data())->getOriginalText());
+    } else {
+        content.insert(QStringLiteral("text"), message->getContent());
+    }
+
+    QJsonObject object{
+            {QStringLiteral("messageId"), message->getMessageId()},
+            {QStringLiteral("conversationId"), conversationId},
+            {QStringLiteral("senderId"), message->getSenderId()},
+            {QStringLiteral("senderName"), message->getSenderName()},
+            {QStringLiteral("type"), messageTypeToString(message->getType())},
+            {QStringLiteral("content"), content},
+            {QStringLiteral("createdAt"), message->getTimestamp().toUTC().toString(Qt::ISODateWithMs)},
+            {QStringLiteral("isGroupChat"), message->isInGroupChat()}
+    };
+    if (!message->getReferencedMessageId().isEmpty()) {
+        object.insert(QStringLiteral("referencedMessageId"), message->getReferencedMessageId());
+    }
+    if (message->getType() == MessageType::Recall) {
+        object.insert(QStringLiteral("displayText"), message->getContent());
+        object.insert(QStringLiteral("recalledAt"), message->getTimestamp().toUTC().toString(Qt::ISODateWithMs));
+    }
+    return object;
+}
+
+ConversationSyncState conversationSyncStateFromJson(const QJsonObject& object)
+{
+    QJsonObject syncState = object.value(QStringLiteral("syncState")).toObject();
+    if (syncState.isEmpty()) {
+        syncState = object;
+    }
+
+    ConversationSyncState state;
+    state.conversationId = firstString(object, {QStringLiteral("conversationId"), QStringLiteral("id")});
+    state.unreadCount = syncState.value(QStringLiteral("unreadCount")).toInt();
+    state.isDoNotDisturb = syncState.value(QStringLiteral("isDnd")).toBool(
+            syncState.value(QStringLiteral("isDoNotDisturb")).toBool());
+    state.isPinned = syncState.value(QStringLiteral("isPinned")).toBool();
+    state.messageListTime = firstDateTime(object, {QStringLiteral("lastMessageAt"),
+                                                   QStringLiteral("updatedAt"),
+                                                   QStringLiteral("createdAt")});
+    state.lastReadAt = firstDateTime(syncState, {QStringLiteral("lastReadAt")});
+    return state;
+}
+
+QJsonObject conversationObjectFromPayload(QJsonObject payload)
+{
+    QJsonObject object = payload.value(QStringLiteral("conversation")).toObject();
+    if (object.isEmpty()) {
+        object = payload;
+    }
+    const QString conversationId = firstString(payload, {QStringLiteral("conversationId"), QStringLiteral("id")});
+    if (!conversationId.isEmpty() && !object.contains(QStringLiteral("conversationId"))) {
+        object.insert(QStringLiteral("conversationId"), conversationId);
+    }
+    return object;
+}
+
 enum class SampleLatestBucket {
     Today,
     Yesterday,
@@ -666,112 +924,138 @@ private:
 MessageRepository::MessageRepository(QObject* parent)
         : QObject(parent)
 {
-    auto addGeneratedDirectHistory = [this](const QString& conversationId,
-                                            const QString& peerId,
-                                            const QString& peerName,
-                                            int ordinal) {
-        const QVector<QDateTime> timeline = buildHistoryTimeline(ordinal);
-        ChatMessageList generatedMessages;
-        generatedMessages.reserve(timeline.size() + sampleUnreadCount(ordinal, timeline.size()));
-        for (int index = 0; index < timeline.size(); ++index) {
-            const bool fromMe = index % 4 == 1;
-            const QString senderId = fromMe ? CurrentUser::instance().getUserId() : peerId;
-            const QString senderName = fromMe ? CurrentUser::instance().getUserName() : peerName;
-            auto msg = QSharedPointer<ChatMessage>(new TextMessage(
-                    QStringLiteral("%1 历史消息 %2").arg(peerName).arg(index + 1),
-                    fromMe,
-                    senderId,
-                    false,
-                    senderName,
-                    GroupRole::Member));
-            msg->setTimestamp(timeline.at(index));
-            generatedMessages.push_back(msg);
-        }
-        const int unreadCount = sampleUnreadCount(ordinal, timeline.size());
-        appendSyntheticDirectUnreadMessages(generatedMessages,
-                                            timeline,
-                                            peerId,
-                                            peerName,
-                                            unreadCount);
-        addLongGapReferenceSamples(generatedMessages);
-        for (const QSharedPointer<ChatMessage>& msg : generatedMessages) {
-            addMessage(conversationId, msg);
-        }
-        ConversationSyncState state;
-        state.conversationId = conversationId;
-        state.unreadCount = unreadCount;
-        state.isDoNotDisturb = sampleDoNotDisturb(ordinal);
-        state.messageListTime = m_conversationStates.value(conversationId).messageListTime;
-        m_conversationStates.insert(conversationId, state);
-    };
+    reloadFromStore();
 
-    auto addGeneratedGroupHistory = [this](const Group& group, int ordinal) {
-        const QVector<QDateTime> timeline = buildHistoryTimeline(ordinal);
-        const QVector<SampleParticipant> participants = sampleParticipantsForGroup(group, ordinal);
-        if (participants.isEmpty()) {
-            return;
-        }
+    connect(&LocalDataStore::instance(),
+            &LocalDataStore::activeAccountChanged,
+            this,
+            [this](const QString&) {
+                reloadFromStore();
+            });
+    connect(&LocalDataStore::instance(),
+            &LocalDataStore::domainChanged,
+            this,
+            [this](const QString& domain) {
+                if (domain == QStringLiteral("chat_messages") ||
+                    domain == QStringLiteral("conversations")) {
+                    reloadFromStore();
+                }
+            },
+            Qt::QueuedConnection);
 
-        ChatMessageList generatedMessages;
-        generatedMessages.reserve(timeline.size() + sampleUnreadCount(ordinal, timeline.size()));
-        QString lastSenderId;
-        for (int index = 0; index < timeline.size(); ++index) {
-            int senderIndex = (index + ordinal * 3 + index / participants.size()) % participants.size();
-            if (participants.size() > 1 && participants.at(senderIndex).userId == lastSenderId) {
-                senderIndex = (senderIndex + 1) % participants.size();
-            }
+    connect(&AppEventBus::instance(),
+            &AppEventBus::typedEventReceived,
+            this,
+            [this](const QString& type, const QJsonObject& payload, const RealtimeEvent&) {
+                if (type == QStringLiteral("chat.message.created") ||
+                    type == QStringLiteral("chat.message.sent")) {
+                    QJsonObject object = payload.value(QStringLiteral("message")).toObject();
+                    if (object.isEmpty()) {
+                        object = payload;
+                    }
+                    const QString conversationId = conversationIdFromMessageObject(object);
+                    const QSharedPointer<ChatMessage> message = chatMessageFromJson(object);
+                    if (conversationId.isEmpty() || message.isNull()) {
+                        return;
+                    }
+                    addMessage(conversationId, message);
 
-            const SampleParticipant& sender = participants.at(senderIndex);
-            const bool fromMe = CurrentUser::instance().isCurrentUserId(sender.userId);
-            auto msg = QSharedPointer<ChatMessage>(new TextMessage(
-                    QStringLiteral("%1 群聊消息 %2").arg(groupDisplayName(group)).arg(index + 1),
-                    fromMe,
-                    sender.userId,
-                    true,
-                    sender.displayName,
-                    sender.role));
-            msg->setTimestamp(timeline.at(index));
-            generatedMessages.push_back(msg);
-            lastSenderId = sender.userId;
-        }
+                    const QJsonObject conversation = conversationObjectFromPayload(payload);
+                    const QString stateConversationId = firstString(conversation, {QStringLiteral("conversationId"), QStringLiteral("id")});
+                    if (!stateConversationId.isEmpty()) {
+                        LocalDataStore::instance().upsertValue(QStringLiteral("conversations"),
+                                                               stateConversationId,
+                                                               conversation);
+                    }
+                    return;
+                }
 
-        const int unreadCount = sampleUnreadCount(ordinal, timeline.size());
-        appendSyntheticGroupUnreadMessages(generatedMessages,
-                                           timeline,
-                                           participants,
-                                           unreadCount);
-        addLongGapReferenceSamples(generatedMessages);
-        for (const QSharedPointer<ChatMessage>& msg : generatedMessages) {
-            addMessage(group.groupId, msg);
-        }
-        ConversationSyncState state;
-        state.conversationId = group.groupId;
-        state.unreadCount = unreadCount;
-        state.isDoNotDisturb = sampleDoNotDisturb(ordinal);
-        state.messageListTime = m_conversationStates.value(group.groupId).messageListTime;
-        m_conversationStates.insert(group.groupId, state);
-    };
-
-    const QVector<Group> groups = GroupRepository::instance().requestGroupList();
-    int conversationOrdinal = 0;
-    for (int index = 0; index < qMin(kGroupConversationSampleCount, groups.size()); ++index) {
-        const Group& group = groups.at(index);
-        addGeneratedGroupHistory(group, conversationOrdinal++);
-    }
-
-    const QVector<FriendSummary> friends = sampledFriendsForMessages();
-    for (const FriendSummary& friendSummary : friends) {
-        addGeneratedDirectHistory(friendSummary.userId,
-                                  friendSummary.userId,
-                                  friendSummary.displayName,
-                                  conversationOrdinal++);
-    }
+                if (type == QStringLiteral("chat.conversation.updated") ||
+                    type == QStringLiteral("chat.conversation.sync.updated") ||
+                    type == QStringLiteral("chat.read.updated")) {
+                    const QJsonObject conversation = conversationObjectFromPayload(payload);
+                    const QString conversationId = firstString(conversation, {QStringLiteral("conversationId"), QStringLiteral("id")});
+                    if (!conversationId.isEmpty()) {
+                        LocalDataStore::instance().upsertValue(QStringLiteral("conversations"),
+                                                               conversationId,
+                                                               conversation);
+                    }
+                }
+            });
 }
 
 MessageRepository& MessageRepository::instance()
 {
     static MessageRepository repo;
     return repo;
+}
+
+void MessageRepository::reloadFromStore()
+{
+    QMap<QString, QVector<QSharedPointer<ChatMessage>>> nextStore;
+    QMap<QString, ConversationSyncState> nextStates;
+
+    for (const QJsonObject& object : LocalDataStore::instance().values(QStringLiteral("conversations"))) {
+        ConversationSyncState state = conversationSyncStateFromJson(object);
+        if (state.conversationId.isEmpty()) {
+            continue;
+        }
+        nextStates.insert(state.conversationId, state);
+
+        const QJsonObject lastMessage = object.value(QStringLiteral("lastMessage")).toObject();
+        if (!lastMessage.isEmpty()) {
+            QJsonObject messageObject = lastMessage;
+            if (!messageObject.contains(QStringLiteral("conversationId"))) {
+                messageObject.insert(QStringLiteral("conversationId"), state.conversationId);
+            }
+            const QSharedPointer<ChatMessage> message = chatMessageFromJson(messageObject);
+            if (!message.isNull()) {
+                nextStore[state.conversationId].push_back(message);
+            }
+        }
+    }
+
+    for (const QJsonObject& object : LocalDataStore::instance().values(QStringLiteral("chat_messages"))) {
+        const QString conversationId = conversationIdFromMessageObject(object);
+        const QSharedPointer<ChatMessage> message = chatMessageFromJson(object);
+        if (conversationId.isEmpty() || message.isNull()) {
+            continue;
+        }
+
+        QVector<QSharedPointer<ChatMessage>>& messages = nextStore[conversationId];
+        const auto duplicate = std::find_if(messages.cbegin(), messages.cend(), [&message](const QSharedPointer<ChatMessage>& existing) {
+            return existing && existing->getMessageId() == message->getMessageId();
+        });
+        if (duplicate == messages.cend()) {
+            messages.push_back(message);
+        }
+    }
+
+    for (auto it = nextStore.begin(); it != nextStore.end(); ++it) {
+        std::sort(it.value().begin(), it.value().end(), [](const QSharedPointer<ChatMessage>& lhs,
+                                                           const QSharedPointer<ChatMessage>& rhs) {
+            if (!lhs || !rhs) {
+                return !rhs.isNull();
+            }
+            return lhs->getTimestamp() < rhs->getTimestamp();
+        });
+        if (!it.value().isEmpty()) {
+            ConversationSyncState& state = nextStates[it.key()];
+            state.conversationId = it.key();
+            if (!state.messageListTime.isValid()) {
+                state.messageListTime = it.value().last()->getTimestamp();
+            }
+        }
+    }
+
+    {
+        QMutexLocker locker(&m_mutex);
+        m_store = nextStore;
+        m_conversationStates = nextStates;
+    }
+
+    emit lastMessageChanged({}, {});
+    emit conversationListChanged({});
 }
 
 QVector<ConversationSummary> MessageRepository::requestConversationList(const ConversationListRequest& query) const
@@ -1026,12 +1310,40 @@ void MessageRepository::removeConversation(const QString& conversationId)
 void MessageRepository::addMessage(const QString& conversationId,
                                    QSharedPointer<ChatMessage> message)
 {
+    if (conversationId.isEmpty() || message.isNull()) {
+        return;
+    }
+
+    bool added = false;
     {
         QMutexLocker locker(&m_mutex);
-        m_store[conversationId].push_back(message);
+        QVector<QSharedPointer<ChatMessage>>& messages = m_store[conversationId];
+        for (const QSharedPointer<ChatMessage>& existing : messages) {
+            if (existing && existing->getMessageId() == message->getMessageId()) {
+                return;
+            }
+        }
+        messages.push_back(message);
+        std::sort(messages.begin(), messages.end(), [](const QSharedPointer<ChatMessage>& lhs,
+                                                       const QSharedPointer<ChatMessage>& rhs) {
+            if (!lhs || !rhs) {
+                return !rhs.isNull();
+            }
+            return lhs->getTimestamp() < rhs->getTimestamp();
+        });
         ConversationSyncState& state = m_conversationStates[conversationId];
         state.conversationId = conversationId;
         state.messageListTime = message ? message->getTimestamp() : QDateTime::currentDateTime();
+        added = true;
+    }
+
+    if (!added) {
+        return;
+    }
+    const QJsonObject object = chatMessageToJson(conversationId, message);
+    const QString key = chatMessageCacheKey(conversationId, message->getMessageId());
+    if (!object.isEmpty() && !key.isEmpty()) {
+        LocalDataStore::instance().upsertValue(QStringLiteral("chat_messages"), key, object);
     }
     emit lastMessageChanged(conversationId, message);
     emit conversationListChanged(conversationId);
