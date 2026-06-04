@@ -1,0 +1,76 @@
+#pragma once
+
+#include "shared/network/NetworkTypes.h"
+
+#include <QHash>
+#include <QObject>
+#include <QString>
+
+class FriendRemoteDataSource final : public QObject
+{
+    Q_OBJECT
+
+public:
+    static FriendRemoteDataSource& instance();
+
+    QString acceptFriendRequest(const QString& notificationId,
+                                const QString& remark = {},
+                                const QString& groupId = {},
+                                const QString& groupName = {});
+    QString rejectFriendRequest(const QString& notificationId);
+    QString acceptGroupJoinRequest(const QString& notificationId,
+                                   const QString& remark = {},
+                                   const QString& categoryId = {},
+                                   const QString& categoryName = {});
+    QString rejectGroupJoinRequest(const QString& notificationId);
+
+signals:
+    void friendRequestAccepted(const QString& requestId,
+                               const QString& notificationId,
+                               const QString& remark,
+                               const QString& groupId,
+                               const QString& groupName);
+    void friendRequestRejected(const QString& requestId, const QString& notificationId);
+    void groupJoinRequestAccepted(const QString& requestId,
+                                  const QString& notificationId,
+                                  const QString& remark,
+                                  const QString& categoryId,
+                                  const QString& categoryName);
+    void groupJoinRequestRejected(const QString& requestId, const QString& notificationId);
+    void friendRequestActionFailed(const QString& requestId,
+                                   const QString& notificationId,
+                                   const NetworkError& error);
+    void groupJoinRequestActionFailed(const QString& requestId,
+                                      const QString& notificationId,
+                                      const NetworkError& error);
+
+private:
+    enum class Action {
+        AcceptFriendRequest,
+        RejectFriendRequest,
+        AcceptGroupJoinRequest,
+        RejectGroupJoinRequest
+    };
+
+    struct PendingOperation {
+        Action action = Action::AcceptFriendRequest;
+        QString notificationId;
+        QString remark;
+        QString groupId;
+        QString groupName;
+        QString categoryId;
+        QString categoryName;
+    };
+
+    explicit FriendRemoteDataSource(QObject* parent = nullptr);
+    Q_DISABLE_COPY(FriendRemoteDataSource)
+
+    QString sendOperation(Action action,
+                          const QString& path,
+                          const QJsonObject& body,
+                          PendingOperation pending);
+    void handleRequestSucceeded(const QString& requestId, const NetworkResponse& response);
+    void handleRequestFailed(const QString& requestId, const NetworkError& error);
+
+    QHash<QString, PendingOperation> m_pendingOperations;
+};

@@ -9,6 +9,7 @@
 #include "shared/types/FriendNotification.h"
 #include "shared/types/Group.h"
 #include "shared/types/GroupNotification.h"
+#include "shared/network/NetworkTypes.h"
 #include "shared/types/RepositoryTypes.h"
 #include "shared/types/User.h"
 
@@ -81,6 +82,8 @@ signals:
     void userAvatarImageFailed(const QString& requestId, const QString& userId);
     void groupAvatarImageReady(const QString& requestId, const QString& groupId, const QImage& image);
     void groupAvatarImageFailed(const QString& requestId, const QString& groupId);
+    void friendRequestActionFailed(const QString& notificationId, const NetworkError& error);
+    void groupJoinRequestActionFailed(const QString& notificationId, const NetworkError& error);
 
 private:
     void ensureUserRepositoryConnections() const;

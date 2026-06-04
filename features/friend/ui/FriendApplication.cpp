@@ -1,5 +1,6 @@
 #include "FriendApplication.h"
 #include "shared/services/AppFonts.h"
+#include "shared/ui/GlobalNotification.h"
 #include "shared/ui/renderers/BadgeRenderer.h"
 #include "shared/ui/StyledActionMenu.h"
 #include "shared/ui/TransparentSplitter.h"
@@ -426,6 +427,14 @@ FriendApplication::FriendApplication(QWidget* parent)
                 if (m_groupNotificationPage && m_rightStack->currentWidget() == m_groupNotificationPage) {
                     m_groupNotificationPage->refreshLoadedNotifications();
                 }
+            });
+    connect(m_friendController, &FriendSessionController::friendRequestActionFailed,
+            this, [this](const QString&, const NetworkError&) {
+                GlobalNotification::showFailure(this, QStringLiteral("好友申请处理失败"));
+            });
+    connect(m_friendController, &FriendSessionController::groupJoinRequestActionFailed,
+            this, [this](const QString&, const NetworkError&) {
+                GlobalNotification::showFailure(this, QStringLiteral("入群申请处理失败"));
             });
 
     const int friendUnreadCount = m_friendController->friendUnreadCount();

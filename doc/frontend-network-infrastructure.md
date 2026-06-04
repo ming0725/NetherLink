@@ -174,9 +174,10 @@
 - 发送用户文本后请求 `POST /api/v1/ai/conversations/{conversationId}/messages?stream=true`。
 - 请求 body 固定包含 `message`、稳定 `clientMessageId` 和空 `aiFileIds`，不接入 AI 文件上传、绑定和解析轮询。
 - `ai.stream.chunk` 的 `delta` 会追加到现有临时 AI 消息，保持输入栏停止态、气泡增量刷新和自动滚动体验。
-- `ai.stream.done` 会读取服务端 `assistantMessage`，用服务端 `messageId/text/time` 替换本地临时消息并同步更新 `AiChatRepository`、`AiChatMessageListModel`。
+- `ai.stream.done` 会读取服务端 `assistantMessage`，用服务端 `messageId/text/time` 替换本地临时消息并同步更新 `AiChatRepository`、`AiChatMessageListModel`；若包含 `title`，同步更新会话标题。
+- `ai.stream.cancelled` 会按同一终态路径处理；payload 携带 `assistantMessage` 时替换本地临时 AI 消息，未生成 token 时允许没有 `assistantMessage`。
 - `client.error` 或 HTTP/SSE 失败会结束流式状态并显示全局失败提示，不回退到本地模拟回复。
-- 用户停止生成时当前只取消客户端 SSE 读取；后端 `ai.stream.cancel` 命令尚未接入。
+- 用户停止生成时优先通过 WebSocket 发送 `ai.stream.cancel`，并等待 SSE/WebSocket 返回 `ai.stream.cancelled`；尚未拿到 `streamId` 时断开 SSE，触发服务端保存 partial 后同步取消终态。
 
 ### WebSocket Realtime Client
 
@@ -258,6 +259,18 @@
 - `ChatMessage`、`MessageRepository` 和 `ChatListModel` 已保留并按 `clientMessageId` 去重，避免 REST 成功或 WebSocket `chat.message.sent/chat.message.created` 回包重复追加同一条本端消息。
 - 当前只接入已有文本消息和单张图片消息入口，不新增聊天文件、语音、视频或多附件 UI。
 
+### 好友/群组申请远程写入
+
+已新增 `features/friend/data/FriendRemoteDataSource.h/.cpp`：
+
+- 好友申请同意通过 `POST /api/v1/friend-requests/{requestId}/accept` 发送，body 包含 `remark`、`groupId` 和稳定 `clientOperationId`。
+- 好友申请拒绝通过 `POST /api/v1/friend-requests/{requestId}/reject` 发送，body 包含稳定 `clientOperationId`。
+- 群入群申请同意通过 `POST /api/v1/group-join-requests/{requestId}/accept` 发送，body 包含稳定 `clientOperationId`；前端选择的群备注和本地分组仍只用于现有本地 UI 状态。
+- 群入群申请拒绝通过 `POST /api/v1/group-join-requests/{requestId}/reject` 发送，body 包含稳定 `clientOperationId`。
+- `FriendSessionController` 保持 UI 层现有调用入口不变，远程请求成功后复用 `FriendNotificationRepository` / `GroupNotificationRepository` 原有本地缓存更新逻辑。
+- 请求失败时通过 `FriendApplication` 展示“好友申请处理失败”或“入群申请处理失败”，不回退到静态样例数据。
+- 当前只覆盖已有通知页的同意/拒绝按钮；好友搜索发起申请、删除好友、群资料编辑、退群等写操作尚未接入远程。
+
 ### 网络状态 UI 汇总
 
 `NetworkService` 已把底层网络状态汇总为 UI 可消费信号：
@@ -283,7 +296,7 @@
 - 网络不可用时显示错误、重试或空状态，不回退到静态本地数据。
 
 1. 业务 API 封装
-   - 每个 feature 增加独立 remote data source，例如 `ChatRemoteDataSource`、`FriendRemoteDataSource`。
+   - 每个 feature 增加独立 remote data source。当前已覆盖 `ChatRemoteDataSource` 以及 `FriendRemoteDataSource` 的好友/群申请同意拒绝入口。
    - repository 保留统一业务入口，但不再以静态样例数据作为 fallback；本地只保留缓存、临时 pending 状态、游标和必要的 UI 状态。
    - UI 层只观察 repository/model，不直接调用网络 client。
 

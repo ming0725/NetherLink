@@ -3,12 +3,67 @@
 #include "features/chat/data/GroupRepository.h"
 #include "features/chat/data/MessageRepository.h"
 #include "features/friend/data/FriendNotificationRepository.h"
+#include "features/friend/data/FriendRemoteDataSource.h"
 #include "features/friend/data/GroupNotificationRepository.h"
 #include "features/friend/data/UserRepository.h"
 
 FriendSessionController::FriendSessionController(QObject* parent)
     : QObject(parent)
 {
+    connect(&FriendRemoteDataSource::instance(),
+            &FriendRemoteDataSource::friendRequestAccepted,
+            this,
+            [this](const QString&,
+                   const QString& notificationId,
+                   const QString& remark,
+                   const QString& groupId,
+                   const QString& groupName) {
+                ensureFriendNotificationRepositoryConnections();
+                FriendNotificationRepository::instance().acceptRequest(notificationId,
+                                                                       remark,
+                                                                       groupId,
+                                                                       groupName);
+            });
+    connect(&FriendRemoteDataSource::instance(),
+            &FriendRemoteDataSource::friendRequestRejected,
+            this,
+            [this](const QString&, const QString& notificationId) {
+                ensureFriendNotificationRepositoryConnections();
+                FriendNotificationRepository::instance().rejectRequest(notificationId);
+            });
+    connect(&FriendRemoteDataSource::instance(),
+            &FriendRemoteDataSource::groupJoinRequestAccepted,
+            this,
+            [this](const QString&,
+                   const QString& notificationId,
+                   const QString& remark,
+                   const QString& categoryId,
+                   const QString& categoryName) {
+                ensureGroupNotificationRepositoryConnections();
+                GroupNotificationRepository::instance().acceptJoinRequest(notificationId,
+                                                                          remark,
+                                                                          categoryId,
+                                                                          categoryName);
+            });
+    connect(&FriendRemoteDataSource::instance(),
+            &FriendRemoteDataSource::groupJoinRequestRejected,
+            this,
+            [this](const QString&, const QString& notificationId) {
+                ensureGroupNotificationRepositoryConnections();
+                GroupNotificationRepository::instance().rejectJoinRequest(notificationId);
+            });
+    connect(&FriendRemoteDataSource::instance(),
+            &FriendRemoteDataSource::friendRequestActionFailed,
+            this,
+            [this](const QString&, const QString& notificationId, const NetworkError& error) {
+                emit friendRequestActionFailed(notificationId, error);
+            });
+    connect(&FriendRemoteDataSource::instance(),
+            &FriendRemoteDataSource::groupJoinRequestActionFailed,
+            this,
+            [this](const QString&, const QString& notificationId, const NetworkError& error) {
+                emit groupJoinRequestActionFailed(notificationId, error);
+            });
 }
 
 void FriendSessionController::ensureUserRepositoryConnections() const
@@ -310,16 +365,16 @@ bool FriendSessionController::acceptFriendRequest(const QString& notificationId,
                                                   const QString& groupName)
 {
     ensureFriendNotificationRepositoryConnections();
-    return FriendNotificationRepository::instance().acceptRequest(notificationId,
+    return !FriendRemoteDataSource::instance().acceptFriendRequest(notificationId,
                                                                   remark,
                                                                   groupId,
-                                                                  groupName);
+                                                                  groupName).isEmpty();
 }
 
 bool FriendSessionController::rejectFriendRequest(const QString& notificationId)
 {
     ensureFriendNotificationRepositoryConnections();
-    return FriendNotificationRepository::instance().rejectRequest(notificationId);
+    return !FriendRemoteDataSource::instance().rejectFriendRequest(notificationId).isEmpty();
 }
 
 QVector<GroupNotification> FriendSessionController::loadGroupNotifications(int offset, int limit) const
@@ -352,14 +407,14 @@ bool FriendSessionController::acceptGroupJoinRequest(const QString& notification
                                                      const QString& categoryName)
 {
     ensureGroupNotificationRepositoryConnections();
-    return GroupNotificationRepository::instance().acceptJoinRequest(notificationId,
-                                                                    remark,
-                                                                    categoryId,
-                                                                    categoryName);
+    return !FriendRemoteDataSource::instance().acceptGroupJoinRequest(notificationId,
+                                                                     remark,
+                                                                     categoryId,
+                                                                     categoryName).isEmpty();
 }
 
 bool FriendSessionController::rejectGroupJoinRequest(const QString& notificationId)
 {
     ensureGroupNotificationRepositoryConnections();
-    return GroupNotificationRepository::instance().rejectJoinRequest(notificationId);
+    return !FriendRemoteDataSource::instance().rejectGroupJoinRequest(notificationId).isEmpty();
 }

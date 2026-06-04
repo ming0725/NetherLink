@@ -369,13 +369,13 @@ SSE event 名称：
 - `ai.stream.cancelled`
 - `client.error`
 
-每条 SSE 的 `data` 是 JSON。前端逐步拼接 `ai.stream.chunk.delta`，收到 `ai.stream.done` 后用服务端返回的 `assistantMessage` 替换本地临时消息。
+每条 SSE 的 `data` 是 JSON。前端逐步拼接 `ai.stream.chunk.delta`，收到 `ai.stream.done` 后用服务端返回的 `assistantMessage` 替换本地临时消息。收到 `ai.stream.cancelled` 时，如果 payload 包含 `assistantMessage`，也必须用它替换本地临时 assistant 消息；如果模型还没输出 token，`assistantMessage` 可能为空。
 
 断开重试：
 
 - 使用同一个 `clientMessageId` 重新请求。
 - 若服务端仍在处理，返回 `client.error`，code 为 `OPERATION_IN_PROGRESS`。
-- 若已完成，服务端会重放 `ai.stream.done`，不会再次调用模型。
+- 若已完成，服务端会重放 `ai.stream.done` 或 `ai.stream.cancelled`，不会再次调用模型。
 
 ## 3. 通用数据模型
 
@@ -937,6 +937,15 @@ POST /api/v1/friend-requests/{requestId}/reject
 { "clientOperationId": "op_x" }
 ```
 
+当前 Qt 前端接入状态：
+
+- 好友列表、好友通知列表仍由登录 bootstrap、实时事件和本地账号库快照驱动。
+- 已新增 `FriendRemoteDataSource` 封装通知页已有的好友申请同意/拒绝按钮。
+- 同意请求发送 `POST /api/v1/friend-requests/{requestId}/accept`，body 包含 `remark`、`groupId` 和稳定 `clientOperationId`。
+- 拒绝请求发送 `POST /api/v1/friend-requests/{requestId}/reject`，body 包含稳定 `clientOperationId`。
+- 远程成功后复用 `FriendNotificationRepository` 更新通知状态、好友关系和本地会话提示；远程失败展示错误提示，不回退到纯本地确认。
+- 好友搜索发起申请、好友资料编辑、删除好友等写操作尚未接入远程。
+
 ### 6.3 群组
 
 ```http
@@ -997,6 +1006,15 @@ POST /api/v1/group-join-requests/{requestId}/reject
 ```json
 { "groupId": "uuid", "message": "申请加入", "clientOperationId": "op_x" }
 ```
+
+当前 Qt 前端接入状态：
+
+- 群列表、群通知列表仍由登录 bootstrap、实时事件和本地账号库快照驱动。
+- `FriendRemoteDataSource` 已封装通知页已有的入群申请同意/拒绝按钮。
+- 同意请求发送 `POST /api/v1/group-join-requests/{requestId}/accept`，body 包含稳定 `clientOperationId`；前端选择的群备注和本地分组继续只更新当前 UI 的本地缓存。
+- 拒绝请求发送 `POST /api/v1/group-join-requests/{requestId}/reject`，body 包含稳定 `clientOperationId`。
+- 远程成功后复用 `GroupNotificationRepository` 更新通知状态、群成员、本地分组和会话提示；远程失败展示错误提示。
+- 创建群、群资料编辑、成员管理、退群、转让群主等写操作尚未接入远程；没有现有 UI 的复杂群管理仍不实现。
 
 ## 7. 聊天 API
 
@@ -1349,10 +1367,10 @@ DELETE /api/v1/replies/{replyId}?clientOperationId=op_x
 ```http
 GET /api/v1/ai/conversations?limit=20&offset=0
 POST /api/v1/ai/conversations
+PATCH /api/v1/ai/conversations/{conversationId}
 DELETE /api/v1/ai/conversations/{conversationId}?clientOperationId=op_x
 GET /api/v1/ai/conversations/{conversationId}/messages
 GET /api/v1/ai/conversations/{conversationId}/context
-POST /api/v1/ai/title
 ```
 
 创建：
@@ -1365,16 +1383,13 @@ POST /api/v1/ai/title
 }
 ```
 
-生成标题：
+改名：
 
 ```json
-{ "firstUserMessage": "第一条消息" }
-```
-
-返回：
-
-```json
-{ "title": "简短标题" }
+{
+  "title": "新的标题",
+  "clientOperationId": "op_x"
+}
 ```
 
 ### 10.2 非流式消息
@@ -1400,7 +1415,8 @@ POST /api/v1/ai/conversations/{conversationId}/messages
   "userMessage": {},
   "assistantMessageId": "uuid",
   "streamId": "",
-  "usedFiles": []
+  "usedFiles": [],
+  "title": "正式标题，可选"
 }
 ```
 
@@ -1409,9 +1425,10 @@ POST /api/v1/ai/conversations/{conversationId}/messages
 - `AiChatStreamClient` 已使用 `SseClient` 请求 `POST /api/v1/ai/conversations/{conversationId}/messages?stream=true`，不再使用本地模拟回复。
 - 请求 body 固定发送文本 `message`、稳定 `clientMessageId` 和空 `aiFileIds`。
 - `ai.stream.chunk` 会把 `delta` 追加到当前临时 AI 气泡。
-- `ai.stream.done` 会读取 `assistantMessage`，用服务端 `messageId/text/time` 替换本地临时消息。
+- `ai.stream.done` 会读取 `assistantMessage`，用服务端 `messageId/text/time` 替换本地临时消息；若包含 `title`，同步更新会话标题。
+- `ai.stream.cancelled` 可能携带 `assistantMessage`、`usedFiles`、`finishReason=cancelled` 和 `title`；携带 `assistantMessage` 时按 `done` 的规则替换本地临时 AI 气泡，未输出 token 时允许为空。
 - `client.error` 或 HTTP/SSE 失败会结束流式状态并显示全局失败提示，不回退到本地模拟输出。
-- 取消生成仍使用当前客户端侧 `SseClient::cancel()` 停止读取；尚未接入后端 `ai.stream.cancel` 命令。
+- 取消生成会优先通过 WebSocket 发送 `ai.stream.cancel`；若尚未拿到 `streamId`，则断开 SSE 连接，由服务端保存已生成 partial 并通过 SSE/WebSocket 同步 `ai.stream.cancelled`。
 
 ### 10.3 AI 文件
 
