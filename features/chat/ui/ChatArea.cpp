@@ -468,6 +468,10 @@ ChatArea::ChatArea(QWidget *parent)
             this, &ChatArea::onSessionMessagesCleared);
     connect(sessionController, &ChatSessionController::conversationRemoved,
             this, &ChatArea::onSessionConversationRemoved);
+    connect(sessionController, &ChatSessionController::friendDeleteFailed,
+            this, [this](const QString&, const NetworkError&) {
+                GlobalNotification::showFailure(this, QStringLiteral("删除好友失败"));
+            });
 
 }
 

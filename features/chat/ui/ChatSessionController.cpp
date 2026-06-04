@@ -2,6 +2,7 @@
 
 #include "features/chat/data/GroupRepository.h"
 #include "features/chat/data/MessageRepository.h"
+#include "features/friend/data/FriendRemoteDataSource.h"
 #include "features/friend/data/UserRepository.h"
 #include "app/state/CurrentUser.h"
 
@@ -229,6 +230,26 @@ ChatSessionController::ChatSessionController(QObject* parent)
             this, [this]() {
                 if (!m_meta.conversationId.isEmpty() && !m_meta.isGroup) {
                     refreshSessionData(true);
+                }
+            });
+    connect(&FriendRemoteDataSource::instance(),
+            &FriendRemoteDataSource::friendDeleted,
+            this,
+            [this](const QString&, const QString& userId) {
+                if (m_meta.isGroup || !hasCurrentConversation(userId)) {
+                    return;
+                }
+                MessageRepository::instance().removeConversation(userId);
+                UserRepository::instance().removeUser(userId);
+                close();
+                emit conversationRemoved();
+            });
+    connect(&FriendRemoteDataSource::instance(),
+            &FriendRemoteDataSource::friendDeleteFailed,
+            this,
+            [this](const QString&, const QString& userId, const NetworkError& error) {
+                if (!m_meta.isGroup && hasCurrentConversation(userId)) {
+                    emit friendDeleteFailed(userId, error);
                 }
             });
 }
@@ -704,10 +725,7 @@ void ChatSessionController::deleteFriend()
     }
 
     const QString friendId = m_meta.conversationId;
-    MessageRepository::instance().removeConversation(friendId);
-    UserRepository::instance().removeUser(friendId);
-    close();
-    emit conversationRemoved();
+    FriendRemoteDataSource::instance().deleteFriend(friendId);
 }
 
 void ChatSessionController::exitGroup()

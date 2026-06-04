@@ -23,6 +23,7 @@ public:
                                    const QString& categoryId = {},
                                    const QString& categoryName = {});
     QString rejectGroupJoinRequest(const QString& notificationId);
+    QString deleteFriend(const QString& userId);
 
 signals:
     void friendRequestAccepted(const QString& requestId,
@@ -37,24 +38,28 @@ signals:
                                   const QString& categoryId,
                                   const QString& categoryName);
     void groupJoinRequestRejected(const QString& requestId, const QString& notificationId);
+    void friendDeleted(const QString& requestId, const QString& userId);
     void friendRequestActionFailed(const QString& requestId,
                                    const QString& notificationId,
                                    const NetworkError& error);
     void groupJoinRequestActionFailed(const QString& requestId,
                                       const QString& notificationId,
                                       const NetworkError& error);
+    void friendDeleteFailed(const QString& requestId, const QString& userId, const NetworkError& error);
 
 private:
     enum class Action {
         AcceptFriendRequest,
         RejectFriendRequest,
         AcceptGroupJoinRequest,
-        RejectGroupJoinRequest
+        RejectGroupJoinRequest,
+        DeleteFriend
     };
 
     struct PendingOperation {
         Action action = Action::AcceptFriendRequest;
         QString notificationId;
+        QString userId;
         QString remark;
         QString groupId;
         QString groupName;

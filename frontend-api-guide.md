@@ -943,8 +943,10 @@ POST /api/v1/friend-requests/{requestId}/reject
 - 已新增 `FriendRemoteDataSource` 封装通知页已有的好友申请同意/拒绝按钮。
 - 同意请求发送 `POST /api/v1/friend-requests/{requestId}/accept`，body 包含 `remark`、`groupId` 和稳定 `clientOperationId`。
 - 拒绝请求发送 `POST /api/v1/friend-requests/{requestId}/reject`，body 包含稳定 `clientOperationId`。
+- 删除好友发送 `DELETE /api/v1/friends/{friendUserUuid}?clientOperationId=<op>`，并携带同值 `Idempotency-Key` 让失败重试保持幂等。
 - 远程成功后复用 `FriendNotificationRepository` 更新通知状态、好友关系和本地会话提示；远程失败展示错误提示，不回退到纯本地确认。
-- 好友搜索发起申请、好友资料编辑、删除好友等写操作尚未接入远程。
+- 删除好友远程成功后再清理本地好友缓存和会话；好友页、好友列表右键菜单和聊天资料页入口共用 `FriendRemoteDataSource`。
+- 好友搜索发起申请、好友资料编辑等写操作尚未接入远程。
 
 ### 6.3 群组
 
@@ -1014,7 +1016,7 @@ POST /api/v1/group-join-requests/{requestId}/reject
 - 同意请求发送 `POST /api/v1/group-join-requests/{requestId}/accept`，body 包含稳定 `clientOperationId`；前端选择的群备注和本地分组继续只更新当前 UI 的本地缓存。
 - 拒绝请求发送 `POST /api/v1/group-join-requests/{requestId}/reject`，body 包含稳定 `clientOperationId`。
 - 远程成功后复用 `GroupNotificationRepository` 更新通知状态、群成员、本地分组和会话提示；远程失败展示错误提示。
-- 创建群、群资料编辑、成员管理、退群、转让群主等写操作尚未接入远程；没有现有 UI 的复杂群管理仍不实现。
+- 创建群、群资料编辑、成员管理、退群、转让群主等写操作尚未接入远程；退群需要先确认当前用户 `userUuid` 与成员删除接口的字段映射；没有现有 UI 的复杂群管理仍不实现。
 
 ## 7. 聊天 API
 

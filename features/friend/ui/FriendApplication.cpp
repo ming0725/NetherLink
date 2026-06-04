@@ -436,6 +436,10 @@ FriendApplication::FriendApplication(QWidget* parent)
             this, [this](const QString&, const NetworkError&) {
                 GlobalNotification::showFailure(this, QStringLiteral("入群申请处理失败"));
             });
+    connect(m_friendController, &FriendSessionController::friendDeleteFailed,
+            this, [this](const QString&, const NetworkError&) {
+                GlobalNotification::showFailure(this, QStringLiteral("删除好友失败"));
+            });
 
     const int friendUnreadCount = m_friendController->friendUnreadCount();
     const int groupUnreadCount = m_friendController->groupUnreadCount();

@@ -4,6 +4,7 @@
 #include <QStringList>
 
 #include "shared/types/Group.h"
+#include "shared/network/NetworkTypes.h"
 #include "shared/types/RepositoryTypes.h"
 #include "shared/types/User.h"
 
@@ -64,6 +65,7 @@ signals:
                                 const GroupMembersPage& page);
     void messagesCleared();
     void conversationRemoved();
+    void friendDeleteFailed(const QString& userId, const NetworkError& error);
 
 private:
     void refreshSessionData(bool emitChange);

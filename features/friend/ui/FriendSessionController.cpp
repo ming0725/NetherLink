@@ -53,6 +53,17 @@ FriendSessionController::FriendSessionController(QObject* parent)
                 GroupNotificationRepository::instance().rejectJoinRequest(notificationId);
             });
     connect(&FriendRemoteDataSource::instance(),
+            &FriendRemoteDataSource::friendDeleted,
+            this,
+            [this](const QString&, const QString& userId) {
+                if (userId.isEmpty()) {
+                    return;
+                }
+                ensureUserRepositoryConnections();
+                MessageRepository::instance().removeConversation(userId);
+                UserRepository::instance().removeUser(userId);
+            });
+    connect(&FriendRemoteDataSource::instance(),
             &FriendRemoteDataSource::friendRequestActionFailed,
             this,
             [this](const QString&, const QString& notificationId, const NetworkError& error) {
@@ -63,6 +74,12 @@ FriendSessionController::FriendSessionController(QObject* parent)
             this,
             [this](const QString&, const QString& notificationId, const NetworkError& error) {
                 emit groupJoinRequestActionFailed(notificationId, error);
+            });
+    connect(&FriendRemoteDataSource::instance(),
+            &FriendRemoteDataSource::friendDeleteFailed,
+            this,
+            [this](const QString&, const QString& userId, const NetworkError& error) {
+                emit friendDeleteFailed(userId, error);
             });
 }
 
@@ -210,9 +227,7 @@ bool FriendSessionController::deleteFriend(const QString& userId)
     }
 
     ensureUserRepositoryConnections();
-    MessageRepository::instance().removeConversation(userId);
-    UserRepository::instance().removeUser(userId);
-    return true;
+    return !FriendRemoteDataSource::instance().deleteFriend(userId).isEmpty();
 }
 
 QVector<GroupCategorySummary> FriendSessionController::loadGroupCategorySummaries(const QString& keyword) const
