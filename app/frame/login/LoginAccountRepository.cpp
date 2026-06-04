@@ -72,6 +72,10 @@ LoginAccount accountFromJson(const QJsonObject& object)
     account.password = object.value(QStringLiteral("password")).toString(kDefaultLoginPassword);
     account.displayName = object.value(QStringLiteral("displayName")).toString();
     account.avatarPath = object.value(QStringLiteral("avatarPath")).toString();
+    account.avatarSource = object.value(QStringLiteral("avatarSource")).toString();
+    account.avatarVersion = object.value(QStringLiteral("avatarVersion")).toInt();
+    account.avatarEtag = object.value(QStringLiteral("avatarEtag")).toString();
+    account.avatarContentHash = object.value(QStringLiteral("avatarContentHash")).toString();
     account.status = statusFromString(object.value(QStringLiteral("status")).toString());
     account.signature = object.value(QStringLiteral("signature")).toString();
     account.region = object.value(QStringLiteral("region")).toString();
@@ -86,6 +90,10 @@ QJsonObject accountToJson(const LoginAccount& account)
             {QStringLiteral("password"), account.password},
             {QStringLiteral("displayName"), account.displayName},
             {QStringLiteral("avatarPath"), account.avatarPath},
+            {QStringLiteral("avatarSource"), account.avatarSource},
+            {QStringLiteral("avatarVersion"), account.avatarVersion},
+            {QStringLiteral("avatarEtag"), account.avatarEtag},
+            {QStringLiteral("avatarContentHash"), account.avatarContentHash},
             {QStringLiteral("status"), statusToString(account.status)},
             {QStringLiteral("signature"), account.signature},
             {QStringLiteral("region"), account.region},

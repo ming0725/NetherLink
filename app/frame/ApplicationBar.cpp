@@ -14,6 +14,7 @@
 #include "shared/ui/popup/InWindowPopupOverlay.h"
 #include "shared/ui/StyledActionMenu.h"
 #include "shared/ui/GlobalNotification.h"
+#include "shared/ui/renderers/MediaPlaceholderRenderer.h"
 #include "shared/theme/ThemeManager.h"
 #include "app/state/CurrentUser.h"
 #include <QHBoxLayout>
@@ -46,6 +47,9 @@ ApplicationBar::ApplicationBar(QWidget* parent)
     connect(&CurrentUser::instance(), &CurrentUser::identityChanged, this, [this]() {
         setAvatarSource(CurrentUser::instance().getAvatarPath());
         update();
+    });
+    connect(&ImageService::instance(), &ImageService::previewReady, this, [this]() {
+        update(avatarRect());
     });
     connect(&CurrentUser::instance(),
             &CurrentUser::profileSaveFailed,
@@ -152,7 +156,11 @@ void ApplicationBar::paintEvent(QPaintEvent*) {
         QPainterPath statusCutoutPath;
         statusCutoutPath.addEllipse(avatarCutoutRect());
         painter.setClipPath(avatarPath.subtracted(statusCutoutPath));
-        painter.drawPixmap(avatar, avatarPixmap);
+        if (avatarPixmap.isNull()) {
+            MediaPlaceholderRenderer::drawAvatar(&painter, avatar);
+        } else {
+            painter.drawPixmap(avatar, avatarPixmap);
+        }
         painter.restore();
 
         painter.save();

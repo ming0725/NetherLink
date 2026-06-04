@@ -10,7 +10,7 @@
 
 本文记录的是后端完整 API 契约，不等同于当前 Qt 前端功能清单。前端对接 API 时必须先匹配已有 UI、模型和 repository 能力；如果接口能力超出当前前端已经实现的交互，不在对接阶段新增 UI 或业务流程。
 
-本地 repository 中的静态样例数据已删除，不能作为 API 对接 fallback。repository 可以继续作为业务入口、本地缓存、临时状态和事件游标承载层，但真实列表、详情、消息、通知、动态和 AI 会话数据应来自后端。当前 AI 的模拟流式输出不是静态数据；它代表已有的流式 UI 交互，后续需要用后端 SSE 正常实现。
+本地 repository 中的静态样例数据已删除，不能作为 API 对接 fallback。repository 可以继续作为业务入口、本地缓存、临时状态和事件游标承载层，但真实列表、详情、消息、通知、动态和 AI 会话数据应来自后端。AI 文本回复已用后端 SSE 替换原本地模拟流式输出，继续保留分片追加、停止生成和完成态 UI。
 
 当前优先对接：
 
@@ -19,7 +19,7 @@
 - 聊天会话、文本消息、已有图片消息、撤回/引用/已读/未读等现有聊天交互。
 - 好友、好友通知、群组、群通知中已经存在的列表、详情、申请、同意/拒绝、成员展示和基础管理入口。
 - 动态信息流、详情、图片展示、点赞、关注、评论、回复等当前动态模块已有能力。
-- AI 对话仅限当前文本输入、文本流式回复、停止生成、标题等已有对话能力；必须保留流式体验，用后端 SSE 替换当前模拟输出源。
+- AI 对话仅限当前文本输入、文本流式回复、停止生成、标题等已有对话能力；必须保留后端 SSE 流式体验。
 
 以下后端能力已可作为契约参考，但当前 Qt 前端对接时不要实现：
 
@@ -1403,6 +1403,15 @@ POST /api/v1/ai/conversations/{conversationId}/messages
   "usedFiles": []
 }
 ```
+
+当前 Qt 前端接入状态：
+
+- `AiChatStreamClient` 已使用 `SseClient` 请求 `POST /api/v1/ai/conversations/{conversationId}/messages?stream=true`，不再使用本地模拟回复。
+- 请求 body 固定发送文本 `message`、稳定 `clientMessageId` 和空 `aiFileIds`。
+- `ai.stream.chunk` 会把 `delta` 追加到当前临时 AI 气泡。
+- `ai.stream.done` 会读取 `assistantMessage`，用服务端 `messageId/text/time` 替换本地临时消息。
+- `client.error` 或 HTTP/SSE 失败会结束流式状态并显示全局失败提示，不回退到本地模拟输出。
+- 取消生成仍使用当前客户端侧 `SseClient::cancel()` 停止读取；尚未接入后端 `ai.stream.cancel` 命令。
 
 ### 10.3 AI 文件
 

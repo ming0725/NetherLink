@@ -9,7 +9,12 @@
 #ifndef Q_OS_MACOS
 #include "platform/windows/WindowsWindowControlButton.h"
 #endif
+#include "shared/data/LocalDataStore.h"
 #include "shared/services/AppFonts.h"
+#include "shared/services/AvatarSource.h"
+#include "shared/services/ImageService.h"
+#include "shared/network/AuthSession.h"
+#include "shared/network/HttpClient.h"
 #include "shared/network/NetworkService.h"
 #include "shared/theme/ThemeManager.h"
 #include "shared/ui/effects/FastGaussianBlur.h"
@@ -18,18 +23,28 @@
 
 #include <QAbstractButton>
 #include <QApplication>
+#include <QBuffer>
 #include <QCloseEvent>
+#include <QCryptographicHash>
+#include <QDir>
 #include <QFutureWatcher>
 #include <QGuiApplication>
+#include <QFile>
+#include <QFileInfo>
 #include <QHBoxLayout>
+#include <QImageReader>
 #include <QLabel>
 #include <QMouseEvent>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QNetworkRequest>
 #include <QPainter>
 #include <QPainterPath>
 #include <QPixmap>
 #include <QRandomGenerator>
 #include <QScreen>
 #include <QTimer>
+#include <QUrl>
 #include <QVBoxLayout>
 #include <QtConcurrent/QtConcurrentRun>
 
@@ -115,13 +130,151 @@ UserStatus statusFromAuthStatus(const QString& value)
     return normalized.isEmpty() ? Online : Offline;
 }
 
+bool isExistingLocalAvatarFile(const QString& source)
+{
+    const QString cleanSource = AvatarSource::cleanForIo(source);
+    return cleanSource.startsWith(QLatin1Char('/')) && QFileInfo::exists(cleanSource);
+}
+
+bool isApiRelativeAvatarSource(const QString& source)
+{
+    return source.startsWith(QLatin1Char('/')) && !isExistingLocalAvatarFile(source);
+}
+
+bool isRemoteAvatarSource(const QString& source)
+{
+    if (isApiRelativeAvatarSource(source)) {
+        return true;
+    }
+
+    const QUrl url(AvatarSource::cleanForIo(source));
+    return url.scheme() == QStringLiteral("http") || url.scheme() == QStringLiteral("https");
+}
+
+QUrl resolvedAvatarUrl(const QString& source)
+{
+    const QString cleanSource = AvatarSource::cleanForIo(source);
+    if (isApiRelativeAvatarSource(cleanSource)) {
+        const BackendEnvironment environment = HttpClient::instance().environment();
+        const QString prefix = environment.apiPrefix.startsWith(QLatin1Char('/'))
+                ? environment.apiPrefix
+                : QStringLiteral("/") + environment.apiPrefix;
+        const QUrl relative(cleanSource);
+        QString path = relative.path();
+        if (!path.startsWith(prefix + QLatin1Char('/')) && path != prefix) {
+            path = prefix + (path.startsWith(QLatin1Char('/')) ? path : QStringLiteral("/") + path);
+        }
+
+        QUrl url(environment.baseUrl);
+        url.setPath(path);
+        url.setQuery(relative.query());
+        return url;
+    }
+    return QUrl(cleanSource);
+}
+
+bool shouldAttachAvatarAuthorization(const QString& source, const QUrl& url)
+{
+    const QUrl baseUrl = HttpClient::instance().environment().baseUrl;
+    const bool sameBackendOrigin = url.scheme() == baseUrl.scheme()
+            && url.host() == baseUrl.host()
+            && url.port() == baseUrl.port();
+    return sameBackendOrigin && !source.isEmpty() && AuthSession::instance().hasAccessToken();
+}
+
+QImage imageFromAvatarBytes(const QByteArray& bytes)
+{
+    if (bytes.isEmpty()) {
+        return {};
+    }
+
+    QBuffer buffer;
+    buffer.setData(bytes);
+    buffer.open(QIODevice::ReadOnly);
+
+    QImageReader reader(&buffer);
+    reader.setAutoTransform(true);
+    return reader.read();
+}
+
+QString loginAvatarCachePath(const QString& accountId)
+{
+    const QString normalized = accountId.trimmed();
+    if (normalized.isEmpty()) {
+        return {};
+    }
+
+    const QByteArray digest = QCryptographicHash::hash(normalized.toUtf8()
+                                                       + QByteArrayLiteral(":login-avatar-v1"),
+                                                       QCryptographicHash::Sha256).toHex();
+    const QString dirPath = LocalDataStore::instance().dataRootPath()
+                            + QStringLiteral("/cache/login-avatars");
+    QDir().mkpath(dirPath);
+    return QDir(dirPath).filePath(QString::fromLatin1(digest) + QStringLiteral(".png"));
+}
+
+bool saveLoginAvatarImage(const QString& accountId, const QImage& image, QString* cachedPath)
+{
+    if (image.isNull()) {
+        return false;
+    }
+
+    const QString path = loginAvatarCachePath(accountId);
+    if (path.isEmpty()) {
+        return false;
+    }
+
+    QFileInfo info(path);
+    QDir().mkpath(info.absolutePath());
+    if (!image.save(path, "PNG")) {
+        return false;
+    }
+    if (cachedPath) {
+        *cachedPath = path;
+    }
+    ImageService::instance().invalidateSource(path);
+    return true;
+}
+
+bool cacheLocalLoginAvatar(const QString& accountId, const QString& source, QString* cachedPath)
+{
+    QImageReader reader(AvatarSource::cleanForIo(source));
+    reader.setAutoTransform(true);
+    return saveLoginAvatarImage(accountId, reader.read(), cachedPath);
+}
+
+bool cachedAvatarMatches(const LoginAccount& cachedAccount, const LoginAccount& authenticatedAccount)
+{
+    if (cachedAccount.avatarPath.isEmpty() || !QFileInfo::exists(cachedAccount.avatarPath)) {
+        return false;
+    }
+    if (cachedAccount.avatarSource != authenticatedAccount.avatarSource) {
+        return false;
+    }
+    if (cachedAccount.avatarVersion != authenticatedAccount.avatarVersion) {
+        return false;
+    }
+    if (cachedAccount.avatarEtag != authenticatedAccount.avatarEtag) {
+        return false;
+    }
+    if (cachedAccount.avatarContentHash != authenticatedAccount.avatarContentHash) {
+        return false;
+    }
+    return cachedAccount.avatarVersion > 0
+            || !cachedAccount.avatarEtag.isEmpty()
+            || !cachedAccount.avatarContentHash.isEmpty();
+}
+
 LoginAccount loginAccountFromAuthResult(const AuthResult& result, const QString& password)
 {
     LoginAccount account;
     account.accountId = result.user.userId.isEmpty() ? result.user.userUuid : result.user.userId;
     account.password = password;
     account.displayName = result.user.nickName.isEmpty() ? account.accountId : result.user.nickName;
-    account.avatarPath = result.user.avatarPath;
+    account.avatarSource = result.user.avatarPath;
+    account.avatarVersion = result.user.avatarVersion;
+    account.avatarEtag = result.user.avatarEtag;
+    account.avatarContentHash = result.user.avatarContentHash;
     account.status = statusFromAuthStatus(result.user.status);
     account.signature = result.user.signature;
     account.region = result.user.region;
@@ -147,6 +300,9 @@ CurrentUserProfile profileFromAuthResult(const AuthResult& result)
     profile.userId = result.user.userId.isEmpty() ? result.user.userUuid : result.user.userId;
     profile.nickName = result.user.nickName.isEmpty() ? profile.userId : result.user.nickName;
     profile.avatarPath = result.user.avatarPath;
+    profile.avatarVersion = result.user.avatarVersion;
+    profile.avatarEtag = result.user.avatarEtag;
+    profile.avatarContentHash = result.user.avatarContentHash;
     profile.status = statusFromAuthStatus(result.user.status);
     profile.signature = result.user.signature;
     profile.region = result.user.region;
@@ -975,11 +1131,10 @@ void LoginWindow::setupUi()
             return;
         }
 
-        LoginAccountRepository::instance().saveAuthenticatedAccount(account);
         if (!result.preferences.isEmpty()) {
             CurrentUserPreferencesRepository::instance().saveCurrentUserPreferencesObject(result.preferences);
         }
-        finishLogin(account, profileFromAuthResult(result));
+        cacheAuthenticatedAvatar(account, profileFromAuthResult(result));
     });
     connect(&NetworkService::instance(), &NetworkService::loginFailed, this, [this](const QString& requestId,
                                                                                    const NetworkError& error) {
@@ -1111,6 +1266,112 @@ void LoginWindow::attemptLogin()
     m_loginButton->setEnabled(false);
     m_loginButton->setText(QStringLiteral("正在登录"));
     m_loginRequestId = NetworkService::instance().login(accountId, password);
+}
+
+void LoginWindow::cacheAuthenticatedAvatar(LoginAccount account, CurrentUserProfile authenticatedProfile)
+{
+    if (account.accountId.isEmpty()) {
+        resetLoginPending();
+        m_errorLabel->setText(QStringLiteral("登录响应缺少用户信息"));
+        GlobalNotification::showFailure(this, QStringLiteral("登录失败"));
+        return;
+    }
+
+    const LoginAccount cachedAccount = LoginAccountRepository::instance().requestLoginAccount({account.accountId});
+    auto continueWithAccount = [this](const LoginAccount& accountToSave,
+                                      const CurrentUserProfile& profileToSave) {
+        LoginAccountRepository::instance().saveAuthenticatedAccount(accountToSave);
+        finishLogin(accountToSave, profileToSave);
+    };
+    auto continueWithPreviousAvatar = [this, account, authenticatedProfile, cachedAccount, continueWithAccount]() mutable {
+        if (!cachedAccount.avatarPath.isEmpty() && QFileInfo::exists(cachedAccount.avatarPath)) {
+            account.avatarPath = cachedAccount.avatarPath;
+            account.avatarSource = cachedAccount.avatarSource;
+            account.avatarVersion = cachedAccount.avatarVersion;
+            account.avatarEtag = cachedAccount.avatarEtag;
+            account.avatarContentHash = cachedAccount.avatarContentHash;
+            authenticatedProfile.avatarPath = cachedAccount.avatarPath;
+            authenticatedProfile.avatarVersion = cachedAccount.avatarVersion;
+            authenticatedProfile.avatarEtag = cachedAccount.avatarEtag;
+            authenticatedProfile.avatarContentHash = cachedAccount.avatarContentHash;
+        } else {
+            account.avatarPath.clear();
+            authenticatedProfile.avatarPath.clear();
+        }
+        continueWithAccount(account, authenticatedProfile);
+    };
+
+    const QString avatarSource = account.avatarSource;
+    if (avatarSource.isEmpty()) {
+        account.avatarPath.clear();
+        authenticatedProfile.avatarPath.clear();
+        continueWithAccount(account, authenticatedProfile);
+        return;
+    }
+
+    if (cachedAvatarMatches(cachedAccount, account)) {
+        account.avatarPath = cachedAccount.avatarPath;
+        authenticatedProfile.avatarPath = cachedAccount.avatarPath;
+        continueWithAccount(account, authenticatedProfile);
+        return;
+    }
+
+    QString cachedPath;
+    if (!isRemoteAvatarSource(avatarSource)) {
+        if (cacheLocalLoginAvatar(account.accountId, avatarSource, &cachedPath)) {
+            account.avatarPath = cachedPath;
+            authenticatedProfile.avatarPath = cachedPath;
+            continueWithAccount(account, authenticatedProfile);
+            return;
+        }
+        continueWithPreviousAvatar();
+        return;
+    }
+
+    const QUrl url = resolvedAvatarUrl(avatarSource);
+    if (!url.isValid() || url.scheme().isEmpty()) {
+        continueWithPreviousAvatar();
+        return;
+    }
+
+    if (m_loginButton) {
+        m_loginButton->setText(QStringLiteral("正在同步头像"));
+    }
+
+    auto* manager = new QNetworkAccessManager(this);
+    QNetworkRequest request(url);
+    request.setRawHeader("Accept", "image/*,*/*;q=0.8");
+    if (shouldAttachAvatarAuthorization(avatarSource, url)) {
+        request.setRawHeader("Authorization", "Bearer " + AuthSession::instance().accessToken().toUtf8());
+    }
+#if QT_VERSION >= QT_VERSION_CHECK(5, 15, 0)
+    request.setTransferTimeout(15000);
+#endif
+
+    QNetworkReply* reply = manager->get(request);
+    connect(reply, &QNetworkReply::finished, this, [this,
+                                                    account,
+                                                    authenticatedProfile,
+                                                    reply,
+                                                    manager,
+                                                    continueWithAccount,
+                                                    continueWithPreviousAvatar]() mutable {
+        const QByteArray body = reply->readAll();
+        const bool networkOk = reply->error() == QNetworkReply::NoError;
+        reply->deleteLater();
+        manager->deleteLater();
+
+        QString cachedPath;
+        const QImage image = networkOk ? imageFromAvatarBytes(body) : QImage();
+        if (!image.isNull() && saveLoginAvatarImage(account.accountId, image, &cachedPath)) {
+            account.avatarPath = cachedPath;
+            authenticatedProfile.avatarPath = cachedPath;
+            continueWithAccount(account, authenticatedProfile);
+            return;
+        }
+
+        continueWithPreviousAvatar();
+    });
 }
 
 void LoginWindow::finishLogin(const LoginAccount& account, const CurrentUserProfile& authenticatedProfile)

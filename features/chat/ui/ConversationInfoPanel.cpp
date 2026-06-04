@@ -15,6 +15,7 @@
 #include "shared/ui/RedstoneLampSwitch.h"
 #include "shared/ui/StatefulPushButton.h"
 #include "shared/ui/StyledActionMenu.h"
+#include "shared/ui/renderers/MediaPlaceholderRenderer.h"
 #include "shared/theme/ThemeManager.h"
 
 #include <QAction>
@@ -421,7 +422,11 @@ protected:
                                                                avatarRect.size(),
                                                                Qt::KeepAspectRatioByExpanding,
                                                                painter.device()->devicePixelRatioF());
-        painter.drawPixmap(avatarRect, avatar);
+        if (avatar.isNull()) {
+            MediaPlaceholderRenderer::drawImage(&painter, avatarRect, 4);
+        } else {
+            painter.drawPixmap(avatarRect, avatar);
+        }
         painter.restore();
 
         const GroupRole role = memberRole(m_group, m_user);

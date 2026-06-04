@@ -1,6 +1,7 @@
 #include "UserRepository.h"
 
 #include <QCollator>
+#include <QDebug>
 #include <QImageReader>
 #include <QJsonObject>
 #include <QMetaObject>
@@ -13,9 +14,11 @@
 
 #include <algorithm>
 
-#include "shared/services/ImageService.h"
 #include "shared/data/LocalDataStore.h"
 #include "shared/data/RepositoryTemplate.h"
+#include "shared/network/AppEventBus.h"
+#include "shared/services/AvatarSource.h"
+#include "shared/services/ImageService.h"
 
 namespace {
 
@@ -55,6 +58,51 @@ QString normalizedFriendGroupId(const User& user)
 QString normalizedFriendGroupName(const User& user)
 {
     return user.friendGroupName.isEmpty() ? QStringLiteral("默认分组") : user.friendGroupName;
+}
+
+QString firstString(const QJsonObject& object, const QStringList& keys)
+{
+    for (const QString& key : keys) {
+        const QString value = object.value(key).toString();
+        if (!value.isEmpty()) {
+            return value;
+        }
+    }
+    return {};
+}
+
+QString avatarFileIdFrom(const QJsonObject& object)
+{
+    const QJsonObject avatar = object.value(QStringLiteral("avatar")).toObject();
+    const QString nestedFileId = firstString(avatar, {QStringLiteral("fileId"), QStringLiteral("id")});
+    if (!nestedFileId.isEmpty()) {
+        return nestedFileId;
+    }
+
+    return firstString(object, {QStringLiteral("avatarFileId"),
+                                QStringLiteral("avatar_file_id"),
+                                QStringLiteral("fileId")});
+}
+
+bool hasAvatarPayload(const QJsonObject& object)
+{
+    return object.contains(QStringLiteral("avatar")) ||
+           object.contains(QStringLiteral("avatarPath")) ||
+           object.contains(QStringLiteral("avatarUrl")) ||
+           object.contains(QStringLiteral("avatarVersion")) ||
+           object.contains(QStringLiteral("avatarEtag")) ||
+           object.contains(QStringLiteral("avatarContentHash")) ||
+           object.contains(QStringLiteral("avatarFileId")) ||
+           object.contains(QStringLiteral("avatar_file_id")) ||
+           object.contains(QStringLiteral("fileId"));
+}
+
+void keepAvatarFromPrevious(User& user, const User& previous)
+{
+    user.avatarPath = previous.avatarPath;
+    user.avatarVersion = previous.avatarVersion;
+    user.avatarEtag = previous.avatarEtag;
+    user.avatarContentHash = previous.avatarContentHash;
 }
 
 bool matchesFriendKeyword(const User& user, const QString& keyword)
@@ -119,12 +167,30 @@ User userFromJson(const QJsonObject& object)
     user.nick = object.value(QStringLiteral("nick")).toString(
             object.value(QStringLiteral("nickName")).toString(object.value(QStringLiteral("displayName")).toString()));
     user.remark = object.value(QStringLiteral("remark")).toString();
-    user.avatarPath = object.value(QStringLiteral("avatarPath")).toString(
-            object.value(QStringLiteral("avatarUrl")).toString());
+    user.avatarVersion = object.value(QStringLiteral("avatarVersion")).toInt();
+    user.avatarEtag = object.value(QStringLiteral("avatarEtag")).toString();
+    user.avatarContentHash = object.value(QStringLiteral("avatarContentHash")).toString();
+    QString avatarPath = AvatarSource::fromAvatarFileId(avatarFileIdFrom(object));
+    if (avatarPath.isEmpty()) {
+        avatarPath = object.value(QStringLiteral("avatarPath")).toString(
+                object.value(QStringLiteral("avatarUrl")).toString());
+    }
+    user.avatarPath = AvatarSource::versioned(
+            avatarPath,
+            user.avatarVersion,
+            user.avatarEtag,
+            user.avatarContentHash);
+    qInfo().noquote() << "[Avatar] user parsed"
+                      << "userId=" << user.id
+                      << "hasAvatarPayload=" << (hasAvatarPayload(object) ? QStringLiteral("yes") : QStringLiteral("no"))
+                      << "source=" << user.avatarPath
+                      << "version=" << user.avatarVersion
+                      << "etag=" << user.avatarEtag
+                      << "hash=" << user.avatarContentHash;
     user.status = userStatusFromString(object.value(QStringLiteral("status")).toString());
     user.signature = object.value(QStringLiteral("signature")).toString();
     user.isDnd = object.value(QStringLiteral("isDnd")).toBool(false);
-    user.isFriend = object.value(QStringLiteral("isFriend")).toBool(true);
+    user.isFriend = object.value(QStringLiteral("isFriend")).toBool(false);
     user.friendGroupId = object.value(QStringLiteral("friendGroupId")).toString(QStringLiteral("default"));
     user.friendGroupName = object.value(QStringLiteral("friendGroupName")).toString(QStringLiteral("默认分组"));
     user.region = object.value(QStringLiteral("region")).toString();
@@ -138,6 +204,9 @@ QJsonObject userToJson(const User& user)
             {QStringLiteral("nick"), user.nick},
             {QStringLiteral("remark"), user.remark},
             {QStringLiteral("avatarPath"), user.avatarPath},
+            {QStringLiteral("avatarVersion"), user.avatarVersion},
+            {QStringLiteral("avatarEtag"), user.avatarEtag},
+            {QStringLiteral("avatarContentHash"), user.avatarContentHash},
             {QStringLiteral("status"), userStatusToString(user.status)},
             {QStringLiteral("signature"), user.signature},
             {QStringLiteral("isDnd"), user.isDnd},
@@ -323,19 +392,119 @@ private:
 UserRepository::UserRepository(QObject* parent)
     : QObject(parent)
 {
-    LocalDataStore& store = LocalDataStore::instance();
-    for (const QJsonObject& object : store.values(QStringLiteral("users"))) {
-        const User user = userFromJson(object);
-        if (!user.id.isEmpty()) {
-            userMap.insert(user.id, user);
+    reloadFromStore();
+
+    connect(&LocalDataStore::instance(),
+            &LocalDataStore::activeAccountChanged,
+            this,
+            [this](const QString&) {
+                reloadFromStore();
+            });
+    connect(&LocalDataStore::instance(),
+            &LocalDataStore::domainChanged,
+            this,
+            [this](const QString& domain) {
+                if (domain == QStringLiteral("users")) {
+                    reloadFromStore();
+                }
+            },
+            Qt::QueuedConnection);
+
+    connect(&AppEventBus::instance(),
+            &AppEventBus::typedEventReceived,
+            this,
+            [this](const QString& type, const QJsonObject& payload, const RealtimeEvent&) {
+        if (type != QStringLiteral("profile.updated")) {
+            return;
         }
-    }
+
+        QJsonObject object = payload.value(QStringLiteral("profile")).toObject();
+        if (object.isEmpty()) {
+            object = payload;
+        }
+
+        const QString userId = payload.value(QStringLiteral("userId")).toString();
+        const QString userUuid = payload.value(QStringLiteral("userUuid")).toString();
+        if (!userId.isEmpty() && !object.contains(QStringLiteral("userId"))) {
+            object.insert(QStringLiteral("userId"), userId);
+        }
+        if (!userUuid.isEmpty() && !object.contains(QStringLiteral("userUuid"))) {
+            object.insert(QStringLiteral("userUuid"), userUuid);
+        }
+
+        for (const QString& key : {QStringLiteral("avatarUrl"),
+                                   QStringLiteral("avatarFileId"),
+                                   QStringLiteral("fileId"),
+                                   QStringLiteral("avatarVersion"),
+                                   QStringLiteral("avatarEtag"),
+                                   QStringLiteral("avatarContentHash")}) {
+            if (payload.contains(key) && !object.contains(key)) {
+                object.insert(key, payload.value(key));
+            }
+        }
+        if (payload.contains(QStringLiteral("avatar")) && !object.contains(QStringLiteral("avatar"))) {
+            object.insert(QStringLiteral("avatar"), payload.value(QStringLiteral("avatar")));
+        }
+
+        User user = userFromJson(object);
+        if (user.id.isEmpty()) {
+            return;
+        }
+
+        const User previous = requestUserDetail({user.id});
+        if (!previous.id.isEmpty()) {
+            const bool avatarPayload = hasAvatarPayload(object);
+            if (!avatarPayload ||
+                (previous.avatarVersion > 0 &&
+                 user.avatarVersion > 0 &&
+                 user.avatarVersion < previous.avatarVersion)) {
+                qInfo().noquote() << "[Avatar] user kept previous avatar"
+                                  << "userId=" << user.id
+                                  << "avatarPayload=" << (avatarPayload ? QStringLiteral("yes") : QStringLiteral("no"))
+                                  << "previousSource=" << previous.avatarPath
+                                  << "incomingSource=" << user.avatarPath
+                                  << "previousVersion=" << previous.avatarVersion
+                                  << "incomingVersion=" << user.avatarVersion;
+                keepAvatarFromPrevious(user, previous);
+            }
+            if (user.nick.isEmpty()) {
+                user.nick = previous.nick;
+            }
+            user.remark = previous.remark;
+            user.status = object.contains(QStringLiteral("status")) ? user.status : previous.status;
+            user.signature = object.contains(QStringLiteral("signature")) ? user.signature : previous.signature;
+            user.isDnd = previous.isDnd;
+            user.isFriend = previous.isFriend;
+            user.friendGroupId = previous.friendGroupId;
+            user.friendGroupName = previous.friendGroupName;
+            user.region = object.contains(QStringLiteral("region")) ? user.region : previous.region;
+        }
+
+        saveUser(user);
+    });
 }
 
 UserRepository& UserRepository::instance()
 {
     static UserRepository repo;
     return repo;
+}
+
+void UserRepository::reloadFromStore()
+{
+    QMap<QString, User> nextUsers;
+    for (const QJsonObject& object : LocalDataStore::instance().values(QStringLiteral("users"))) {
+        const User user = userFromJson(object);
+        if (!user.id.isEmpty()) {
+            nextUsers.insert(user.id, user);
+        }
+    }
+
+    {
+        QMutexLocker locker(&mutex);
+        userMap = nextUsers;
+    }
+    emit friendListChanged();
 }
 
 QVector<FriendSummary> UserRepository::requestFriendList(const FriendListRequest& query) const
@@ -443,7 +612,7 @@ QString UserRepository::requestUserAvatarImageAsync(const QString& userId, int d
             QThread::msleep(static_cast<unsigned long>(boundedDelayMs));
         }
 
-        QImageReader reader(source);
+        QImageReader reader(AvatarSource::cleanForIo(source));
         reader.setAutoTransform(true);
         const QImage image = reader.read();
         QMetaObject::invokeMethod(this, [this, requestId, userId, image]() {
@@ -479,6 +648,9 @@ void UserRepository::saveUser(const User& user)
     changed = !userMap.contains(user.id) || userMap.value(user.id).nick != user.nick
             || userMap.value(user.id).remark != user.remark
             || userMap.value(user.id).avatarPath != user.avatarPath
+            || userMap.value(user.id).avatarVersion != user.avatarVersion
+            || userMap.value(user.id).avatarEtag != user.avatarEtag
+            || userMap.value(user.id).avatarContentHash != user.avatarContentHash
             || userMap.value(user.id).status != user.status
             || userMap.value(user.id).signature != user.signature
             || userMap.value(user.id).isDnd != user.isDnd
@@ -491,6 +663,10 @@ void UserRepository::saveUser(const User& user)
     LocalDataStore::instance().upsertValue(QStringLiteral("users"), user.id, userToJson(user));
 
     if (!oldAvatarPath.isEmpty() && oldAvatarPath != user.avatarPath) {
+        qInfo().noquote() << "[Avatar] user avatar changed"
+                          << "userId=" << user.id
+                          << "oldSource=" << oldAvatarPath
+                          << "newSource=" << user.avatarPath;
         ImageService::instance().invalidateSource(oldAvatarPath);
     }
     if (changed) {

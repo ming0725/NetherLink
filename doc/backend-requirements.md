@@ -33,7 +33,11 @@
 | `user_id_changes` | `id`, `user_id`, `old_public_id`, `new_public_id`, `changed_at`, `client_operation_id` | 记录公开 ID 修改历史，支持审计、风控和幂等重试。 |
 | `user_preferences` | `user_id`, `theme_color`, `font_mode`, `input_effects`, `settings_json`, `version` | 用户偏好配置。 |
 | `user_sessions` | `id`, `user_id`, `refresh_token_hash`, `device_id`, `device_name`, `expires_at`, `revoked_at`, `last_seen_at` | refresh token 会话管理。 |
-| `files` | `id`, `owner_user_id`, `bucket`, `object_key`, `mime_type`, `size_bytes`, `etag`, `content_hash`, `url`, `version` | 头像、群头像、帖子图片、聊天附件等文件元数据。 |
+| `files` | `id`, `owner_user_id`, `original_file_name`, `bucket`, `object_key`, `mime_type`, `size_bytes`, `etag`, `content_hash`, `storage_status`, `visibility`, `version` | MinIO/S3 对象元数据。对象路径只在后端内部使用，API 不直接暴露 `object_key`。 |
+| `file_variants` | `id`, `file_id`, `variant_type`, `bucket`, `object_key`, `mime_type`, `size_bytes`, `width`, `height`, `duration_ms`, `etag`, `content_hash` | 缩略图、转码视频、海报图、头像裁剪图等派生文件。 |
+| `file_usages` | `id`, `file_id`, `usage_type`, `business_id`, `owner_user_id`, `visibility`, `created_at`, `deleted_at` | 文件被头像、聊天、帖子、AI 会话等业务引用的关系，用于权限、清理和审计。 |
+| `file_upload_sessions` | `id`, `user_id`, `target_type`, `status`, `upload_mode`, `s3_upload_id`, `part_size_bytes`, `total_parts`, `uploaded_parts_json`, `expected_mime_type`, `expected_size_bytes`, `expires_at`, `client_operation_id` | 直传对象存储前的上传会话、分片上传状态和幂等控制。 |
+| `file_processing_jobs` | `id`, `file_id`, `job_type`, `status`, `result_json`, `error_code`, `started_at`, `finished_at` | 图片压缩、视频转码、实况拆分、AI 文件解析等异步处理任务。 |
 | `friend_groups` | `id`, `user_id`, `name`, `sort_order` | 好友分组。 |
 | `friendships` | `id`, `user_id`, `friend_user_id`, `remark`, `friend_group_id`, `is_dnd`, `status`, `version` | 好友关系和用户对好友的私有设置。 |
 | `friend_requests` | `id`, `from_user_id`, `to_user_id`, `message`, `source_type`, `source_group_id`, `source_friend_id`, `status`, `handled_at` | 好友申请。 |
@@ -57,6 +61,8 @@
 | `follows` | `follower_user_id`, `target_user_id`, `created_at` | 帖子作者关注关系。 |
 | `ai_conversations` | `id`, `user_id`, `title`, `last_message_at`, `has_unread_dot`, `model`, `context_used_tokens`, `context_max_tokens` | AI 聊天列表和上下文用量。 |
 | `ai_messages` | `id`, `conversation_id`, `role`, `text`, `token_count`, `created_at`, `feedback` | AI 会话消息。 |
+| `ai_uploaded_files` | `id`, `conversation_id`, `message_id`, `file_id`, `purpose`, `parse_status`, `extracted_text_file_id`, `token_count`, `retention_policy`, `expires_at` | AI 会话上传文件、解析结果和保留策略。 |
+| `ai_file_chunks` | `id`, `ai_file_id`, `chunk_index`, `content`, `token_count`, `embedding_vector`, `metadata_json` | AI 文件解析后的文本片段；需要检索增强时可用 pgvector 或外部向量库。 |
 | `operation_receipts` | `id`, `user_id`, `client_operation_id`, `operation_type`, `server_result_json`, `created_at` | 幂等操作回执。 |
 
 ## 3. REST 接口总表
@@ -179,7 +185,11 @@
 | GET | `/ai/conversations` | `offset`, `limit` | `entries[]` | 查询 AI 会话列表。 |
 | POST | `/ai/conversations` | `title?`, `firstMessage?` | `conversation` | 新建 AI 会话。 |
 | GET | `/ai/conversations/{conversationId}/messages` | - | `messages[]` | 查询 AI 会话消息。 |
-| POST | `/ai/conversations/{conversationId}/messages` | `message`, `clientMessageId` | `userMessage`, `assistantMessageId`, `streamId` | 触发 AI 回复，正文可用 SSE 或 WS 流式返回。 |
+| POST | `/ai/conversations/{conversationId}/messages` | `message`, `clientMessageId`, `aiFileIds?` | `userMessage`, `assistantMessageId`, `streamId`, `usedFiles[]` | 触发 AI 回复，正文可用 SSE 或 WS 流式返回；上传文件先完成解析或返回 `AI_FILE_NOT_READY`。 |
+| POST | `/ai/conversations/{conversationId}/files` | `fileId`, `purpose=reference/attachment`, `retentionPolicy?` | `aiFile`, `parseStatus` | 将已上传文件绑定到 AI 会话并启动解析。 |
+| GET | `/ai/conversations/{conversationId}/files` | - | `files[]` | 查询当前 AI 会话可引用文件和解析状态。 |
+| GET | `/ai/files/{aiFileId}` | - | `aiFile`, `parseStatus`, `tokenCount`, `previewText?` | 查询 AI 文件解析结果摘要。 |
+| DELETE | `/ai/files/{aiFileId}` | - | `ok` | 从 AI 会话移除文件；按保留策略决定是否清理原文件。 |
 | GET | `/ai/conversations/{conversationId}/context` | - | `usedTokens`, `maxTokens`, `available` | 查询上下文用量。 |
 | POST | `/ai/messages/{messageId}/feedback` | `feedback=liked/disliked/none` | `message` | AI 消息反馈。 |
 | POST | `/ai/title` | `firstUserMessage` | `title` | 根据首条用户消息生成标题。 |
@@ -188,14 +198,218 @@
 
 | 方法 | 路径 | 请求 | 响应 | 说明 |
 | --- | --- | --- | --- | --- |
-| POST | `/files` | multipart file, `bucket` | `fileId`, `url`, `etag`, `contentHash`, `version` | 上传头像、帖子图、聊天附件等文件。 |
-| GET | `/files/{fileId}` | - | 文件元数据或 302 到对象存储 | 查询文件或跳转下载。 |
+| POST | `/files/upload-session` | `targetType`, `fileName`, `mimeType`, `sizeBytes`, `contentHash?`, `uploadMode=auto/single/multipart`, `clientOperationId?` | `uploadSessionId`, `fileId`, `uploadMode`, `partSizeBytes?`, `totalParts?`, `uploadUrl?`, `headers?`, `expiresAt` | 创建 MinIO/S3 预签名上传会话；小文件单 PUT，大文件分片断点续传。 |
+| GET | `/files/upload-session/{uploadSessionId}` | - | `status`, `uploadMode`, `partSizeBytes`, `totalParts`, `uploadedParts[]`, `expiresAt` | 查询上传会话状态，用于断点续传和补偿。 |
+| POST | `/files/upload-session/{uploadSessionId}/parts` | `partNumbers[]` | `parts[]`，每项含 `partNumber`, `uploadUrl`, `headers`, `expiresAt` | 为指定分片签发短时效上传 URL；仅 `multipart` 模式使用。 |
+| POST | `/files/upload-session/{uploadSessionId}/complete` | `etag?`, `parts?`, `contentHash?` | `fileId`, `url`, `etag`, `contentHash`, `version`, `processingStatus` | 客户端直传完成后确认；单 PUT 传 `etag`，分片上传传 `parts[]`。 |
+| POST | `/files/upload-session/{uploadSessionId}/abort` | - | `ok` | 取消未完成上传，并调用 MinIO Abort Multipart Upload 或删除临时对象。 |
+| POST | `/files` | multipart/form-data file, `targetType` | `fileId`, `url`, `etag`, `contentHash`, `version`, `processingStatus` | 小文件或不支持直传时走后端转存到 MinIO。 |
+| GET | `/files/{fileId}` | - | 文件元数据、变体和受控下载 URL | 查询文件元数据；私有文件返回短时效签名 URL，不直接暴露对象路径。 |
+| GET | `/files/{fileId}/download-url` | `variant?` | `url`, `expiresAt`, `headers?` | 获取短时效下载 URL。 |
+| DELETE | `/files/{fileId}` | - | `ok` | 仅允许删除未被业务引用或当前用户有权删除的文件。 |
 | GET | `/notifications` | `type`, `limit`, `offset` | `notifications[]`, `unreadCount` | 统一通知入口。 |
 | POST | `/notifications/read-all` | `type?` | `ok`, `unreadCount=0` | 按类型或全部标记已读。 |
 | POST | `/notifications/{notificationId}/read` | - | `notification` | 单条通知已读。 |
 | POST | `/operations/receipt` | `clientOperationId`, `operationType`, `payload` | `status`, `serverResult` | 幂等操作回执查询或补偿。 |
 
-## 4. Token 验证机制
+## 4. 文件存储需求
+
+文件服务基于 MinIO，使用 S3 兼容 API。后端必须把 MinIO 当作对象存储底座，而不是把对象路径暴露给调用方。业务系统只持有 `files.id`、公开 URL 或短时效签名 URL；对象桶名、`object_key`、内部 endpoint、access key 只存在于后端配置和数据库元数据中。
+
+实现上建议在后端抽象 `ObjectStorageProvider`，第一实现固定为 MinIO；只允许使用 S3 兼容操作，例如 `PUT Object`、`GET Object`、`HEAD Object`、`Delete Object`、presigned URL 和 multipart upload。后续如迁移到云厂商 S3 兼容存储，不应影响业务表结构和 API。
+
+### 4.1 存储范围
+
+| 文件类型 | 是否进入 MinIO | 业务表关联 | 访问策略 | 处理要求 |
+| --- | --- | --- | --- | --- |
+| 用户头像 | 是 | `users.avatar_file_id` + `file_usages(avatar)` | 公开读或 CDN 公开读 | 校验图片格式，生成标准头像、缩略图，更新 `avatarVersion`。 |
+| 群头像 | 是 | `groups.avatar_file_id` + `file_usages(group_avatar)` | 群成员可读，公开群可公开读 | 同用户头像。 |
+| 聊天图片/语音/普通文件 | 是 | `message_attachments.file_id` + `file_usages(chat_attachment)` | 仅会话参与者可读 | 图片生成缩略图；语音记录时长；普通文件保留原始文件名和 MIME。 |
+| 聊天视频 | 是 | `message_attachments.file_id` | 仅会话参与者可读 | 生成封面图、低码率预览或转码结果。 |
+| 帖子图片 | 是 | `post_media.file_id` + `file_usages(post_media)` | 按帖子可见性裁决 | 生成多尺寸缩略图，保留宽高和内容 hash。 |
+| 帖子视频 | 是 | `post_media.file_id` + `cover_file_id` | 按帖子可见性裁决 | 生成封面、HLS/MP4 转码变体、时长和分辨率元数据。 |
+| 帖子实况 | 是 | `post_media.file_id` + `cover_file_id` + `metadata_json` | 按帖子可见性裁决 | 按产品形态保存为图片+短视频组合，或保存原始 Live Photo 包并生成可播放变体。 |
+| AI 对话上传文件 | 是，默认先保存原文件 | `ai_uploaded_files.file_id` | 仅上传者和该 AI 会话可读 | 异步解析为文本/结构化片段；模型调用只读取解析结果和必要片段。 |
+| AI 解析结果文本 | 是或数据库保存，按大小决定 | `ai_uploaded_files.extracted_text_file_id` 或 `ai_file_chunks` | 仅上传者和该 AI 会话可读 | 小文本可入库，大文本存 MinIO 并切片入 `ai_file_chunks`。 |
+| 临时上传文件 | 是 | `file_upload_sessions` | 上传者短时可写，默认不可读 | 未完成或未绑定业务的对象定时清理。 |
+
+### 4.2 MinIO / S3 约定
+
+建议至少拆分以下 bucket，生产环境可通过 CDN 或网关映射公开读资源：
+
+| bucket | 用途 | 默认权限 |
+| --- | --- | --- |
+| `netherlink-public` | 公开头像、公开帖子缩略图等可公开缓存资源 | 通过 CDN 或网关公开读。 |
+| `netherlink-protected` | 登录后按权限访问的聊天文件、私密帖子媒体、群头像 | 后端签发短时效下载 URL。 |
+| `netherlink-private` | AI 上传原文件、AI 解析结果、审核材料、内部处理产物 | 仅后端服务账号访问。 |
+| `netherlink-tmp` | 上传中、未确认、转码中间文件 | 短生命周期，定时清理。 |
+
+对象 key 由后端生成，不能信任客户端文件名。推荐格式：
+
+```text
+<target_type>/<yyyy>/<mm>/<owner_user_uuid>/<file_uuid>/<variant_or_original>
+```
+
+示例：
+
+```text
+avatar/2026/06/018f.../file_018f.../original.png
+post-media/2026/06/018f.../file_018f.../thumb_720.jpg
+ai-upload/2026/06/018f.../file_018f.../original.pdf
+```
+
+必须保存并校验：
+
+- `mime_type`：以后端 sniff 结果为准，客户端传值只作参考。
+- `size_bytes`：超过目标类型限制时拒绝。
+- `etag`：对象存储返回的 ETag，用于缓存和完整性辅助判断。
+- `content_hash`：建议使用 SHA-256，防重复上传、秒传和安全扫描。
+- `storage_status`：`pending`、`uploaded`、`processing`、`ready`、`failed`、`deleted`。
+- `visibility`：`public`、`authenticated`、`participants`、`owner_private`、`system_private`。
+
+`targetType` 建议固定枚举：
+
+```text
+avatar
+group_avatar
+chat_image
+chat_video
+chat_audio
+chat_file
+post_image
+post_video
+post_live
+ai_upload
+```
+
+### 4.3 上传流程
+
+上传分三种模式：
+
+| 模式 | 适用场景 | 后端行为 |
+| --- | --- | --- |
+| `single` | 小文件，建议 64 MiB 以下 | 返回一个预签名 `PUT Object` URL，客户端一次性直传。 |
+| `multipart` | 大文件、弱网、需要暂停/恢复的文件 | 后端创建 MinIO multipart upload，按分片签发 `UploadPart` URL。 |
+| `proxy` | 客户端不支持直传或极小文件 | 客户端用 `multipart/form-data` 上传到后端，后端转存 MinIO。 |
+
+基础流程：
+
+1. 客户端调用 `/files/upload-session`，传 `targetType`、`mimeType`、`sizeBytes`、`contentHash?`、`uploadMode`。
+2. 后端校验登录态、业务上限、MIME 白名单和用户配额，创建 `files` 与 `file_upload_sessions`。
+3. `single` 模式直接返回预签名 `PUT` URL；`multipart` 模式返回 `partSizeBytes`、`totalParts`，但分片 URL 可按需单独申请。
+4. 客户端上传到 MinIO；上传 URL 过期时间建议 5-15 分钟，过期后重新申请 URL，不重新创建业务文件。
+5. 客户端调用 `/files/upload-session/{id}/complete`，后端校验对象、写入元数据并启动处理任务。
+6. 后端把文件状态改为 `uploaded` 或 `processing`，按 `targetType` 创建处理任务。
+7. 处理完成后写入 `file_variants`、业务元数据和 `file_usages`，状态变为 `ready`，必要时通过 WebSocket 推送业务资源更新。
+
+上传完成但没有被业务绑定的文件必须进入临时保留区，建议 24 小时内自动清理。业务删除不一定立即物理删除对象，应先移除 `file_usages`，再由后台任务确认无引用后删除对象或转入冷存储。
+
+### 4.4 大文件分片和断点续传
+
+大文件上传必须支持 MinIO/S3 multipart upload，满足视频、实况、聊天大附件和 AI 大文档的弱网场景。
+
+分片规则：
+
+- 触发阈值：建议文件大于 64 MiB 自动使用 `multipart`，客户端也可显式请求。
+- 分片大小：默认 8-16 MiB；后端必须保证除最后一片外，每片不小于 S3 multipart 最小限制 5 MiB。
+- 分片数量：必须不超过 S3 上限 10000 片；超出时后端自动增大 `partSizeBytes`。
+- 分片编号：从 1 开始，按 `partNumber` 顺序完成；最后完成时 `parts[]` 必须按升序提交。
+- 并发上传：客户端可并发上传 3-6 个分片；后端可按用户、IP、文件类型限制并发和速率。
+- 分片 URL：每个分片使用独立短时效预签名 URL；URL 过期只影响该分片，不影响上传会话。
+
+断点续传要求：
+
+1. 客户端本地保存 `uploadSessionId`、`fileId`、`contentHash`、`partSizeBytes`、`totalParts` 和已上传分片的 `partNumber + etag`。
+2. 应用重启、网络恢复或 URL 过期后，客户端调用 `GET /files/upload-session/{id}` 获取服务端已知的 `uploadedParts[]`。
+3. 客户端只为缺失分片调用 `/files/upload-session/{id}/parts` 重新签发 URL，然后继续上传。
+4. 同一个分片重复上传必须是幂等的；后端以最后一次 MinIO 返回的 ETag 为准，并更新 `uploaded_parts_json`。
+5. 客户端调用 complete 时提交完整 `parts[]`，每项至少包含 `partNumber`、`etag`、`sizeBytes?`。
+6. 后端调用 MinIO `CompleteMultipartUpload` 后必须执行 `HEAD Object`，校验最终大小、MIME、业务状态和 `contentHash?`。
+
+`contentHash` 推荐由客户端在上传前计算 SHA-256。对于超大文件，如果一次性 hash 成本过高，允许客户端先不传；后端完成后异步计算并更新 `files.content_hash`。需要秒传、去重、AI 审计或安全扫描的目标类型应要求最终必须有 `contentHash`。
+
+上传会话状态建议：
+
+```text
+created
+uploading
+completing
+uploaded
+processing
+ready
+failed
+aborted
+expired
+```
+
+会话过期策略：
+
+- 未完成上传会话默认 24 小时过期，大视频可放宽到 72 小时。
+- 过期会话不能 complete；客户端必须重新创建上传会话。
+- 后台任务需要定期调用 MinIO `AbortMultipartUpload` 清理过期 multipart upload，避免残留分片占用存储。
+- 用户主动取消时调用 `/files/upload-session/{id}/abort`，后端清理 MinIO 未完成分片和临时元数据。
+
+错误处理：
+
+- 单个分片上传失败时客户端只重试该分片，不重传整个文件。
+- complete 发现缺片时返回 `UPLOAD_PART_MISSING`，响应里带缺失 `partNumbers[]`。
+- complete 发现 ETag 不匹配时返回 `UPLOAD_PART_ETAG_MISMATCH`，客户端重新上传对应分片。
+- 上传会话过期返回 `UPLOAD_SESSION_EXPIRED`。
+- MinIO multipart upload 已被清理但业务会话仍存在时，返回 `UPLOAD_SESSION_INVALID`，客户端重新创建会话。
+
+### 4.5 访问控制
+
+文件下载必须先校验业务权限：
+
+- 头像：公开资料可读，但仍应通过 CDN URL 或后端可控 URL 返回。
+- 聊天附件：只有 `conversation_participants` 中的参与者可读；用户退出群后的历史访问策略由产品决定，后端必须可配置。
+- 帖子媒体：按 `posts.visibility`、作者、关注关系和删除状态裁决。
+- AI 上传文件：只允许上传者在对应 AI 会话中引用；不能被普通聊天、帖子或其它 AI 会话默认复用，除非用户显式重新绑定。
+- 管理后台和安全扫描服务使用独立服务账号，不复用用户下载 URL。
+
+公开 API 不返回 MinIO endpoint、bucket、object key、永久 access key。私有文件只返回短时效签名 URL，建议有效期 1-10 分钟；公开资源可返回 CDN URL，但仍需带 `etag`、`version`、`contentHash` 便于缓存失效。
+
+### 4.6 AI 上传文件设计
+
+AI 对话上传文件不建议“只解析后直接拼进提示词且不保存”。推荐默认流程是保存原文件、解析、切片、按需注入提示词：
+
+1. 用户先通过 `/files/upload-session` 或 `/files` 上传文件，`targetType=ai_upload`。
+2. 客户端调用 `/ai/conversations/{conversationId}/files` 把 `fileId` 绑定到 AI 会话。
+3. 后端创建 `ai_uploaded_files`，启动 `file_processing_jobs(job_type=ai_parse)`。
+4. 解析器按 MIME 分流：PDF、txt、Markdown、docx、xlsx、图片 OCR、代码文件等分别处理。
+5. 小文件解析文本可直接写入 `ai_file_chunks.content`；大文件的完整抽取文本存为 `extracted_text_file_id`，再把摘要和切片入库。
+6. 发送 AI 消息时，客户端传 `aiFileIds`；服务端只把相关摘要、命中的 chunks 或用户选中的文件片段加入模型上下文。
+7. 若文件还在解析，消息接口返回 `AI_FILE_NOT_READY`，或按请求参数允许“仅使用文件名/摘要继续”。
+
+这种设计的原因：
+
+- 模型上下文有限，不能把大文件原文无条件拼进 prompt。
+- 原文件需要用于重新解析、审计、下载、用户复查和不同模型策略复用。
+- 异步解析失败可以重试，不要求用户重新上传。
+- 可以通过 `retention_policy` 控制隐私：`conversation` 随会话保留、`temporary` 到期删除、`source_deleted_after_parse` 解析成功后删除原文件但保留抽取文本。
+
+AI 文件默认保留策略建议：
+
+| 策略 | 原文件 | 解析文本/切片 | 适用场景 |
+| --- | --- | --- | --- |
+| `conversation` | 随 AI 会话保留 | 随 AI 会话保留 | 默认策略，方便后续追问。 |
+| `temporary` | 到期删除 | 到期删除 | 临时问答、敏感文件。 |
+| `source_deleted_after_parse` | 解析成功后删除 | 保留到会话删除或到期 | 用户不希望长期保存原文件，但接受保存文本特征。 |
+| `none` | 不允许持久化 | 不允许持久化 | 仅适合很小文本输入；后端不应把二进制文件直接塞进 prompt。 |
+
+当 `retention_policy=none` 时，只允许纯文本且大小受限，服务端可在请求生命周期内解析并注入 prompt，不写 MinIO；但仍要写最小审计记录，例如文件名、大小、hash、处理时间和用户确认状态。
+
+### 4.7 清理、扫描和限制
+
+- 所有上传文件必须做 MIME 白名单、大小限制、扩展名规范化和恶意内容扫描。
+- 图片需剥离不必要 EXIF，避免泄露地理位置；保留方向信息或转正后再生成变体。
+- 视频转码和实况处理必须异步，不阻塞发帖主流程；帖子可先处于 `processing` 状态。
+- 文件引用必须通过 `file_usages` 统计，后台任务只删除无引用且过保留期的对象。
+- 配额至少按用户维度统计：总容量、单文件大小、每日上传流量、AI 解析 token 或页数。
+- 删除用户或会话时，应根据合规要求软删元数据、撤销访问 URL，并异步物理删除对象。
+- MinIO bucket 应开启版本控制或对象锁的取舍由部署环境决定；业务层仍以 `files.version` 和 `file_variants` 为准。
+
+## 5. Token 验证机制
 
 | 项 | 设计 |
 | --- | --- |
@@ -218,10 +432,19 @@
 | 401 | `REFRESH_TOKEN_INVALID` | refresh token 失效，需要重新登录。 |
 | 403 | `PERMISSION_DENIED` | 用户无权操作资源。 |
 | 409 | `VERSION_CONFLICT` | 资料版本冲突，需要重新拉取。 |
+| 413 | `FILE_TOO_LARGE` | 文件超过目标类型或用户配额限制。 |
+| 415 | `FILE_TYPE_NOT_ALLOWED` | MIME、扩展名或文件内容不符合白名单。 |
+| 409 | `FILE_NOT_READY` | 文件仍在上传、处理或转码，暂不可绑定业务。 |
+| 410 | `UPLOAD_SESSION_EXPIRED` | 上传会话已过期，需要重新创建。 |
+| 409 | `UPLOAD_SESSION_INVALID` | MinIO multipart upload 不存在或已被清理，需要重新创建。 |
+| 409 | `UPLOAD_PART_MISSING` | 分片上传 complete 时缺少必要分片。 |
+| 409 | `UPLOAD_PART_ETAG_MISMATCH` | 分片 ETag 与对象存储记录不一致。 |
+| 409 | `AI_FILE_NOT_READY` | AI 上传文件尚未解析完成，暂不可用于模型上下文。 |
+| 422 | `AI_FILE_PARSE_FAILED` | AI 文件解析失败，需要用户删除、重试或换格式上传。 |
 
-## 5. WebSocket 需求
+## 6. WebSocket 需求
 
-### 5.1 连接
+### 6.1 连接
 
 | 项 | 要求 |
 | --- | --- |
@@ -231,7 +454,7 @@
 | 恢复 | 连接方保存 `lastEventId`，重连后发送 `resume`；服务端补发最近事件，超出保留窗口则返回 `sync.required`。 |
 | 顺序 | 每个用户连接收到的事件带全局递增 `eventId` 和服务端 `createdAt`；同一 conversation 内消息按服务端分配的 `messageSeq` 排序。 |
 
-### 5.2 服务端接收事件
+### 6.2 服务端接收事件
 
 | event | payload | 返回/广播 | 说明 |
 | --- | --- | --- | --- |
@@ -241,10 +464,10 @@
 | `chat.message.recall` | `conversationId`, `messageId` | `chat.message.recalled` | 撤回。 |
 | `chat.read` | `conversationId`, `lastReadMessageId`, `lastReadAt` | `chat.read.updated` | 已读同步。 |
 | `presence.update` | `status` | `presence.updated` | 在线状态。 |
-| `ai.message.send` | `conversationId`, `clientMessageId`, `message` | `ai.stream.chunk`, `ai.stream.done` | AI 流式回复。 |
+| `ai.message.send` | `conversationId`, `clientMessageId`, `message`, `aiFileIds?` | `ai.stream.chunk`, `ai.stream.done` | AI 流式回复；服务端只使用解析完成且当前用户有权访问的文件。 |
 | `ai.stream.cancel` | `streamId` | `ai.stream.cancelled` | 停止 AI 回复。 |
 
-### 5.3 服务端推送事件
+### 6.3 服务端推送事件
 
 | event | payload | 语义 |
 | --- | --- | --- |
@@ -266,7 +489,7 @@
 | `preference.updated` | `preferences`, `version` | 用户偏好变化。 |
 | `sync.required` | `scope`, `reason` | 事件无法完整补发，需要通过 REST 重新拉取对应范围。 |
 
-## 6. 响应模型字段建议
+## 7. 响应模型字段建议
 
 资料类响应应统一包含：
 
@@ -329,6 +552,75 @@
 }
 ```
 
+文件响应统一返回业务可用 URL，不返回对象存储内部路径：
+
+```json
+{
+  "fileId": "file_018f4f7e",
+  "fileName": "report.pdf",
+  "mimeType": "application/pdf",
+  "sizeBytes": 204800,
+  "url": "https://cdn.example.com/protected/file_018f4f7e?sig=...",
+  "thumbnailUrl": null,
+  "visibility": "owner_private",
+  "processingStatus": "ready",
+  "version": 1,
+  "etag": "\"minio-etag\"",
+  "contentHash": "sha256:..."
+}
+```
+
+AI 文件响应必须暴露解析状态和上下文成本：
+
+```json
+{
+  "aiFileId": "aif_001",
+  "fileId": "file_018f4f7e",
+  "fileName": "report.pdf",
+  "parseStatus": "ready",
+  "tokenCount": 8420,
+  "retentionPolicy": "conversation",
+  "previewText": "前 200 字摘要或抽取片段..."
+}
+```
+
+分片上传会话响应示例：
+
+```json
+{
+  "uploadSessionId": "ups_001",
+  "fileId": "file_018f4f7e",
+  "uploadMode": "multipart",
+  "partSizeBytes": 8388608,
+  "totalParts": 18,
+  "uploadedParts": [
+    {
+      "partNumber": 1,
+      "etag": "\"part-etag-1\"",
+      "sizeBytes": 8388608
+    }
+  ],
+  "expiresAt": "2026-06-01T12:00:00.000Z"
+}
+```
+
+分片 URL 响应示例：
+
+```json
+{
+  "parts": [
+    {
+      "partNumber": 2,
+      "uploadUrl": "https://minio.example.com/netherlink-tmp/...?partNumber=2&uploadId=...",
+      "headers": {
+        "Content-Type": "application/octet-stream"
+      },
+      "expiresAt": "2026-06-01T10:15:00.000Z"
+    }
+  ]
+}
+```
+
 列表分页响应统一：
 
 ```json
@@ -351,7 +643,7 @@
 }
 ```
 
-## 7. 实施优先级
+## 8. 实施优先级
 
 | 优先级 | 后端能力 | 原因 |
 | --- | --- | --- |
@@ -360,7 +652,7 @@
 | P0 | WebSocket 鉴权、消息发送/接收、历史消息分页 | 聊天是实时核心功能，必须先保证消息可靠性和补偿拉取。 |
 | P1 | 好友申请、群申请、通知未读 | 社交关系变更和通知需要后端统一裁决。 |
 | P1 | 群成员和权限操作 | 敏感操作必须由服务端校验权限。 |
-| P1 | 文件上传和文件版本 | 头像、帖子图和聊天附件都依赖文件服务。 |
+| P1 | MinIO/S3 文件上传、预签名 URL、文件版本、缩略图/转码任务 | 头像、帖子媒体、聊天附件和 AI 上传文件都依赖统一文件服务。 |
 | P2 | 帖子流、帖子详情、点赞、评论、回复 | 内容社区能力。 |
-| P2 | AI 聊天会话、消息、流式回复 | AI 会话能力。 |
+| P2 | AI 聊天会话、消息、上传文件解析、上下文切片和流式回复 | AI 会话能力，且需要避免把大文件直接塞进 prompt。 |
 | P3 | 幂等操作回执和批量补偿同步 | 网络不稳定和多端一致性增强。 |

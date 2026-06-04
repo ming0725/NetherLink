@@ -148,12 +148,16 @@ void AiChatConversationWidget::setController(AiChatSessionController* controller
             this, &AiChatConversationWidget::onAiReplyMessageAdded);
     connect(m_controller, &AiChatSessionController::aiReplyMessageUpdated,
             this, &AiChatConversationWidget::onAiReplyMessageUpdated);
+    connect(m_controller, &AiChatSessionController::aiReplyMessageReplaced,
+            this, &AiChatConversationWidget::onAiReplyMessageReplaced);
     connect(m_controller, &AiChatSessionController::aiReplyMessageRemoved,
             this, &AiChatConversationWidget::onAiReplyMessageRemoved);
     connect(m_controller, &AiChatSessionController::aiReplyFinished,
             this, &AiChatConversationWidget::onAiReplyFinished);
     connect(m_controller, &AiChatSessionController::aiReplyCanceled,
             this, &AiChatConversationWidget::onAiReplyCanceled);
+    connect(m_controller, &AiChatSessionController::aiReplyFailed,
+            this, &AiChatConversationWidget::onAiReplyFailed);
     connect(m_controller, &AiChatSessionController::messagesLoaded,
             this, &AiChatConversationWidget::onConversationMessagesLoaded);
     connect(m_controller, &AiChatSessionController::contextUsageLoaded,
@@ -590,6 +594,20 @@ void AiChatConversationWidget::onAiReplyMessageUpdated(const QString& conversati
     }
 }
 
+void AiChatConversationWidget::onAiReplyMessageReplaced(const QString& conversationId,
+                                                        const QString& messageId,
+                                                        const AiChatMessage& replacement)
+{
+    if (m_currentConversation.conversationId == conversationId) {
+        if (m_messageView->messageDelegate()->streamingMessageId() == messageId) {
+            m_messageView->messageDelegate()->setStreamingMessageId(replacement.messageId);
+        }
+        m_messageModel->replaceMessage(messageId, replacement);
+        m_messageView->scrollToBottomIfLocked();
+        updateNewMessageNotifier();
+    }
+}
+
 void AiChatConversationWidget::onAiReplyMessageRemoved(const QString& conversationId,
                                                        const QString& messageId)
 {
@@ -639,6 +657,20 @@ void AiChatConversationWidget::onAiReplyCanceled(const QString& conversationId, 
         m_streamingNotifierHeld = false;
     }
     updateNewMessageNotifier();
+}
+
+void AiChatConversationWidget::onAiReplyFailed(const QString& conversationId,
+                                               const QString& messageId,
+                                               const QString& message)
+{
+    if (m_currentConversation.conversationId == conversationId || m_currentConversation.conversationId.isEmpty()) {
+        if (m_messageView->messageDelegate()->streamingMessageId() == messageId) {
+            m_messageView->messageDelegate()->setStreamingMessageId(QString());
+            m_messageView->refreshMessageLayout();
+        }
+        m_inputBar->setStreaming(false);
+        GlobalNotification::showFailure(this, message);
+    }
 }
 
 void AiChatConversationWidget::onConversationMessagesLoaded(int requestId,

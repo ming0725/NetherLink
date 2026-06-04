@@ -32,6 +32,7 @@ signals:
 private:
     explicit CurrentUserProfileRepository(QObject* parent = nullptr);
     Q_DISABLE_COPY(CurrentUserProfileRepository)
+    void reloadFromStore();
 
     QMap<QString, CurrentUserProfile> m_profiles;
     mutable QMutex m_mutex;

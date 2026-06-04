@@ -7,6 +7,7 @@
 #include "shared/services/ImageService.h"
 #include "shared/theme/ThemeManager.h"
 #include "shared/ui/GlobalNotification.h"
+#include "shared/ui/renderers/MediaPlaceholderRenderer.h"
 #include <QAbstractTextDocumentLayout>
 #include <QPainter>
 #include <QRegularExpression>
@@ -854,7 +855,11 @@ void ChatItemDelegate::drawMessageReference(QPainter* painter,
             QPainterPath clipPath;
             clipPath.addRoundedRect(imageRect, REFERENCE_IMAGE_RADIUS, REFERENCE_IMAGE_RADIUS);
             painter->setClipPath(clipPath);
-            painter->drawPixmap(imageRect, image);
+            if (image.isNull()) {
+                MediaPlaceholderRenderer::drawImage(painter, imageRect, REFERENCE_IMAGE_RADIUS);
+            } else {
+                painter->drawPixmap(imageRect, image);
+            }
             painter->restore();
             return;
         }
@@ -893,7 +898,11 @@ void ChatItemDelegate::drawAvatar(QPainter* painter, const QRect& rect,
     const QPixmap avatar = ImageService::instance().circularAvatar(avatarPath,
                                                                    rect.width(),
                                                                    painter->device()->devicePixelRatioF());
-    painter->drawPixmap(rect, avatar);
+    if (avatar.isNull()) {
+        MediaPlaceholderRenderer::drawAvatar(painter, rect);
+    } else {
+        painter->drawPixmap(rect, avatar);
+    }
 }
 
 void ChatItemDelegate::drawTextMessage(QPainter* painter, const QRect& rect,
@@ -1026,6 +1035,7 @@ void ChatItemDelegate::drawImageMessage(QPainter* painter, const QRect& rect,
 {
     const QSize sourceSize = ImageService::instance().sourceSize(imageSource);
     if (!sourceSize.isValid()) {
+        MediaPlaceholderRenderer::drawImage(painter, rect, IMAGE_RADIUS);
         return;
     }
 
@@ -1038,7 +1048,11 @@ void ChatItemDelegate::drawImageMessage(QPainter* painter, const QRect& rect,
     clipPath.addRoundedRect(rect, IMAGE_RADIUS, IMAGE_RADIUS);
     painter->save();
     painter->setClipPath(clipPath);
-    painter->drawPixmap(rect, image);
+    if (image.isNull()) {
+        MediaPlaceholderRenderer::drawImage(painter, rect, IMAGE_RADIUS);
+    } else {
+        painter->drawPixmap(rect, image);
+    }
     if (isSelected) {
         painter->fillRect(rect, ThemeManager::instance().color(ThemeColor::ScrollThumb));
     }

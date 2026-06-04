@@ -40,9 +40,15 @@ private slots:
     void onAiReplyMessageUpdated(const QString& conversationId,
                                  const QString& messageId,
                                  const QString& text);
+    void onAiReplyMessageReplaced(const QString& conversationId,
+                                  const QString& messageId,
+                                  const AiChatMessage& replacement);
     void onAiReplyMessageRemoved(const QString& conversationId, const QString& messageId);
     void onAiReplyFinished(const QString& conversationId, const QString& messageId);
     void onAiReplyCanceled(const QString& conversationId, const QString& messageId);
+    void onAiReplyFailed(const QString& conversationId,
+                         const QString& messageId,
+                         const QString& message);
     void onConversationMessagesLoaded(int requestId,
                                       const QString& conversationId,
                                       const QVector<AiChatMessage>& messages);

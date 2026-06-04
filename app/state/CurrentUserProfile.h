@@ -9,6 +9,9 @@ struct CurrentUserProfile {
     QString userId;
     QString nickName;
     QString avatarPath;
+    int avatarVersion = 0;
+    QString avatarEtag;
+    QString avatarContentHash;
     UserStatus status = Offline;
     QString signature;
     QString region;

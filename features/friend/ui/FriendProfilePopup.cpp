@@ -30,6 +30,7 @@
 #include "shared/ui/PaintedLabel.h"
 #include "shared/ui/StatefulPushButton.h"
 #include "shared/ui/popup/InWindowPopupDialogs.h"
+#include "shared/ui/renderers/MediaPlaceholderRenderer.h"
 
 #ifdef Q_OS_WIN
 #include "platform/windows/WindowsPopupChrome.h"
@@ -115,6 +116,10 @@ FriendProfilePopup::FriendProfilePopup(QWidget* parent)
     , m_statusIcon(new QLabel(this))
     , m_actionButton(new StatefulPushButton(this))
 {
+    connect(&ImageService::instance(), &ImageService::previewReady, this, [this]() {
+        update(avatarRect());
+    });
+
     setFixedWidth(kPopupWidth);
     setAttribute(Qt::WA_TranslucentBackground);
 #ifdef Q_OS_WIN
@@ -337,7 +342,11 @@ void FriendProfilePopup::paintEvent(QPaintEvent* event)
         const QPixmap avatarPixmap = ImageService::instance().circularAvatar(m_avatarSource,
                                                                              kAvatarSize,
                                                                              devicePixelRatioF());
-        painter.drawPixmap(avatar, avatarPixmap);
+        if (avatarPixmap.isNull()) {
+            MediaPlaceholderRenderer::drawAvatar(&painter, avatar);
+        } else {
+            painter.drawPixmap(avatar, avatarPixmap);
+        }
     }
 
     const int separatorY = avatar.top() + kAvatarSize + kSeparatorTopSpacing;

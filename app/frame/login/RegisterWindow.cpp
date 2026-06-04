@@ -468,7 +468,10 @@ void RegisterWindow::setupUi()
         account.accountId = accountId;
         account.password = m_pendingPassword;
         account.displayName = result.user.nickName.isEmpty() ? m_pendingNickname : result.user.nickName;
-        account.avatarPath = result.user.avatarPath;
+        account.avatarSource = result.user.avatarPath;
+        account.avatarVersion = result.user.avatarVersion;
+        account.avatarEtag = result.user.avatarEtag;
+        account.avatarContentHash = result.user.avatarContentHash;
         account.status = Online;
         account.signature = result.user.signature;
         account.region = result.user.region;
@@ -479,6 +482,9 @@ void RegisterWindow::setupUi()
             profile.userId = result.user.userId.isEmpty() ? result.user.userUuid : result.user.userId;
             profile.nickName = result.user.nickName.isEmpty() ? account.displayName : result.user.nickName;
             profile.avatarPath = result.user.avatarPath;
+            profile.avatarVersion = result.user.avatarVersion;
+            profile.avatarEtag = result.user.avatarEtag;
+            profile.avatarContentHash = result.user.avatarContentHash;
             profile.status = Online;
             profile.signature = result.user.signature;
             profile.region = result.user.region;

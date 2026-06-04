@@ -1,12 +1,29 @@
 #include "ImageService.h"
 
+#include <QBuffer>
+#include <QCryptographicHash>
+#include <QDateTime>
+#include <QDir>
+#include <QDebug>
+#include <QFile>
+#include <QFileInfo>
 #include <QImageReader>
 #include <QMetaObject>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QNetworkRequest>
 #include <QPainter>
 #include <QPainterPath>
 #include <QPixmapCache>
 #include <QRunnable>
+#include <QThread>
 #include <QThreadPool>
+#include <QUrl>
+
+#include "AvatarSource.h"
+#include "shared/data/LocalDataStore.h"
+#include "shared/network/AuthSession.h"
+#include "shared/network/HttpClient.h"
 
 namespace {
 
@@ -89,7 +106,7 @@ QImage readScaledPreview(const QString& source, const QSize& logicalSize, qreal 
         return {};
     }
 
-    QImageReader reader(source);
+    QImageReader reader(AvatarSource::cleanForIo(source));
     reader.setAutoTransform(true);
 
     const QSize sourceSize = reader.size();
@@ -114,6 +131,142 @@ QString previewSourceKey(const QString& source, const QSize& targetSize, qreal d
                  QString::number(dpr, 'f', 2));
 }
 
+QString ioSource(const QString& source)
+{
+    return AvatarSource::cleanForIo(source);
+}
+
+bool isExistingLocalFile(const QString& source)
+{
+    const QString cleanSource = ioSource(source);
+    return cleanSource.startsWith(QLatin1Char('/')) && QFileInfo::exists(cleanSource);
+}
+
+bool isApiRelativeSource(const QString& source)
+{
+    return source.startsWith(QLatin1Char('/')) && !isExistingLocalFile(source);
+}
+
+bool isRemoteSource(const QString& source)
+{
+    if (isApiRelativeSource(source)) {
+        return true;
+    }
+
+    const QUrl url(ioSource(source));
+    return url.scheme() == QStringLiteral("http") || url.scheme() == QStringLiteral("https");
+}
+
+QUrl resolvedRemoteUrl(const QString& source)
+{
+    const QString cleanSource = ioSource(source);
+    if (isApiRelativeSource(cleanSource)) {
+        const BackendEnvironment environment = HttpClient::instance().environment();
+        const QString prefix = environment.apiPrefix.startsWith(QLatin1Char('/'))
+                ? environment.apiPrefix
+                : QStringLiteral("/") + environment.apiPrefix;
+        const QUrl relative(cleanSource);
+        QString path = relative.path();
+        if (!path.startsWith(prefix + QLatin1Char('/')) && path != prefix) {
+            path = prefix + (path.startsWith(QLatin1Char('/')) ? path : QStringLiteral("/") + path);
+        }
+
+        QUrl url(environment.baseUrl);
+        url.setPath(path);
+        url.setQuery(relative.query());
+        return url;
+    }
+    return QUrl(cleanSource);
+}
+
+bool shouldAttachAuthorization(const QString& source, const QUrl& url)
+{
+    const QUrl baseUrl = HttpClient::instance().environment().baseUrl;
+    const bool sameBackendOrigin = url.scheme() == baseUrl.scheme()
+            && url.host() == baseUrl.host()
+            && url.port() == baseUrl.port();
+    return sameBackendOrigin && (isApiRelativeSource(source) || !source.isEmpty());
+}
+
+QImage imageFromBytes(const QByteArray& bytes)
+{
+    if (bytes.isEmpty()) {
+        return {};
+    }
+
+    QBuffer buffer;
+    buffer.setData(bytes);
+    buffer.open(QIODevice::ReadOnly);
+
+    QImageReader reader(&buffer);
+    reader.setAutoTransform(true);
+    return reader.read();
+}
+
+QString remoteDiskCachePath(const QString& source)
+{
+    if (source.isEmpty()) {
+        return {};
+    }
+
+    const QByteArray digest = QCryptographicHash::hash(source.toUtf8(), QCryptographicHash::Sha256).toHex();
+    const QString dirPath = LocalDataStore::instance().dataRootPath()
+                            + QStringLiteral("/cache/images");
+    QDir().mkpath(dirPath);
+    return QDir(dirPath).filePath(QString::fromLatin1(digest) + QStringLiteral(".img"));
+}
+
+QImage readRemoteDiskCache(const QString& source)
+{
+    const QString path = remoteDiskCachePath(source);
+    if (path.isEmpty() || !QFileInfo::exists(path)) {
+        return {};
+    }
+
+    QImageReader reader(path);
+    reader.setAutoTransform(true);
+    const QImage image = reader.read();
+    if (image.isNull()) {
+        qInfo().noquote() << "[Avatar] disk cache decode failed, removing"
+                          << "source=" << source
+                          << "path=" << path
+                          << "error=" << reader.errorString();
+        QFile::remove(path);
+    } else {
+        qInfo().noquote() << "[Avatar] disk cache hit"
+                          << "source=" << source
+                          << "path=" << path
+                          << "size=" << QStringLiteral("%1x%2").arg(image.width()).arg(image.height());
+    }
+    return image;
+}
+
+void writeRemoteDiskCache(const QString& source, const QByteArray& body)
+{
+    if (body.isEmpty()) {
+        return;
+    }
+
+    const QString path = remoteDiskCachePath(source);
+    if (path.isEmpty()) {
+        return;
+    }
+
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly)) {
+        qInfo().noquote() << "[Avatar] disk cache write failed"
+                          << "source=" << source
+                          << "path=" << path
+                          << "error=" << file.errorString();
+        return;
+    }
+    file.write(body);
+    qInfo().noquote() << "[Avatar] disk cache wrote"
+                      << "source=" << source
+                      << "path=" << path
+                      << "bytes=" << body.size();
+}
+
 } // namespace
 
 ImageService& ImageService::instance()
@@ -126,10 +279,24 @@ ImageService::ImageService()
     : QObject(nullptr)
     , m_originalCache(64 * 1024)
     , m_previewCache(32 * 1024)
+    , m_networkManager(new QNetworkAccessManager(this))
 {
     if (QPixmapCache::cacheLimit() < 65536) {
         QPixmapCache::setCacheLimit(65536);
     }
+}
+
+ImageService::LoadState ImageService::loadState(const QString& source) const
+{
+    if (source.isEmpty()) {
+        return LoadState::Empty;
+    }
+
+    QMutexLocker locker(&m_mutex);
+    if (m_originalCache.object(source)) {
+        return LoadState::Ready;
+    }
+    return m_loadStates.value(source, LoadState::Empty);
 }
 
 QImage ImageService::originalImage(const QString& source) const
@@ -138,19 +305,37 @@ QImage ImageService::originalImage(const QString& source) const
         return {};
     }
 
-    QMutexLocker locker(&m_mutex);
-    if (QImage* cached = m_originalCache.object(source)) {
-        return *cached;
+    {
+        QMutexLocker locker(&m_mutex);
+        if (QImage* cached = m_originalCache.object(source)) {
+            return *cached;
+        }
     }
 
-    QImageReader reader(source);
-    reader.setAutoTransform(true);
-    const QImage image = reader.read();
+    QImage image;
+    if (isRemoteSource(source)) {
+        image = readRemoteDiskCache(source);
+    } else {
+        QImageReader reader(ioSource(source));
+        reader.setAutoTransform(true);
+        image = reader.read();
+    }
     if (image.isNull()) {
+        if (isRemoteSource(source)) {
+            qInfo().noquote() << "[Avatar] original cache miss, requesting remote"
+                              << "source=" << source;
+        } else {
+            qInfo().noquote() << "[Avatar] local image read failed"
+                              << "source=" << source
+                              << "ioSource=" << ioSource(source);
+        }
         return {};
     }
 
+    QMutexLocker locker(&m_mutex);
     m_originalCache.insert(source, new QImage(image), imageCostKb(image));
+    m_sourceSizes.insert(source, image.size());
+    m_loadStates.insert(source, LoadState::Ready);
     return image;
 }
 
@@ -168,6 +353,7 @@ QPixmap ImageService::pixmap(const QString& source) const
 
     const QImage image = originalImage(source);
     if (image.isNull()) {
+        const_cast<ImageService*>(this)->requestOriginalWarmup(source);
         return {};
     }
 
@@ -184,9 +370,30 @@ QSize ImageService::sourceSize(const QString& source) const
         return {};
     }
 
-    QImageReader reader(source);
+    {
+        QMutexLocker locker(&m_mutex);
+        if (const QImage* cached = m_originalCache.object(source)) {
+            return cached->size();
+        }
+        const QSize cachedSize = m_sourceSizes.value(source);
+        if (cachedSize.isValid()) {
+            return cachedSize;
+        }
+    }
+
+    if (isRemoteSource(source)) {
+        const_cast<ImageService*>(this)->requestOriginalWarmup(source);
+        return {};
+    }
+
+    QImageReader reader(ioSource(source));
     reader.setAutoTransform(true);
-    return reader.size();
+    const QSize size = reader.size();
+    if (size.isValid()) {
+        QMutexLocker locker(&m_mutex);
+        m_sourceSizes.insert(source, size);
+    }
+    return size;
 }
 
 QPixmap ImageService::transformed(const QString& key,
@@ -204,6 +411,7 @@ QPixmap ImageService::transformed(const QString& key,
 
     const QImage image = originalImage(source);
     if (image.isNull()) {
+        const_cast<ImageService*>(this)->requestOriginalWarmup(source);
         return {};
     }
 
@@ -318,6 +526,14 @@ void ImageService::requestPreviewWarmup(const QString& source,
         return;
     }
 
+    if (isRemoteSource(source)) {
+        qInfo().noquote() << "[Avatar] preview warmup delegated to remote original"
+                          << "source=" << source
+                          << "target=" << QStringLiteral("%1x%2").arg(targetSize.width()).arg(targetSize.height());
+        requestOriginalWarmup(source);
+        return;
+    }
+
     const QString key = previewSourceKey(source, targetSize, devicePixelRatio);
     {
         QMutexLocker locker(&m_mutex);
@@ -329,12 +545,19 @@ void ImageService::requestPreviewWarmup(const QString& source,
 
     QThreadPool::globalInstance()->start(QRunnable::create([this, key, source, targetSize, devicePixelRatio]() {
         const QImage image = readScaledPreview(source, targetSize, devicePixelRatio);
-        QMetaObject::invokeMethod(this, [this, key, image]() {
+        QMetaObject::invokeMethod(this, [this, key, source, targetSize, image]() {
             {
                 QMutexLocker locker(&m_mutex);
                 m_pendingPreviewLoads.remove(key);
                 if (!image.isNull()) {
                     m_previewCache.insert(key, new QImage(image), imageCostKb(image));
+                    qInfo().noquote() << "[Avatar] local preview ready"
+                                      << "source=" << source
+                                      << "target=" << QStringLiteral("%1x%2").arg(targetSize.width()).arg(targetSize.height());
+                } else {
+                    qInfo().noquote() << "[Avatar] local preview decode failed"
+                                      << "source=" << source
+                                      << "target=" << QStringLiteral("%1x%2").arg(targetSize.width()).arg(targetSize.height());
                 }
             }
             emit previewReady();
@@ -345,6 +568,11 @@ void ImageService::requestPreviewWarmup(const QString& source,
 void ImageService::requestOriginalWarmup(const QString& source)
 {
     if (source.isEmpty()) {
+        return;
+    }
+
+    if (isRemoteSource(source)) {
+        requestRemoteOriginalWarmup(source);
         return;
     }
 
@@ -364,6 +592,168 @@ void ImageService::requestOriginalWarmup(const QString& source)
             m_pendingOriginalLoads.remove(source);
         }, Qt::QueuedConnection);
     }));
+}
+
+void ImageService::requestRemoteOriginalWarmup(const QString& source)
+{
+    if (source.isEmpty()) {
+        return;
+    }
+
+    if (QThread::currentThread() != thread()) {
+        QMetaObject::invokeMethod(this, [this, source]() {
+            requestRemoteOriginalWarmup(source);
+        }, Qt::QueuedConnection);
+        return;
+    }
+
+    {
+        QMutexLocker locker(&m_mutex);
+        if (m_originalCache.object(source) || m_pendingOriginalLoads.contains(source)) {
+            qInfo().noquote() << "[Avatar] remote request skipped"
+                              << "source=" << source
+                              << "reason=" << (m_originalCache.object(source) ? QStringLiteral("cached") : QStringLiteral("pending"));
+            return;
+        }
+        if (m_loadStates.value(source) == LoadState::Failed) {
+            const qint64 now = QDateTime::currentMSecsSinceEpoch();
+            const qint64 retryAfter = m_failedRetryAfterMs.value(source);
+            if (retryAfter > now) {
+                qInfo().noquote() << "[Avatar] remote request skipped"
+                                  << "source=" << source
+                                  << "reason=failed-state"
+                                  << "retryInMs=" << (retryAfter - now);
+                return;
+            }
+            qInfo().noquote() << "[Avatar] remote failed-state retry"
+                              << "source=" << source;
+        }
+        m_pendingOriginalLoads.insert(source);
+        m_loadStates.insert(source, LoadState::Loading);
+    }
+
+    const QUrl url = resolvedRemoteUrl(source);
+    if (!url.isValid() || url.scheme().isEmpty()) {
+        {
+            QMutexLocker locker(&m_mutex);
+            m_pendingOriginalLoads.remove(source);
+            m_loadStates.insert(source, LoadState::Failed);
+            m_failedRetryAfterMs.insert(source, QDateTime::currentMSecsSinceEpoch() + 30000);
+        }
+        qInfo().noquote() << "[Avatar] remote URL invalid"
+                          << "source=" << source
+                          << "url=" << url.toString();
+        emit previewReady();
+        emit resourceChanged(source);
+        return;
+    }
+
+    startRemoteOriginalRequest(source,
+                               url,
+                               shouldAttachAuthorization(source, url) && AuthSession::instance().hasAccessToken(),
+                               0);
+}
+
+void ImageService::startRemoteOriginalRequest(const QString& source,
+                                              const QUrl& url,
+                                              bool attachAuthorization,
+                                              int redirectCount)
+{
+    QNetworkRequest request(url);
+    request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
+                         QNetworkRequest::ManualRedirectPolicy);
+    request.setRawHeader("Accept", "image/*,*/*;q=0.8");
+    if (attachAuthorization) {
+        request.setRawHeader("Authorization",
+                             "Bearer " + AuthSession::instance().accessToken().toUtf8());
+    }
+#if QT_VERSION >= QT_VERSION_CHECK(5, 15, 0)
+    request.setTransferTimeout(15000);
+#endif
+
+    qInfo().noquote() << "[Avatar] remote request"
+                      << "source=" << source
+                      << "url=" << url.toString()
+                      << "auth=" << (attachAuthorization ? QStringLiteral("yes") : QStringLiteral("no"))
+                      << "redirectCount=" << redirectCount;
+
+    QNetworkReply* reply = m_networkManager->get(request);
+    connect(reply, &QNetworkReply::finished, this, [this, source, url, redirectCount, reply]() {
+        const QByteArray body = reply->readAll();
+        const bool networkOk = reply->error() == QNetworkReply::NoError;
+        const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        const QUrl redirectTarget = reply->attribute(QNetworkRequest::RedirectionTargetAttribute).toUrl();
+        if (status >= 300 && status < 400 && redirectTarget.isValid()) {
+            const QUrl nextUrl = url.resolved(redirectTarget);
+            qInfo().noquote() << "[Avatar] remote redirect"
+                              << "source=" << source
+                              << "status=" << status
+                              << "from=" << url.toString()
+                              << "to=" << nextUrl.toString();
+            reply->deleteLater();
+            if (redirectCount >= 5) {
+                {
+                    QMutexLocker locker(&m_mutex);
+                    m_pendingOriginalLoads.remove(source);
+                    m_loadStates.insert(source, LoadState::Failed);
+                    m_failedRetryAfterMs.insert(source, QDateTime::currentMSecsSinceEpoch() + 30000);
+                }
+                qInfo().noquote() << "[Avatar] remote redirect failed"
+                                  << "source=" << source
+                                  << "reason=too-many-redirects";
+                emit previewReady();
+                emit resourceChanged(source);
+                return;
+            }
+
+            startRemoteOriginalRequest(source,
+                                       nextUrl,
+                                       shouldAttachAuthorization(source, nextUrl) && AuthSession::instance().hasAccessToken(),
+                                       redirectCount + 1);
+            return;
+        }
+
+        const QImage image = networkOk ? imageFromBytes(body) : QImage();
+        {
+            QMutexLocker locker(&m_mutex);
+            m_pendingOriginalLoads.remove(source);
+            if (!image.isNull()) {
+                writeRemoteDiskCache(source, body);
+                m_originalCache.insert(source, new QImage(image), imageCostKb(image));
+                m_sourceSizes.insert(source, image.size());
+                m_loadStates.insert(source, LoadState::Ready);
+                m_failedRetryAfterMs.remove(source);
+            } else {
+                m_loadStates.insert(source, LoadState::Failed);
+                m_failedRetryAfterMs.insert(source, QDateTime::currentMSecsSinceEpoch() + 30000);
+            }
+        }
+        if (!image.isNull()) {
+            qInfo().noquote() << "[Avatar] remote response success"
+                              << "source=" << source
+                              << "url=" << url.toString()
+                              << "status=" << status
+                              << "bytes=" << body.size()
+                              << "size=" << QStringLiteral("%1x%2").arg(image.width()).arg(image.height());
+        } else if (networkOk) {
+            qInfo().noquote() << "[Avatar] remote response decode failed"
+                              << "source=" << source
+                              << "url=" << url.toString()
+                              << "status=" << status
+                              << "bytes=" << body.size()
+                              << "contentType=" << reply->header(QNetworkRequest::ContentTypeHeader).toString();
+        } else {
+            qInfo().noquote() << "[Avatar] remote response failed"
+                              << "source=" << source
+                              << "url=" << url.toString()
+                              << "status=" << status
+                              << "error=" << reply->errorString()
+                              << "bytes=" << body.size();
+        }
+        reply->deleteLater();
+        emit previewReady();
+        emit resourceChanged(source);
+    });
 }
 
 QPixmap ImageService::circularAvatar(const QString& source,
@@ -397,6 +787,10 @@ QPixmap ImageService::circularAvatarPreview(const QString& source,
         return {};
     }
 
+    if (isRemoteSource(source)) {
+        return circularAvatar(source, size, devicePixelRatio);
+    }
+
     const QSize targetSize(size, size);
     const QString key = variantKey("avatar-preview",
                                    source,
@@ -419,7 +813,7 @@ QPixmap ImageService::circularAvatarPreview(const QString& source,
     }
     if (image.isNull()) {
         const_cast<ImageService*>(this)->requestPreviewWarmup(source, targetSize, devicePixelRatio);
-        return {};
+        return circularAvatar(source, size, devicePixelRatio);
     }
 
     pixmap = renderPixmap(image,
@@ -440,13 +834,24 @@ void ImageService::invalidateSource(const QString& source)
         return;
     }
 
-    QMutexLocker locker(&m_mutex);
-    m_originalCache.remove(source);
-    const auto pendingKeys = m_pendingPreviewLoads.values();
-    for (const QString& key : pendingKeys) {
-        if (key.contains(source)) {
-            m_pendingPreviewLoads.remove(key);
+    {
+        QMutexLocker locker(&m_mutex);
+        m_originalCache.remove(source);
+        m_previewCache.clear();
+        m_sourceSizes.remove(source);
+        m_loadStates.remove(source);
+        m_failedRetryAfterMs.remove(source);
+        QPixmapCache::clear();
+        const auto pendingKeys = m_pendingPreviewLoads.values();
+        for (const QString& key : pendingKeys) {
+            if (key.contains(source)) {
+                m_pendingPreviewLoads.remove(key);
+            }
         }
+        m_pendingOriginalLoads.remove(source);
     }
-    m_pendingOriginalLoads.remove(source);
+
+    QFile::remove(remoteDiskCachePath(source));
+    emit previewReady();
+    emit resourceChanged(source);
 }

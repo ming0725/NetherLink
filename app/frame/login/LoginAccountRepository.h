@@ -12,6 +12,10 @@ struct LoginAccount {
     QString password;
     QString displayName;
     QString avatarPath;
+    QString avatarSource;
+    int avatarVersion = 0;
+    QString avatarEtag;
+    QString avatarContentHash;
     UserStatus status = Offline;
     QString signature;
     QString region;

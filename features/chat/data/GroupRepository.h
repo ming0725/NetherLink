@@ -41,6 +41,7 @@ signals:
 private:
     explicit GroupRepository(QObject* parent = nullptr);
     Q_DISABLE_COPY(GroupRepository)
+    void reloadFromStore();
 
     QMap<QString, Group> groupMap;
     mutable QMutex mutex; // 用于线程安全

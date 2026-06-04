@@ -35,6 +35,7 @@ private:
     ~GroupNotificationRepository() override = default;
 
     void ensureLoaded() const;
+    void reloadFromStore();
 
     mutable bool m_loaded = false;
     QVector<GroupNotification> m_notifications;

@@ -13,7 +13,7 @@
 - 上传、SSE 流式响应预留独立客户端，后续业务可以逐步接入。
 - 事件分发要做到解耦：网络层只发布标准事件，业务模块自行订阅对应 event type。
 - repository 继续作为业务入口、本地缓存、临时状态和事件游标承载层，但 API 对接不能依赖静态样例数据 fallback；`resources/data` 已删除。
-- 当前 AI 的模拟流式输出不是静态数据，后续应保留流式 UI 体验并用后端 SSE 替换输出源。
+- AI 文本回复通过后端 SSE 输出，保留现有流式追加、停止生成和完成态 UI。
 
 ## 已实现需求
 
@@ -165,9 +165,18 @@
 - 支持发起 `Accept: text/event-stream` 的 POST 请求。
 - 按 SSE block 解析 `event:` 和 `data:`。
 - 将 `data` 解析为 JSON object 后通过信号发出。
-- 支持取消流。
+- 支持取消流，取消时会断开当前 reply 信号后 abort，避免旧 reply 回调污染新请求。
 
-当前尚未接入 AI 消息业务，也未实现基于 `clientMessageId` 的业务级重放。
+### AI SSE 对话
+
+已用 `SseClient` 替换 `AiChatStreamClient` 原本地模拟流式输出：
+
+- 发送用户文本后请求 `POST /api/v1/ai/conversations/{conversationId}/messages?stream=true`。
+- 请求 body 固定包含 `message`、稳定 `clientMessageId` 和空 `aiFileIds`，不接入 AI 文件上传、绑定和解析轮询。
+- `ai.stream.chunk` 的 `delta` 会追加到现有临时 AI 消息，保持输入栏停止态、气泡增量刷新和自动滚动体验。
+- `ai.stream.done` 会读取服务端 `assistantMessage`，用服务端 `messageId/text/time` 替换本地临时消息并同步更新 `AiChatRepository`、`AiChatMessageListModel`。
+- `client.error` 或 HTTP/SSE 失败会结束流式状态并显示全局失败提示，不回退到本地模拟回复。
+- 用户停止生成时当前只取消客户端 SSE 读取；后端 `ai.stream.cancel` 命令尚未接入。
 
 ### WebSocket Realtime Client
 
@@ -272,20 +281,13 @@
 - 只接入已有 UI、模型和交互能承载的 API；不要因为后端已有接口就新增前端功能。
 - 删除静态样例数据依赖。repository 可保留为业务入口和缓存层，但真实业务数据以远程接口为准；`resources/data` 不再存在。
 - 网络不可用时显示错误、重试或空状态，不回退到静态本地数据。
-- AI 模拟流式输出要正常改造成后端 SSE 流式输出，保留分片追加、停止生成和完成替换等现有交互。
 
-1. AI SSE
-   - 用 `SseClient` 替换当前本地模拟流式输出，保留现有流式追加、停止生成和完成态 UI。
-   - 发送请求时强制生成并复用 `clientMessageId`。
-   - 对 `ai.stream.chunk` 拼接 delta，对 `ai.stream.done` 用服务端消息替换临时消息。
-   - `aiFileIds` 固定为空数组或省略，不实现 AI 文件上传、绑定、解析轮询和引用文件回答。
-
-2. 业务 API 封装
+1. 业务 API 封装
    - 每个 feature 增加独立 remote data source，例如 `ChatRemoteDataSource`、`FriendRemoteDataSource`。
    - repository 保留统一业务入口，但不再以静态样例数据作为 fallback；本地只保留缓存、临时 pending 状态、游标和必要的 UI 状态。
    - UI 层只观察 repository/model，不直接调用网络 client。
 
-3. 配置和安全存储
+2. 配置和安全存储
    - 将 base URL、代理、超时接入设置页。
    - access token 保持内存优先。
    - refresh token 是否落盘需结合 macOS Keychain、Windows Credential Manager 或 Qt 平台能力再实现。

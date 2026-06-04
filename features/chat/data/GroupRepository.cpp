@@ -1,6 +1,7 @@
 #include "GroupRepository.h"
 
 #include <QCollator>
+#include <QDebug>
 #include <QImageReader>
 #include <QJsonArray>
 #include <QJsonObject>
@@ -17,6 +18,9 @@
 #include "features/friend/data/UserRepository.h"
 #include "shared/data/LocalDataStore.h"
 #include "shared/data/RepositoryTemplate.h"
+#include "shared/network/AppEventBus.h"
+#include "shared/services/AvatarSource.h"
+#include "shared/services/ImageService.h"
 
 namespace {
 
@@ -32,6 +36,30 @@ const QString kWorkCategoryId = QStringLiteral("gg_work");
 const QString kWorkCategoryName = QStringLiteral("工坊协作");
 const QString kPerformanceCategoryId = QStringLiteral("gg_performance");
 const QString kPerformanceCategoryName = QStringLiteral("大型存档压测");
+
+QString firstString(const QJsonObject& object, const QStringList& keys)
+{
+    for (const QString& key : keys) {
+        const QString value = object.value(key).toString();
+        if (!value.isEmpty()) {
+            return value;
+        }
+    }
+    return {};
+}
+
+QString avatarFileIdFrom(const QJsonObject& object)
+{
+    const QJsonObject avatar = object.value(QStringLiteral("avatar")).toObject();
+    const QString nestedFileId = firstString(avatar, {QStringLiteral("fileId"), QStringLiteral("id")});
+    if (!nestedFileId.isEmpty()) {
+        return nestedFileId;
+    }
+
+    return firstString(object, {QStringLiteral("avatarFileId"),
+                                QStringLiteral("avatar_file_id"),
+                                QStringLiteral("fileId")});
+}
 
 QString currentUserId()
 {
@@ -348,8 +376,25 @@ Group groupFromJson(const QJsonObject& object)
     group.groupName = object.value(QStringLiteral("groupName")).toString(object.value(QStringLiteral("name")).toString());
     group.memberNum = object.value(QStringLiteral("memberNum")).toInt(object.value(QStringLiteral("memberCount")).toInt());
     group.ownerId = object.value(QStringLiteral("ownerId")).toString(object.value(QStringLiteral("ownerUuid")).toString());
-    group.groupAvatarPath = object.value(QStringLiteral("groupAvatarPath")).toString(
-            object.value(QStringLiteral("avatarUrl")).toString());
+    group.avatarVersion = object.value(QStringLiteral("avatarVersion")).toInt();
+    group.avatarEtag = object.value(QStringLiteral("avatarEtag")).toString();
+    group.avatarContentHash = object.value(QStringLiteral("avatarContentHash")).toString();
+    QString avatarPath = AvatarSource::fromAvatarFileId(avatarFileIdFrom(object));
+    if (avatarPath.isEmpty()) {
+        avatarPath = object.value(QStringLiteral("groupAvatarPath")).toString(
+                object.value(QStringLiteral("avatarUrl")).toString());
+    }
+    group.groupAvatarPath = AvatarSource::versioned(
+            avatarPath,
+            group.avatarVersion,
+            group.avatarEtag,
+            group.avatarContentHash);
+    qInfo().noquote() << "[Avatar] group parsed"
+                      << "groupId=" << group.groupId
+                      << "source=" << group.groupAvatarPath
+                      << "version=" << group.avatarVersion
+                      << "etag=" << group.avatarEtag
+                      << "hash=" << group.avatarContentHash;
     group.isDnd = object.value(QStringLiteral("isDnd")).toBool(false);
     group.adminsID = stringVectorFromJson(object.value(QStringLiteral("adminsID")).toArray());
     group.remark = object.value(QStringLiteral("remark")).toString();
@@ -374,6 +419,9 @@ QJsonObject groupToJson(const Group& group)
             {QStringLiteral("memberNum"), group.memberNum},
             {QStringLiteral("ownerId"), group.ownerId},
             {QStringLiteral("groupAvatarPath"), group.groupAvatarPath},
+            {QStringLiteral("avatarVersion"), group.avatarVersion},
+            {QStringLiteral("avatarEtag"), group.avatarEtag},
+            {QStringLiteral("avatarContentHash"), group.avatarContentHash},
             {QStringLiteral("isDnd"), group.isDnd},
             {QStringLiteral("adminsID"), stringVectorToJson(group.adminsID)},
             {QStringLiteral("remark"), group.remark},
@@ -392,19 +440,90 @@ QJsonObject groupToJson(const Group& group)
 GroupRepository::GroupRepository(QObject* parent)
         : QObject(parent)
 {
-    LocalDataStore& store = LocalDataStore::instance();
-    for (const QJsonObject& object : store.values(QStringLiteral("groups"))) {
-        const Group group = groupFromJson(object);
-        if (!group.groupId.isEmpty()) {
-            groupMap.insert(group.groupId, group);
+    reloadFromStore();
+
+    connect(&LocalDataStore::instance(),
+            &LocalDataStore::activeAccountChanged,
+            this,
+            [this](const QString&) {
+                reloadFromStore();
+            });
+    connect(&LocalDataStore::instance(),
+            &LocalDataStore::domainChanged,
+            this,
+            [this](const QString& domain) {
+                if (domain == QStringLiteral("groups")) {
+                    reloadFromStore();
+                }
+            },
+            Qt::QueuedConnection);
+
+    connect(&AppEventBus::instance(),
+            &AppEventBus::typedEventReceived,
+            this,
+            [this](const QString& type, const QJsonObject& payload, const RealtimeEvent&) {
+        if (type != QStringLiteral("group.updated")) {
+            return;
         }
-    }
+
+        QJsonObject object = payload.value(QStringLiteral("group")).toObject();
+        if (object.isEmpty()) {
+            object = payload;
+        }
+        const QString groupId = payload.value(QStringLiteral("groupId")).toString();
+        if (!groupId.isEmpty() && !object.contains(QStringLiteral("groupId"))) {
+            object.insert(QStringLiteral("groupId"), groupId);
+        }
+
+        Group group = groupFromJson(object);
+        if (group.groupId.isEmpty()) {
+            return;
+        }
+
+        const Group previous = requestGroupDetail({group.groupId});
+        if (!previous.groupId.isEmpty()) {
+            if (group.groupName.isEmpty()) {
+                group.groupName = previous.groupName;
+            }
+            group.memberNum = group.memberNum > 0 ? group.memberNum : previous.memberNum;
+            group.ownerId = object.contains(QStringLiteral("ownerId")) ? group.ownerId : previous.ownerId;
+            group.isDnd = previous.isDnd;
+            group.adminsID = object.contains(QStringLiteral("adminsID")) ? group.adminsID : previous.adminsID;
+            group.remark = previous.remark;
+            group.introduction = object.contains(QStringLiteral("introduction")) ? group.introduction : previous.introduction;
+            group.announcement = object.contains(QStringLiteral("announcement")) ? group.announcement : previous.announcement;
+            group.currentUserNickname = previous.currentUserNickname;
+            group.memberNicknames = previous.memberNicknames;
+            group.membersID = object.contains(QStringLiteral("membersID")) ? group.membersID : previous.membersID;
+            group.listGroupId = previous.listGroupId;
+            group.listGroupName = previous.listGroupName;
+        }
+
+        saveGroup(group);
+    });
 }
 
 GroupRepository& GroupRepository::instance()
 {
     static GroupRepository repo;
     return repo;
+}
+
+void GroupRepository::reloadFromStore()
+{
+    QMap<QString, Group> nextGroups;
+    for (const QJsonObject& object : LocalDataStore::instance().values(QStringLiteral("groups"))) {
+        const Group group = groupFromJson(object);
+        if (!group.groupId.isEmpty()) {
+            nextGroups.insert(group.groupId, group);
+        }
+    }
+
+    {
+        QMutexLocker locker(&mutex);
+        groupMap = nextGroups;
+    }
+    emit groupListChanged();
 }
 
 QVector<Group> GroupRepository::requestGroupList(const GroupListRequest& query) const
@@ -468,7 +587,7 @@ QString GroupRepository::requestGroupAvatarImageAsync(const QString& groupId, in
             QThread::msleep(static_cast<unsigned long>(boundedDelayMs));
         }
 
-        QImageReader reader(source);
+        QImageReader reader(AvatarSource::cleanForIo(source));
         reader.setAutoTransform(true);
         const QImage image = reader.read();
         QMetaObject::invokeMethod(this, [this, requestId, groupId, image]() {
@@ -520,10 +639,18 @@ bool GroupRepository::contains(const QString& groupId) const
 
 void GroupRepository::saveGroup(const Group& group)
 {
+    const QString oldAvatarPath = requestGroupAvatarPath(group.groupId);
     QMutexLocker locker(&mutex);
     groupMap[group.groupId] = group;
     locker.unlock();
     LocalDataStore::instance().upsertValue(QStringLiteral("groups"), group.groupId, groupToJson(group));
+    if (!oldAvatarPath.isEmpty() && oldAvatarPath != group.groupAvatarPath) {
+        qInfo().noquote() << "[Avatar] group avatar changed"
+                          << "groupId=" << group.groupId
+                          << "oldSource=" << oldAvatarPath
+                          << "newSource=" << group.groupAvatarPath;
+        ImageService::instance().invalidateSource(oldAvatarPath);
+    }
     emit groupListChanged();
 }
 

@@ -4,6 +4,7 @@
 
 #include <QObject>
 #include <QTimer>
+#include <QUrl>
 
 class QWebSocket;
 
@@ -60,6 +61,9 @@ private:
     QTimer m_pingTimer;
     QTimer m_staleTimer;
     QTimer m_reconnectTimer;
+    QUrl m_currentUrl;
+    int m_lastHandshakeHttpStatus = 0;
+    bool m_suppressNextReconnect = false;
     int m_reconnectAttempt = 0;
     bool m_userClosed = false;
 };

@@ -6,6 +6,7 @@
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
+#include <QPointer>
 #include <QUuid>
 
 SseClient::SseClient(QObject* parent)
@@ -36,30 +37,43 @@ QString SseClient::start(const NetworkRequest& request)
 
     const QByteArray body = request.hasJsonBody ? request.body.toJson(QJsonDocument::Compact) : request.rawBody;
     m_reply = m_manager->post(networkRequest, body);
-    connect(m_reply, &QNetworkReply::readyRead, this, [this]() {
-        m_buffer += m_reply->readAll();
+    QPointer<QNetworkReply> reply = m_reply;
+    const QString requestId = m_requestId;
+    connect(m_reply, &QNetworkReply::readyRead, this, [this, reply]() {
+        if (!reply || reply != m_reply) {
+            return;
+        }
+        m_buffer += reply->readAll();
         parseBufferedEvents();
     });
-    connect(m_reply, &QNetworkReply::finished, this, [this]() {
-        const int status = m_reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    connect(m_reply, &QNetworkReply::finished, this, [this, reply, requestId]() {
+        if (!reply || reply != m_reply) {
+            return;
+        }
+
+        const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
         if (status >= 200 && status < 300) {
             if (!m_buffer.trimmed().isEmpty()) {
                 emitEventBlock(m_buffer);
             }
-            emit streamFinished(m_requestId);
+            emit streamFinished(requestId);
         } else {
             NetworkError error;
             error.httpStatus = status;
-            error.rawBody = m_reply->readAll();
+            error.rawBody = m_buffer + reply->readAll();
             const QJsonObject object = QJsonDocument::fromJson(error.rawBody).object();
-            error.code = object.value(QStringLiteral("code")).toString();
-            error.message = object.value(QStringLiteral("message")).toString(m_reply->errorString());
+            error.code = object.value(QStringLiteral("code")).toString(
+                    reply->error() == QNetworkReply::NoError
+                            ? QString()
+                            : QStringLiteral("NETWORK_ERROR"));
+            error.message = object.value(QStringLiteral("message")).toString(reply->errorString());
             error.requestId = object.value(QStringLiteral("requestId")).toString();
             error.details = object.value(QStringLiteral("details")).toObject();
-            emit streamFailed(m_requestId, error);
+            emit streamFailed(requestId, error);
         }
-        m_reply->deleteLater();
+        reply->deleteLater();
         m_reply = nullptr;
+        m_requestId.clear();
         m_buffer.clear();
     });
 
@@ -77,9 +91,12 @@ void SseClient::cancel()
     if (!m_reply) {
         return;
     }
-    m_reply->abort();
-    m_reply->deleteLater();
+    QNetworkReply* reply = m_reply;
+    disconnect(reply, nullptr, this, nullptr);
+    reply->abort();
+    reply->deleteLater();
     m_reply = nullptr;
+    m_requestId.clear();
     m_buffer.clear();
 }
 

@@ -2,10 +2,36 @@
 
 #include "AuthSession.h"
 #include "HttpClient.h"
+#include "shared/services/AvatarSource.h"
 
+#include <QDebug>
 #include <QJsonObject>
 
 namespace {
+
+QString firstString(const QJsonObject& object, const QStringList& keys)
+{
+    for (const QString& key : keys) {
+        const QString value = object.value(key).toString();
+        if (!value.isEmpty()) {
+            return value;
+        }
+    }
+    return {};
+}
+
+QString avatarFileIdFrom(const QJsonObject& object)
+{
+    const QJsonObject avatar = object.value(QStringLiteral("avatar")).toObject();
+    const QString nestedFileId = firstString(avatar, {QStringLiteral("fileId"), QStringLiteral("id")});
+    if (!nestedFileId.isEmpty()) {
+        return nestedFileId;
+    }
+
+    return firstString(object, {QStringLiteral("avatarFileId"),
+                                QStringLiteral("avatar_file_id"),
+                                QStringLiteral("fileId")});
+}
 
 AuthUser authUserFromObject(const QJsonObject& object)
 {
@@ -13,7 +39,26 @@ AuthUser authUserFromObject(const QJsonObject& object)
     user.userUuid = object.value(QStringLiteral("userUuid")).toString();
     user.userId = object.value(QStringLiteral("userId")).toString(user.userUuid);
     user.nickName = object.value(QStringLiteral("nickName")).toString(user.userId);
-    user.avatarPath = object.value(QStringLiteral("avatarPath")).toString();
+    user.avatarVersion = object.value(QStringLiteral("avatarVersion")).toInt();
+    user.avatarEtag = object.value(QStringLiteral("avatarEtag")).toString();
+    user.avatarContentHash = object.value(QStringLiteral("avatarContentHash")).toString();
+    QString avatarPath = AvatarSource::fromAvatarFileId(avatarFileIdFrom(object));
+    if (avatarPath.isEmpty()) {
+        avatarPath = object.value(QStringLiteral("avatarPath")).toString(
+                object.value(QStringLiteral("avatarUrl")).toString());
+    }
+    user.avatarPath = AvatarSource::versioned(
+            avatarPath,
+            user.avatarVersion,
+            user.avatarEtag,
+            user.avatarContentHash);
+    qInfo().noquote() << "[Avatar] auth user parsed"
+                      << "userId=" << user.userId
+                      << "userUuid=" << user.userUuid
+                      << "source=" << user.avatarPath
+                      << "version=" << user.avatarVersion
+                      << "etag=" << user.avatarEtag
+                      << "hash=" << user.avatarContentHash;
     user.signature = object.value(QStringLiteral("signature")).toString();
     user.region = object.value(QStringLiteral("region")).toString();
     user.status = object.value(QStringLiteral("status")).toString();
@@ -91,6 +136,7 @@ QString AuthApiClient::logout()
             HttpMethod::Post,
             QStringLiteral("/auth/logout"),
             {{QStringLiteral("refreshToken"), AuthSession::instance().refreshToken()}});
+    request.requiresAuth = false;
     request.maxRetries = 0;
     const QString requestId = HttpClient::instance().send(request);
     m_pendingRequests.insert(requestId, RequestKind::Logout);

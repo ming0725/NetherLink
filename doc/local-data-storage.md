@@ -2,15 +2,17 @@
 
 ## 改动说明
 
-当前本地存储只作为服务端数据快照、最近账号缓存、临时交互状态和事件游标使用。`resources/data` 静态业务种子已经删除，登录态数据必须来自服务端响应。
+当前本地存储只作为服务端数据快照、最近账号缓存、临时交互状态和事件游标使用。`resources/data` 静态业务种子已经删除，登录态数据必须来自服务端响应。除登录界面的历史账号列表外，所有账号态数据必须写入当前账号目录，不能再落到单个全局业务库。
 
-- 新增 `shared/data/LocalDataStore.h/.cpp`，统一管理本地数据目录、SQLite 连接、基础 schema、JSON 记录读写。
+- `shared/data/LocalDataStore.h/.cpp` 统一管理本地数据目录、SQLite 连接、基础 schema、JSON 记录读写，并按当前账号路由到独立账号库。
 - `CMakeLists.txt` 增加 `Qt::Sql` 依赖。
-- `UserRepository`、`GroupRepository`、`CurrentUserProfileRepository`、`LoginAccountRepository`、`UnreadStateRepository` 启动时只从 SQLite 读取，不再从 qrc 种子导入。
+- `LoginAccountRepository` 只读写全局 `global.sqlite` 的 `login_accounts` domain。
+- `UserRepository`、`GroupRepository`、`CurrentUserProfileRepository`、`UnreadStateRepository` 等账号态仓库只读写 `accounts/<account_hash>/data.sqlite`，并在账号切换或同步落库后重载内存快照。
 - 帖子、评论、好友通知、群通知、AI 会话列表均读取 SQLite 快照；空库时返回空列表，由 `RemoteDataBootstrapper` 登录后拉取服务端数据填充。
-- 点赞状态、评论数增量、评论点赞状态、未读状态、最近登录账号仍写入 SQLite，作为临时或用户交互状态。
+- 点赞状态、评论数增量、评论点赞状态、未读状态等用户交互状态写入账号库；最近登录账号写入全局库。
 - AI 聊天本地新建/编辑能力仍会写入 SQLite；后续服务端 SSE 接入后再细化消息同步和冲突处理。
 - 认证 token 仍只保存在 `AuthSession` 内存态；token 刷新失败后由 `NetworkService::sessionExpired` 通知应用壳清理当前用户并回到登录窗，不写入 SQLite。
+- 聊天列表不再生成演示历史消息或演示未读数；消息和未读状态必须来自服务端会话状态或用户真实本地操作。
 
 ## 本地结构
 
@@ -18,13 +20,21 @@
 
 ```text
 <AppDataLocation>/
-  netherlink-local.sqlite
+  global.sqlite
+  accounts/
+    <account_hash>/
+      data.sqlite
+      cache/
+        images/
+          <sha256(source-with-avatar-version-fragment)>.img
 ```
 
 如果系统没有返回应用数据目录，则回退到：
 
 ```text
-<temp>/NetherLink/netherlink-local.sqlite
+<temp>/NetherLink/
+  global.sqlite
+  accounts/<account_hash>/data.sqlite
 ```
 
 SQLite 内部先使用通用 JSON 记录表：
@@ -42,10 +52,10 @@ local_records(
 当前 domain 约定：
 
 ```text
+login_accounts
 users
 groups
 current_profiles
-login_accounts
 unread_state
 post_like_states
 post_comment_count_deltas
@@ -62,7 +72,9 @@ conversations
 network_event_cursor
 ```
 
-`network_event_cursor` 只记录已成功处理的实时事件游标，不保存 access token、refresh token 或 WebSocket 连接状态。
+`login_accounts` 是唯一全局 domain，只保存登录界面的历史账号登录信息。其它 domain 都是账号态 domain，路由到当前登录账号的 `accounts/<account_hash>/data.sqlite`。
+
+`network_event_cursor` 只记录当前账号已成功处理的实时事件游标，不保存 access token、refresh token 或 WebSocket 连接状态。
 
 已删除的静态资源目录：
 
@@ -86,33 +98,31 @@ PRAGMA cipher_version;
 后续更稳妥的生产方案：
 
 - token、refresh token、私钥不要进入 SQLite，应使用 Keychain/Credential Manager。
-- 每账号单独数据库时，每个账号使用独立 SQLCipher key。
+- 每个账号应使用独立 SQLCipher key。
 - key 由系统安全存储保存，不应写入普通配置文件或代码。
 
-## 多账号建议
+## 多账号隔离
 
-当前实现先落在单个本地库，便于把 C++ 死数据迁出。后续多账号应改成：
+当前实现已经按账号拆分本地目录：
 
 ```text
 AppData/NetherLink/
   global.sqlite
-  anonymous/
-    settings.sqlite
   accounts/
     <account_hash>/
       data.sqlite
       cache/
-        avatars/
         images/
         attachments/
 ```
 
 其中：
 
-- `global.sqlite`：只保存最近登录账号、匿名窗口状态、schema version。
-- `anonymous/settings.sqlite`：登录前主题默认值、登录窗大小位置。
+- `global.sqlite`：只保存最近登录账号等登录界面历史信息；不得写入好友、群、消息、通知、帖子、AI 会话、偏好、事件游标等账号态数据。
 - `accounts/<account_hash>/data.sqlite`：该账号设置、缓存快照、同步队列。
 - `account_hash = sha256(user_uuid + app_salt)`，不要直接使用邮箱或可修改的公开用户 ID 做目录名。
+- 用户远程图片缓存默认位于当前账号目录下的 `cache/images/`，避免不同账号共享头像或媒体缓存状态。
+- 登录、注册成功后，网络层必须先调用 `LocalDataStore::setActiveAccount()`，再保存当前用户资料、偏好并启动 `RemoteDataBootstrapper::syncAll()`。
 
 ## 后续网络部分
 
@@ -146,8 +156,10 @@ Repository
 - 用户资料必须带 `avatar_url`、`avatar_version`、`avatar_etag`、`avatar_content_hash`。
 - 用户资料、群资料、帖子作者资料等接口必须直接带 `avatar_url`；本地缓存只保存 URL 对应的下载结果。
 - 服务端数据库内部固定使用 `avatar_file_id` 关联 `files.id`；`avatar_file_id` 不进入客户端用户模型。
-- 本地缓存键使用 `avatar:<user_uuid>:<avatar_version>`，不要使用可修改的公开 `user_id`。
-- 资料刷新发现版本变化时下载新头像，更新 `file_cache`，通知 UI 刷新。
+- 前端展示用的 `avatarPath` 会把远程 URL 和 `avatar_version` / `avatar_content_hash` / `avatar_etag` 合成为带 `#nl-cache=...` fragment 的 source；真正 HTTP 请求会去掉 fragment，只把它作为本地缓存 key。
+- 本地远程图片缓存位于 `accounts/<account_hash>/cache/images/`，文件名使用 `sha256(source-with-avatar-version-fragment)`；SQLite 继续保存用户、群资料 JSON 和头像元数据，不保存二进制图片。
+- 资料刷新或 `profile.updated` / `group.updated` 实时事件发现头像版本变化时，Repository 写入新资料，旧 source 通过 `ImageService::invalidateSource()` 清掉内存和磁盘缓存，UI 通过已有 model/repaint 信号刷新。
+- 本地缓存键逻辑应等价于 `avatar:<user_uuid>:<avatar_version>`；当前 C++ 模型仍沿用既有 `user.id` 字段和 `avatarPath` 字段承载 UI 数据。
 - 旧头像按账号缓存目录清理。
 
 帖子：

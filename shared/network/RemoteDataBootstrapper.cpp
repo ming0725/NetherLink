@@ -3,7 +3,9 @@
 #include "AppEventBus.h"
 #include "HttpClient.h"
 #include "shared/data/LocalDataStore.h"
+#include "shared/services/AvatarSource.h"
 
+#include <QDebug>
 #include <QJsonArray>
 #include <QJsonObject>
 
@@ -22,6 +24,19 @@ QString firstString(const QJsonObject& object, const QStringList& keys)
     return {};
 }
 
+QString avatarFileIdFrom(const QJsonObject& object)
+{
+    const QJsonObject avatar = object.value(QStringLiteral("avatar")).toObject();
+    const QString nestedFileId = firstString(avatar, {QStringLiteral("fileId"), QStringLiteral("id")});
+    if (!nestedFileId.isEmpty()) {
+        return nestedFileId;
+    }
+
+    return firstString(object, {QStringLiteral("avatarFileId"),
+                                QStringLiteral("avatar_file_id"),
+                                QStringLiteral("fileId")});
+}
+
 int firstInt(const QJsonObject& object, const QStringList& keys, int fallback = 0)
 {
     for (const QString& key : keys) {
@@ -30,6 +45,18 @@ int firstInt(const QJsonObject& object, const QStringList& keys, int fallback = 
         }
     }
     return fallback;
+}
+
+QString avatarSourceFrom(const QJsonObject& object, const QStringList& sourceKeys)
+{
+    QString source = AvatarSource::fromAvatarFileId(avatarFileIdFrom(object));
+    if (source.isEmpty()) {
+        source = firstString(object, sourceKeys);
+    }
+    return AvatarSource::versioned(source,
+                                   firstInt(object, {QStringLiteral("avatarVersion")}),
+                                   firstString(object, {QStringLiteral("avatarEtag")}),
+                                   firstString(object, {QStringLiteral("avatarContentHash")}));
 }
 
 QString cacheKeyFor(const QJsonObject& object, const QStringList& keyFields, int index)
@@ -82,7 +109,10 @@ QJsonObject mergedUserObject(QJsonObject object)
     }
     if (!object.contains(QStringLiteral("avatarPath"))) {
         object.insert(QStringLiteral("avatarPath"),
-                      firstString(object, {QStringLiteral("avatarUrl"), QStringLiteral("avatarPath")}));
+                      avatarSourceFrom(object, {QStringLiteral("avatarUrl"), QStringLiteral("avatarPath")}));
+    } else {
+        object.insert(QStringLiteral("avatarPath"),
+                      avatarSourceFrom(object, {QStringLiteral("avatarPath"), QStringLiteral("avatarUrl")}));
     }
     if (!object.contains(QStringLiteral("isFriend"))) {
         object.insert(QStringLiteral("isFriend"), true);
@@ -111,8 +141,11 @@ QJsonObject profileObject(QJsonObject object)
     return {
             {QStringLiteral("userId"), userId},
             {QStringLiteral("nickName"), nickName.isEmpty() ? userId : nickName},
-            {QStringLiteral("avatarPath"), firstString(object, {QStringLiteral("avatarPath"),
-                                                                QStringLiteral("avatarUrl")})},
+            {QStringLiteral("avatarPath"), avatarSourceFrom(object, {QStringLiteral("avatarPath"),
+                                                                     QStringLiteral("avatarUrl")})},
+            {QStringLiteral("avatarVersion"), firstInt(object, {QStringLiteral("avatarVersion")})},
+            {QStringLiteral("avatarEtag"), firstString(object, {QStringLiteral("avatarEtag")})},
+            {QStringLiteral("avatarContentHash"), firstString(object, {QStringLiteral("avatarContentHash")})},
             {QStringLiteral("status"), object.value(QStringLiteral("status")).toString(QStringLiteral("online"))},
             {QStringLiteral("signature"), object.value(QStringLiteral("signature")).toString()},
             {QStringLiteral("region"), object.value(QStringLiteral("region")).toString()},
@@ -148,8 +181,12 @@ QJsonObject groupObject(QJsonObject object)
     }
     if (!object.contains(QStringLiteral("groupAvatarPath"))) {
         object.insert(QStringLiteral("groupAvatarPath"),
-                      firstString(object, {QStringLiteral("groupAvatarPath"),
-                                           QStringLiteral("avatarUrl")}));
+                      avatarSourceFrom(object, {QStringLiteral("groupAvatarPath"),
+                                                QStringLiteral("avatarUrl")}));
+    } else {
+        object.insert(QStringLiteral("groupAvatarPath"),
+                      avatarSourceFrom(object, {QStringLiteral("groupAvatarPath"),
+                                                QStringLiteral("avatarUrl")}));
     }
     return object;
 }
@@ -231,8 +268,7 @@ QVector<RemoteDataBootstrapper::FetchSpec> defaultFetchSpecs()
     return {
             {QStringLiteral("current_profiles"), QStringLiteral("/me"), {}, {QStringLiteral("userId"), QStringLiteral("id"), QStringLiteral("userUuid")}, {}, true, false},
             {QStringLiteral("current_preferences"), QStringLiteral("/me/preferences"), {}, {QStringLiteral("id")}, {}, true, false},
-            {QStringLiteral("users"), QStringLiteral("/users"), QStringLiteral("users"), {QStringLiteral("id"), QStringLiteral("userId"), QStringLiteral("userUuid")}, {{QStringLiteral("limit"), kPageLimit}, {QStringLiteral("offset"), 0}}, true, true},
-            {QStringLiteral("users"), QStringLiteral("/friends"), QStringLiteral("friends"), {QStringLiteral("id"), QStringLiteral("userId"), QStringLiteral("userUuid"), QStringLiteral("friendUserUuid")}, {{QStringLiteral("limit"), kPageLimit}, {QStringLiteral("offset"), 0}}, false, true},
+            {QStringLiteral("users"), QStringLiteral("/friends"), QStringLiteral("friends"), {QStringLiteral("id"), QStringLiteral("userId"), QStringLiteral("userUuid"), QStringLiteral("friendUserUuid")}, {{QStringLiteral("limit"), kPageLimit}, {QStringLiteral("offset"), 0}}, true, true},
             {QStringLiteral("groups"), QStringLiteral("/groups"), QStringLiteral("groups"), {QStringLiteral("groupId"), QStringLiteral("id")}, {{QStringLiteral("limit"), kPageLimit}, {QStringLiteral("offset"), 0}}, true, true},
             {QStringLiteral("friend_notifications"), QStringLiteral("/friend-requests"), QStringLiteral("requests"), {QStringLiteral("id"), QStringLiteral("requestId"), QStringLiteral("notificationId")}, {{QStringLiteral("status"), QStringLiteral("pending")}, {QStringLiteral("limit"), kPageLimit}, {QStringLiteral("offset"), 0}}, true, true},
             {QStringLiteral("group_notifications"), QStringLiteral("/group-notifications"), QStringLiteral("notifications"), {QStringLiteral("id"), QStringLiteral("requestId"), QStringLiteral("notificationId")}, {{QStringLiteral("limit"), kPageLimit}, {QStringLiteral("offset"), 0}}, true, true},
@@ -310,6 +346,11 @@ void RemoteDataBootstrapper::handleSuccess(const QString& requestId, const Netwo
     const FetchSpec spec = m_requests.value(requestId);
     int itemCount = 0;
     cacheResponse(spec, response, &itemCount);
+    qInfo().noquote() << "[Avatar] sync success"
+                      << "domain=" << spec.domain
+                      << "path=" << spec.path
+                      << "status=" << response.httpStatus
+                      << "items=" << itemCount;
     emit domainSynced(spec.domain, itemCount);
     finishRequest(requestId);
 }
@@ -322,6 +363,12 @@ void RemoteDataBootstrapper::handleFailure(const QString& requestId, const Netwo
 
     const FetchSpec spec = m_requests.value(requestId);
     m_failed = true;
+    qInfo().noquote() << "[Avatar] sync failed"
+                      << "domain=" << spec.domain
+                      << "path=" << spec.path
+                      << "status=" << error.httpStatus
+                      << "code=" << error.code
+                      << "message=" << error.message;
     emit domainSyncFailed(spec.domain, error);
     finishRequest(requestId);
 }

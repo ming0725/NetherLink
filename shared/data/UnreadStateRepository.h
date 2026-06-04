@@ -22,6 +22,7 @@ signals:
 
 private:
     explicit UnreadStateRepository(QObject* parent = nullptr);
+    void reloadFromStore();
 
     QHash<QString, QSet<QString>> m_unreadByScope;
 };

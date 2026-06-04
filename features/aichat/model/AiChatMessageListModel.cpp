@@ -102,6 +102,32 @@ bool AiChatMessageListModel::removeMessage(const QString& messageId)
     return false;
 }
 
+bool AiChatMessageListModel::replaceMessage(const QString& messageId, const AiChatMessage& replacement)
+{
+    if (messageId.isEmpty() || replacement.messageId.isEmpty()) {
+        return false;
+    }
+
+    for (int row = 0; row < m_messages.size(); ++row) {
+        if (m_messages.at(row).messageId == messageId) {
+            m_messages[row] = replacement;
+            const QModelIndex changedIndex = index(row, 0);
+            emit dataChanged(changedIndex,
+                             changedIndex,
+                             QVector<int>{MessageIdRole,
+                                          ConversationIdRole,
+                                          Qt::DisplayRole,
+                                          TextRole,
+                                          IsFromUserRole,
+                                          TimeRole,
+                                          Qt::SizeHintRole});
+            return true;
+        }
+    }
+
+    return false;
+}
+
 bool AiChatMessageListModel::updateMessageText(const QString& messageId, const QString& text)
 {
     if (messageId.isEmpty()) {

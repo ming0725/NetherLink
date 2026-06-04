@@ -59,15 +59,13 @@ int main(int argc, char *argv[])
         auto completeLogout = [&]() {
             MainWindow* loggedOutMainWindow = mainWindow;
             mainWindow = nullptr;
+            if (!loginWindow) {
+                showLoginWindow();
+            }
             if (loggedOutMainWindow) {
                 loggedOutMainWindow->hide();
                 loggedOutMainWindow->deleteLater();
             }
-            QTimer::singleShot(0, &a, [&]() {
-                if (!loginWindow && !mainWindow) {
-                    showLoginWindow();
-                }
-            });
         };
 
         QObject::connect(window, &MainWindow::logoutRequested, window, [&, completeLogout]() {
@@ -79,17 +77,9 @@ int main(int argc, char *argv[])
                 return;
             }
 
-            const QString logoutRequestId = NetworkService::instance().logout();
-            QObject::connect(&NetworkService::instance(),
-                             &NetworkService::logoutFinished,
-                             window,
-                             [&, logoutRequestId, completeLogout](const QString& requestId, bool, const NetworkError&) {
-                if (requestId != logoutRequestId) {
-                    return;
-                }
-                CurrentUser::instance().clear();
-                completeLogout();
-            });
+            NetworkService::instance().logout();
+            CurrentUser::instance().clear();
+            completeLogout();
         });
         QObject::connect(&NetworkService::instance(),
                          &NetworkService::sessionExpired,

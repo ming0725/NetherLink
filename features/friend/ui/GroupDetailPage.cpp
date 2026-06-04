@@ -29,6 +29,7 @@
 #include "shared/ui/StatefulPushButton.h"
 #include "shared/ui/StyledActionMenu.h"
 #include "shared/ui/ThemedSelectButton.h"
+#include "shared/ui/renderers/MediaPlaceholderRenderer.h"
 #include "shared/theme/ThemeManager.h"
 
 namespace {
@@ -131,6 +132,10 @@ GroupDetailPage::GroupDetailPage(QWidget* parent)
     , m_messageButton(new StatefulPushButton(QStringLiteral("发消息"), this))
     , m_exitButton(new StatefulPushButton(QStringLiteral("退出群聊"), this))
 {
+    connect(&ImageService::instance(), &ImageService::previewReady, this, [this]() {
+        update(avatarRect());
+    });
+
     auto* root = new QVBoxLayout(this);
     root->setContentsMargins(88, 64, 88, 40);
     root->setSpacing(0);
@@ -360,7 +365,11 @@ void GroupDetailPage::paintEvent(QPaintEvent* event)
         const QPixmap avatar = ImageService::instance().circularAvatar(m_avatarSource,
                                                                        kAvatarSize,
                                                                        devicePixelRatioF());
-        painter.drawPixmap(avatarRect, avatar);
+        if (avatar.isNull()) {
+            MediaPlaceholderRenderer::drawAvatar(&painter, avatarRect);
+        } else {
+            painter.drawPixmap(avatarRect, avatar);
+        }
     }
 
     const int separatorY = avatarRect.top() + kAvatarSize + kSeparatorTopSpacing;

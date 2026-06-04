@@ -62,6 +62,7 @@ private:
     void updateAutoLoginRules();
     void updateAvatarForAccount(const QString& accountId);
     void attemptLogin();
+    void cacheAuthenticatedAvatar(LoginAccount account, CurrentUserProfile authenticatedProfile);
     void finishLogin(const LoginAccount& account, const CurrentUserProfile& authenticatedProfile = {});
     void resetLoginPending(const QString& buttonText = QString());
     void showRegisterWindow();

@@ -10,6 +10,9 @@ struct Group {
     int memberNum;
     QString ownerId;
     QString groupAvatarPath;
+    int avatarVersion = 0;
+    QString avatarEtag;
+    QString avatarContentHash;
     bool isDnd = false;
     QVector<QString> adminsID;
     QString remark;

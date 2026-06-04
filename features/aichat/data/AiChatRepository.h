@@ -27,6 +27,9 @@ public:
                                  const QString& messageId,
                                  const QString& text,
                                  const QDateTime& time = QDateTime::currentDateTime());
+    bool replaceAiChatMessage(const QString& conversationId,
+                              const QString& messageId,
+                              const AiChatMessage& replacement);
     bool setConversationUnreadDot(const QString& conversationId, bool unread);
     int unreadDotCount() const;
     bool removeAiChatMessage(const QString& conversationId, const QString& messageId);

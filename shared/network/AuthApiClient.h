@@ -12,6 +12,9 @@ struct AuthUser {
     QString userId;
     QString nickName;
     QString avatarPath;
+    int avatarVersion = 0;
+    QString avatarEtag;
+    QString avatarContentHash;
     QString signature;
     QString region;
     QString status;

@@ -5,6 +5,16 @@
 #include "RealtimeClient.h"
 #include "RemoteDataBootstrapper.h"
 #include "UploadClient.h"
+#include "shared/data/LocalDataStore.h"
+
+namespace {
+
+QString accountKeyForAuthResult(const AuthResult& result)
+{
+    return result.user.userUuid.isEmpty() ? result.user.userId : result.user.userUuid;
+}
+
+} // namespace
 
 NetworkService& NetworkService::instance()
 {
@@ -20,6 +30,7 @@ NetworkService::NetworkService(QObject* parent)
     connect(&AuthApiClient::instance(), &AuthApiClient::loginSucceeded, this, [this](const QString& requestId,
                                                                                     const AuthResult& result) {
         m_sessionExpiryNotified = false;
+        LocalDataStore::instance().setActiveAccount(accountKeyForAuthResult(result));
         emit loginSucceeded(requestId, result);
         RemoteDataBootstrapper::instance().syncAll();
         startRealtime();
@@ -30,6 +41,7 @@ NetworkService::NetworkService(QObject* parent)
             this,
             [this](const QString& requestId, const AuthResult& result) {
                 m_sessionExpiryNotified = false;
+                LocalDataStore::instance().setActiveAccount(accountKeyForAuthResult(result));
                 emit registerSucceeded(requestId, result);
                 RemoteDataBootstrapper::instance().syncAll();
                 startRealtime();
@@ -38,14 +50,13 @@ NetworkService::NetworkService(QObject* parent)
     connect(&AuthApiClient::instance(), &AuthApiClient::logoutFinished, this, [this](const QString& requestId,
                                                                                     bool success,
                                                                                     const NetworkError& error) {
-        stopRealtime();
-        AuthSession::instance().clear();
         emit logoutFinished(requestId, success, error);
     });
     connect(&RealtimeClient::instance(), &RealtimeClient::stateChanged, this, &NetworkService::realtimeStateChanged);
     connect(&RealtimeClient::instance(), &RealtimeClient::connectionError, this, &NetworkService::realtimeConnectionError);
     connect(&HttpClient::instance(), &HttpClient::authRefreshFailed, this, [this](const NetworkError& error) {
         stopRealtime();
+        LocalDataStore::instance().clearActiveAccount();
         if (m_sessionExpiryNotified) {
             return;
         }
@@ -82,7 +93,11 @@ QString NetworkService::registerAccount(const QString& email,
 
 QString NetworkService::logout()
 {
-    return AuthApiClient::instance().logout();
+    const QString requestId = AuthApiClient::instance().logout();
+    stopRealtime();
+    AuthSession::instance().clear();
+    LocalDataStore::instance().clearActiveAccount();
+    return requestId;
 }
 
 void NetworkService::startRealtime()

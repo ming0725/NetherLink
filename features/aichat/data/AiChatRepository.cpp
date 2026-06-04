@@ -251,6 +251,44 @@ bool AiChatRepository::updateAiChatMessageText(const QString& conversationId,
     return false;
 }
 
+bool AiChatRepository::replaceAiChatMessage(const QString& conversationId,
+                                            const QString& messageId,
+                                            const AiChatMessage& replacement)
+{
+    if (conversationId.isEmpty() || messageId.isEmpty() ||
+            replacement.messageId.isEmpty() ||
+            replacement.conversationId != conversationId ||
+            !replacement.time.isValid()) {
+        return false;
+    }
+
+    QMutexLocker locker(&m_mutex);
+    auto messagesIt = m_messages.find(conversationId);
+    if (messagesIt == m_messages.end()) {
+        return false;
+    }
+
+    QVector<AiChatMessage>& messages = messagesIt.value();
+    for (int row = 0; row < messages.size(); ++row) {
+        if (messages.at(row).messageId != messageId) {
+            continue;
+        }
+
+        const QString oldMessageId = messages.at(row).messageId;
+        messages[row] = replacement;
+        m_contextUsages.remove(conversationId);
+        if (oldMessageId != replacement.messageId) {
+            LocalDataStore::instance().removeValue(QStringLiteral("ai_chat_messages"), oldMessageId);
+        }
+        LocalDataStore::instance().upsertValue(QStringLiteral("ai_chat_messages"),
+                                               replacement.messageId,
+                                               aiChatMessageToJson(replacement));
+        return true;
+    }
+
+    return false;
+}
+
 bool AiChatRepository::setConversationUnreadDot(const QString& conversationId, bool unread)
 {
     if (conversationId.isEmpty()) {

@@ -392,8 +392,6 @@ void MainWindow::setSystemFloatingBarsSuppressed(bool suppressed)
 
 void MainWindow::showRealtimeFailureNotice(const QString& message)
 {
-    Q_UNUSED(message);
-
     m_realtimeHadFailure = true;
     if (m_realtimeNoticeClock.isValid() && m_realtimeNoticeClock.elapsed() < kRealtimeNoticeThrottleMs) {
         return;
@@ -403,6 +401,10 @@ void MainWindow::showRealtimeFailureNotice(const QString& message)
         m_realtimeNoticeClock.start();
     } else {
         m_realtimeNoticeClock.restart();
+    }
+    if (message.contains(QStringLiteral("status code: 403"))) {
+        GlobalNotification::showFailure(this, QStringLiteral("实时连接被拒绝，请重新登录"));
+        return;
     }
     GlobalNotification::showFailure(this, QStringLiteral("实时连接失败，正在重试"));
 }

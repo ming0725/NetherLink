@@ -23,6 +23,7 @@ signals:
 private:
     explicit CurrentUserPreferencesRepository(QObject* parent = nullptr);
     Q_DISABLE_COPY(CurrentUserPreferencesRepository)
+    void reloadFromStore();
 
     CurrentUserPreferences m_preferences;
     mutable QMutex m_mutex;

@@ -38,18 +38,56 @@ QSet<QString> unreadScopeFromJson(const QJsonObject& object)
 UnreadStateRepository::UnreadStateRepository(QObject* parent)
     : QObject(parent)
 {
-    for (const QJsonObject& object : LocalDataStore::instance().values(QString::fromLatin1(kUnreadDomain))) {
-        const QString scope = object.value(QStringLiteral("scope")).toString();
-        if (!scope.isEmpty()) {
-            m_unreadByScope.insert(scope, unreadScopeFromJson(object));
-        }
-    }
+    reloadFromStore();
+
+    connect(&LocalDataStore::instance(),
+            &LocalDataStore::activeAccountChanged,
+            this,
+            [this](const QString&) {
+                reloadFromStore();
+            });
+    connect(&LocalDataStore::instance(),
+            &LocalDataStore::domainChanged,
+            this,
+            [this](const QString& domain) {
+                if (domain == QString::fromLatin1(kUnreadDomain)) {
+                    reloadFromStore();
+                }
+            },
+            Qt::QueuedConnection);
 }
 
 UnreadStateRepository& UnreadStateRepository::instance()
 {
     static UnreadStateRepository repo;
     return repo;
+}
+
+void UnreadStateRepository::reloadFromStore()
+{
+    QHash<QString, QSet<QString>> nextUnreadByScope;
+    for (const QJsonObject& object : LocalDataStore::instance().values(QString::fromLatin1(kUnreadDomain))) {
+        const QString scope = object.value(QStringLiteral("scope")).toString();
+        if (!scope.isEmpty()) {
+            nextUnreadByScope.insert(scope, unreadScopeFromJson(object));
+        }
+    }
+
+    QSet<QString> oldScopes;
+    for (auto it = m_unreadByScope.keyBegin(); it != m_unreadByScope.keyEnd(); ++it) {
+        oldScopes.insert(*it);
+    }
+    QSet<QString> nextScopes;
+    for (auto it = nextUnreadByScope.keyBegin(); it != nextUnreadByScope.keyEnd(); ++it) {
+        nextScopes.insert(*it);
+    }
+    m_unreadByScope = nextUnreadByScope;
+
+    QSet<QString> scopes = oldScopes;
+    scopes.unite(nextScopes);
+    for (const QString& scope : scopes) {
+        emit unreadCountChanged(scope, m_unreadByScope.value(scope).size());
+    }
 }
 
 bool UnreadStateRepository::isUnread(const QString& scope, const QString& itemId) const

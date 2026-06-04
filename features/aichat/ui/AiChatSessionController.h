@@ -2,6 +2,7 @@
 
 #include <QObject>
 
+#include "shared/network/NetworkTypes.h"
 #include "shared/types/RepositoryTypes.h"
 
 class AiChatStreamClient;
@@ -51,13 +52,23 @@ signals:
     void aiReplyMessageUpdated(const QString& conversationId,
                                const QString& messageId,
                                const QString& text);
+    void aiReplyMessageReplaced(const QString& conversationId,
+                                const QString& messageId,
+                                const AiChatMessage& replacement);
     void aiReplyMessageRemoved(const QString& conversationId, const QString& messageId);
     void aiReplyFinished(const QString& conversationId, const QString& messageId);
     void aiReplyCanceled(const QString& conversationId, const QString& messageId);
+    void aiReplyFailed(const QString& conversationId,
+                       const QString& messageId,
+                       const QString& message);
     void unreadDotStateChanged();
 
 private slots:
     void onAiReplyChunkReceived(const QString& chunk);
+    void onAssistantMessageReceived(const QString& messageId,
+                                    const QString& text,
+                                    const QDateTime& time);
+    void onAiReplyFailed(const NetworkError& error);
     void onAiReplyFinished();
 
 private:
@@ -70,4 +81,5 @@ private:
     QString m_streamConversationId;
     QString m_streamMessageId;
     QString m_streamVisibleText;
+    bool m_streamFailed = false;
 };

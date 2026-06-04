@@ -3,6 +3,7 @@
 #include "features/aichat/data/AiChatRepository.h"
 #include "features/aichat/data/AiChatStreamClient.h"
 #include "features/aichat/data/AiChatTitleClient.h"
+#include "shared/network/NetworkTypes.h"
 
 #include <QDateTime>
 #include <QFutureWatcher>
@@ -15,6 +16,10 @@ AiChatSessionController::AiChatSessionController(QObject* parent)
 {
     connect(m_streamClient, &AiChatStreamClient::chunkReceived,
             this, &AiChatSessionController::onAiReplyChunkReceived);
+    connect(m_streamClient, &AiChatStreamClient::assistantMessageReceived,
+            this, &AiChatSessionController::onAssistantMessageReceived);
+    connect(m_streamClient, &AiChatStreamClient::failed,
+            this, &AiChatSessionController::onAiReplyFailed);
     connect(m_streamClient, &AiChatStreamClient::finished,
             this, &AiChatSessionController::onAiReplyFinished);
     connect(&AiChatRepository::instance(), &AiChatRepository::unreadDotStateChanged,
@@ -261,13 +266,70 @@ void AiChatSessionController::onAiReplyChunkReceived(const QString& chunk)
     emit aiReplyMessageUpdated(m_streamConversationId, m_streamMessageId, m_streamVisibleText);
 }
 
+void AiChatSessionController::onAssistantMessageReceived(const QString& messageId,
+                                                         const QString& text,
+                                                         const QDateTime& time)
+{
+    if (m_streamConversationId.isEmpty()) {
+        return;
+    }
+
+    const QString resolvedText = text.isEmpty() ? m_streamVisibleText : text;
+    if (resolvedText.isEmpty()) {
+        return;
+    }
+
+    if (m_streamMessageId.isEmpty()) {
+        const AiChatMessage message = AiChatRepository::instance().addAiChatMessage(
+                m_streamConversationId,
+                resolvedText,
+                false,
+                time.isValid() ? time : QDateTime::currentDateTime());
+        if (message.messageId.isEmpty()) {
+            cancelActiveAiReplyStream();
+            return;
+        }
+
+        m_streamMessageId = message.messageId;
+        emit aiReplyMessageAdded(message);
+    }
+
+    AiChatMessage replacement;
+    replacement.messageId = messageId.isEmpty() ? m_streamMessageId : messageId;
+    replacement.conversationId = m_streamConversationId;
+    replacement.text = resolvedText;
+    replacement.isFromUser = false;
+    replacement.time = time.isValid() ? time : QDateTime::currentDateTime();
+
+    const QString previousMessageId = m_streamMessageId;
+    if (AiChatRepository::instance().replaceAiChatMessage(m_streamConversationId,
+                                                          previousMessageId,
+                                                          replacement)) {
+        m_streamMessageId = replacement.messageId;
+        m_streamVisibleText = replacement.text;
+        emit aiReplyMessageReplaced(m_streamConversationId, previousMessageId, replacement);
+    }
+}
+
+void AiChatSessionController::onAiReplyFailed(const NetworkError& error)
+{
+    m_streamFailed = true;
+    const QString message = error.message.isEmpty()
+            ? QStringLiteral("AI 回复失败，请稍后重试")
+            : error.message;
+    emit aiReplyFailed(m_streamConversationId, m_streamMessageId, message);
+}
+
 void AiChatSessionController::onAiReplyFinished()
 {
     const QString conversationId = m_streamConversationId;
     const QString messageId = m_streamMessageId;
+    const bool failed = m_streamFailed;
     resetActiveAiReplyStream();
     if (!conversationId.isEmpty()) {
-        AiChatRepository::instance().setConversationUnreadDot(conversationId, true);
+        if (!failed && !messageId.isEmpty()) {
+            AiChatRepository::instance().setConversationUnreadDot(conversationId, true);
+        }
         emit conversationsChanged();
         emit aiReplyFinished(conversationId, messageId);
     }
@@ -282,9 +344,10 @@ void AiChatSessionController::startAiReplyStream(const QString& conversationId, 
     m_streamConversationId = conversationId;
     m_streamMessageId.clear();
     m_streamVisibleText.clear();
+    m_streamFailed = false;
     emit aiReplyStarted(conversationId);
 
-    m_streamClient->start(prompt);
+    m_streamClient->start(conversationId, prompt);
     if (!m_streamClient->isRunning()) {
         cancelActiveAiReplyStream();
     }
@@ -295,4 +358,5 @@ void AiChatSessionController::resetActiveAiReplyStream()
     m_streamConversationId.clear();
     m_streamMessageId.clear();
     m_streamVisibleText.clear();
+    m_streamFailed = false;
 }

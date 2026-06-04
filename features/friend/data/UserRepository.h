@@ -41,6 +41,8 @@ signals:
 private:
     explicit UserRepository(QObject* parent = nullptr);
     Q_DISABLE_COPY(UserRepository)
+    void reloadFromStore();
+
     QMap<QString, User> userMap;
     mutable QMutex mutex; // 用于线程安全
 };

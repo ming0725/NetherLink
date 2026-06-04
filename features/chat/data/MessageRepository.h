@@ -56,6 +56,7 @@ signals:
 private:
     explicit MessageRepository(QObject* parent = nullptr);
     Q_DISABLE_COPY(MessageRepository)
+    void reloadFromStore();
 
     QMap<QString, QVector<QSharedPointer<ChatMessage>>> m_store;
     QMap<QString, ConversationSyncState> m_conversationStates;

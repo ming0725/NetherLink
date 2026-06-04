@@ -65,10 +65,42 @@ CurrentUserPreferencesRepository& CurrentUserPreferencesRepository::instance()
 CurrentUserPreferencesRepository::CurrentUserPreferencesRepository(QObject* parent)
     : QObject(parent)
 {
+    reloadFromStore();
+
+    connect(&LocalDataStore::instance(),
+            &LocalDataStore::activeAccountChanged,
+            this,
+            [this](const QString&) {
+                reloadFromStore();
+            });
+    connect(&LocalDataStore::instance(),
+            &LocalDataStore::domainChanged,
+            this,
+            [this](const QString& domain) {
+                if (domain == QString::fromLatin1(kPreferencesDomain)) {
+                    reloadFromStore();
+                }
+            },
+            Qt::QueuedConnection);
+}
+
+void CurrentUserPreferencesRepository::reloadFromStore()
+{
+    CurrentUserPreferences nextPreferences;
     const QJsonObject object = LocalDataStore::instance().value(QString::fromLatin1(kPreferencesDomain),
                                                                QString::fromLatin1(kCurrentPreferencesKey));
     if (!object.isEmpty()) {
-        m_preferences = preferencesFromJson(object);
+        nextPreferences = preferencesFromJson(object);
+    }
+
+    bool changed = false;
+    {
+        QMutexLocker locker(&m_mutex);
+        changed = !preferencesEqual(m_preferences, nextPreferences);
+        m_preferences = nextPreferences;
+    }
+    if (changed) {
+        emit currentUserPreferencesChanged();
     }
 }
 
