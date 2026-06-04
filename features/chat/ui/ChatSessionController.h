@@ -67,6 +67,9 @@ signals:
     void conversationRemoved();
     void friendUpdateFailed(const QString& userId, const NetworkError& error);
     void friendDeleteFailed(const QString& userId, const NetworkError& error);
+    void groupUpdateFailed(const QString& groupId, const NetworkError& error);
+    void groupMySettingsUpdateFailed(const QString& groupId, const NetworkError& error);
+    void groupLeaveFailed(const QString& groupId, const NetworkError& error);
 
 private:
     void refreshSessionData(bool emitChange);

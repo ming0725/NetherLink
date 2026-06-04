@@ -476,6 +476,18 @@ ChatArea::ChatArea(QWidget *parent)
             this, [this](const QString&, const NetworkError&) {
                 GlobalNotification::showFailure(this, QStringLiteral("删除好友失败"));
             });
+    connect(sessionController, &ChatSessionController::groupUpdateFailed,
+            this, [this](const QString&, const NetworkError&) {
+                GlobalNotification::showFailure(this, QStringLiteral("群资料保存失败"));
+            });
+    connect(sessionController, &ChatSessionController::groupMySettingsUpdateFailed,
+            this, [this](const QString&, const NetworkError&) {
+                GlobalNotification::showFailure(this, QStringLiteral("群设置保存失败"));
+            });
+    connect(sessionController, &ChatSessionController::groupLeaveFailed,
+            this, [this](const QString&, const NetworkError&) {
+                GlobalNotification::showFailure(this, QStringLiteral("退出群聊失败"));
+            });
 
 }
 

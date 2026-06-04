@@ -1,11 +1,23 @@
 #include "features/friend/ui/FriendSessionController.h"
 
 #include "features/chat/data/GroupRepository.h"
+#include "features/chat/data/GroupRemoteDataSource.h"
 #include "features/chat/data/MessageRepository.h"
 #include "features/friend/data/FriendNotificationRepository.h"
 #include "features/friend/data/FriendRemoteDataSource.h"
 #include "features/friend/data/GroupNotificationRepository.h"
 #include "features/friend/data/UserRepository.h"
+#include "app/state/CurrentUser.h"
+
+namespace {
+
+QString currentUserUuid()
+{
+    const CurrentUserProfile profile = CurrentUser::instance().identity();
+    return profile.userUuid.isEmpty() ? CurrentUser::instance().getUserId() : profile.userUuid;
+}
+
+} // namespace
 
 FriendSessionController::FriendSessionController(QObject* parent)
     : QObject(parent)
@@ -96,6 +108,56 @@ FriendSessionController::FriendSessionController(QObject* parent)
             this,
             [this](const QString&, const QString& userId, const NetworkError& error) {
                 emit friendDeleteFailed(userId, error);
+            });
+    connect(&GroupRemoteDataSource::instance(),
+            &GroupRemoteDataSource::groupUpdated,
+            this,
+            [this](const QString&, const Group& group) {
+                if (group.groupId.isEmpty()) {
+                    return;
+                }
+                ensureGroupRepositoryConnections();
+                GroupRepository::instance().saveGroup(group);
+            });
+    connect(&GroupRemoteDataSource::instance(),
+            &GroupRemoteDataSource::groupMySettingsUpdated,
+            this,
+            [this](const QString&, const Group& group) {
+                if (group.groupId.isEmpty()) {
+                    return;
+                }
+                ensureGroupRepositoryConnections();
+                GroupRepository::instance().saveGroup(group);
+            });
+    connect(&GroupRemoteDataSource::instance(),
+            &GroupRemoteDataSource::groupLeft,
+            this,
+            [this](const QString&, const QString& groupId) {
+                if (groupId.isEmpty()) {
+                    return;
+                }
+                ensureGroupRepositoryConnections();
+                MessageRepository::instance().removeConversation(groupId);
+                GroupRepository::instance().removeGroup(groupId);
+                emit groupLeaveSucceeded(groupId);
+            });
+    connect(&GroupRemoteDataSource::instance(),
+            &GroupRemoteDataSource::groupUpdateFailed,
+            this,
+            [this](const QString&, const QString& groupId, const NetworkError& error) {
+                emit groupUpdateFailed(groupId, error);
+            });
+    connect(&GroupRemoteDataSource::instance(),
+            &GroupRemoteDataSource::groupMySettingsUpdateFailed,
+            this,
+            [this](const QString&, const QString& groupId, const NetworkError& error) {
+                emit groupMySettingsUpdateFailed(groupId, error);
+            });
+    connect(&GroupRemoteDataSource::instance(),
+            &GroupRemoteDataSource::groupLeaveFailed,
+            this,
+            [this](const QString&, const QString& groupId, const NetworkError& error) {
+                emit groupLeaveFailed(groupId, error);
             });
 }
 
@@ -320,8 +382,31 @@ bool FriendSessionController::saveGroup(const Group& group)
         return false;
     }
     ensureGroupRepositoryConnections();
-    GroupRepository::instance().saveGroup(group);
-    return true;
+    const Group previous = GroupRepository::instance().requestGroupDetail({group.groupId});
+    if (previous.groupId.isEmpty()) {
+        return false;
+    }
+
+    const bool groupInfoChanged = group.groupName != previous.groupName ||
+                                  group.introduction != previous.introduction ||
+                                  group.announcement != previous.announcement ||
+                                  group.groupAvatarPath != previous.groupAvatarPath;
+    const bool mySettingsChanged = group.remark != previous.remark ||
+                                   group.listGroupId != previous.listGroupId ||
+                                   group.listGroupName != previous.listGroupName ||
+                                   group.isDnd != previous.isDnd;
+    if (!groupInfoChanged && !mySettingsChanged) {
+        return false;
+    }
+
+    bool sent = false;
+    if (groupInfoChanged) {
+        sent = !GroupRemoteDataSource::instance().updateGroup(group).isEmpty() || sent;
+    }
+    if (mySettingsChanged) {
+        sent = !GroupRemoteDataSource::instance().updateMySettings(group).isEmpty() || sent;
+    }
+    return sent;
 }
 
 bool FriendSessionController::changeGroupCategory(const QString& groupId,
@@ -343,8 +428,7 @@ bool FriendSessionController::changeGroupCategory(const QString& groupId,
 
     group.listGroupId = categoryId;
     group.listGroupName = categoryName;
-    GroupRepository::instance().saveGroup(group);
-    return true;
+    return !GroupRemoteDataSource::instance().updateMySettings(group).isEmpty();
 }
 
 bool FriendSessionController::exitGroup(const QString& groupId)
@@ -359,9 +443,7 @@ bool FriendSessionController::exitGroup(const QString& groupId)
         return false;
     }
 
-    MessageRepository::instance().removeConversation(groupId);
-    GroupRepository::instance().removeGroup(groupId);
-    return true;
+    return !GroupRemoteDataSource::instance().leaveGroup(groupId, currentUserUuid()).isEmpty();
 }
 
 QVector<FriendNotification> FriendSessionController::loadFriendNotifications(int offset, int limit) const

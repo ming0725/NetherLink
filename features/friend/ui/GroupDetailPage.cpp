@@ -314,6 +314,14 @@ void GroupDetailPage::setController(FriendSessionController* controller)
             m_avatarImageRequestId.clear();
         }
     });
+    connect(m_controller, &FriendSessionController::groupLeaveSucceeded,
+            this, [this](const QString& groupId) {
+        if (groupId != m_group.groupId) {
+            return;
+        }
+        clear();
+        emit groupExited();
+    });
 }
 
 void GroupDetailPage::setGroupId(const QString& groupId)
@@ -649,8 +657,5 @@ void GroupDetailPage::confirmExitGroup()
         return;
     }
 
-    if (m_controller->exitGroup(m_group.groupId)) {
-        clear();
-        emit groupExited();
-    }
+    m_controller->exitGroup(m_group.groupId);
 }

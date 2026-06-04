@@ -1,6 +1,7 @@
 #include "features/chat/ui/ChatSessionController.h"
 
 #include "features/chat/data/GroupRepository.h"
+#include "features/chat/data/GroupRemoteDataSource.h"
 #include "features/chat/data/MessageRepository.h"
 #include "features/friend/data/FriendRemoteDataSource.h"
 #include "features/friend/data/UserRepository.h"
@@ -28,6 +29,12 @@ QString memberNickname(const Group& group, const QString& userId)
         return group.currentUserNickname.trimmed();
     }
     return {};
+}
+
+QString currentUserUuid()
+{
+    const CurrentUserProfile profile = CurrentUser::instance().identity();
+    return profile.userUuid.isEmpty() ? CurrentUser::instance().getUserId() : profile.userUuid;
 }
 
 QString memberDisplayName(const Group& group, const User& user)
@@ -267,6 +274,62 @@ ChatSessionController::ChatSessionController(QObject* parent)
             [this](const QString&, const QString& userId, const NetworkError& error) {
                 if (!m_meta.isGroup && hasCurrentConversation(userId)) {
                     emit friendDeleteFailed(userId, error);
+                }
+            });
+    connect(&GroupRemoteDataSource::instance(),
+            &GroupRemoteDataSource::groupUpdated,
+            this,
+            [this](const QString&, const Group& group) {
+                if (!m_meta.isGroup || !hasCurrentConversation(group.groupId)) {
+                    return;
+                }
+                GroupRepository::instance().saveGroup(group);
+                refreshSessionData(true);
+            });
+    connect(&GroupRemoteDataSource::instance(),
+            &GroupRemoteDataSource::groupMySettingsUpdated,
+            this,
+            [this](const QString&, const Group& group) {
+                if (!m_meta.isGroup || !hasCurrentConversation(group.groupId)) {
+                    return;
+                }
+                GroupRepository::instance().saveGroup(group);
+                refreshSessionData(true);
+            });
+    connect(&GroupRemoteDataSource::instance(),
+            &GroupRemoteDataSource::groupLeft,
+            this,
+            [this](const QString&, const QString& groupId) {
+                if (!m_meta.isGroup || !hasCurrentConversation(groupId)) {
+                    return;
+                }
+                MessageRepository::instance().removeConversation(groupId);
+                GroupRepository::instance().removeGroup(groupId);
+                close();
+                emit conversationRemoved();
+            });
+    connect(&GroupRemoteDataSource::instance(),
+            &GroupRemoteDataSource::groupUpdateFailed,
+            this,
+            [this](const QString&, const QString& groupId, const NetworkError& error) {
+                if (m_meta.isGroup && hasCurrentConversation(groupId)) {
+                    emit groupUpdateFailed(groupId, error);
+                }
+            });
+    connect(&GroupRemoteDataSource::instance(),
+            &GroupRemoteDataSource::groupMySettingsUpdateFailed,
+            this,
+            [this](const QString&, const QString& groupId, const NetworkError& error) {
+                if (m_meta.isGroup && hasCurrentConversation(groupId)) {
+                    emit groupMySettingsUpdateFailed(groupId, error);
+                }
+            });
+    connect(&GroupRemoteDataSource::instance(),
+            &GroupRemoteDataSource::groupLeaveFailed,
+            this,
+            [this](const QString&, const QString& groupId, const NetworkError& error) {
+                if (m_meta.isGroup && hasCurrentConversation(groupId)) {
+                    emit groupLeaveFailed(groupId, error);
                 }
             });
 }
@@ -752,10 +815,7 @@ void ChatSessionController::exitGroup()
     }
 
     const QString groupId = m_meta.conversationId;
-    MessageRepository::instance().removeConversation(groupId);
-    GroupRepository::instance().removeGroup(groupId);
-    close();
-    emit conversationRemoved();
+    GroupRemoteDataSource::instance().leaveGroup(groupId, currentUserUuid());
 }
 
 void ChatSessionController::refreshSessionData(bool emitChange)
@@ -899,5 +959,12 @@ void ChatSessionController::saveGroupField(const QString& value, void (*assign)(
         return;
     }
 
-    GroupRepository::instance().saveGroup(group);
+    if (group.groupName != previousGroup.groupName ||
+        group.introduction != previousGroup.introduction ||
+        group.announcement != previousGroup.announcement) {
+        GroupRemoteDataSource::instance().updateGroup(group);
+        return;
+    }
+
+    GroupRemoteDataSource::instance().updateMySettings(group);
 }

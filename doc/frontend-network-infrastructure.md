@@ -272,8 +272,13 @@
 - `FriendSessionController` 保持 UI 层现有调用入口不变，远程请求成功后复用 `FriendNotificationRepository` / `GroupNotificationRepository` 原有本地缓存更新逻辑。
 - 好友资料更新成功后再写入 `UserRepository`；好友详情页、好友列表菜单和聊天资料页的备注/分组编辑共用同一远程结果。
 - 删除好友成功后再移除本地会话和好友缓存；好友页、好友列表菜单和聊天资料页的删除入口共用同一远程结果。
-- 请求失败时通过 `FriendApplication` / `ChatArea` 展示“好友申请处理失败”“入群申请处理失败”“好友资料保存失败”或“删除好友失败”，不回退到静态样例数据。
-- 当前只覆盖已有通知页的同意/拒绝按钮、好友资料编辑和删除好友入口；好友搜索发起申请、群资料编辑、退群等写操作尚未接入远程。
+- 已新增 `features/chat/data/GroupRemoteDataSource.h/.cpp`：
+  - 群全局资料编辑通过 `PATCH /api/v1/groups/{groupId}` 发送，body 包含 `name`、`introduction`、`announcement` 和稳定 `clientOperationId`。
+  - 当前用户群备注、分组和免打扰设置通过 `PATCH /api/v1/groups/{groupId}/my-settings` 发送，body 包含 `remark`、`listGroupId`、`listGroupName`、`isDnd` 和稳定 `clientOperationId`。
+  - 退群通过 `DELETE /api/v1/groups/{groupId}/members/{currentUserUuid}?clientOperationId=<op>` 发送，并携带同值 `Idempotency-Key`；`currentUserUuid` 优先来自当前用户资料中的 `userUuid`。
+  - 远程成功后再写入 `GroupRepository`、移除本地会话和群缓存；好友页、群列表菜单和聊天资料页入口共用同一远程结果。
+- 请求失败时通过 `FriendApplication` / `ChatArea` 展示“好友申请处理失败”“入群申请处理失败”“好友资料保存失败”“删除好友失败”“群资料保存失败”“群设置保存失败”或“退出群聊失败”，不回退到静态样例数据。
+- 当前只覆盖已有通知页的同意/拒绝按钮、好友资料编辑和删除好友入口，以及已有群资料编辑、我的群设置和退群入口；好友搜索发起申请、创建群、群成员管理、转让群主等写操作尚未接入远程。
 
 ### 网络状态 UI 汇总
 
@@ -300,7 +305,7 @@
 - 网络不可用时显示错误、重试或空状态，不回退到静态本地数据。
 
 1. 业务 API 封装
-   - 每个 feature 增加独立 remote data source。当前已覆盖 `ChatRemoteDataSource` 以及 `FriendRemoteDataSource` 的好友/群申请同意拒绝入口。
+   - 每个 feature 增加独立 remote data source。当前已覆盖 `ChatRemoteDataSource`、`FriendRemoteDataSource` 的好友/群申请同意拒绝入口，以及 `GroupRemoteDataSource` 的群资料、我的群设置和退群入口。
    - repository 保留统一业务入口，但不再以静态样例数据作为 fallback；本地只保留缓存、临时 pending 状态、游标和必要的 UI 状态。
    - UI 层只观察 repository/model，不直接调用网络 client。
 

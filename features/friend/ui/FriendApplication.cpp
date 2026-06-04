@@ -444,6 +444,18 @@ FriendApplication::FriendApplication(QWidget* parent)
             this, [this](const QString&, const NetworkError&) {
                 GlobalNotification::showFailure(this, QStringLiteral("删除好友失败"));
             });
+    connect(m_friendController, &FriendSessionController::groupUpdateFailed,
+            this, [this](const QString&, const NetworkError&) {
+                GlobalNotification::showFailure(this, QStringLiteral("群资料保存失败"));
+            });
+    connect(m_friendController, &FriendSessionController::groupMySettingsUpdateFailed,
+            this, [this](const QString&, const NetworkError&) {
+                GlobalNotification::showFailure(this, QStringLiteral("群设置保存失败"));
+            });
+    connect(m_friendController, &FriendSessionController::groupLeaveFailed,
+            this, [this](const QString&, const NetworkError&) {
+                GlobalNotification::showFailure(this, QStringLiteral("退出群聊失败"));
+            });
 
     const int friendUnreadCount = m_friendController->friendUnreadCount();
     const int groupUnreadCount = m_friendController->groupUnreadCount();
