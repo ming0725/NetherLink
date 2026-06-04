@@ -573,7 +573,9 @@ PATCH 请求：
 - 登录/注册响应和 `/me` 响应会写入 `CurrentUserProfileRepository`，并保留 `userUuid`、`version`、`etag`。
 - `CurrentUser::setUserInfo()` 会主动拉取 `/me`；资料编辑保存会调用 `PATCH /me`。
 - PATCH 使用模型内 `etag` 生成 `If-Match`，使用模型内 `version` 生成 `expectedVersion`。
-- 当前资料编辑 UI 只发送已有的昵称、签名、地区字段。头像上传仍属于后续文件上传阶段，不通过 `/me` PATCH 传本地头像路径；左侧头像状态属于本地呈现状态，等待 presence 契约明确后再接后端。
+- 当前资料编辑 UI 保存时只通过 `/me` PATCH 发送已有的昵称、签名、地区字段，不通过 `/me` PATCH 传本地头像路径。
+- 头像裁剪后仍先保存为本地 PNG 以便立即预览；保存资料时若头像路径为本地文件，则通过 `UploadClient::uploadAvatar()` 调用 `POST /api/v1/me/avatar?expectedVersion=<version>`，成功后用返回的 `avatarUrl/avatarVersion/avatarEtag/avatarContentHash/fileId` 更新当前用户资料缓存。
+- 左侧头像状态属于本地呈现状态，等待 presence 契约明确后再接后端。
 - `VERSION_CONFLICT` 等保存失败会显示全局失败通知，不写入静态 fallback。
 
 ### 4.5 公开 ID
@@ -832,6 +834,13 @@ DELETE /api/v1/files/{fileId}?expectedVersion=1
   "headers": {}
 }
 ```
+
+当前 Qt 前端接入状态：
+
+- `UploadClient::uploadFile(path, targetType)` 已接入 `/files` multipart 代理上传，当前用于聊天图片 `targetType=chat_image`。
+- `UploadClient::uploadAvatar(path, expectedVersion)` 已接入 `/me/avatar` multipart 专用头像上传。
+- 预签名单文件 PUT、多段上传、上传会话查询/取消仍未接入。
+- 动态图片/视频上传、聊天文件/音频/视频上传、AI 文件上传仍不实现，除非后续已有 UI 明确新增对应入口。
 
 ## 6. 用户、好友、群组 API
 
@@ -1140,6 +1149,15 @@ type Message = {
   recalledAt?: string;
 };
 ```
+
+当前 Qt 前端接入状态：
+
+- 已新增 `ChatRemoteDataSource` 封装聊天发送。
+- 文本消息通过 `POST /api/v1/conversations/{conversationId}/messages` 发送，body 使用 `type=text`、`content.text`、空 `attachments` 和稳定 `clientMessageId`。
+- 图片消息先通过 `UploadClient::uploadFile(path, "chat_image")` 上传文件，成功后使用返回的 `fileId` 作为 `type=image` 消息的附件发送，并填入本地读取到的 `width/height`。
+- `ChatArea` 保留现有乐观追加体验；发送失败显示全局失败提示。
+- `ChatMessage`、`MessageRepository` 和 `ChatListModel` 已保存 `clientMessageId` 并按 `messageId/clientMessageId` 去重，避免 REST/WS 回包重复显示。
+- 仍不接入聊天文件、音频、视频和多附件选择。
 
 ### 7.3 WebSocket 命令
 

@@ -243,6 +243,20 @@ const ChatMessage* ChatListModel::messageById(const QString& messageId) const
     return nullptr;
 }
 
+const ChatMessage* ChatListModel::messageByClientMessageId(const QString& clientMessageId) const
+{
+    if (clientMessageId.isEmpty()) {
+        return nullptr;
+    }
+
+    for (const QSharedPointer<ChatMessage>& message : messages) {
+        if (message && message->getClientMessageId() == clientMessageId) {
+            return message.get();
+        }
+    }
+    return nullptr;
+}
+
 QModelIndex ChatListModel::indexForMessageId(const QString& messageId) const
 {
     if (messageId.isEmpty()) {

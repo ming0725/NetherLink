@@ -92,7 +92,14 @@
 - `CurrentUser::setUserInfo()` 会在本地身份建立后主动拉取 `/me` 和 `/me/preferences`。
 - 资料编辑入口调用 `CurrentUser::saveProfile()` 后由远程 PATCH 成功结果更新本地 repository；`VERSION_CONFLICT` 等失败会通过现有全局通知提示。
 
-当前头像专用上传尚未接入；资料 PATCH 不把本地头像文件路径当作后端头像更新。左侧头像状态仍是本地呈现状态，不映射到后端当前仅表示账号可用性的 `User.status`。
+当前头像专用上传已接入：
+
+- 资料编辑仍先把裁剪后的头像保存为本地 PNG 以便立即预览。
+- `CurrentUser::saveProfile()` 发现头像路径变成本地文件时，会调用 `CurrentUserRemoteDataSource::uploadAvatar()`。
+- `uploadAvatar()` 使用 `UploadClient::uploadAvatar()` 发起 `POST /api/v1/me/avatar?expectedVersion=<version>`。
+- 上传成功后按返回的 `avatarUrl`、`avatarVersion`、`avatarEtag`、`avatarContentHash`、`fileId/avatarFileId` 更新 `CurrentUserProfileRepository`，并触发头像缓存失效。
+- 资料 PATCH 仍只发送已有的昵称、签名、地区字段，不把本地头像文件路径写入 `/me`。
+- 左侧头像状态仍是本地呈现状态，不映射到后端当前仅表示账号可用性的 `User.status`。
 
 ### 远程数据 Bootstrap
 
@@ -147,8 +154,9 @@
 - 支持字段：`file`、`targetType`、可选 `contentHash`。
 - 自动带 `Authorization`。
 - 暴露上传进度、成功、失败信号。
+- 支持头像专用 multipart 上传到 `/api/v1/me/avatar`，可携带 `expectedVersion` query。
 
-头像专用上传、预签名 PUT、多段上传尚未实现，只保留了基础代理上传入口。
+预签名 PUT、多段上传尚未实现，只保留基础代理上传入口。
 
 ### SSE Client
 
@@ -230,6 +238,17 @@
 
 当前 handler 均为同步缓存更新；`RealtimeEventDispatcher` 在 `AppEventBus::publish()` 返回后推进 `EventCursorStore` 游标，因此这些已接入的同步 handler 完成后才会保存 `eventSeq`。若后续接入需要等待 HTTP 补拉或异步写入的 handler，再把 dispatcher 升级为 handler ack 模式。
 
+### 聊天发送与图片上传
+
+已新增 `features/chat/data/ChatRemoteDataSource.h/.cpp`：
+
+- 文本消息通过 `POST /api/v1/conversations/{conversationId}/messages` 发送。
+- 聊天图片先调用 `UploadClient::uploadFile(path, "chat_image")` 上传到 `/files`，成功后用返回的 `fileId` 作为 `image` 消息附件发送。
+- 每条本端发送消息都生成稳定 `clientMessageId`，失败重试由 `HttpClient` 按幂等消息规则处理。
+- `ChatArea` 继续先创建本地乐观消息并保留现有 UI 体验；发送失败用现有全局通知提示。
+- `ChatMessage`、`MessageRepository` 和 `ChatListModel` 已保留并按 `clientMessageId` 去重，避免 REST 成功或 WebSocket `chat.message.sent/chat.message.created` 回包重复追加同一条本端消息。
+- 当前只接入已有文本消息和单张图片消息入口，不新增聊天文件、语音、视频或多附件 UI。
+
 ### 网络状态 UI 汇总
 
 `NetworkService` 已把底层网络状态汇总为 UI 可消费信号：
@@ -255,23 +274,18 @@
 - 网络不可用时显示错误、重试或空状态，不回退到静态本地数据。
 - AI 模拟流式输出要正常改造成后端 SSE 流式输出，保留分片追加、停止生成和完成替换等现有交互。
 
-1. 文件上传
-   - 只在已有入口使用 `UploadClient::uploadFile`，例如头像和聊天图片。
-   - 动态模块当前以远程列表、详情和图片展示为主；没有发布器时不要新增动态图片/视频上传。
-   - 不接入预签名 PUT、多段上传、聊天文件、聊天音频、聊天视频、帖子视频、直播媒体和 AI 文件上传。
-
-2. AI SSE
+1. AI SSE
    - 用 `SseClient` 替换当前本地模拟流式输出，保留现有流式追加、停止生成和完成态 UI。
    - 发送请求时强制生成并复用 `clientMessageId`。
    - 对 `ai.stream.chunk` 拼接 delta，对 `ai.stream.done` 用服务端消息替换临时消息。
    - `aiFileIds` 固定为空数组或省略，不实现 AI 文件上传、绑定、解析轮询和引用文件回答。
 
-3. 业务 API 封装
+2. 业务 API 封装
    - 每个 feature 增加独立 remote data source，例如 `ChatRemoteDataSource`、`FriendRemoteDataSource`。
    - repository 保留统一业务入口，但不再以静态样例数据作为 fallback；本地只保留缓存、临时 pending 状态、游标和必要的 UI 状态。
    - UI 层只观察 repository/model，不直接调用网络 client。
 
-4. 配置和安全存储
+3. 配置和安全存储
    - 将 base URL、代理、超时接入设置页。
    - access token 保持内存优先。
    - refresh token 是否落盘需结合 macOS Keychain、Windows Credential Manager 或 Qt 平台能力再实现。

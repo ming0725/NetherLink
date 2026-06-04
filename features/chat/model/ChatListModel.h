@@ -65,6 +65,7 @@ public:
     const ChatMessage* messageAt(int index) const;
     QSharedPointer<ChatMessage> sharedMessageAt(int index) const;
     const ChatMessage* messageById(const QString& messageId) const;
+    const ChatMessage* messageByClientMessageId(const QString& clientMessageId) const;
     QModelIndex indexForMessageId(const QString& messageId) const;
     void clearSelection();
     void clearRowHighlight();

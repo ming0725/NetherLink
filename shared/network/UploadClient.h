@@ -22,6 +22,9 @@ public:
                        const QString& targetType,
                        const QString& contentHash = {},
                        const QVariantMap& query = {});
+    QString uploadAvatar(const QString& path,
+                         int expectedVersion = 0,
+                         const QString& contentHash = {});
 
 signals:
     void uploadStarted(const QString& requestId, const QString& path);

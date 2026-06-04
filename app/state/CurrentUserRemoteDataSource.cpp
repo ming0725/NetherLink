@@ -3,6 +3,7 @@
 #include "CurrentUserPreferencesRepository.h"
 #include "CurrentUserProfileRepository.h"
 #include "shared/network/HttpClient.h"
+#include "shared/network/UploadClient.h"
 
 #include <QJsonObject>
 #include <QJsonValue>
@@ -62,6 +63,37 @@ CurrentUserProfile profileFromResponseObject(QJsonObject object, const QString& 
                     object.value(QStringLiteral("userUuid")).toString())});
 }
 
+QJsonObject profileObjectWithAvatarResponse(const CurrentUserProfile& profile, QJsonObject avatarResponse)
+{
+    if (avatarResponse.value(QStringLiteral("avatar")).isObject()) {
+        avatarResponse = avatarResponse.value(QStringLiteral("avatar")).toObject();
+    }
+
+    QJsonObject object{
+            {QStringLiteral("userUuid"), profile.userUuid},
+            {QStringLiteral("userId"), profile.userId},
+            {QStringLiteral("nickName"), profile.nickName},
+            {QStringLiteral("signature"), profile.signature},
+            {QStringLiteral("region"), profile.region},
+            {QStringLiteral("version"), profile.version},
+            {QStringLiteral("etag"), profile.etag}
+    };
+    for (const QString& key : {QStringLiteral("avatarUrl"),
+                               QStringLiteral("avatarVersion"),
+                               QStringLiteral("avatarEtag"),
+                               QStringLiteral("avatarContentHash"),
+                               QStringLiteral("fileId"),
+                               QStringLiteral("avatarFileId")}) {
+        if (avatarResponse.contains(key)) {
+            object.insert(key, avatarResponse.value(key));
+        }
+    }
+    if (avatarResponse.contains(QStringLiteral("avatar"))) {
+        object.insert(QStringLiteral("avatar"), avatarResponse.value(QStringLiteral("avatar")));
+    }
+    return object;
+}
+
 CurrentUserPreferences preferencesFromResponseObject(const QJsonObject& object, const QString& responseEtag)
 {
     CurrentUserPreferencesRepository::instance().saveCurrentUserPreferencesObject(object, responseEtag);
@@ -103,6 +135,14 @@ CurrentUserRemoteDataSource::CurrentUserRemoteDataSource(QObject* parent)
             &HttpClient::requestFailed,
             this,
             &CurrentUserRemoteDataSource::handleRequestFailed);
+    connect(&UploadClient::instance(),
+            &UploadClient::uploadSucceeded,
+            this,
+            &CurrentUserRemoteDataSource::handleRequestSucceeded);
+    connect(&UploadClient::instance(),
+            &UploadClient::uploadFailed,
+            this,
+            &CurrentUserRemoteDataSource::handleRequestFailed);
 }
 
 QString CurrentUserRemoteDataSource::fetchProfile()
@@ -121,6 +161,17 @@ QString CurrentUserRemoteDataSource::updateProfile(const CurrentUserProfile& pro
                                                                             profilePatchBody(profile),
                                                                             profile.etag));
     m_pendingRequests.insert(requestId, RequestKind::UpdateProfile);
+    return requestId;
+}
+
+QString CurrentUserRemoteDataSource::uploadAvatar(const CurrentUserProfile& profile)
+{
+    if (profile.avatarPath.isEmpty()) {
+        return {};
+    }
+    const QString requestId = UploadClient::instance().uploadAvatar(profile.avatarPath, profile.version);
+    m_pendingRequests.insert(requestId, RequestKind::UploadAvatar);
+    m_pendingAvatarProfiles.insert(requestId, profile);
     return requestId;
 }
 
@@ -161,6 +212,16 @@ void CurrentUserRemoteDataSource::handleRequestSucceeded(const QString& requestI
         emit profileUpdated(requestId, profile);
         break;
     }
+    case RequestKind::UploadAvatar: {
+        const CurrentUserProfile previous = m_pendingAvatarProfiles.take(requestId);
+        const QJsonObject object = profileObjectWithAvatarResponse(previous, response.object());
+        CurrentUserProfileRepository::instance().saveCurrentUserProfileObject(object);
+        const CurrentUserProfile profile = CurrentUserProfileRepository::instance().requestCurrentUserProfile({
+                previous.userId
+        });
+        emit avatarUpdated(requestId, profile);
+        break;
+    }
     case RequestKind::FetchPreferences: {
         const CurrentUserPreferences preferences = preferencesFromResponseObject(response.object(), response.etag);
         emit preferencesFetched(requestId, preferences);
@@ -187,6 +248,10 @@ void CurrentUserRemoteDataSource::handleRequestFailed(const QString& requestId, 
         break;
     case RequestKind::UpdateProfile:
         emit profileUpdateFailed(requestId, error);
+        break;
+    case RequestKind::UploadAvatar:
+        m_pendingAvatarProfiles.remove(requestId);
+        emit avatarUpdateFailed(requestId, error);
         break;
     case RequestKind::FetchPreferences:
         emit preferencesFetchFailed(requestId, error);

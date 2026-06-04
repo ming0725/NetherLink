@@ -17,6 +17,7 @@ public:
 
     QString fetchProfile();
     QString updateProfile(const CurrentUserProfile& profile);
+    QString uploadAvatar(const CurrentUserProfile& profile);
     QString fetchPreferences();
     QString updatePreferences(const CurrentUserPreferences& preferences);
 
@@ -25,6 +26,8 @@ signals:
     void profileFetchFailed(const QString& requestId, const NetworkError& error);
     void profileUpdated(const QString& requestId, const CurrentUserProfile& profile);
     void profileUpdateFailed(const QString& requestId, const NetworkError& error);
+    void avatarUpdated(const QString& requestId, const CurrentUserProfile& profile);
+    void avatarUpdateFailed(const QString& requestId, const NetworkError& error);
     void preferencesFetched(const QString& requestId, const CurrentUserPreferences& preferences);
     void preferencesFetchFailed(const QString& requestId, const NetworkError& error);
     void preferencesUpdated(const QString& requestId, const CurrentUserPreferences& preferences);
@@ -34,6 +37,7 @@ private:
     enum class RequestKind {
         FetchProfile,
         UpdateProfile,
+        UploadAvatar,
         FetchPreferences,
         UpdatePreferences
     };
@@ -45,6 +49,7 @@ private:
     void handleRequestFailed(const QString& requestId, const NetworkError& error);
 
     QHash<QString, RequestKind> m_pendingRequests;
+    QHash<QString, CurrentUserProfile> m_pendingAvatarProfiles;
 };
 
 Q_DECLARE_METATYPE(CurrentUserProfile)

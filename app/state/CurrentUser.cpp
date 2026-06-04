@@ -3,6 +3,8 @@
 #include "CurrentUserProfileRepository.h"
 #include "CurrentUserRemoteDataSource.h"
 
+#include <QFileInfo>
+
 CurrentUser::CurrentUser(QObject* parent)
     : QObject(parent)
 {
@@ -32,6 +34,26 @@ CurrentUser::CurrentUser(QObject* parent)
             });
     connect(&CurrentUserRemoteDataSource::instance(),
             &CurrentUserRemoteDataSource::profileUpdateFailed,
+            this,
+            [this](const QString& requestId, const NetworkError& error) {
+                if (m_pendingProfileSaveRequests.remove(requestId)) {
+                    emit profileSaveFailed(requestId, error);
+                }
+            });
+    connect(&CurrentUserRemoteDataSource::instance(),
+            &CurrentUserRemoteDataSource::avatarUpdated,
+            this,
+            [this](const QString& requestId, const CurrentUserProfile& profile) {
+                if (!m_pendingProfileSaveRequests.remove(requestId)) {
+                    return;
+                }
+                if (isCurrentUserId(profile.userId)) {
+                    applyProfile(profile, ProfileLoadLevel::Full);
+                }
+                emit profileSaveSucceeded(requestId);
+            });
+    connect(&CurrentUserRemoteDataSource::instance(),
+            &CurrentUserRemoteDataSource::avatarUpdateFailed,
             this,
             [this](const QString& requestId, const NetworkError& error) {
                 if (m_pendingProfileSaveRequests.remove(requestId)) {
@@ -146,11 +168,25 @@ QString CurrentUser::saveProfile(const CurrentUserProfile& profile)
     if (m_userId.isEmpty() || profile.userId != m_userId) {
         return {};
     }
-    const QString requestId = CurrentUserRemoteDataSource::instance().updateProfile(profile);
-    if (!requestId.isEmpty()) {
-        m_pendingProfileSaveRequests.insert(requestId);
+    QString firstRequestId;
+    const bool hasLocalAvatarChange = profile.avatarPath != m_profile.avatarPath &&
+            QFileInfo(profile.avatarPath).isFile();
+    if (hasLocalAvatarChange) {
+        const QString avatarRequestId = CurrentUserRemoteDataSource::instance().uploadAvatar(profile);
+        if (!avatarRequestId.isEmpty()) {
+            m_pendingProfileSaveRequests.insert(avatarRequestId);
+            firstRequestId = avatarRequestId;
+        }
     }
-    return requestId;
+
+    const QString profileRequestId = CurrentUserRemoteDataSource::instance().updateProfile(profile);
+    if (!profileRequestId.isEmpty()) {
+        m_pendingProfileSaveRequests.insert(profileRequestId);
+        if (firstRequestId.isEmpty()) {
+            firstRequestId = profileRequestId;
+        }
+    }
+    return firstRequestId;
 }
 
 void CurrentUser::clear()
@@ -196,6 +232,9 @@ void CurrentUser::applyProfile(CurrentUserProfile profile, ProfileLoadLevel leve
     const bool identityChangedValue = m_profile.userId != profile.userId
             || m_profile.nickName != profile.nickName
             || m_profile.avatarPath != profile.avatarPath
+            || m_profile.avatarVersion != profile.avatarVersion
+            || m_profile.avatarEtag != profile.avatarEtag
+            || m_profile.avatarContentHash != profile.avatarContentHash
             || m_profile.status != profile.status;
     const bool fullChangedValue = identityChangedValue
             || m_profile.signature != profile.signature

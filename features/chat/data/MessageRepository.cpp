@@ -409,6 +409,12 @@ QString messageIdFromObject(const QJsonObject& object)
                                 QStringLiteral("clientMessageId")});
 }
 
+QString clientMessageIdFromObject(const QJsonObject& object)
+{
+    return firstString(object, {QStringLiteral("clientMessageId"),
+                                QStringLiteral("client_message_id")});
+}
+
 QString chatMessageCacheKey(const QString& conversationId, const QString& messageId)
 {
     if (conversationId.isEmpty() || messageId.isEmpty()) {
@@ -537,6 +543,7 @@ QSharedPointer<ChatMessage> chatMessageFromJson(const QJsonObject& object)
     if (!messageId.isEmpty()) {
         message->setMessageId(messageId);
     }
+    message->setClientMessageId(clientMessageIdFromObject(object));
     const QDateTime timestamp = firstDateTime(object, {QStringLiteral("createdAt"),
                                                        QStringLiteral("serverReceivedAt"),
                                                        QStringLiteral("clientSentAt"),
@@ -576,6 +583,9 @@ QJsonObject chatMessageToJson(const QString& conversationId, const QSharedPointe
             {QStringLiteral("createdAt"), message->getTimestamp().toUTC().toString(Qt::ISODateWithMs)},
             {QStringLiteral("isGroupChat"), message->isInGroupChat()}
     };
+    if (!message->getClientMessageId().isEmpty()) {
+        object.insert(QStringLiteral("clientMessageId"), message->getClientMessageId());
+    }
     if (!message->getReferencedMessageId().isEmpty()) {
         object.insert(QStringLiteral("referencedMessageId"), message->getReferencedMessageId());
     }
@@ -1024,7 +1034,10 @@ void MessageRepository::reloadFromStore()
 
         QVector<QSharedPointer<ChatMessage>>& messages = nextStore[conversationId];
         const auto duplicate = std::find_if(messages.cbegin(), messages.cend(), [&message](const QSharedPointer<ChatMessage>& existing) {
-            return existing && existing->getMessageId() == message->getMessageId();
+            return existing &&
+                   (existing->getMessageId() == message->getMessageId() ||
+                    (!existing->getClientMessageId().isEmpty() &&
+                     existing->getClientMessageId() == message->getClientMessageId()));
         });
         if (duplicate == messages.cend()) {
             messages.push_back(message);
@@ -1319,7 +1332,10 @@ void MessageRepository::addMessage(const QString& conversationId,
         QMutexLocker locker(&m_mutex);
         QVector<QSharedPointer<ChatMessage>>& messages = m_store[conversationId];
         for (const QSharedPointer<ChatMessage>& existing : messages) {
-            if (existing && existing->getMessageId() == message->getMessageId()) {
+            if (existing &&
+                (existing->getMessageId() == message->getMessageId() ||
+                 (!existing->getClientMessageId().isEmpty() &&
+                  existing->getClientMessageId() == message->getClientMessageId()))) {
                 return;
             }
         }

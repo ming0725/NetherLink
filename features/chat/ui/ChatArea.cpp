@@ -1,6 +1,7 @@
 #include "ChatArea.h"
 #include "shared/services/AppFonts.h"
 #include "features/chat/data/GroupRepository.h"
+#include "features/chat/data/ChatRemoteDataSource.h"
 #include "features/friend/data/UserRepository.h"
 #include "features/chat/data/MessageRepository.h"
 #include "features/chat/ui/ConversationInfoPanel.h"
@@ -424,6 +425,18 @@ ChatArea::ChatArea(QWidget *parent)
             this, &ChatArea::onSendTextAsPeer);
     connect(inputBar, &FloatingInputBar::recallLatestPeerMessageRequested,
             this, &ChatArea::onRecallLatestPeerMessageRequested);
+    connect(&ChatRemoteDataSource::instance(),
+            &ChatRemoteDataSource::messageSendFailed,
+            this,
+            [this](const QString&, const NetworkError&) {
+                GlobalNotification::showFailure(this, QStringLiteral("消息发送失败"));
+            });
+    connect(&ChatRemoteDataSource::instance(),
+            &ChatRemoteDataSource::imageUploadFailed,
+            this,
+            [this](const QString&, const NetworkError&) {
+                GlobalNotification::showFailure(this, QStringLiteral("图片上传失败"));
+            });
     connect(inputBar, &FloatingInputBar::inputFocused,
             this, &ChatArea::clearMessageSelection);
     connect(chatDelegate, &ChatItemDelegate::deleteRequested,
@@ -516,7 +529,9 @@ void ChatArea::appendRepositoryMessage(const QString& changedConversationId,
 
     if (chatModel->indexForMessage(message.get()).isValid() ||
             (!message->getMessageId().isEmpty() &&
-             chatModel->messageById(message->getMessageId()))) {
+             chatModel->messageById(message->getMessageId())) ||
+            (!message->getClientMessageId().isEmpty() &&
+             chatModel->messageByClientMessageId(message->getClientMessageId()))) {
         return;
     }
 
@@ -1989,6 +2004,14 @@ void ChatArea::updateInputBarPosition() {
 void ChatArea::onSendImage(const QString &path)
 {
     if (ImageService::instance().sourceSize(path).isValid()) {
+        const QString clientMessageId = ChatRemoteDataSource::instance().sendImageMessage(
+                conversationId(),
+                path,
+                m_pendingReferenceMessageId);
+        if (clientMessageId.isEmpty()) {
+            GlobalNotification::showFailure(this, QStringLiteral("图片发送失败"));
+            return;
+        }
         GroupRole role = GroupRole::Member;
         QString senderName = CurrentUser::instance().getUserName();
         if (isGroupMode()) {
@@ -2003,6 +2026,7 @@ void ChatArea::onSendImage(const QString &path)
                                                isGroupMode(),
                                                senderName,
                                                role);
+        ptr->setClientMessageId(clientMessageId);
         applyPendingReference(ptr);
         addMessage(ptr);
     }
@@ -2011,6 +2035,14 @@ void ChatArea::onSendImage(const QString &path)
 void ChatArea::onSendText(const QString &text)
 {
     if (!text.trimmed().isEmpty()) {
+        const QString clientMessageId = ChatRemoteDataSource::instance().sendTextMessage(
+                conversationId(),
+                text,
+                m_pendingReferenceMessageId);
+        if (clientMessageId.isEmpty()) {
+            GlobalNotification::showFailure(this, QStringLiteral("消息发送失败"));
+            return;
+        }
         GroupRole role = GroupRole::Member;
         QString senderName = CurrentUser::instance().getUserName();
         if (isGroupMode()) {
@@ -2025,6 +2057,7 @@ void ChatArea::onSendText(const QString &text)
                                                isGroupMode(),
                                                senderName,
                                                role);
+        ptr->setClientMessageId(clientMessageId);
         applyPendingReference(ptr);
         addMessage(ptr);
     }

@@ -41,6 +41,8 @@ public:
             messageId = id;
         }
     }
+    QString getClientMessageId() const { return clientMessageId; }
+    void setClientMessageId(const QString& id) { clientMessageId = id; }
     bool isFromMe() const { return fromMe; }
     QString getSenderId() const { return senderId; }
     QDateTime getTimestamp() const { return timestamp; }
@@ -60,6 +62,7 @@ public:
 
 protected:
     QString messageId;
+    QString clientMessageId;
     bool fromMe;
     QString senderId;
     QDateTime timestamp;
