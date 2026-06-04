@@ -233,6 +233,15 @@ ChatSessionController::ChatSessionController(QObject* parent)
                 }
             });
     connect(&FriendRemoteDataSource::instance(),
+            &FriendRemoteDataSource::friendUpdated,
+            this,
+            [this](const QString&, const User& user) {
+                if (m_meta.isGroup || !hasCurrentConversation(user.id)) {
+                    return;
+                }
+                UserRepository::instance().saveUser(user);
+            });
+    connect(&FriendRemoteDataSource::instance(),
             &FriendRemoteDataSource::friendDeleted,
             this,
             [this](const QString&, const QString& userId) {
@@ -243,6 +252,14 @@ ChatSessionController::ChatSessionController(QObject* parent)
                 UserRepository::instance().removeUser(userId);
                 close();
                 emit conversationRemoved();
+            });
+    connect(&FriendRemoteDataSource::instance(),
+            &FriendRemoteDataSource::friendUpdateFailed,
+            this,
+            [this](const QString&, const QString& userId, const NetworkError& error) {
+                if (!m_meta.isGroup && hasCurrentConversation(userId)) {
+                    emit friendUpdateFailed(userId, error);
+                }
             });
     connect(&FriendRemoteDataSource::instance(),
             &FriendRemoteDataSource::friendDeleteFailed,
@@ -685,7 +702,7 @@ void ChatSessionController::saveDirectRemark(const QString& remark)
     }
 
     user.remark = nextRemark;
-    UserRepository::instance().saveUser(user);
+    FriendRemoteDataSource::instance().updateFriend(user);
 }
 
 void ChatSessionController::setPinned(bool pinned)

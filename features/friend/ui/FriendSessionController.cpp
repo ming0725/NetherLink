@@ -53,6 +53,16 @@ FriendSessionController::FriendSessionController(QObject* parent)
                 GroupNotificationRepository::instance().rejectJoinRequest(notificationId);
             });
     connect(&FriendRemoteDataSource::instance(),
+            &FriendRemoteDataSource::friendUpdated,
+            this,
+            [this](const QString&, const User& user) {
+                if (user.id.isEmpty()) {
+                    return;
+                }
+                ensureUserRepositoryConnections();
+                UserRepository::instance().saveUser(user);
+            });
+    connect(&FriendRemoteDataSource::instance(),
             &FriendRemoteDataSource::friendDeleted,
             this,
             [this](const QString&, const QString& userId) {
@@ -74,6 +84,12 @@ FriendSessionController::FriendSessionController(QObject* parent)
             this,
             [this](const QString&, const QString& notificationId, const NetworkError& error) {
                 emit groupJoinRequestActionFailed(notificationId, error);
+            });
+    connect(&FriendRemoteDataSource::instance(),
+            &FriendRemoteDataSource::friendUpdateFailed,
+            this,
+            [this](const QString&, const QString& userId, const NetworkError& error) {
+                emit friendUpdateFailed(userId, error);
             });
     connect(&FriendRemoteDataSource::instance(),
             &FriendRemoteDataSource::friendDeleteFailed,
@@ -196,8 +212,7 @@ bool FriendSessionController::saveFriend(const User& user)
         return false;
     }
     ensureUserRepositoryConnections();
-    UserRepository::instance().saveUser(user);
-    return true;
+    return !FriendRemoteDataSource::instance().updateFriend(user).isEmpty();
 }
 
 bool FriendSessionController::changeFriendGroup(const QString& userId,
@@ -216,8 +231,7 @@ bool FriendSessionController::changeFriendGroup(const QString& userId,
 
     user.friendGroupId = groupId;
     user.friendGroupName = groupName;
-    UserRepository::instance().saveUser(user);
-    return true;
+    return !FriendRemoteDataSource::instance().updateFriend(user).isEmpty();
 }
 
 bool FriendSessionController::deleteFriend(const QString& userId)

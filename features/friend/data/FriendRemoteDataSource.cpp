@@ -20,6 +20,14 @@ QJsonObject bodyWithClientOperationId(const QString& clientOperationId)
     };
 }
 
+QJsonValue backendFriendGroupId(const QString& groupId)
+{
+    if (groupId.isEmpty() || groupId == QStringLiteral("default")) {
+        return QJsonValue(QJsonValue::Null);
+    }
+    return QJsonValue(groupId);
+}
+
 } // namespace
 
 FriendRemoteDataSource& FriendRemoteDataSource::instance()
@@ -119,6 +127,28 @@ QString FriendRemoteDataSource::rejectGroupJoinRequest(const QString& notificati
                          pending);
 }
 
+QString FriendRemoteDataSource::updateFriend(const User& user)
+{
+    if (user.id.isEmpty()) {
+        return {};
+    }
+
+    QJsonObject body = bodyWithClientOperationId(newClientOperationId(QStringLiteral("op_friend_update")));
+    body.insert(QStringLiteral("remark"), user.remark);
+    body.insert(QStringLiteral("groupId"), backendFriendGroupId(user.friendGroupId));
+    body.insert(QStringLiteral("isDnd"), user.isDnd);
+
+    PendingOperation pending;
+    pending.action = Action::UpdateFriend;
+    pending.userId = user.id;
+    pending.user = user;
+    return sendOperation(Action::UpdateFriend,
+                         QStringLiteral("/friends/%1").arg(user.id),
+                         body,
+                         pending,
+                         HttpMethod::Patch);
+}
+
 QString FriendRemoteDataSource::deleteFriend(const QString& userId)
 {
     if (userId.isEmpty()) {
@@ -145,10 +175,11 @@ QString FriendRemoteDataSource::deleteFriend(const QString& userId)
 QString FriendRemoteDataSource::sendOperation(Action action,
                                               const QString& path,
                                               const QJsonObject& body,
-                                              PendingOperation pending)
+                                              PendingOperation pending,
+                                              HttpMethod method)
 {
     pending.action = action;
-    NetworkRequest request = NetworkRequest::json(HttpMethod::Post, path, body);
+    NetworkRequest request = NetworkRequest::json(method, path, body);
     request.maxRetries = 3;
     const QString requestId = HttpClient::instance().send(request);
     m_pendingOperations.insert(requestId, pending);
@@ -183,6 +214,9 @@ void FriendRemoteDataSource::handleRequestSucceeded(const QString& requestId, co
     case Action::RejectGroupJoinRequest:
         emit groupJoinRequestRejected(requestId, pending.notificationId);
         break;
+    case Action::UpdateFriend:
+        emit friendUpdated(requestId, pending.user);
+        break;
     case Action::DeleteFriend:
         emit friendDeleted(requestId, pending.userId);
         break;
@@ -204,6 +238,9 @@ void FriendRemoteDataSource::handleRequestFailed(const QString& requestId, const
     case Action::AcceptGroupJoinRequest:
     case Action::RejectGroupJoinRequest:
         emit groupJoinRequestActionFailed(requestId, pending.notificationId, error);
+        break;
+    case Action::UpdateFriend:
+        emit friendUpdateFailed(requestId, pending.userId, error);
         break;
     case Action::DeleteFriend:
         emit friendDeleteFailed(requestId, pending.userId, error);

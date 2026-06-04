@@ -267,11 +267,13 @@
 - 好友申请拒绝通过 `POST /api/v1/friend-requests/{requestId}/reject` 发送，body 包含稳定 `clientOperationId`。
 - 群入群申请同意通过 `POST /api/v1/group-join-requests/{requestId}/accept` 发送，body 包含稳定 `clientOperationId`；前端选择的群备注和本地分组仍只用于现有本地 UI 状态。
 - 群入群申请拒绝通过 `POST /api/v1/group-join-requests/{requestId}/reject` 发送，body 包含稳定 `clientOperationId`。
+- 好友备注、分组和免打扰状态通过 `PATCH /api/v1/friends/{friendUserUuid}` 发送，body 包含 `remark`、`groupId`、`isDnd` 和稳定 `clientOperationId`；本地默认分组 `default` 映射为后端 `null`。
 - 删除好友通过 `DELETE /api/v1/friends/{friendUserUuid}?clientOperationId=<op>` 发送，同时携带 `Idempotency-Key`。
 - `FriendSessionController` 保持 UI 层现有调用入口不变，远程请求成功后复用 `FriendNotificationRepository` / `GroupNotificationRepository` 原有本地缓存更新逻辑。
+- 好友资料更新成功后再写入 `UserRepository`；好友详情页、好友列表菜单和聊天资料页的备注/分组编辑共用同一远程结果。
 - 删除好友成功后再移除本地会话和好友缓存；好友页、好友列表菜单和聊天资料页的删除入口共用同一远程结果。
-- 请求失败时通过 `FriendApplication` / `ChatArea` 展示“好友申请处理失败”“入群申请处理失败”或“删除好友失败”，不回退到静态样例数据。
-- 当前只覆盖已有通知页的同意/拒绝按钮和删除好友入口；好友搜索发起申请、好友资料编辑、群资料编辑、退群等写操作尚未接入远程。
+- 请求失败时通过 `FriendApplication` / `ChatArea` 展示“好友申请处理失败”“入群申请处理失败”“好友资料保存失败”或“删除好友失败”，不回退到静态样例数据。
+- 当前只覆盖已有通知页的同意/拒绝按钮、好友资料编辑和删除好友入口；好友搜索发起申请、群资料编辑、退群等写操作尚未接入远程。
 
 ### 网络状态 UI 汇总
 

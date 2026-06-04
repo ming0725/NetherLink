@@ -436,6 +436,10 @@ FriendApplication::FriendApplication(QWidget* parent)
             this, [this](const QString&, const NetworkError&) {
                 GlobalNotification::showFailure(this, QStringLiteral("入群申请处理失败"));
             });
+    connect(m_friendController, &FriendSessionController::friendUpdateFailed,
+            this, [this](const QString&, const NetworkError&) {
+                GlobalNotification::showFailure(this, QStringLiteral("好友资料保存失败"));
+            });
     connect(m_friendController, &FriendSessionController::friendDeleteFailed,
             this, [this](const QString&, const NetworkError&) {
                 GlobalNotification::showFailure(this, QStringLiteral("删除好友失败"));

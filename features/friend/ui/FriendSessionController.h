@@ -84,6 +84,7 @@ signals:
     void groupAvatarImageFailed(const QString& requestId, const QString& groupId);
     void friendRequestActionFailed(const QString& notificationId, const NetworkError& error);
     void groupJoinRequestActionFailed(const QString& notificationId, const NetworkError& error);
+    void friendUpdateFailed(const QString& userId, const NetworkError& error);
     void friendDeleteFailed(const QString& userId, const NetworkError& error);
 
 private:

@@ -65,6 +65,7 @@ signals:
                                 const GroupMembersPage& page);
     void messagesCleared();
     void conversationRemoved();
+    void friendUpdateFailed(const QString& userId, const NetworkError& error);
     void friendDeleteFailed(const QString& userId, const NetworkError& error);
 
 private:

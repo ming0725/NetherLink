@@ -1,6 +1,7 @@
 #pragma once
 
 #include "shared/network/NetworkTypes.h"
+#include "shared/types/User.h"
 
 #include <QHash>
 #include <QObject>
@@ -23,6 +24,7 @@ public:
                                    const QString& categoryId = {},
                                    const QString& categoryName = {});
     QString rejectGroupJoinRequest(const QString& notificationId);
+    QString updateFriend(const User& user);
     QString deleteFriend(const QString& userId);
 
 signals:
@@ -38,6 +40,7 @@ signals:
                                   const QString& categoryId,
                                   const QString& categoryName);
     void groupJoinRequestRejected(const QString& requestId, const QString& notificationId);
+    void friendUpdated(const QString& requestId, const User& user);
     void friendDeleted(const QString& requestId, const QString& userId);
     void friendRequestActionFailed(const QString& requestId,
                                    const QString& notificationId,
@@ -45,6 +48,7 @@ signals:
     void groupJoinRequestActionFailed(const QString& requestId,
                                       const QString& notificationId,
                                       const NetworkError& error);
+    void friendUpdateFailed(const QString& requestId, const QString& userId, const NetworkError& error);
     void friendDeleteFailed(const QString& requestId, const QString& userId, const NetworkError& error);
 
 private:
@@ -53,6 +57,7 @@ private:
         RejectFriendRequest,
         AcceptGroupJoinRequest,
         RejectGroupJoinRequest,
+        UpdateFriend,
         DeleteFriend
     };
 
@@ -65,6 +70,7 @@ private:
         QString groupName;
         QString categoryId;
         QString categoryName;
+        User user;
     };
 
     explicit FriendRemoteDataSource(QObject* parent = nullptr);
@@ -73,7 +79,8 @@ private:
     QString sendOperation(Action action,
                           const QString& path,
                           const QJsonObject& body,
-                          PendingOperation pending);
+                          PendingOperation pending,
+                          HttpMethod method = HttpMethod::Post);
     void handleRequestSucceeded(const QString& requestId, const NetworkResponse& response);
     void handleRequestFailed(const QString& requestId, const NetworkError& error);
 

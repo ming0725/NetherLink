@@ -943,10 +943,12 @@ POST /api/v1/friend-requests/{requestId}/reject
 - 已新增 `FriendRemoteDataSource` 封装通知页已有的好友申请同意/拒绝按钮。
 - 同意请求发送 `POST /api/v1/friend-requests/{requestId}/accept`，body 包含 `remark`、`groupId` 和稳定 `clientOperationId`。
 - 拒绝请求发送 `POST /api/v1/friend-requests/{requestId}/reject`，body 包含稳定 `clientOperationId`。
+- 好友资料编辑发送 `PATCH /api/v1/friends/{friendUserUuid}`，body 包含 `remark`、`groupId`、`isDnd` 和稳定 `clientOperationId`；本地默认分组 `default` 会作为 `null` 发送给后端。
 - 删除好友发送 `DELETE /api/v1/friends/{friendUserUuid}?clientOperationId=<op>`，并携带同值 `Idempotency-Key` 让失败重试保持幂等。
 - 远程成功后复用 `FriendNotificationRepository` 更新通知状态、好友关系和本地会话提示；远程失败展示错误提示，不回退到纯本地确认。
+- 好友资料编辑远程成功后再写入 `UserRepository`；好友详情页、好友列表分组菜单和聊天资料页备注入口共用 `FriendRemoteDataSource`。
 - 删除好友远程成功后再清理本地好友缓存和会话；好友页、好友列表右键菜单和聊天资料页入口共用 `FriendRemoteDataSource`。
-- 好友搜索发起申请、好友资料编辑等写操作尚未接入远程。
+- 好友搜索发起申请等写操作尚未接入远程。
 
 ### 6.3 群组
 
