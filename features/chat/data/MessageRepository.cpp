@@ -13,6 +13,7 @@
 #include <random>
 
 #include "features/chat/data/GroupRepository.h"
+#include "features/chat/data/ConversationRemoteDataSource.h"
 #include "shared/data/LocalDataStore.h"
 #include "shared/data/RepositoryTemplate.h"
 #include "shared/network/AppEventBus.h"
@@ -991,6 +992,43 @@ MessageRepository::MessageRepository(QObject* parent)
                                                                conversation);
                     }
                 }
+            });
+
+    connect(&ConversationRemoteDataSource::instance(),
+            &ConversationRemoteDataSource::pinnedUpdated,
+            this,
+            [this](const QString&, const QString& conversationId, bool pinned) {
+                setConversationPinned(conversationId, pinned);
+            });
+    connect(&ConversationRemoteDataSource::instance(),
+            &ConversationRemoteDataSource::doNotDisturbUpdated,
+            this,
+            [this](const QString&, const QString& conversationId, bool enabled) {
+                setConversationDoNotDisturb(conversationId, enabled);
+            });
+    connect(&ConversationRemoteDataSource::instance(),
+            &ConversationRemoteDataSource::conversationHidden,
+            this,
+            [this](const QString&, const QString& conversationId) {
+                removeConversation(conversationId);
+            });
+    connect(&ConversationRemoteDataSource::instance(),
+            &ConversationRemoteDataSource::conversationMarkedRead,
+            this,
+            [this](const QString&, const QString& conversationId) {
+                markConversationRead(conversationId);
+            });
+    connect(&ConversationRemoteDataSource::instance(),
+            &ConversationRemoteDataSource::conversationMarkedUnread,
+            this,
+            [this](const QString&, const QString& conversationId) {
+                markConversationUnread(conversationId);
+            });
+    connect(&ConversationRemoteDataSource::instance(),
+            &ConversationRemoteDataSource::messagesCleared,
+            this,
+            [this](const QString&, const QString& conversationId) {
+                clearConversationMessages(conversationId);
             });
 }
 

@@ -2,6 +2,7 @@
 
 #include "features/chat/data/GroupRepository.h"
 #include "features/chat/data/GroupRemoteDataSource.h"
+#include "features/chat/data/ConversationRemoteDataSource.h"
 #include "features/chat/data/MessageRepository.h"
 #include "features/friend/data/FriendRemoteDataSource.h"
 #include "features/friend/data/UserRepository.h"
@@ -331,6 +332,35 @@ ChatSessionController::ChatSessionController(QObject* parent)
                 if (m_meta.isGroup && hasCurrentConversation(groupId)) {
                     emit groupLeaveFailed(groupId, error);
                 }
+            });
+    connect(&ConversationRemoteDataSource::instance(),
+            &ConversationRemoteDataSource::pinnedUpdated,
+            this,
+            [this](const QString&, const QString& conversationId, bool pinned) {
+                if (!hasCurrentConversation(conversationId)) {
+                    return;
+                }
+                m_meta.isPinned = pinned;
+                refreshSessionData(true);
+            });
+    connect(&ConversationRemoteDataSource::instance(),
+            &ConversationRemoteDataSource::doNotDisturbUpdated,
+            this,
+            [this](const QString&, const QString& conversationId, bool enabled) {
+                if (!hasCurrentConversation(conversationId)) {
+                    return;
+                }
+                m_meta.isDoNotDisturb = enabled;
+                refreshSessionData(true);
+            });
+    connect(&ConversationRemoteDataSource::instance(),
+            &ConversationRemoteDataSource::messagesCleared,
+            this,
+            [this](const QString&, const QString& conversationId) {
+                if (!hasCurrentConversation(conversationId)) {
+                    return;
+                }
+                emit messagesCleared();
             });
 }
 
@@ -774,8 +804,7 @@ void ChatSessionController::setPinned(bool pinned)
         return;
     }
 
-    m_meta.isPinned = pinned;
-    MessageRepository::instance().setConversationPinned(m_meta.conversationId, pinned);
+    ConversationRemoteDataSource::instance().setPinned(m_meta.conversationId, pinned);
 }
 
 void ChatSessionController::setDoNotDisturb(bool enabled)
@@ -784,8 +813,7 @@ void ChatSessionController::setDoNotDisturb(bool enabled)
         return;
     }
 
-    m_meta.isDoNotDisturb = enabled;
-    MessageRepository::instance().setConversationDoNotDisturb(m_meta.conversationId, enabled);
+    ConversationRemoteDataSource::instance().setDoNotDisturb(m_meta.conversationId, enabled);
 }
 
 void ChatSessionController::clearMessages()
@@ -794,8 +822,7 @@ void ChatSessionController::clearMessages()
         return;
     }
 
-    MessageRepository::instance().clearConversationMessages(m_meta.conversationId);
-    emit messagesCleared();
+    ConversationRemoteDataSource::instance().clearMessages(m_meta.conversationId);
 }
 
 void ChatSessionController::deleteFriend()

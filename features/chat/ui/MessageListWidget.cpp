@@ -13,8 +13,10 @@
 #include "features/friend/data/UserRepository.h"
 #include "features/chat/ui/MessageListDelegate.h"
 #include "features/chat/model/MessageListModel.h"
+#include "features/chat/data/ConversationRemoteDataSource.h"
 #include "features/chat/data/GroupRepository.h"
 #include "features/chat/data/MessageRepository.h"
+#include "shared/ui/GlobalNotification.h"
 
 MessageListWidget::MessageListWidget(QWidget* parent)
     : OverlayScrollListView(parent)
@@ -58,6 +60,33 @@ MessageListWidget::MessageListWidget(QWidget* parent)
             this, &MessageListWidget::reloadConversations);
     connect(&GroupRepository::instance(), &GroupRepository::groupListChanged,
             this, &MessageListWidget::reloadConversations);
+    connect(&ConversationRemoteDataSource::instance(),
+            &ConversationRemoteDataSource::conversationHidden,
+            this,
+            [this](const QString&, const QString& conversationId) {
+                if (selectedConversationId() != conversationId) {
+                    return;
+                }
+                clearCurrentConversationSelection();
+                emit currentConversationDeleted();
+            });
+    connect(&ConversationRemoteDataSource::instance(),
+            &ConversationRemoteDataSource::operationFailed,
+            this,
+            [this](const QString&, const QString&, const QString& operation, const NetworkError&) {
+                if (operation == QStringLiteral("setPinned")) {
+                    GlobalNotification::showFailure(this, QStringLiteral("会话置顶设置失败"));
+                } else if (operation == QStringLiteral("setDoNotDisturb")) {
+                    GlobalNotification::showFailure(this, QStringLiteral("会话免打扰设置失败"));
+                } else if (operation == QStringLiteral("hideConversation")) {
+                    GlobalNotification::showFailure(this, QStringLiteral("删除会话失败"));
+                } else if (operation == QStringLiteral("markRead") ||
+                           operation == QStringLiteral("markUnread")) {
+                    GlobalNotification::showFailure(this, QStringLiteral("会话已读状态更新失败"));
+                } else if (operation == QStringLiteral("clearMessages")) {
+                    GlobalNotification::showFailure(this, QStringLiteral("清空聊天记录失败"));
+                }
+            });
     connect(&ImageService::instance(), &ImageService::previewReady,
             viewport(), QOverload<>::of(&QWidget::update));
     QTimer::singleShot(0, this, [this]() { clearCurrentConversationSelection(); });
@@ -96,8 +125,7 @@ void MessageListWidget::setCurrentConversation(const QString& conversationId)
     }
 
     const QModelIndex index = m_model->index(row, 0);
-    m_model->markConversationRead(conversationId);
-    MessageRepository::instance().markConversationRead(conversationId);
+    ConversationRemoteDataSource::instance().markRead(conversationId);
     m_restoringSelection = true;
     selectionModel()->setCurrentIndex(index, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
     m_restoringSelection = false;
@@ -148,8 +176,7 @@ void MessageListWidget::onCurrentChanged(const QModelIndex& current, const QMode
         emit conversationActivated(conversationId);
     }
 
-    m_model->markConversationRead(conversationId);
-    MessageRepository::instance().markConversationRead(conversationId);
+    ConversationRemoteDataSource::instance().markRead(conversationId);
     update(current);
 }
 
@@ -178,12 +205,7 @@ void MessageListWidget::showConversationMenu(const QPoint& globalPos, const QMod
     connect(pinAction, &QAction::triggered, this,
             [this, conversationId = conversation.conversationId,
              pinned = !conversation.isPinned]() {
-        MessageRepository::instance().setConversationPinned(conversationId, pinned);
-        const int row = m_model->indexOfConversation(conversationId);
-        if (row >= 0) {
-            scrollTo(m_model->index(row, 0));
-        }
-        viewport()->update();
+        ConversationRemoteDataSource::instance().setPinned(conversationId, pinned);
     });
 
     const bool hasUnread = conversation.unreadCount > 0;
@@ -193,15 +215,11 @@ void MessageListWidget::showConversationMenu(const QPoint& globalPos, const QMod
     connect(unreadAction, &QAction::triggered, this,
             [this, conversationId = conversation.conversationId, hasUnread]() {
         if (hasUnread) {
-            m_model->markConversationRead(conversationId);
-            MessageRepository::instance().markConversationRead(conversationId);
-            viewport()->update();
+            ConversationRemoteDataSource::instance().markRead(conversationId);
             return;
         }
 
-        m_model->markConversationUnread(conversationId);
-        MessageRepository::instance().markConversationUnread(conversationId);
-        viewport()->update();
+        ConversationRemoteDataSource::instance().markUnread(conversationId);
     });
 
     QAction* dndAction = menu->addAction(conversation.isDoNotDisturb
@@ -210,9 +228,7 @@ void MessageListWidget::showConversationMenu(const QPoint& globalPos, const QMod
     connect(dndAction, &QAction::triggered, this,
             [this, conversationId = conversation.conversationId,
              enabled = !conversation.isDoNotDisturb]() {
-        m_model->setConversationDoNotDisturb(conversationId, enabled);
-        MessageRepository::instance().setConversationDoNotDisturb(conversationId, enabled);
-        viewport()->update();
+        ConversationRemoteDataSource::instance().setDoNotDisturb(conversationId, enabled);
     });
 
     menu->addSeparator();
@@ -224,16 +240,7 @@ void MessageListWidget::showConversationMenu(const QPoint& globalPos, const QMod
                                       ThemeManager::instance().color(ThemeColor::DestructiveActionText));
     connect(deleteAction, &QAction::triggered, this,
             [this, conversationId = conversation.conversationId]() {
-        const bool deletingSelected = selectedConversationId() == conversationId;
-        if (deletingSelected) {
-            clearCurrentConversationSelection();
-        }
-        m_model->removeConversation(conversationId);
-        MessageRepository::instance().removeConversation(conversationId);
-        if (deletingSelected) {
-            emit currentConversationDeleted();
-        }
-        viewport()->update();
+        ConversationRemoteDataSource::instance().hideConversation(conversationId);
     });
 
     connect(menu, &StyledActionMenu::aboutToHide, this, [this, menu]() {

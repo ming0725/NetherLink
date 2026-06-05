@@ -1180,6 +1180,13 @@ type Message = {
 
 当前 Qt 前端接入状态：
 
+- 已新增 `ConversationRemoteDataSource` 封装已有会话设置和状态入口。
+- 会话列表和聊天信息面板的置顶、免打扰通过 `PATCH /api/v1/conversations/{conversationId}/settings` 发送，body 分别包含 `isPinned` 或 `isDnd`。
+- 会话列表删除入口使用后端隐藏语义，通过 `PATCH /api/v1/conversations/{conversationId}/settings` 发送 `hidden=true`。
+- 打开会话、右键菜单标记已读/未读通过 `POST /api/v1/conversations/{conversationId}/read` 和 `/unread` 发送。
+- 聊天信息面板清空记录通过 `DELETE /api/v1/conversations/{conversationId}/messages` 发送。
+- 远程成功后由 `MessageRepository` 更新本地 `conversations` / `chat_messages` 快照；失败只显示错误提示，不回退到纯本地确认。
+- 当前 `ConversationMeta` / `ConversationSummary` 未承载 `version/etag`，暂不发送 `expectedVersion` / `If-Match`。
 - 已新增 `ChatRemoteDataSource` 封装聊天发送。
 - 文本消息通过 `POST /api/v1/conversations/{conversationId}/messages` 发送，body 使用 `type=text`、`content.text`、空 `attachments` 和稳定 `clientMessageId`。
 - 图片消息先通过 `UploadClient::uploadFile(path, "chat_image")` 上传文件，成功后使用返回的 `fileId` 作为 `type=image` 消息的附件发送，并填入本地读取到的 `width/height`。

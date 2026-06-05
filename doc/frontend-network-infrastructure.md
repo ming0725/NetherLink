@@ -259,6 +259,20 @@
 - `ChatMessage`、`MessageRepository` 和 `ChatListModel` 已保留并按 `clientMessageId` 去重，避免 REST 成功或 WebSocket `chat.message.sent/chat.message.created` 回包重复追加同一条本端消息。
 - 当前只接入已有文本消息和单张图片消息入口，不新增聊天文件、语音、视频或多附件 UI。
 
+### 会话设置、已读和清空
+
+已新增 `features/chat/data/ConversationRemoteDataSource.h/.cpp`：
+
+- 置顶、免打扰和移除会话通过 `PATCH /api/v1/conversations/{conversationId}/settings` 发送。
+  - 置顶 body 包含 `isPinned`。
+  - 免打扰 body 包含 `isDnd`。
+  - 删除/移除会话使用后端隐藏语义，body 包含 `hidden=true`。
+- 标记已读通过 `POST /api/v1/conversations/{conversationId}/read` 发送。
+- 标记未读通过 `POST /api/v1/conversations/{conversationId}/unread` 发送。
+- 清空聊天记录通过 `DELETE /api/v1/conversations/{conversationId}/messages` 发送。
+- `MessageRepository` 监听远程成功信号后再更新本地会话状态、未读数、清空消息或移除会话；失败通过会话列表提示，不把纯本地操作当作后端确认。
+- 当前 `ConversationMeta` / `ConversationSummary` 尚未承载 `version/etag`，因此设置和清空暂不发送 `expectedVersion` / `If-Match`。
+
 ### 好友/群组申请远程写入
 
 已新增 `features/friend/data/FriendRemoteDataSource.h/.cpp`：
@@ -281,7 +295,7 @@
   - 远程成功后再写入 `GroupRepository`、移除本地会话和群缓存；好友页、群列表菜单和聊天资料页入口共用同一远程结果。
 - 搜索窗口发起申请会等待远程返回；成功只记录本进程 pending 状态并提示“申请已发送”，不直接把对方写成好友或把当前用户写入群成员。失败提示发送失败并允许重试。
 - 请求失败时通过 `FriendApplication` / `ChatArea` / 搜索窗口展示“好友申请处理失败”“入群申请处理失败”“好友申请发送失败”“入群申请发送失败”“好友资料保存失败”“删除好友失败”“群资料保存失败”“群设置保存失败”或“退出群聊失败”，不回退到静态样例数据。
-- 当前只覆盖已有通知页的同意/拒绝按钮、好友搜索/群搜索发起申请、好友资料编辑和删除好友入口，以及已有群资料编辑、我的群设置和退群入口；创建群、群成员管理、转让群主等写操作尚未接入远程。
+- 当前只覆盖已有通知页的同意/拒绝按钮、好友搜索/群搜索发起申请、好友资料编辑和删除好友入口，已有群资料编辑、我的群设置和退群入口，以及会话置顶/免打扰/隐藏/已读/未读/清空入口；创建群、群成员管理、转让群主、消息历史分页和消息撤回等写操作尚未接入远程。
 
 ### 网络状态 UI 汇总
 
