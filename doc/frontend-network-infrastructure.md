@@ -91,6 +91,7 @@
 - `CurrentUserProfile` 已保留 `userUuid`、`version`、`etag`；`CurrentUserPreferences` 已保留 `themeColor`、`fontMode`、`inputEffects`、`settings`、`version`、`etag`。
 - `CurrentUser::setUserInfo()` 会在本地身份建立后主动拉取 `/me` 和 `/me/preferences`。
 - 资料编辑入口调用 `CurrentUser::saveProfile()` 后由远程 PATCH 成功结果更新本地 repository；`VERSION_CONFLICT` 等失败会通过现有全局通知提示。
+- 设置页外观设置保存时会调用 `CurrentUserRemoteDataSource::updatePreferences()`，把主题色、字体模式、输入栏效果、外观模式和平台外观选项同步到 `/me/preferences`；保存失败显示“偏好保存失败”。网络、声音、通知、存储、快捷键、登录等设置页当前没有对应后端承载流程，不额外扩展接口。
 
 当前头像专用上传已接入：
 

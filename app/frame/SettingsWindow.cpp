@@ -2,6 +2,8 @@
 #include "shared/services/AppFonts.h"
 
 #include "NetherLinkCreditsWindow.h"
+#include "app/state/CurrentUserPreferencesRepository.h"
+#include "app/state/CurrentUserRemoteDataSource.h"
 #include "features/post/ui/PostApplicationBar.h"
 #include "features/post/ui/PostFloatingActionButton.h"
 #include "shared/services/ImageService.h"
@@ -9,6 +11,7 @@
 #include "shared/theme/ThemeColorPalette.h"
 #include "shared/theme/ThemeManager.h"
 #include "shared/ui/FloatingInputBar.h"
+#include "shared/ui/GlobalNotification.h"
 #include "shared/ui/MinecraftButton.h"
 #include "shared/ui/MinecraftSlider.h"
 #include "shared/ui/QtFallbackLiquidGlass.h"
@@ -22,6 +25,7 @@
 #include <QApplication>
 #include <QDesktopServices>
 #include <QGuiApplication>
+#include <QJsonObject>
 #include <QKeyEvent>
 #include <QPainter>
 #include <QPaintEvent>
@@ -82,6 +86,26 @@ ThemeManager::FontFamilyMode fontFamilyModeFromIndex(int index)
     return index == 1
             ? ThemeManager::FontFamilyMode::Minecraft
             : ThemeManager::FontFamilyMode::Default;
+}
+
+QString modePreferenceValue(ThemeManager::Mode mode)
+{
+    switch (mode) {
+    case ThemeManager::Mode::Light:
+        return QStringLiteral("light");
+    case ThemeManager::Mode::Dark:
+        return QStringLiteral("dark");
+    case ThemeManager::Mode::FollowSystem:
+        return QStringLiteral("system");
+    }
+    return QStringLiteral("system");
+}
+
+QString fontPreferenceValue(ThemeManager::FontFamilyMode mode)
+{
+    return mode == ThemeManager::FontFamilyMode::Minecraft
+            ? QStringLiteral("minecraft")
+            : QStringLiteral("default");
 }
 
 // ---- Choice lists for sub-page toggles ----
@@ -429,6 +453,12 @@ SettingsWindow::SettingsWindow(QWidget* parent)
 
     connect(&ThemeManager::instance(), &ThemeManager::themeChanged,
             this, QOverload<>::of(&SettingsWindow::update));
+    connect(&CurrentUserRemoteDataSource::instance(),
+            &CurrentUserRemoteDataSource::preferencesUpdateFailed,
+            this,
+            [this](const QString&, const NetworkError&) {
+                GlobalNotification::showFailure(this, QStringLiteral("偏好保存失败"));
+            });
 
     buildInitialPages();
     m_currentTitle = QStringLiteral("设置");
@@ -1402,4 +1432,39 @@ void SettingsWindow::applyAppearance()
             postActionButton->refreshPlatformAppearance();
         }
     }
+    syncAppearancePreferences();
+}
+
+void SettingsWindow::syncAppearancePreferences()
+{
+    CurrentUserPreferences preferences =
+            CurrentUserPreferencesRepository::instance().currentPreferences();
+    preferences.themeColor = ThemeManager::instance().themeColor().name(QColor::HexRgb);
+    preferences.fontMode = fontPreferenceValue(ThemeManager::instance().fontFamilyMode());
+
+    QJsonObject inputEffects = preferences.inputEffects;
+    inputEffects.insert(QStringLiteral("qtFallbackInputBarEffect"),
+                        static_cast<int>(ThemeManager::instance().qtFallbackInputBarEffect()));
+#ifdef Q_OS_MACOS
+    inputEffects.insert(QStringLiteral("macFloatingInputBarMode"),
+                        static_cast<int>(MacFloatingInputBarBridge::mode()));
+#endif
+    preferences.inputEffects = inputEffects;
+
+    QJsonObject settings = preferences.settings;
+    QJsonObject appearance = settings.value(QStringLiteral("appearance")).toObject();
+    appearance.insert(QStringLiteral("mode"),
+                      modePreferenceValue(ThemeManager::instance().configuredMode()));
+    appearance.insert(QStringLiteral("postBarQtFallbackLiquidGlass"),
+                      ThemeManager::instance().postBarQtFallbackLiquidGlassEnabled());
+#ifdef Q_OS_MACOS
+    appearance.insert(QStringLiteral("macPostBarMode"),
+                      static_cast<int>(MacPostBarBridge::mode()));
+    appearance.insert(QStringLiteral("macActionMenuMode"),
+                      static_cast<int>(MacStyledActionMenuBridge::mode()));
+#endif
+    settings.insert(QStringLiteral("appearance"), appearance);
+    preferences.settings = settings;
+
+    CurrentUserRemoteDataSource::instance().updatePreferences(preferences);
 }

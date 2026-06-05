@@ -97,6 +97,7 @@ private:
     // Appearance — real ThemeManager integration
     void resetAppearanceControls();
     void applyAppearance();
+    void syncAppearancePreferences();
 
     QStackedWidget* m_stack = nullptr;
     QString m_currentTitle;

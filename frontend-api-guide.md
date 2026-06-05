@@ -426,7 +426,7 @@ type Preferences = {
 };
 ```
 
-当前 Qt 前端已建立 `CurrentUserPreferences` 业务模型和本地缓存，保存 `themeColor`、`fontMode`、`inputEffects`、`settings`、`version`、`etag`。设置页控件到这些字段的完整枚举映射尚未完成，因此本节仍保留底部偏好 schema 待补充指令。
+当前 Qt 前端已建立 `CurrentUserPreferences` 业务模型和本地缓存，保存 `themeColor`、`fontMode`、`inputEffects`、`settings`、`version`、`etag`。设置页外观控件保存时会同步 PATCH `/me/preferences`：`themeColor` 使用 `#RRGGBB`，`fontMode` 使用 `default/minecraft`，输入栏效果写入 `inputEffects`，外观模式和平台外观选项写入 `settings.appearance`。
 
 ### 3.3 File
 
@@ -631,7 +631,7 @@ PATCH：
 - 已新增 `CurrentUserRemoteDataSource::fetchPreferences()` 与 `updatePreferences()` 封装 `GET/PATCH /me/preferences`。
 - 登录/注册响应中的 `preferences` 会写入本地偏好缓存；`CurrentUser::setUserInfo()` 和 `RemoteDataBootstrapper::syncAll()` 也会拉取 `/me/preferences`。
 - PATCH 使用模型内 `etag` 生成 `If-Match`，使用模型内 `version` 生成 `expectedVersion`。
-- 设置页控件到远程偏好的完整读写映射尚未完成。
+- 设置页外观控件已接入远程偏好保存；网络、声音、通知、存储、快捷键、登录等页面当前仍是本地 UI 占位或本地设置入口，后端没有现成前端承载流程时不额外扩展。
 
 ## 5. 文件和上传 API
 
@@ -1665,7 +1665,5 @@ async function request<T>(call: BackendCall): Promise<T> {
 > AI_ACTION_REQUIRED: 若后端新增 CORS、Cookie 鉴权或 CSRF 保护，请更新“基础约定”和“鉴权”章节。完成后删除本指令。
 
 > AI_ACTION_REQUIRED: 若确认所有事件 payload 的完整类型，请在“实时事件列表”章节把 `payload` 从描述改为精确 TypeScript discriminated union。完成后删除本指令。
-
-> AI_ACTION_REQUIRED: 若前端 UI 已确定偏好字段 `themeColor`、`fontMode`、`inputEffects`、`settings` 的枚举和 schema，请补充到 `Preferences` 章节。完成后删除本指令。
 
 > AI_ACTION_REQUIRED: 若上线环境不使用 `localhost:8080`，请补充环境变量和部署网关 base URL 规则。完成后删除本指令。
