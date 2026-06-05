@@ -320,7 +320,7 @@ void RealtimeClient::handleTextMessage(const QString& message)
     if (event.type.isEmpty()) {
         qWarning().noquote() << "Realtime WebSocket received event without type"
                              << "raw=" << QString::fromUtf8(QJsonDocument(object).toJson(QJsonDocument::Compact));
-    } else if (event.isControlEvent()) {
+    } else if (event.isControlEvent() && event.type != QStringLiteral("realtime.pong")) {
         qInfo().noquote() << "Realtime WebSocket received control event"
                           << "type=" << event.type
                           << "eventSeq=" << event.eventSeq

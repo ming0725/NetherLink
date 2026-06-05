@@ -1,8 +1,8 @@
 #include "AiChatConversationWidget.h"
 #include <QDateTime>
-#include <QLoggingCategory>
 #include <QModelIndex>
 #include <QPainter>
+#include <QPointer>
 #include <QResizeEvent>
 #include <QScrollBar>
 #include <QTimer>
@@ -19,8 +19,6 @@
 #include "shared/ui/PaintedLabel.h"
 
 namespace {
-
-Q_LOGGING_CATEGORY(lcAiChatUnread, "netherlink.aichat.unread")
 
 class ThemeDivider : public QWidget
 {
@@ -103,12 +101,6 @@ AiChatConversationWidget::AiChatConversationWidget(QWidget* parent)
     });
     connect(m_newMessageNotifier, &NewMessageNotifier::clicked, this, [this]() {
         m_messageView->scrollToBottom(true);
-        if (m_unreadAiReplyCount > 0) {
-            qCDebug(lcAiChatUnread).noquote()
-                    << "AICHAT_UNREAD clearByNotifier"
-                    << "conversationId=" << m_currentConversation.conversationId
-                    << "unreadBefore=" << m_unreadAiReplyCount;
-        }
         m_unreadAiReplyCount = 0;
         m_newMessageNotifierRevealedByDownScroll = false;
         m_streamingNotifierHeld = false;
@@ -158,6 +150,39 @@ void AiChatConversationWidget::setController(AiChatSessionController* controller
             this, &AiChatConversationWidget::onAiReplyCanceled);
     connect(m_controller, &AiChatSessionController::aiReplyFailed,
             this, &AiChatConversationWidget::onAiReplyFailed);
+    connect(m_controller, &AiChatSessionController::conversationIdChanged,
+            this, [this](const QString& previousConversationId, const AiChatListEntry& entry) {
+                if (m_currentConversation.conversationId != previousConversationId) {
+                    return;
+                }
+
+                m_currentConversation.conversationId = entry.conversationId;
+                if (!entry.title.isEmpty()) {
+                    m_currentConversation.title = entry.title;
+                }
+                if (entry.time.isValid()) {
+                    m_currentConversation.time = entry.time;
+                }
+                m_pendingMessagesConversationId = entry.conversationId;
+                m_pendingContextUsageConversationId = entry.conversationId;
+                emit conversationCreatedFromStartPage(entry.conversationId);
+                updateHeader();
+            });
+    connect(m_controller, &AiChatSessionController::conversationTitleChanged,
+            this, [this](const QString& conversationId, const QString& title) {
+                if (m_currentConversation.conversationId != conversationId) {
+                    return;
+                }
+
+                m_currentConversation.title = title;
+                updateHeader();
+            });
+    connect(m_controller, &AiChatSessionController::conversationDeleted,
+            this, [this](const QString& conversationId) {
+                if (m_currentConversation.conversationId == conversationId) {
+                    showStartPage();
+                }
+            });
     connect(m_controller, &AiChatSessionController::messagesLoaded,
             this, &AiChatConversationWidget::onConversationMessagesLoaded);
     connect(m_controller, &AiChatSessionController::contextUsageLoaded,
@@ -218,14 +243,18 @@ void AiChatConversationWidget::openConversation(const AiChatListEntry& entry)
     m_inputBar->setStreaming(currentConversationStreaming, false);
     updateHeader();
     updateLayout();
-    if (m_controller) {
-        m_pendingMessagesRequestId = m_controller->loadMessagesAsync(entry.conversationId);
-        requestContextUsage();
-    }
-    QTimer::singleShot(0, m_inputBar, [this]() {
-        if (m_inputBar->isVisible() && !m_currentConversation.conversationId.isEmpty()) {
-            m_inputBar->focusInput();
+    const QPointer<AiChatConversationWidget> self(this);
+    const QString expectedConversationId = entry.conversationId;
+    QTimer::singleShot(0, this, [self, expectedConversationId]() {
+        if (!self || !self->m_controller) {
+            return;
         }
+        if (self->m_currentConversation.conversationId != expectedConversationId) {
+            return;
+        }
+
+        self->m_pendingMessagesRequestId = self->m_controller->loadMessagesAsync(expectedConversationId);
+        self->requestContextUsage();
     });
 }
 
@@ -453,12 +482,6 @@ void AiChatConversationWidget::updateNewMessageNotifier()
     const bool hasUnread = m_unreadAiReplyCount > 0;
 
     if (isMessageViewAtBottom()) {
-        if (m_unreadAiReplyCount > 0) {
-            qCDebug(lcAiChatUnread).noquote()
-                    << "AICHAT_UNREAD clearAtBottom"
-                    << "conversationId=" << m_currentConversation.conversationId
-                    << "unreadBefore=" << m_unreadAiReplyCount;
-        }
         m_unreadAiReplyCount = 0;
         m_streamingNotifierHeld = false;
         m_newMessageNotifierRevealedByDownScroll = false;
@@ -564,12 +587,6 @@ void AiChatConversationWidget::onAiReplyMessageAdded(const AiChatMessage& messag
         m_messageModel->appendMessage(message);
         if (!message.isFromUser && !shouldFollowReply) {
             ++m_unreadAiReplyCount;
-            qCDebug(lcAiChatUnread).noquote()
-                    << "AICHAT_UNREAD replyAdded"
-                    << "conversationId=" << message.conversationId
-                    << "messageId=" << message.messageId
-                    << "unread=" << m_unreadAiReplyCount
-                    << "bottomLocked=" << shouldFollowReply;
         }
         m_messageView->scrollToBottomIfLocked();
         updateNewMessageNotifier();
@@ -663,13 +680,13 @@ void AiChatConversationWidget::onAiReplyFailed(const QString& conversationId,
                                                const QString& messageId,
                                                const QString& message)
 {
+    Q_UNUSED(message)
     if (m_currentConversation.conversationId == conversationId || m_currentConversation.conversationId.isEmpty()) {
         if (m_messageView->messageDelegate()->streamingMessageId() == messageId) {
             m_messageView->messageDelegate()->setStreamingMessageId(QString());
             m_messageView->refreshMessageLayout();
         }
         m_inputBar->setStreaming(false);
-        GlobalNotification::showFailure(this, message);
     }
 }
 
@@ -680,6 +697,7 @@ void AiChatConversationWidget::onConversationMessagesLoaded(int requestId,
     if (requestId != m_pendingMessagesRequestId ||
             conversationId != m_pendingMessagesConversationId ||
             conversationId != m_currentConversation.conversationId) {
+        Q_UNUSED(messages)
         return;
     }
 
@@ -707,6 +725,7 @@ void AiChatConversationWidget::onContextUsageLoaded(int requestId,
     if (requestId != m_pendingContextUsageRequestId ||
             request.conversationId != m_pendingContextUsageConversationId ||
             request.conversationId != m_currentConversation.conversationId) {
+        Q_UNUSED(usage)
         return;
     }
 

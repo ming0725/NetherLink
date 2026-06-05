@@ -6,7 +6,6 @@
 #include "shared/services/AvatarSource.h"
 #include "shared/services/ImageService.h"
 
-#include <QDebug>
 #include <QJsonObject>
 #include <QStringList>
 #include <utility>
@@ -120,14 +119,6 @@ CurrentUserProfile profileFromJson(QJsonObject object, const QString& responseEt
             profile.avatarVersion,
             profile.avatarEtag,
             profile.avatarContentHash);
-    qInfo().noquote() << "[Avatar] current profile parsed"
-                      << "userId=" << profile.userId
-                      << "userUuid=" << profile.userUuid
-                      << "hasAvatarPayload=" << (hasAvatarPayload(object) ? QStringLiteral("yes") : QStringLiteral("no"))
-                      << "source=" << profile.avatarPath
-                      << "version=" << profile.avatarVersion
-                      << "etag=" << profile.avatarEtag
-                      << "hash=" << profile.avatarContentHash;
     profile.status = statusFromString(object.value(QStringLiteral("status")).toString());
     profile.signature = object.value(QStringLiteral("signature")).toString();
     profile.region = object.value(QStringLiteral("region")).toString();
@@ -334,10 +325,6 @@ void CurrentUserProfileRepository::saveCurrentUserProfile(const CurrentUserProfi
                                            profileToJson(next));
 
     if (!oldAvatarPath.isEmpty() && oldAvatarPath != next.avatarPath) {
-        qInfo().noquote() << "[Avatar] current profile avatar changed"
-                          << "userId=" << next.userId
-                          << "oldSource=" << oldAvatarPath
-                          << "newSource=" << next.avatarPath;
         ImageService::instance().invalidateSource(oldAvatarPath);
     }
     if (changed) {
@@ -355,12 +342,6 @@ void CurrentUserProfileRepository::saveCurrentUserProfileObject(const QJsonObjec
             (previous.avatarVersion > 0 &&
              profile.avatarVersion > 0 &&
              profile.avatarVersion < previous.avatarVersion)) {
-            qInfo().noquote() << "[Avatar] current profile kept previous avatar"
-                              << "userId=" << profile.userId
-                              << "previousSource=" << previous.avatarPath
-                              << "incomingSource=" << profile.avatarPath
-                              << "previousVersion=" << previous.avatarVersion
-                              << "incomingVersion=" << profile.avatarVersion;
             keepAvatarFromPrevious(profile, previous);
         }
         if (profile.nickName.isEmpty()) {

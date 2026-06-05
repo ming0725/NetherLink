@@ -7,7 +7,6 @@
 #include <QColor>
 #include <QFontMetricsF>
 #include <QImage>
-#include <QDebug>
 #include <QPainter>
 #include <QPainterPath>
 #include <QPixmap>
@@ -33,7 +32,6 @@
 
 namespace {
 
-constexpr bool kAiChatLayoutDebug = false;
 constexpr int kViewPaintWidthInset = 4;
 
 QStyleOptionViewItem optionWithPaintWidth(const QStyleOptionViewItem& option)
@@ -41,39 +39,6 @@ QStyleOptionViewItem optionWithPaintWidth(const QStyleOptionViewItem& option)
     QStyleOptionViewItem adjusted(option);
     adjusted.rect.setWidth(qMax(1, adjusted.rect.width() - kViewPaintWidthInset));
     return adjusted;
-}
-
-QString rectDebugString(const QRect& rect)
-{
-    return QStringLiteral("(%1,%2 %3x%4)")
-            .arg(rect.x())
-            .arg(rect.y())
-            .arg(rect.width())
-            .arg(rect.height());
-}
-
-QString pointDebugString(const QPoint& point)
-{
-    return QStringLiteral("(%1,%2)").arg(point.x()).arg(point.y());
-}
-
-QString messageActionDebugString(AiChatMessageDelegate::MessageAction action)
-{
-    switch (action) {
-    case AiChatMessageDelegate::MessageAction::None:
-        return QStringLiteral("None");
-    case AiChatMessageDelegate::MessageAction::Copy:
-        return QStringLiteral("Copy");
-    case AiChatMessageDelegate::MessageAction::Refresh:
-        return QStringLiteral("Refresh");
-    case AiChatMessageDelegate::MessageAction::Like:
-        return QStringLiteral("Like");
-    case AiChatMessageDelegate::MessageAction::Dislike:
-        return QStringLiteral("Dislike");
-    case AiChatMessageDelegate::MessageAction::ToggleExpansion:
-        return QStringLiteral("ToggleExpansion");
-    }
-    return QStringLiteral("Unknown");
 }
 
 struct MarkdownBlockSelection {
@@ -506,22 +471,6 @@ void AiChatMessageDelegate::paint(QPainter* painter,
             : ThemeManager::instance().color(ThemeColor::AccentTextSelection);
 
     const LayoutMetrics metrics = layoutMetrics(option, index);
-    if (kAiChatLayoutDebug && isFromUser) {
-        const QString messageId = index.data(AiChatMessageListModel::MessageIdRole).toString();
-        qDebug().noquote()
-                << "AICHAT_LAYOUT paint"
-                << "row=" << index.row()
-                << "id=" << messageId
-                << "option=" << rectDebugString(option.rect)
-                << "bubble=" << rectDebugString(metrics.bubbleRect)
-                << "text=" << rectDebugString(metrics.textRect)
-                << "expand=" << rectDebugString(metrics.expandRect)
-                << "copy=" << rectDebugString(metrics.copyButtonRect)
-                << "contentBottom=" << qMax(metrics.bubbleRect.bottom(), metrics.copyButtonRect.bottom())
-                << "canExpand=" << metrics.userCanExpand
-                << "progress=" << userMessageExpansionProgress(messageId)
-                << "copyOpacity=" << userCopyButtonOpacity(messageId);
-    }
     if (!isFromUser) {
         const MarkdownCacheEntry& markdown = cachedMarkdown(text);
         paintMarkdownMessage(painter,
@@ -588,20 +537,6 @@ QSize AiChatMessageDelegate::sizeHint(const QStyleOptionViewItem& option,
     const LayoutMetrics metrics = layoutMetrics(layoutOption, index);
     const int contentBottom = qMax(metrics.bubbleRect.bottom(), metrics.copyButtonRect.bottom());
     const QSize result(option.rect.width(), contentBottom - layoutOption.rect.top() + 1 + kVerticalMargin);
-    if (kAiChatLayoutDebug && index.data(AiChatMessageListModel::IsFromUserRole).toBool()) {
-        const QString messageId = index.data(AiChatMessageListModel::MessageIdRole).toString();
-        qDebug().noquote()
-                << "AICHAT_LAYOUT sizeHint"
-                << "row=" << index.row()
-                << "id=" << messageId
-                << "option=" << rectDebugString(layoutOption.rect)
-                << "bubble=" << rectDebugString(metrics.bubbleRect)
-                << "expand=" << rectDebugString(metrics.expandRect)
-                << "copy=" << rectDebugString(metrics.copyButtonRect)
-                << "height=" << result.height()
-                << "canExpand=" << metrics.userCanExpand
-                << "progress=" << userMessageExpansionProgress(messageId);
-    }
     return result;
 }
 
@@ -638,20 +573,6 @@ int AiChatMessageDelegate::characterIndexAt(const QStyleOptionViewItem& option,
             ? metrics.bubbleRect.adjusted(-2, -2, 2, 2)
             : metrics.textRect;
     if (!hitRect.contains(viewportPos)) {
-        if (kAiChatLayoutDebug && index.data(AiChatMessageListModel::IsFromUserRole).toBool()) {
-            qDebug().noquote()
-                    << "AICHAT_LAYOUT charAt outside"
-                    << "row=" << index.row()
-                    << "id=" << index.data(AiChatMessageListModel::MessageIdRole).toString()
-                    << "pos=" << pointDebugString(viewportPos)
-                    << "allowLineWhitespace=" << allowLineWhitespace
-                    << "option=" << rectDebugString(option.rect)
-                    << "hitRect=" << rectDebugString(hitRect)
-                    << "bubble=" << rectDebugString(metrics.bubbleRect)
-                    << "text=" << rectDebugString(metrics.textRect)
-                    << "expand=" << rectDebugString(metrics.expandRect)
-                    << "copy=" << rectDebugString(metrics.copyButtonRect);
-        }
         return -1;
     }
 
@@ -733,18 +654,6 @@ int AiChatMessageDelegate::characterIndexAt(const QStyleOptionViewItem& option,
                                                             textLength,
                                                             allowLineWhitespace);
     if (lineCursor >= 0) {
-        if (kAiChatLayoutDebug) {
-            qDebug().noquote()
-                    << "AICHAT_LAYOUT charAt line"
-                    << "row=" << index.row()
-                    << "id=" << index.data(AiChatMessageListModel::MessageIdRole).toString()
-                    << "pos=" << pointDebugString(viewportPos)
-                    << "local=" << pointDebugString(local.toPoint())
-                    << "cursor=" << lineCursor
-                    << "allowLineWhitespace=" << allowLineWhitespace
-                    << "option=" << rectDebugString(option.rect)
-                    << "text=" << rectDebugString(metrics.textRect);
-        }
         return lineCursor;
     }
 
@@ -755,35 +664,10 @@ int AiChatMessageDelegate::characterIndexAt(const QStyleOptionViewItem& option,
                                                                 local,
                                                                 textLength,
                                                                 allowLineWhitespace);
-        if (kAiChatLayoutDebug) {
-            qDebug().noquote()
-                    << "AICHAT_LAYOUT charAt fallback"
-                    << "row=" << index.row()
-                    << "id=" << index.data(AiChatMessageListModel::MessageIdRole).toString()
-                    << "pos=" << pointDebugString(viewportPos)
-                    << "local=" << pointDebugString(local.toPoint())
-                    << "cursor=" << fallbackCursor
-                    << "allowLineWhitespace=" << allowLineWhitespace
-                    << "option=" << rectDebugString(option.rect)
-                    << "text=" << rectDebugString(metrics.textRect);
-        }
         return fallbackCursor;
     }
 
     const int boundedCursor = qBound(0, cursor, textLength);
-    if (kAiChatLayoutDebug) {
-        qDebug().noquote()
-                << "AICHAT_LAYOUT charAt hit"
-                << "row=" << index.row()
-                << "id=" << index.data(AiChatMessageListModel::MessageIdRole).toString()
-                << "pos=" << pointDebugString(viewportPos)
-                << "local=" << pointDebugString(local.toPoint())
-                << "cursor=" << boundedCursor
-                << "rawCursor=" << cursor
-                << "allowLineWhitespace=" << allowLineWhitespace
-                << "option=" << rectDebugString(option.rect)
-                << "text=" << rectDebugString(metrics.textRect);
-    }
     return boundedCursor;
 }
 
@@ -1015,49 +899,10 @@ AiChatMessageDelegate::MessageAction AiChatMessageDelegate::messageActionAt(
     const LayoutMetrics metrics = layoutMetrics(option, index);
     if (index.data(AiChatMessageListModel::IsFromUserRole).toBool()) {
         if (metrics.copyButtonRect.contains(viewportPos)) {
-            if (kAiChatLayoutDebug) {
-                qDebug().noquote()
-                        << "AICHAT_LAYOUT actionAt"
-                        << "row=" << index.row()
-                        << "id=" << index.data(AiChatMessageListModel::MessageIdRole).toString()
-                        << "pos=" << pointDebugString(viewportPos)
-                        << "action=" << messageActionDebugString(MessageAction::Copy)
-                        << "option=" << rectDebugString(option.rect)
-                        << "bubble=" << rectDebugString(metrics.bubbleRect)
-                        << "expand=" << rectDebugString(metrics.expandRect)
-                        << "copy=" << rectDebugString(metrics.copyButtonRect);
-            }
             return MessageAction::Copy;
         }
         if (metrics.userCanExpand && metrics.expandRect.contains(viewportPos)) {
-            if (kAiChatLayoutDebug) {
-                qDebug().noquote()
-                        << "AICHAT_LAYOUT actionAt"
-                        << "row=" << index.row()
-                        << "id=" << index.data(AiChatMessageListModel::MessageIdRole).toString()
-                        << "pos=" << pointDebugString(viewportPos)
-                        << "action=" << messageActionDebugString(MessageAction::ToggleExpansion)
-                        << "option=" << rectDebugString(option.rect)
-                        << "bubble=" << rectDebugString(metrics.bubbleRect)
-                        << "expand=" << rectDebugString(metrics.expandRect)
-                        << "copy=" << rectDebugString(metrics.copyButtonRect);
-            }
             return MessageAction::ToggleExpansion;
-        }
-        if (kAiChatLayoutDebug &&
-                (metrics.bubbleRect.adjusted(-4, -4, 4, 4).contains(viewportPos) ||
-                 metrics.expandRect.adjusted(-10, -10, 10, 10).contains(viewportPos) ||
-                 metrics.copyButtonRect.adjusted(-10, -10, 10, 10).contains(viewportPos))) {
-            qDebug().noquote()
-                    << "AICHAT_LAYOUT actionAt"
-                    << "row=" << index.row()
-                    << "id=" << index.data(AiChatMessageListModel::MessageIdRole).toString()
-                    << "pos=" << pointDebugString(viewportPos)
-                    << "action=" << messageActionDebugString(MessageAction::None)
-                    << "option=" << rectDebugString(option.rect)
-                    << "bubble=" << rectDebugString(metrics.bubbleRect)
-                    << "expand=" << rectDebugString(metrics.expandRect)
-                    << "copy=" << rectDebugString(metrics.copyButtonRect);
         }
         return MessageAction::None;
     }

@@ -8,6 +8,7 @@
 #include "PostSessionController.h"
 #include "shared/services/ImageService.h"
 #include "shared/theme/ThemeManager.h"
+#include "shared/ui/GlobalNotification.h"
 #include "shared/ui/QtFallbackLiquidGlass.h"
 #include <QDateTime>
 #include <QPaintEvent>
@@ -225,6 +226,30 @@ PostApplication::PostApplication(QWidget* parent)
             this, [this](const PostSummary&) {
                 schedulePostBarLiquidGlassUpdate();
             });
+    connect(m_postController, &PostSessionController::postOperationFailed,
+            this, [this](const QString& operation, const QString&) {
+                QString message = QStringLiteral("动态操作失败");
+                if (operation == QStringLiteral("like_post")) {
+                    message = QStringLiteral("动态点赞失败");
+                } else if (operation == QStringLiteral("follow_author")) {
+                    message = QStringLiteral("关注设置失败");
+                } else if (operation == QStringLiteral("fetch_feed")) {
+                    message = QStringLiteral("动态加载失败");
+                } else if (operation == QStringLiteral("fetch_detail")) {
+                    message = QStringLiteral("动态详情加载失败");
+                } else if (operation == QStringLiteral("fetch_comments")) {
+                    message = QStringLiteral("评论加载失败");
+                } else if (operation == QStringLiteral("like_comment")) {
+                    message = QStringLiteral("评论点赞失败");
+                } else if (operation == QStringLiteral("like_reply")) {
+                    message = QStringLiteral("回复点赞失败");
+                } else if (operation == QStringLiteral("create_comment")) {
+                    message = QStringLiteral("评论发送失败");
+                } else if (operation == QStringLiteral("create_reply")) {
+                    message = QStringLiteral("回复发送失败");
+                }
+                GlobalNotification::showFailure(this, message);
+            });
     connect(m_bar, &PostApplicationBar::pageClicked,
             this, &PostApplication::onPageTabClicked);
 
@@ -429,7 +454,9 @@ void PostApplication::onPostClickedWithGeometry(const PostSummary& summary, cons
     m_detailView->setPreviewSummary(summary);
     m_detailView->setImageVisible(false);
     connect(m_detailView, &PostDetailView::likeClicked, this, [this](bool liked) {
-        m_postController->setCurrentPostLiked(liked);
+        if (!m_postController->setCurrentPostLiked(liked)) {
+            GlobalNotification::showFailure(this, QStringLiteral("动态点赞失败"));
+        }
     });
     m_detailView->setGeometry(detailRectForCurrentPost());
     m_detailView->show();

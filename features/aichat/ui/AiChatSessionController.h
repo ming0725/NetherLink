@@ -1,12 +1,12 @@
 #pragma once
 
+#include <QHash>
 #include <QObject>
 
 #include "shared/network/NetworkTypes.h"
 #include "shared/types/RepositoryTypes.h"
 
 class AiChatStreamClient;
-class AiChatTitleClient;
 
 class AiChatSessionController : public QObject
 {
@@ -61,25 +61,44 @@ signals:
     void aiReplyFailed(const QString& conversationId,
                        const QString& messageId,
                        const QString& message);
+    void conversationIdChanged(const QString& previousConversationId,
+                               const AiChatListEntry& entry);
+    void conversationTitleChanged(const QString& conversationId,
+                                  const QString& title);
+    void conversationDeleted(const QString& conversationId);
     void unreadDotStateChanged();
 
 private slots:
     void onAiReplyChunkReceived(const QString& chunk);
+    void onGeneratedTitleReceived(const QString& title);
     void onAssistantMessageReceived(const QString& messageId,
                                     const QString& text,
                                     const QDateTime& time);
+    void onAiReplyCanceled();
     void onAiReplyFailed(const NetworkError& error);
     void onAiReplyFinished();
+    void onConversationListRequestSucceeded(const QString& httpRequestId,
+                                            const NetworkResponse& response);
+    void onConversationListRequestFailed(const QString& httpRequestId,
+                                         const NetworkError& error);
+    void onMessageHistoryRequestSucceeded(const QString& httpRequestId,
+                                          const NetworkResponse& response);
+    void onMessageHistoryRequestFailed(const QString& httpRequestId,
+                                       const NetworkError& error);
 
 private:
     void startAiReplyStream(const QString& conversationId, const QString& prompt);
     void resetActiveAiReplyStream();
+    void discardMessageHistoryRequestsForConversation(const QString& conversationId);
 
     AiChatStreamClient* m_streamClient = nullptr;
-    AiChatTitleClient* m_titleClient = nullptr;
     int m_nextAsyncRequestId = 1;
     QString m_streamConversationId;
     QString m_streamMessageId;
     QString m_streamVisibleText;
     bool m_streamFailed = false;
+    QHash<QString, int> m_conversationListRequestIds;
+    QHash<QString, AiChatListRequest> m_conversationListQueries;
+    QHash<QString, int> m_messageHistoryRequestIds;
+    QHash<QString, QString> m_messageHistoryConversationIds;
 };

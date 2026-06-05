@@ -4,7 +4,6 @@
 #include <QCryptographicHash>
 #include <QDateTime>
 #include <QDir>
-#include <QDebug>
 #include <QFile>
 #include <QFileInfo>
 #include <QImageReader>
@@ -227,16 +226,7 @@ QImage readRemoteDiskCache(const QString& source)
     reader.setAutoTransform(true);
     const QImage image = reader.read();
     if (image.isNull()) {
-        qInfo().noquote() << "[Avatar] disk cache decode failed, removing"
-                          << "source=" << source
-                          << "path=" << path
-                          << "error=" << reader.errorString();
         QFile::remove(path);
-    } else {
-        qInfo().noquote() << "[Avatar] disk cache hit"
-                          << "source=" << source
-                          << "path=" << path
-                          << "size=" << QStringLiteral("%1x%2").arg(image.width()).arg(image.height());
     }
     return image;
 }
@@ -254,17 +244,9 @@ void writeRemoteDiskCache(const QString& source, const QByteArray& body)
 
     QFile file(path);
     if (!file.open(QIODevice::WriteOnly)) {
-        qInfo().noquote() << "[Avatar] disk cache write failed"
-                          << "source=" << source
-                          << "path=" << path
-                          << "error=" << file.errorString();
         return;
     }
     file.write(body);
-    qInfo().noquote() << "[Avatar] disk cache wrote"
-                      << "source=" << source
-                      << "path=" << path
-                      << "bytes=" << body.size();
 }
 
 } // namespace
@@ -321,14 +303,6 @@ QImage ImageService::originalImage(const QString& source) const
         image = reader.read();
     }
     if (image.isNull()) {
-        if (isRemoteSource(source)) {
-            qInfo().noquote() << "[Avatar] original cache miss, requesting remote"
-                              << "source=" << source;
-        } else {
-            qInfo().noquote() << "[Avatar] local image read failed"
-                              << "source=" << source
-                              << "ioSource=" << ioSource(source);
-        }
         return {};
     }
 
@@ -527,9 +501,6 @@ void ImageService::requestPreviewWarmup(const QString& source,
     }
 
     if (isRemoteSource(source)) {
-        qInfo().noquote() << "[Avatar] preview warmup delegated to remote original"
-                          << "source=" << source
-                          << "target=" << QStringLiteral("%1x%2").arg(targetSize.width()).arg(targetSize.height());
         requestOriginalWarmup(source);
         return;
     }
@@ -551,13 +522,6 @@ void ImageService::requestPreviewWarmup(const QString& source,
                 m_pendingPreviewLoads.remove(key);
                 if (!image.isNull()) {
                     m_previewCache.insert(key, new QImage(image), imageCostKb(image));
-                    qInfo().noquote() << "[Avatar] local preview ready"
-                                      << "source=" << source
-                                      << "target=" << QStringLiteral("%1x%2").arg(targetSize.width()).arg(targetSize.height());
-                } else {
-                    qInfo().noquote() << "[Avatar] local preview decode failed"
-                                      << "source=" << source
-                                      << "target=" << QStringLiteral("%1x%2").arg(targetSize.width()).arg(targetSize.height());
                 }
             }
             emit previewReady();
@@ -610,23 +574,14 @@ void ImageService::requestRemoteOriginalWarmup(const QString& source)
     {
         QMutexLocker locker(&m_mutex);
         if (m_originalCache.object(source) || m_pendingOriginalLoads.contains(source)) {
-            qInfo().noquote() << "[Avatar] remote request skipped"
-                              << "source=" << source
-                              << "reason=" << (m_originalCache.object(source) ? QStringLiteral("cached") : QStringLiteral("pending"));
             return;
         }
         if (m_loadStates.value(source) == LoadState::Failed) {
             const qint64 now = QDateTime::currentMSecsSinceEpoch();
             const qint64 retryAfter = m_failedRetryAfterMs.value(source);
             if (retryAfter > now) {
-                qInfo().noquote() << "[Avatar] remote request skipped"
-                                  << "source=" << source
-                                  << "reason=failed-state"
-                                  << "retryInMs=" << (retryAfter - now);
                 return;
             }
-            qInfo().noquote() << "[Avatar] remote failed-state retry"
-                              << "source=" << source;
         }
         m_pendingOriginalLoads.insert(source);
         m_loadStates.insert(source, LoadState::Loading);
@@ -640,9 +595,6 @@ void ImageService::requestRemoteOriginalWarmup(const QString& source)
             m_loadStates.insert(source, LoadState::Failed);
             m_failedRetryAfterMs.insert(source, QDateTime::currentMSecsSinceEpoch() + 30000);
         }
-        qInfo().noquote() << "[Avatar] remote URL invalid"
-                          << "source=" << source
-                          << "url=" << url.toString();
         emit previewReady();
         emit resourceChanged(source);
         return;
@@ -671,12 +623,6 @@ void ImageService::startRemoteOriginalRequest(const QString& source,
     request.setTransferTimeout(15000);
 #endif
 
-    qInfo().noquote() << "[Avatar] remote request"
-                      << "source=" << source
-                      << "url=" << url.toString()
-                      << "auth=" << (attachAuthorization ? QStringLiteral("yes") : QStringLiteral("no"))
-                      << "redirectCount=" << redirectCount;
-
     QNetworkReply* reply = m_networkManager->get(request);
     connect(reply, &QNetworkReply::finished, this, [this, source, url, redirectCount, reply]() {
         const QByteArray body = reply->readAll();
@@ -685,11 +631,6 @@ void ImageService::startRemoteOriginalRequest(const QString& source,
         const QUrl redirectTarget = reply->attribute(QNetworkRequest::RedirectionTargetAttribute).toUrl();
         if (status >= 300 && status < 400 && redirectTarget.isValid()) {
             const QUrl nextUrl = url.resolved(redirectTarget);
-            qInfo().noquote() << "[Avatar] remote redirect"
-                              << "source=" << source
-                              << "status=" << status
-                              << "from=" << url.toString()
-                              << "to=" << nextUrl.toString();
             reply->deleteLater();
             if (redirectCount >= 5) {
                 {
@@ -698,9 +639,6 @@ void ImageService::startRemoteOriginalRequest(const QString& source,
                     m_loadStates.insert(source, LoadState::Failed);
                     m_failedRetryAfterMs.insert(source, QDateTime::currentMSecsSinceEpoch() + 30000);
                 }
-                qInfo().noquote() << "[Avatar] remote redirect failed"
-                                  << "source=" << source
-                                  << "reason=too-many-redirects";
                 emit previewReady();
                 emit resourceChanged(source);
                 return;
@@ -727,28 +665,6 @@ void ImageService::startRemoteOriginalRequest(const QString& source,
                 m_loadStates.insert(source, LoadState::Failed);
                 m_failedRetryAfterMs.insert(source, QDateTime::currentMSecsSinceEpoch() + 30000);
             }
-        }
-        if (!image.isNull()) {
-            qInfo().noquote() << "[Avatar] remote response success"
-                              << "source=" << source
-                              << "url=" << url.toString()
-                              << "status=" << status
-                              << "bytes=" << body.size()
-                              << "size=" << QStringLiteral("%1x%2").arg(image.width()).arg(image.height());
-        } else if (networkOk) {
-            qInfo().noquote() << "[Avatar] remote response decode failed"
-                              << "source=" << source
-                              << "url=" << url.toString()
-                              << "status=" << status
-                              << "bytes=" << body.size()
-                              << "contentType=" << reply->header(QNetworkRequest::ContentTypeHeader).toString();
-        } else {
-            qInfo().noquote() << "[Avatar] remote response failed"
-                              << "source=" << source
-                              << "url=" << url.toString()
-                              << "status=" << status
-                              << "error=" << reply->errorString()
-                              << "bytes=" << body.size();
         }
         reply->deleteLater();
         emit previewReady();

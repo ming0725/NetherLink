@@ -33,6 +33,15 @@ QDateTime dateTimeFromJson(const QJsonObject& object, const QStringList& keys)
     return QDateTime::fromString(firstString(object, keys), Qt::ISODateWithMs);
 }
 
+bool boolFromViewer(const QJsonObject& object, const QString& key, bool fallback = false)
+{
+    if (object.contains(key)) {
+        return object.value(key).toBool(fallback);
+    }
+    const QJsonObject viewer = object.value(QStringLiteral("viewer")).toObject();
+    return viewer.value(key).toBool(fallback);
+}
+
 QString visibleName(const QString& userId)
 {
     if (CurrentUser::instance().isCurrentUserId(userId)) {
@@ -89,7 +98,7 @@ PostCommentReply replyFromJson(const QString& postId,
     reply.content = firstString(object, {QStringLiteral("content"), QStringLiteral("text")});
     reply.createdAt = dateTimeFromJson(object, {QStringLiteral("createdAt"), QStringLiteral("updatedAt")});
     reply.likeCount = object.value(QStringLiteral("likeCount")).toInt(object.value(QStringLiteral("likes")).toInt());
-    reply.isLiked = object.value(QStringLiteral("isLiked")).toBool(false);
+    reply.isLiked = boolFromViewer(object, QStringLiteral("isLiked"));
     return reply;
 }
 
@@ -114,7 +123,7 @@ PostComment commentFromJson(const QJsonObject& object)
     comment.content = firstString(object, {QStringLiteral("content"), QStringLiteral("text")});
     comment.createdAt = dateTimeFromJson(object, {QStringLiteral("createdAt"), QStringLiteral("updatedAt")});
     comment.likeCount = object.value(QStringLiteral("likeCount")).toInt(object.value(QStringLiteral("likes")).toInt());
-    comment.isLiked = object.value(QStringLiteral("isLiked")).toBool(false);
+    comment.isLiked = boolFromViewer(object, QStringLiteral("isLiked"));
 
     const QJsonArray replies = object.value(QStringLiteral("replies")).toArray();
     for (const QJsonValue& value : replies) {
@@ -125,6 +134,46 @@ PostComment commentFromJson(const QJsonObject& object)
     }
     comment.totalReplyCount = object.value(QStringLiteral("totalReplyCount")).toInt(comment.replies.size());
     return comment;
+}
+
+QJsonObject replyToJson(const PostCommentReply& reply)
+{
+    return {
+            {QStringLiteral("replyId"), reply.replyId},
+            {QStringLiteral("commentId"), reply.commentId},
+            {QStringLiteral("postId"), reply.postId},
+            {QStringLiteral("authorId"), reply.authorId},
+            {QStringLiteral("authorName"), reply.authorName},
+            {QStringLiteral("authorAvatarPath"), reply.authorAvatarPath},
+            {QStringLiteral("targetUserId"), reply.targetUserId},
+            {QStringLiteral("targetUserName"), reply.targetUserName},
+            {QStringLiteral("targetReplyId"), reply.targetReplyId},
+            {QStringLiteral("content"), reply.content},
+            {QStringLiteral("createdAt"), reply.createdAt.toUTC().toString(Qt::ISODateWithMs)},
+            {QStringLiteral("likeCount"), reply.likeCount},
+            {QStringLiteral("isLiked"), reply.isLiked}
+    };
+}
+
+QJsonObject commentToJson(const PostComment& comment)
+{
+    QJsonArray replies;
+    for (const PostCommentReply& reply : comment.replies) {
+        replies.append(replyToJson(reply));
+    }
+    return {
+            {QStringLiteral("commentId"), comment.commentId},
+            {QStringLiteral("postId"), comment.postId},
+            {QStringLiteral("authorId"), comment.authorId},
+            {QStringLiteral("authorName"), comment.authorName},
+            {QStringLiteral("authorAvatarPath"), comment.authorAvatarPath},
+            {QStringLiteral("content"), comment.content},
+            {QStringLiteral("createdAt"), comment.createdAt.toUTC().toString(Qt::ISODateWithMs)},
+            {QStringLiteral("likeCount"), comment.likeCount},
+            {QStringLiteral("isLiked"), comment.isLiked},
+            {QStringLiteral("replies"), replies},
+            {QStringLiteral("totalReplyCount"), comment.totalReplyCount}
+    };
 }
 
 } // namespace
@@ -282,4 +331,164 @@ bool PostCommentRepository::setReplyLiked(const QString& replyId, bool liked)
                                                 {QStringLiteral("isLiked"), state.isLiked}});
     }
     return true;
+}
+
+PostCommentsPage PostCommentRepository::upsertCommentsFromJson(const QString& postId,
+                                                               const QJsonArray& comments,
+                                                               int offset,
+                                                               int totalCount,
+                                                               bool hasMore)
+{
+    PostCommentsPage page;
+    page.postId = postId;
+    page.offset = qMax(0, offset);
+    page.totalCount = qMax(0, totalCount);
+    page.hasMore = hasMore;
+
+    QMutexLocker locker(&m_mutex);
+    for (const QJsonValue& value : comments) {
+        QJsonObject object = value.toObject();
+        if (object.value(QStringLiteral("comment")).isObject()) {
+            object = object.value(QStringLiteral("comment")).toObject();
+        }
+        PostComment comment = commentFromJson(object);
+        if (comment.postId.isEmpty()) {
+            comment.postId = postId;
+        }
+        if (comment.commentId.isEmpty()) {
+            continue;
+        }
+        if (const auto likeIt = m_commentLikeStates.constFind(comment.commentId);
+            likeIt != m_commentLikeStates.constEnd()) {
+            comment.likeCount = likeIt->likes;
+            comment.isLiked = likeIt->isLiked;
+        }
+        for (PostCommentReply& reply : comment.replies) {
+            if (const auto likeIt = m_replyLikeStates.constFind(reply.replyId);
+                likeIt != m_replyLikeStates.constEnd()) {
+                reply.likeCount = likeIt->likes;
+                reply.isLiked = likeIt->isLiked;
+            }
+        }
+        m_comments.insert(comment.commentId, comment);
+        LocalDataStore::instance().upsertValue(QStringLiteral("post_comments"),
+                                               comment.commentId,
+                                               commentToJson(comment));
+        page.comments.push_back(comment);
+    }
+
+    if (page.totalCount <= 0) {
+        page.totalCount = page.offset + page.comments.size() + (page.hasMore ? 1 : 0);
+    }
+    return page;
+}
+
+PostComment PostCommentRepository::upsertCommentFromJson(const QString& postId, const QJsonObject& object)
+{
+    QJsonObject commentObject = object;
+    if (commentObject.value(QStringLiteral("comment")).isObject()) {
+        commentObject = commentObject.value(QStringLiteral("comment")).toObject();
+    }
+
+    PostComment comment = commentFromJson(commentObject);
+    if (comment.postId.isEmpty()) {
+        comment.postId = postId;
+    }
+    if (comment.commentId.isEmpty()) {
+        return {};
+    }
+
+    QMutexLocker locker(&m_mutex);
+    m_comments.insert(comment.commentId, comment);
+    LocalDataStore::instance().upsertValue(QStringLiteral("post_comments"),
+                                           comment.commentId,
+                                           commentToJson(comment));
+    return comment;
+}
+
+PostCommentReply PostCommentRepository::upsertReplyFromJson(const QString& commentId, const QJsonObject& object)
+{
+    QJsonObject replyObject = object;
+    if (replyObject.value(QStringLiteral("reply")).isObject()) {
+        replyObject = replyObject.value(QStringLiteral("reply")).toObject();
+    }
+
+    QMutexLocker locker(&m_mutex);
+    PostComment parent = m_comments.value(commentId);
+    if (parent.commentId.isEmpty()) {
+        return {};
+    }
+
+    PostCommentReply reply = replyFromJson(parent.postId, commentId, replyObject);
+    if (reply.replyId.isEmpty()) {
+        return {};
+    }
+
+    bool replaced = false;
+    for (PostCommentReply& existing : parent.replies) {
+        if (existing.replyId == reply.replyId) {
+            existing = reply;
+            replaced = true;
+            break;
+        }
+    }
+    if (!replaced) {
+        parent.replies.push_back(reply);
+    }
+    parent.totalReplyCount = qMax(parent.totalReplyCount, parent.replies.size());
+    m_comments.insert(parent.commentId, parent);
+    LocalDataStore::instance().upsertValue(QStringLiteral("post_comments"),
+                                           parent.commentId,
+                                           commentToJson(parent));
+    return reply;
+}
+
+bool PostCommentRepository::applyCommentLikeResult(const QString& commentId, const QJsonObject& object)
+{
+    QMutexLocker locker(&m_mutex);
+    if (!m_comments.contains(commentId)) {
+        return false;
+    }
+
+    PostComment comment = m_comments.value(commentId);
+    comment.likeCount = object.value(QStringLiteral("likeCount")).toInt(comment.likeCount);
+    comment.isLiked = object.value(QStringLiteral("isLiked")).toBool(comment.isLiked);
+    m_comments.insert(commentId, comment);
+    m_commentLikeStates.insert(commentId, {comment.likeCount, comment.isLiked});
+    LocalDataStore::instance().upsertValue(QStringLiteral("comment_like_states"),
+                                           commentId,
+                                           {{QStringLiteral("id"), commentId},
+                                            {QStringLiteral("likes"), comment.likeCount},
+                                            {QStringLiteral("isLiked"), comment.isLiked}});
+    LocalDataStore::instance().upsertValue(QStringLiteral("post_comments"),
+                                           commentId,
+                                           commentToJson(comment));
+    return true;
+}
+
+bool PostCommentRepository::applyReplyLikeResult(const QString& replyId, const QJsonObject& object)
+{
+    QMutexLocker locker(&m_mutex);
+    for (auto it = m_comments.begin(); it != m_comments.end(); ++it) {
+        PostComment comment = it.value();
+        for (PostCommentReply& reply : comment.replies) {
+            if (reply.replyId != replyId) {
+                continue;
+            }
+            reply.likeCount = object.value(QStringLiteral("likeCount")).toInt(reply.likeCount);
+            reply.isLiked = object.value(QStringLiteral("isLiked")).toBool(reply.isLiked);
+            it.value() = comment;
+            m_replyLikeStates.insert(replyId, {reply.likeCount, reply.isLiked});
+            LocalDataStore::instance().upsertValue(QStringLiteral("reply_like_states"),
+                                                   replyId,
+                                                   {{QStringLiteral("id"), replyId},
+                                                    {QStringLiteral("likes"), reply.likeCount},
+                                                    {QStringLiteral("isLiked"), reply.isLiked}});
+            LocalDataStore::instance().upsertValue(QStringLiteral("post_comments"),
+                                                   comment.commentId,
+                                                   commentToJson(comment));
+            return true;
+        }
+    }
+    return false;
 }

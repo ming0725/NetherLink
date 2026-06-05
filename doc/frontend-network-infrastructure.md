@@ -123,7 +123,7 @@
   - `conversations`：`GET /conversations`
 - 支持 `limit=100&offset=...` 分页续拉；响应字段可为契约数组名、`items`、`data` 或 `results`。
 - 会对常见后端字段做轻量归一化，例如 `userId/nickName/avatarUrl` 到当前 repository 可读的 `id/nick/avatarPath`，并保留当前用户 `version/etag`。
-- 当前用户资料和偏好已具备独立 remote data source；其他业务写流程、列表刷新信号和更细粒度 remote data source 尚未完成。
+- 当前用户资料、偏好、聊天、会话设置、好友、群组、动态和 AI 文本会话均已有独立 remote data source 或业务远程入口。后续只应继续按已有 UI 能力补细粒度接口，不新增后端已有但前端没有承载的流程。
 
 ### HTTP Client
 
@@ -304,6 +304,20 @@
 - 请求失败时通过 `FriendApplication` / `ChatArea` / 搜索窗口展示“好友申请处理失败”“入群申请处理失败”“好友申请发送失败”“入群申请发送失败”“创建群聊失败”“好友资料保存失败”“删除好友失败”“群资料保存失败”“群设置保存失败”或“退出群聊失败”，不回退到静态样例数据。
 - 当前只覆盖已有通知页的同意/拒绝按钮、好友搜索/群搜索发起申请、好友资料编辑和删除好友入口，已有创建群、群资料编辑、群成员管理、转让群主、我的群设置和退群入口，会话置顶/免打扰/隐藏/已读/未读/清空入口，以及消息撤回入口；消息历史分页尚未接入远程。
 
+### 动态信息流、详情和评论
+
+已新增 `features/post/data/PostRemoteDataSource.h/.cpp`：
+
+- 信息流通过 `GET /api/v1/posts?followOnly=<bool>&limit=<n>&offset=<n>` 异步分页加载，成功后写入 `PostRepository` 和 `posts` 本地快照；空本地库不再导致首屏永久为空。
+- 动态详情通过 `GET /api/v1/posts/{postId}` 加载，成功后更新 `posts` 快照并刷新详情页。
+- 评论列表通过 `GET /api/v1/posts/{postId}/comments?limit=<n>&offset=<n>` 加载，成功后写入 `PostCommentRepository` 和 `post_comments` 快照。
+- 动态点赞通过 `POST /api/v1/posts/{postId}/like` 发送，后端返回 `likeCount/isLiked` 后再更新 `post_like_states` 和 UI。
+- 作者关注通过 `POST /api/v1/users/{authorUuid}/follow` 发送，成功后只更新动态作者关注状态，不把作者写入好友关系。
+- 评论、回复点赞分别通过 `POST /api/v1/comments/{commentId}/like` 和 `POST /api/v1/replies/{replyId}/like` 发送，成功后再更新对应本地快照和详情模型。
+- 发表评论通过 `POST /api/v1/posts/{postId}/comments` 发送，回复通过 `POST /api/v1/comments/{commentId}/replies` 发送，body 包含稳定 `clientOperationId`；成功后插入服务端返回的评论/回复并刷新帖子评论数。
+- 详情页和信息流保留现有交互，不新增帖子创建、视频/直播/音频/文件媒体上传或播放能力。
+- 请求失败时通过 `PostApplication` / `PostDetailView` 展示“动态加载失败”“动态点赞失败”“评论发送失败”等提示，不把本地临时评论或点赞状态当作后端确认。
+
 ### 网络状态 UI 汇总
 
 `NetworkService` 已把底层网络状态汇总为 UI 可消费信号：
@@ -329,7 +343,7 @@
 - 网络不可用时显示错误、重试或空状态，不回退到静态本地数据。
 
 1. 业务 API 封装
-   - 每个 feature 增加独立 remote data source。当前已覆盖 `ChatRemoteDataSource`、`FriendRemoteDataSource` 的好友/群申请同意拒绝入口，以及 `GroupRemoteDataSource` 的群资料、我的群设置和退群入口。
+   - 每个 feature 增加独立 remote data source。当前已覆盖 `ChatRemoteDataSource`、`ConversationRemoteDataSource`、`FriendRemoteDataSource`、`GroupRemoteDataSource`、`PostRemoteDataSource` 和 AI 文本 SSE 入口。
    - repository 保留统一业务入口，但不再以静态样例数据作为 fallback；本地只保留缓存、临时 pending 状态、游标和必要的 UI 状态。
    - UI 层只观察 repository/model，不直接调用网络 client。
 

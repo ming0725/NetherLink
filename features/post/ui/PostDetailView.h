@@ -135,6 +135,10 @@ private:
     QTimer* m_loadingAnimationTimer;
     PostSessionController* m_controller = nullptr;
     QMetaObject::Connection m_commentsLoadedConnection;
+    QMetaObject::Connection m_commentLikeUpdatedConnection;
+    QMetaObject::Connection m_replyLikeUpdatedConnection;
+    QMetaObject::Connection m_commentCreatedConnection;
+    QMetaObject::Connection m_replyCreatedConnection;
     QPushButton* m_likeBtn;
     QLabel* m_likeCount;
     QPushButton* m_commentBtn;

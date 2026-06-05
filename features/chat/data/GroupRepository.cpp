@@ -1,7 +1,6 @@
 #include "GroupRepository.h"
 
 #include <QCollator>
-#include <QDebug>
 #include <QImageReader>
 #include <QJsonArray>
 #include <QJsonObject>
@@ -389,12 +388,6 @@ Group groupFromJson(const QJsonObject& object)
             group.avatarVersion,
             group.avatarEtag,
             group.avatarContentHash);
-    qInfo().noquote() << "[Avatar] group parsed"
-                      << "groupId=" << group.groupId
-                      << "source=" << group.groupAvatarPath
-                      << "version=" << group.avatarVersion
-                      << "etag=" << group.avatarEtag
-                      << "hash=" << group.avatarContentHash;
     group.isDnd = object.value(QStringLiteral("isDnd")).toBool(false);
     group.adminsID = stringVectorFromJson(object.value(QStringLiteral("adminsID")).toArray());
     group.remark = object.value(QStringLiteral("remark")).toString();
@@ -645,10 +638,6 @@ void GroupRepository::saveGroup(const Group& group)
     locker.unlock();
     LocalDataStore::instance().upsertValue(QStringLiteral("groups"), group.groupId, groupToJson(group));
     if (!oldAvatarPath.isEmpty() && oldAvatarPath != group.groupAvatarPath) {
-        qInfo().noquote() << "[Avatar] group avatar changed"
-                          << "groupId=" << group.groupId
-                          << "oldSource=" << oldAvatarPath
-                          << "newSource=" << group.groupAvatarPath;
         ImageService::instance().invalidateSource(oldAvatarPath);
     }
     emit groupListChanged();

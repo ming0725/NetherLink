@@ -1,6 +1,8 @@
 #include "AiChatStreamClient.h"
 
+#include "shared/network/AppEventBus.h"
 #include "shared/network/HttpClient.h"
+#include "shared/network/RealtimeClient.h"
 #include "shared/network/SseClient.h"
 
 #include <QJsonArray>
@@ -37,6 +39,28 @@ NetworkError errorFromObject(const QJsonObject& object)
     return error;
 }
 
+QString clientMessageIdFromPayload(const QJsonObject& payload)
+{
+    QString clientMessageId = payload.value(QStringLiteral("clientMessageId")).toString();
+    if (!clientMessageId.isEmpty()) {
+        return clientMessageId;
+    }
+
+    const QJsonObject userMessage = payload.value(QStringLiteral("userMessage")).toObject();
+    clientMessageId = userMessage.value(QStringLiteral("clientMessageId")).toString();
+    if (!clientMessageId.isEmpty()) {
+        return clientMessageId;
+    }
+
+    const QJsonObject message = payload.value(QStringLiteral("message")).toObject();
+    clientMessageId = message.value(QStringLiteral("clientMessageId")).toString();
+    if (!clientMessageId.isEmpty()) {
+        return clientMessageId;
+    }
+
+    return payload.value(QStringLiteral("userClientMessageId")).toString();
+}
+
 } // namespace
 
 AiChatStreamClient::AiChatStreamClient(QObject* parent)
@@ -55,6 +79,19 @@ AiChatStreamClient::AiChatStreamClient(QObject* parent)
             &SseClient::streamFailed,
             this,
             &AiChatStreamClient::handleStreamFailed);
+    connect(&AppEventBus::instance(),
+            &AppEventBus::typedEventReceived,
+            this,
+            [this](const QString& type, const QJsonObject& payload, const RealtimeEvent&) {
+                handleRealtimeEvent(type, payload);
+            });
+
+    m_cancelTimeoutTimer.setSingleShot(true);
+    m_cancelTimeoutTimer.setInterval(3000);
+    connect(&m_cancelTimeoutTimer,
+            &QTimer::timeout,
+            this,
+            &AiChatStreamClient::handleCancelTimeout);
 }
 
 bool AiChatStreamClient::isRunning() const
@@ -66,7 +103,7 @@ void AiChatStreamClient::start(const QString& conversationId,
                                const QString& prompt,
                                const QString& clientMessageId)
 {
-    cancel();
+    abort();
 
     const QString trimmedPrompt = prompt.trimmed();
     if (conversationId.isEmpty() || trimmedPrompt.isEmpty() || !m_sseClient) {
@@ -94,6 +131,23 @@ void AiChatStreamClient::start(const QString& conversationId,
 
 void AiChatStreamClient::cancel()
 {
+    if (!isRunning()) {
+        clearActiveRequest();
+        return;
+    }
+
+    sendCancelCommand();
+    m_waitingForTerminalEvent = true;
+    m_cancelTimeoutTimer.start();
+
+    if (m_streamId.isEmpty() && m_sseClient) {
+        m_sseClient->cancel();
+        m_requestId.clear();
+    }
+}
+
+void AiChatStreamClient::abort()
+{
     if (m_sseClient) {
         m_sseClient->cancel();
     }
@@ -115,10 +169,14 @@ void AiChatStreamClient::handleStreamEvent(const QString& requestId,
 
     const QString type = normalizedEventName(eventName, data);
     if (type == QStringLiteral("ai.stream.started")) {
+        m_streamId = data.value(QStringLiteral("streamId")).toString(m_streamId);
         return;
     }
 
     if (type == QStringLiteral("ai.stream.chunk")) {
+        if (m_waitingForTerminalEvent) {
+            return;
+        }
         const QString delta = data.value(QStringLiteral("delta")).toString(
                 data.value(QStringLiteral("content")).toString());
         if (!delta.isEmpty()) {
@@ -128,21 +186,12 @@ void AiChatStreamClient::handleStreamEvent(const QString& requestId,
     }
 
     if (type == QStringLiteral("ai.stream.done")) {
-        const QJsonObject message = assistantMessageObject(data);
-        const QString text = assistantMessageText(message);
-        if (!text.isEmpty()) {
-            emit assistantMessageReceived(assistantMessageId(message),
-                                          text,
-                                          assistantMessageTime(message));
-        }
-        clearActiveRequest();
-        emit finished();
+        processTerminalEvent(data, false);
         return;
     }
 
     if (type == QStringLiteral("ai.stream.cancelled")) {
-        clearActiveRequest();
-        emit finished();
+        processTerminalEvent(data, true);
         return;
     }
 
@@ -152,6 +201,20 @@ void AiChatStreamClient::handleStreamEvent(const QString& requestId,
         emit failed(error);
         emit finished();
     }
+}
+
+void AiChatStreamClient::handleRealtimeEvent(const QString& type, const QJsonObject& payload)
+{
+    if (type != QStringLiteral("ai.stream.done") &&
+            type != QStringLiteral("ai.stream.cancelled")) {
+        return;
+    }
+
+    if (!matchesActiveRealtimeEvent(payload)) {
+        return;
+    }
+
+    processTerminalEvent(payload, type == QStringLiteral("ai.stream.cancelled"));
 }
 
 void AiChatStreamClient::handleStreamFinished(const QString& requestId)
@@ -173,6 +236,58 @@ void AiChatStreamClient::handleStreamFailed(const QString& requestId, const Netw
     clearActiveRequest();
     emit failed(error);
     emit finished();
+}
+
+void AiChatStreamClient::handleCancelTimeout()
+{
+    if (!m_running || !m_waitingForTerminalEvent) {
+        return;
+    }
+
+    if (m_sseClient) {
+        m_sseClient->cancel();
+    }
+    clearActiveRequest();
+    emit cancelled();
+}
+
+void AiChatStreamClient::processTerminalEvent(const QJsonObject& data, bool isCancelled)
+{
+    const QString title = streamTitle(data);
+    if (!title.isEmpty()) {
+        emit titleReceived(title);
+    }
+
+    const QJsonObject message = assistantMessageObject(data);
+    const QString text = assistantMessageText(message);
+    const QString messageId = assistantMessageId(message);
+    if (!message.isEmpty() && (!text.isEmpty() || !messageId.isEmpty())) {
+        emit assistantMessageReceived(messageId,
+                                      text,
+                                      assistantMessageTime(message));
+    }
+
+    if (m_sseClient) {
+        m_sseClient->cancel();
+    }
+    clearActiveRequest();
+    if (isCancelled) {
+        emit cancelled();
+    } else {
+        emit finished();
+    }
+}
+
+void AiChatStreamClient::sendCancelCommand()
+{
+    if (m_streamId.isEmpty() || !RealtimeClient::instance().isConnected()) {
+        return;
+    }
+
+    RealtimeClient::instance().sendJson({
+            {QStringLiteral("type"), QStringLiteral("ai.stream.cancel")},
+            {QStringLiteral("payload"), QJsonObject{{QStringLiteral("streamId"), m_streamId}}}
+    });
 }
 
 QJsonObject AiChatStreamClient::assistantMessageObject(QJsonObject data)
@@ -211,14 +326,48 @@ QDateTime AiChatStreamClient::assistantMessageTime(const QJsonObject& message)
                     message.value(QStringLiteral("time")).toString())));
 }
 
+QString AiChatStreamClient::streamTitle(const QJsonObject& data)
+{
+    QString title = data.value(QStringLiteral("title")).toString().trimmed();
+    if (!title.isEmpty()) {
+        return title;
+    }
+
+    const QJsonObject conversation = data.value(QStringLiteral("conversation")).toObject();
+    title = conversation.value(QStringLiteral("title")).toString().trimmed();
+    if (!title.isEmpty()) {
+        return title;
+    }
+
+    return data.value(QStringLiteral("conversationTitle")).toString().trimmed();
+}
+
 bool AiChatStreamClient::matchesActiveRequest(const QString& requestId) const
 {
     return m_running && !m_requestId.isEmpty() && requestId == m_requestId;
 }
 
+bool AiChatStreamClient::matchesActiveRealtimeEvent(const QJsonObject& payload) const
+{
+    if (!m_running) {
+        return false;
+    }
+
+    const QString streamId = payload.value(QStringLiteral("streamId")).toString();
+    if (!m_streamId.isEmpty() && !streamId.isEmpty()) {
+        return streamId == m_streamId;
+    }
+
+    const QString clientMessageId = clientMessageIdFromPayload(payload);
+    return !m_clientMessageId.isEmpty() && clientMessageId == m_clientMessageId;
+}
+
 void AiChatStreamClient::clearActiveRequest()
 {
+    m_cancelTimeoutTimer.stop();
     m_requestId.clear();
+    m_streamId.clear();
     m_clientMessageId.clear();
     m_running = false;
+    m_waitingForTerminalEvent = false;
 }

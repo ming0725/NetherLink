@@ -184,15 +184,16 @@
 | --- | --- | --- | --- | --- |
 | GET | `/ai/conversations` | `offset`, `limit` | `entries[]` | 查询 AI 会话列表。 |
 | POST | `/ai/conversations` | `title?`, `firstMessage?` | `conversation` | 新建 AI 会话。 |
+| PATCH | `/ai/conversations/{conversationId}` | `title`, `clientOperationId` | `conversation` | 修改 AI 会话标题。 |
+| DELETE | `/ai/conversations/{conversationId}` | `clientOperationId` | `ok` | 删除 AI 会话。 |
 | GET | `/ai/conversations/{conversationId}/messages` | - | `messages[]` | 查询 AI 会话消息。 |
-| POST | `/ai/conversations/{conversationId}/messages` | `message`, `clientMessageId`, `aiFileIds?` | `userMessage`, `assistantMessageId`, `streamId`, `usedFiles[]` | 触发 AI 回复，正文可用 SSE 或 WS 流式返回；上传文件先完成解析或返回 `AI_FILE_NOT_READY`。 |
+| POST | `/ai/conversations/{conversationId}/messages` | `message`, `clientMessageId`, `aiFileIds?` | `userMessage`, `assistantMessageId`, `streamId`, `usedFiles[]`, `title?` | 触发 AI 回复，正文可用 SSE 或 WS 流式返回；首轮完成后可返回正式标题。 |
 | POST | `/ai/conversations/{conversationId}/files` | `fileId`, `purpose=reference/attachment`, `retentionPolicy?` | `aiFile`, `parseStatus` | 将已上传文件绑定到 AI 会话并启动解析。 |
 | GET | `/ai/conversations/{conversationId}/files` | - | `files[]` | 查询当前 AI 会话可引用文件和解析状态。 |
 | GET | `/ai/files/{aiFileId}` | - | `aiFile`, `parseStatus`, `tokenCount`, `previewText?` | 查询 AI 文件解析结果摘要。 |
 | DELETE | `/ai/files/{aiFileId}` | - | `ok` | 从 AI 会话移除文件；按保留策略决定是否清理原文件。 |
 | GET | `/ai/conversations/{conversationId}/context` | - | `usedTokens`, `maxTokens`, `available` | 查询上下文用量。 |
 | POST | `/ai/messages/{messageId}/feedback` | `feedback=liked/disliked/none` | `message` | AI 消息反馈。 |
-| POST | `/ai/title` | `firstUserMessage` | `title` | 根据首条用户消息生成标题。 |
 
 ### 3.8 File / Notification / Operation Receipt
 

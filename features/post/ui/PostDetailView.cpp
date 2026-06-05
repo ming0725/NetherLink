@@ -20,6 +20,7 @@
 #include "shared/services/AppFonts.h"
 #include "shared/services/ImageService.h"
 #include "shared/theme/ThemeManager.h"
+#include "shared/ui/GlobalNotification.h"
 #include "shared/ui/IconLineEdit.h"
 #include "shared/ui/ImageViewer.h"
 #include "shared/ui/popup/InWindowPopupDialogs.h"
@@ -246,6 +247,22 @@ void PostDetailView::setController(PostSessionController* controller)
         disconnect(m_commentsLoadedConnection);
         m_commentsLoadedConnection = {};
     }
+    if (m_commentLikeUpdatedConnection) {
+        disconnect(m_commentLikeUpdatedConnection);
+        m_commentLikeUpdatedConnection = {};
+    }
+    if (m_replyLikeUpdatedConnection) {
+        disconnect(m_replyLikeUpdatedConnection);
+        m_replyLikeUpdatedConnection = {};
+    }
+    if (m_commentCreatedConnection) {
+        disconnect(m_commentCreatedConnection);
+        m_commentCreatedConnection = {};
+    }
+    if (m_replyCreatedConnection) {
+        disconnect(m_replyCreatedConnection);
+        m_replyCreatedConnection = {};
+    }
 
     m_controller = controller;
     if (!m_controller) {
@@ -254,6 +271,42 @@ void PostDetailView::setController(PostSessionController* controller)
 
     m_commentsLoadedConnection = connect(m_controller, &PostSessionController::postCommentsLoaded,
                                          this, &PostDetailView::onCommentsReady);
+    m_commentLikeUpdatedConnection = connect(m_controller,
+                                             &PostSessionController::commentLikeUpdated,
+                                             this,
+                                             [this](const QString& commentId, bool liked) {
+                                                 if (m_detailModel && m_detailModel->commentById(commentId)) {
+                                                     m_detailModel->updateCommentLike(commentId, liked);
+                                                 }
+                                             });
+    m_replyLikeUpdatedConnection = connect(m_controller,
+                                           &PostSessionController::replyLikeUpdated,
+                                           this,
+                                           [this](const QString& commentId, const QString& replyId, bool liked) {
+                                               if (m_detailModel && m_detailModel->commentById(commentId)) {
+                                                   m_detailModel->updateReplyLike(commentId, replyId, liked);
+                                               }
+                                           });
+    m_commentCreatedConnection = connect(m_controller,
+                                         &PostSessionController::commentCreated,
+                                         this,
+                                         [this](const PostComment& comment) {
+                                             if (!m_detailModel || comment.postId != m_state.postId) {
+                                                 return;
+                                             }
+                                             m_detailModel->insertComment(comment);
+                                         });
+    m_replyCreatedConnection = connect(m_controller,
+                                       &PostSessionController::replyCreated,
+                                       this,
+                                       [this](const QString& commentId,
+                                              const QString& targetReplyId,
+                                              const PostCommentReply& reply) {
+                                           if (!m_detailModel || reply.postId != m_state.postId) {
+                                               return;
+                                           }
+                                           m_detailModel->insertReply(commentId, targetReplyId, reply);
+                                       });
 }
 
 QRect PostDetailView::fittedImageRect(const QRect& bounds, const QSize& imageSize) const
@@ -457,13 +510,10 @@ void PostDetailView::setupUI()
         }
 
         if (m_controller && !m_controller->setAuthorFollowed(m_state.authorId, nextFollowed)) {
+            GlobalNotification::showFailure(this, QStringLiteral("关注设置失败"));
             syncFollowUi();
             return;
         }
-
-        m_state.isFollowed = nextFollowed;
-        syncFollowUi();
-        emit followClicked(m_state.isFollowed);
     });
 
     connect(m_likeBtn, &QPushButton::clicked, this, [this]() {
@@ -476,17 +526,15 @@ void PostDetailView::setupUI()
         m_commentLineEdit->setFocus();
     });
     connect(m_contentList, &PostDetailListView::commentLikeRequested, this, [this](const QString& commentId, bool liked) {
-        if ((m_controller && m_controller->setCommentLiked(commentId, liked))
-            || m_detailModel->commentById(commentId)) {
-            m_detailModel->updateCommentLike(commentId, liked);
+        if (!m_controller || !m_controller->setCommentLiked(commentId, liked)) {
+            GlobalNotification::showFailure(this, QStringLiteral("评论点赞失败"));
         }
     });
     connect(m_contentList, &PostDetailListView::replyLikeRequested, this, [this](const QString& commentId,
                                                                                  const QString& replyId,
                                                                                  bool liked) {
-        if ((m_controller && m_controller->setReplyLiked(replyId, liked))
-            || m_detailModel->commentById(commentId)) {
-            m_detailModel->updateReplyLike(commentId, replyId, liked);
+        if (!m_controller || !m_controller->setReplyLiked(commentId, replyId, liked)) {
+            GlobalNotification::showFailure(this, QStringLiteral("回复点赞失败"));
         }
     });
     connect(m_contentList, &PostDetailListView::replyToCommentRequested,
@@ -1416,8 +1464,10 @@ void PostDetailView::submitCommentText()
     }
 
     if (m_replyTarget.commentId.isEmpty()) {
-        PostComment comment = m_controller->createLocalComment(m_state.postId, text);
-        m_detailModel->insertComment(std::move(comment));
+        if (!m_controller->createComment(m_state.postId, text)) {
+            GlobalNotification::showFailure(this, QStringLiteral("评论发送失败"));
+            return;
+        }
     } else {
         const PostComment* parentComment = m_detailModel->commentById(m_replyTarget.commentId);
         if (!parentComment) {
@@ -1437,20 +1487,13 @@ void PostDetailView::submitCommentText()
             }
         }
 
-        PostCommentReply reply = m_controller->createLocalReply(m_state.postId,
-                                                                m_replyTarget.commentId,
-                                                                m_replyTarget.replyId,
-                                                                targetUserId,
-                                                                targetUserName,
-                                                                text);
-        m_detailModel->insertReply(m_replyTarget.commentId, m_replyTarget.replyId, std::move(reply));
+        Q_UNUSED(targetUserName);
+        if (!m_controller->createReply(m_replyTarget.commentId, text, targetUserId, m_replyTarget.replyId)) {
+            GlobalNotification::showFailure(this, QStringLiteral("回复发送失败"));
+            return;
+        }
     }
 
-    ++m_state.commentCount;
-    syncEngagementUi();
-    if (m_controller) {
-        m_controller->adjustCurrentPostCommentCount(1);
-    }
     m_commentLineEdit->clear();
     clearReplyTarget();
 }

@@ -31,6 +31,7 @@ signals:
 
 protected:
     void mousePressEvent(QMouseEvent* event) override;
+    void mouseReleaseEvent(QMouseEvent* event) override;
     void mouseMoveEvent(QMouseEvent* event) override;
     void leaveEvent(QEvent* event) override;
     void paintEvent(QPaintEvent* event) override;
@@ -72,9 +73,12 @@ private:
     int m_nextOffset = 0;
     bool m_hasMore = true;
     bool m_loadingEntries = false;
+    bool m_restoringSelection = false;
     bool m_selectFirstAfterLoad = false;
     int m_pendingEntriesRequestId = 0;
     QString m_pendingSelectedConversationId;
+    QString m_replacedConversationId;
+    QString m_replacementConversationId;
 
     static constexpr int kPageSize = 20;
 };

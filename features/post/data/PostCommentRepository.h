@@ -6,6 +6,9 @@
 
 #include "shared/types/RepositoryTypes.h"
 
+class QJsonArray;
+class QJsonObject;
+
 class PostCommentRepository : public QObject
 {
     Q_OBJECT
@@ -17,6 +20,15 @@ public:
     QString requestPostCommentsAsync(const PostCommentsRequest& query, int delayMs = 0);
     bool setCommentLiked(const QString& commentId, bool liked);
     bool setReplyLiked(const QString& replyId, bool liked);
+    PostCommentsPage upsertCommentsFromJson(const QString& postId,
+                                            const QJsonArray& comments,
+                                            int offset,
+                                            int totalCount,
+                                            bool hasMore);
+    PostComment upsertCommentFromJson(const QString& postId, const QJsonObject& object);
+    PostCommentReply upsertReplyFromJson(const QString& commentId, const QJsonObject& object);
+    bool applyCommentLikeResult(const QString& commentId, const QJsonObject& object);
+    bool applyReplyLikeResult(const QString& replyId, const QJsonObject& object);
 
 signals:
     void postCommentsReady(const QString& requestId, const PostCommentsPage& page);

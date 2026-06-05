@@ -5,7 +5,6 @@
 #include "shared/data/LocalDataStore.h"
 #include "shared/services/AvatarSource.h"
 
-#include <QDebug>
 #include <QJsonArray>
 #include <QJsonObject>
 
@@ -346,11 +345,6 @@ void RemoteDataBootstrapper::handleSuccess(const QString& requestId, const Netwo
     const FetchSpec spec = m_requests.value(requestId);
     int itemCount = 0;
     cacheResponse(spec, response, &itemCount);
-    qInfo().noquote() << "[Avatar] sync success"
-                      << "domain=" << spec.domain
-                      << "path=" << spec.path
-                      << "status=" << response.httpStatus
-                      << "items=" << itemCount;
     emit domainSynced(spec.domain, itemCount);
     finishRequest(requestId);
 }
@@ -363,12 +357,6 @@ void RemoteDataBootstrapper::handleFailure(const QString& requestId, const Netwo
 
     const FetchSpec spec = m_requests.value(requestId);
     m_failed = true;
-    qInfo().noquote() << "[Avatar] sync failed"
-                      << "domain=" << spec.domain
-                      << "path=" << spec.path
-                      << "status=" << error.httpStatus
-                      << "code=" << error.code
-                      << "message=" << error.message;
     emit domainSyncFailed(spec.domain, error);
     finishRequest(requestId);
 }

@@ -12,6 +12,8 @@ struct Post {
     int likes;
     int commentCount = 0;
     QString authorID;
+    QString authorName;
+    QString authorAvatarPath;
     QDateTime createdAt;
     QDateTime contentCreatedAt;
     QString thumbnailPath;

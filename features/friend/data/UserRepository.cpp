@@ -1,7 +1,6 @@
 #include "UserRepository.h"
 
 #include <QCollator>
-#include <QDebug>
 #include <QImageReader>
 #include <QJsonObject>
 #include <QMetaObject>
@@ -180,13 +179,6 @@ User userFromJson(const QJsonObject& object)
             user.avatarVersion,
             user.avatarEtag,
             user.avatarContentHash);
-    qInfo().noquote() << "[Avatar] user parsed"
-                      << "userId=" << user.id
-                      << "hasAvatarPayload=" << (hasAvatarPayload(object) ? QStringLiteral("yes") : QStringLiteral("no"))
-                      << "source=" << user.avatarPath
-                      << "version=" << user.avatarVersion
-                      << "etag=" << user.avatarEtag
-                      << "hash=" << user.avatarContentHash;
     user.status = userStatusFromString(object.value(QStringLiteral("status")).toString());
     user.signature = object.value(QStringLiteral("signature")).toString();
     user.isDnd = object.value(QStringLiteral("isDnd")).toBool(false);
@@ -458,13 +450,6 @@ UserRepository::UserRepository(QObject* parent)
                 (previous.avatarVersion > 0 &&
                  user.avatarVersion > 0 &&
                  user.avatarVersion < previous.avatarVersion)) {
-                qInfo().noquote() << "[Avatar] user kept previous avatar"
-                                  << "userId=" << user.id
-                                  << "avatarPayload=" << (avatarPayload ? QStringLiteral("yes") : QStringLiteral("no"))
-                                  << "previousSource=" << previous.avatarPath
-                                  << "incomingSource=" << user.avatarPath
-                                  << "previousVersion=" << previous.avatarVersion
-                                  << "incomingVersion=" << user.avatarVersion;
                 keepAvatarFromPrevious(user, previous);
             }
             if (user.nick.isEmpty()) {
@@ -663,10 +648,6 @@ void UserRepository::saveUser(const User& user)
     LocalDataStore::instance().upsertValue(QStringLiteral("users"), user.id, userToJson(user));
 
     if (!oldAvatarPath.isEmpty() && oldAvatarPath != user.avatarPath) {
-        qInfo().noquote() << "[Avatar] user avatar changed"
-                          << "userId=" << user.id
-                          << "oldSource=" << oldAvatarPath
-                          << "newSource=" << user.avatarPath;
         ImageService::instance().invalidateSource(oldAvatarPath);
     }
     if (changed) {

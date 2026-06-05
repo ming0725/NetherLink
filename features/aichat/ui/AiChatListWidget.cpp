@@ -112,9 +112,33 @@ void AiChatListWidget::setController(AiChatSessionController* controller)
             return;
         }
 
-        const QString selectedConversationId = currentIndex().data(AiChatListModel::ConversationIdRole).toString();
+        QString selectedConversationId = currentIndex().data(AiChatListModel::ConversationIdRole).toString();
+        if (selectedConversationId == m_replacedConversationId) {
+            selectedConversationId = m_replacementConversationId;
+        } else if (selectedConversationId.isEmpty() && !m_pendingSelectedConversationId.isEmpty()) {
+            selectedConversationId = m_pendingSelectedConversationId;
+        }
         reloadEntries(selectedConversationId);
     });
+    connect(m_controller, &AiChatSessionController::conversationIdChanged,
+            this, [this](const QString& previousConversationId, const AiChatListEntry& entry) {
+                if (!m_initialized || previousConversationId.isEmpty() || entry.conversationId.isEmpty()) {
+                    return;
+                }
+
+                if (m_delegate->streamingConversationId() == previousConversationId) {
+                    setStreamingConversationId(entry.conversationId);
+                }
+
+                m_replacedConversationId = previousConversationId;
+                m_replacementConversationId = entry.conversationId;
+
+                const QString selectedConversationId =
+                        currentIndex().data(AiChatListModel::ConversationIdRole).toString();
+                reloadEntries(selectedConversationId == previousConversationId
+                                      ? entry.conversationId
+                                      : selectedConversationId);
+            });
     connect(m_controller, &AiChatSessionController::conversationsLoaded,
             this, &AiChatListWidget::onEntriesLoaded);
     connect(m_controller, &AiChatSessionController::aiReplyStarted,
@@ -154,11 +178,17 @@ void AiChatListWidget::ensureInitialized()
 void AiChatListWidget::createNewConversation()
 {
     m_initialized = true;
+    m_pendingSelectedConversationId.clear();
+    m_replacedConversationId.clear();
+    m_replacementConversationId.clear();
+    m_selectFirstAfterLoad = false;
+    m_restoringSelection = true;
     clearSelection();
     if (selectionModel()) {
         selectionModel()->clearCurrentIndex();
     }
     setCurrentIndex(QModelIndex());
+    m_restoringSelection = false;
     updateStickyHeader();
     emit conversationCleared();
 }
@@ -203,6 +233,8 @@ void AiChatListWidget::onEntriesLoaded(int requestId,
                                        const QVector<AiChatListEntry>& loadedEntries)
 {
     if (requestId != m_pendingEntriesRequestId) {
+        Q_UNUSED(query)
+        Q_UNUSED(loadedEntries)
         return;
     }
 
@@ -215,11 +247,12 @@ void AiChatListWidget::onEntriesLoaded(int requestId,
     const int addedCount = entries.size();
 
     if (query.offset == 0) {
+        m_restoringSelection = true;
         m_model->setEntries(std::move(entries));
+        m_restoringSelection = false;
     } else {
         m_model->appendEntries(entries);
     }
-
     m_nextOffset += addedCount;
     m_hasMore = hasMore;
     updateStickyHeader();
@@ -242,11 +275,13 @@ void AiChatListWidget::finishPendingSelection()
             selectionModel()->setCurrentIndex(m_model->index(0, 0),
                                               QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
         } else {
+            m_restoringSelection = true;
             clearSelection();
             if (selectionModel()) {
                 selectionModel()->clearCurrentIndex();
             }
             setCurrentIndex(QModelIndex());
+            m_restoringSelection = false;
             emit conversationCleared();
         }
         return;
@@ -258,13 +293,20 @@ void AiChatListWidget::finishPendingSelection()
 
     const QString selectedConversationId = m_pendingSelectedConversationId;
     m_pendingSelectedConversationId.clear();
+    if (selectedConversationId == m_replacementConversationId) {
+        m_replacedConversationId.clear();
+        m_replacementConversationId.clear();
+    }
+
     const int row = m_model->rowOfConversation(selectedConversationId);
     if (row < 0) {
+        m_restoringSelection = true;
         clearSelection();
         if (selectionModel()) {
             selectionModel()->clearCurrentIndex();
         }
         setCurrentIndex(QModelIndex());
+        m_restoringSelection = false;
         emit conversationCleared();
         return;
     }
@@ -287,6 +329,14 @@ void AiChatListWidget::mousePressEvent(QMouseEvent* event)
                 event->accept();
                 return;
             }
+
+            if (selectionModel()) {
+                selectionModel()->setCurrentIndex(index,
+                                                  QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+            }
+            viewport()->update();
+            event->accept();
+            return;
         }
     }
 
@@ -304,6 +354,17 @@ void AiChatListWidget::mousePressEvent(QMouseEvent* event)
     }
 
     OverlayScrollListView::mousePressEvent(event);
+}
+
+void AiChatListWidget::mouseReleaseEvent(QMouseEvent* event)
+{
+    if (event->button() == Qt::LeftButton) {
+        event->accept();
+        viewport()->update();
+        return;
+    }
+
+    OverlayScrollListView::mouseReleaseEvent(event);
 }
 
 void AiChatListWidget::mouseMoveEvent(QMouseEvent* event)
@@ -343,7 +404,11 @@ void AiChatListWidget::showEvent(QShowEvent* event)
 
 void AiChatListWidget::onCurrentChanged(const QModelIndex& current, const QModelIndex& previous)
 {
-    Q_UNUSED(previous);
+    Q_UNUSED(previous)
+    if (m_restoringSelection) {
+        return;
+    }
+
     if (!current.isValid()) {
         emit conversationCleared();
         return;
@@ -527,21 +592,13 @@ void AiChatListWidget::deleteItem(const QModelIndex& index)
     const QString removedId = index.data(AiChatListModel::ConversationIdRole).toString();
     const QString currentSelectionId = currentIndex().data(AiChatListModel::ConversationIdRole).toString();
     const bool wasCurrent = currentSelectionId == removedId;
-    QString nextSelectionId;
-    if (m_model->rowCount() > 1) {
-        const int nextRow = qBound(0, removedRow, m_model->rowCount() - 2);
-        const QModelIndex nextIndex = m_model->index(nextRow, 0);
-        nextSelectionId = nextIndex.data(AiChatListModel::ConversationIdRole).toString();
-        if (nextSelectionId == removedId && removedRow > 0) {
-            nextSelectionId = m_model->index(removedRow - 1, 0).data(AiChatListModel::ConversationIdRole).toString();
-        }
-    }
+    Q_UNUSED(removedRow)
 
     if (!m_controller || !m_controller->deleteConversation(removedId)) {
         return;
     }
 
-    const QString restoredSelectionId = wasCurrent ? nextSelectionId : currentSelectionId;
+    const QString restoredSelectionId = wasCurrent ? QString() : currentSelectionId;
     QTimer::singleShot(0, this, [this, restoredSelectionId, removedId]() {
         reloadEntries(restoredSelectionId == removedId ? QString() : restoredSelectionId);
     });

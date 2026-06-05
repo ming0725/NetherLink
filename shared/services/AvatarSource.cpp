@@ -1,6 +1,5 @@
 #include "AvatarSource.h"
 
-#include <QDebug>
 #include <QUrl>
 
 namespace {
@@ -42,9 +41,6 @@ QString fromAvatarFileId(const QString& fileId)
 
     const QString source = QStringLiteral("/api/v1/avatar-files/%1?variant=thumb")
             .arg(QString::fromLatin1(QUrl::toPercentEncoding(trimmed)));
-    qInfo().noquote() << "[Avatar] avatarFileId source"
-                      << "fileId=" << trimmed
-                      << "source=" << source;
     return source;
 }
 
@@ -56,25 +52,12 @@ QString versioned(const QString& source, int version, const QString& etag, const
 
     const QString token = cacheToken(version, etag, contentHash);
     if (token.isEmpty()) {
-        qInfo().noquote() << "[Avatar] source parsed"
-                          << "source=" << source
-                          << "version=" << version
-                          << "etag=" << etag
-                          << "hash=" << contentHash
-                          << "versioned=no";
         return source;
     }
 
     QUrl url(source);
     url.setFragment(QStringLiteral("nl-cache=%1").arg(token));
-    const QString versionedSource = url.toString();
-    qInfo().noquote() << "[Avatar] source parsed"
-                      << "source=" << source
-                      << "version=" << version
-                      << "etag=" << etag
-                      << "hash=" << contentHash
-                      << "versioned=" << versionedSource;
-    return versionedSource;
+    return url.toString();
 }
 
 QString cleanForIo(const QString& source)

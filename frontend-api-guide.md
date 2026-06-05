@@ -1351,6 +1351,16 @@ POST /api/v1/users/{authorUuid}/follow
 { "isFollowedAuthor": true }
 ```
 
+当前 Qt 前端接入状态：
+
+- 已新增 `PostRemoteDataSource` 封装动态已有能力对应的远程接口。
+- 信息流分页通过 `GET /api/v1/posts` 请求，query 包含 `followOnly`、`limit` 和 `offset`；`PostFeedPage` 等待远程页返回后替换 loading placeholder。
+- 动态详情通过 `GET /api/v1/posts/{postId}` 请求，成功后写入 `PostRepository` 和 `posts` 本地快照。
+- 帖子解析兼容后端 `author`、`media[]` 和 `viewer.isLiked/isFollowedAuthor` 字段；作者昵称、头像和图片 URL 进入现有 `PostSummary` / `PostDetailData` 模型。
+- 动态点赞通过 `POST /api/v1/posts/{postId}/like` 发送，后端返回 `likeCount/isLiked` 后再更新 `post_like_states` 和 UI，不做纯本地点赞确认。
+- 作者关注通过 `POST /api/v1/users/{authorUuid}/follow` 发送，成功后刷新当前动态作者关注状态；关注作者不再复用好友关系写入。
+- 帖子创建、编辑、删除、媒体上传、视频/直播/音频/文件展示仍不接入，因为当前 Qt 前端没有对应发布或管理 UI。
+
 ### 9.2 评论和回复
 
 ```http
@@ -1381,6 +1391,14 @@ DELETE /api/v1/replies/{replyId}?clientOperationId=op_x
 ```
 
 评论和回复内容最多 2000 字符。
+
+当前 Qt 前端接入状态：
+
+- 评论列表通过 `GET /api/v1/posts/{postId}/comments` 分页请求，成功后写入 `PostCommentRepository` 和 `post_comments` 本地快照。
+- 发表评论通过 `POST /api/v1/posts/{postId}/comments` 发送，回复通过 `POST /api/v1/comments/{commentId}/replies` 发送，body 带稳定 `clientOperationId`。
+- 评论和回复发送成功后插入服务端返回对象，并通过 `PostRepository` 更新帖子评论数；失败只展示错误，不插入本地临时评论。
+- 评论点赞和回复点赞分别通过 `POST /api/v1/comments/{commentId}/like`、`POST /api/v1/replies/{replyId}/like` 发送，成功后再更新详情模型和本地 `comment_like_states` / `reply_like_states`。
+- 当前前端没有评论/回复删除 UI，因此 `DELETE /comments` 和 `DELETE /replies` 暂不接入。
 
 ## 10. AI API
 

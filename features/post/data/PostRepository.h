@@ -7,6 +7,9 @@
 #include "shared/types/RepositoryTypes.h"
 #include "shared/types/Post.h"
 
+class QJsonArray;
+class QJsonObject;
+
 class PostRepository : public QObject {
     Q_OBJECT
 public:
@@ -17,6 +20,10 @@ public:
     bool setPostLiked(const QString& postId, bool liked);
     bool adjustPostCommentCount(const QString& postId, int delta);
     void refreshAuthorFollowState(const QString& authorId);
+    QVector<PostSummary> upsertPostsFromJson(const QJsonArray& posts);
+    PostDetailData upsertPostFromJson(const QJsonObject& object);
+    bool applyPostLikeResult(const QString& postId, const QJsonObject& object);
+    bool applyAuthorFollowState(const QString& authorId, bool followed);
 
 signals:
     void postUpdated(const PostSummary& summary);

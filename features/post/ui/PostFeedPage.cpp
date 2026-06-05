@@ -57,6 +57,10 @@ void PostFeedPage::setController(PostSessionController* controller)
         disconnect(m_postUpdatedConnection);
         m_postUpdatedConnection = {};
     }
+    if (m_feedLoadedConnection) {
+        disconnect(m_feedLoadedConnection);
+        m_feedLoadedConnection = {};
+    }
 
     m_controller = controller;
     if (!m_controller) {
@@ -65,6 +69,10 @@ void PostFeedPage::setController(PostSessionController* controller)
 
     m_postUpdatedConnection = connect(m_controller, &PostSessionController::postUpdated,
                                       this, &PostFeedPage::onRepositoryPostUpdated);
+    m_feedLoadedConnection = connect(m_controller,
+                                     &PostSessionController::postFeedPageLoaded,
+                                     this,
+                                     &PostFeedPage::onFeedPageLoaded);
 }
 
 void PostFeedPage::ensureInitialized()
@@ -145,13 +153,40 @@ void PostFeedPage::loadMore(qint64 loadingStartedAt, int generation)
     }
 
     m_loading = true;
-    const QVector<PostSummary> posts = m_controller->loadFeedPage(m_nextOffset, kPageSize, m_followOnly);
-    m_loading = false;
+    m_feedLoadingStartedAt = loadingStartedAt;
+    m_feedRequestGeneration = generation;
+    m_feedRequestId = m_controller->requestFeedPage(m_nextOffset, kPageSize, m_followOnly);
+    if (!m_feedRequestId.isEmpty()) {
+        return;
+    }
 
-    const auto applyPosts = [this, posts, generation]() {
+    const QVector<PostSummary> posts = m_controller->loadFeedPage(m_nextOffset, kPageSize, m_followOnly);
+    onFeedPageLoaded({}, m_nextOffset, kPageSize, m_followOnly, posts, posts.size() >= kPageSize);
+}
+
+void PostFeedPage::onFeedPageLoaded(const QString& requestId,
+                                    int offset,
+                                    int limit,
+                                    bool followOnly,
+                                    const QVector<PostSummary>& posts,
+                                    bool hasMore)
+{
+    Q_UNUSED(limit);
+    if (requestId != m_feedRequestId
+        || offset != m_nextOffset
+        || followOnly != m_followOnly
+        || m_feedRequestGeneration != m_loadGeneration) {
+        return;
+    }
+
+    const int generation = m_loadGeneration;
+    const qint64 loadingStartedAt = m_feedLoadingStartedAt;
+    const auto applyPosts = [this, posts, hasMore, generation]() {
         if (generation != m_loadGeneration) {
             return;
         }
+        m_loading = false;
+        m_feedRequestId.clear();
         stopLoadingAnimation();
         if (posts.isEmpty()) {
             m_hasMore = false;
@@ -167,7 +202,7 @@ void PostFeedPage::loadMore(qint64 loadingStartedAt, int generation)
             m_model->appendPosts(posts);
         }
         m_nextOffset += posts.size();
-        m_hasMore = posts.size() >= kPageSize;
+        m_hasMore = hasMore;
     };
 
     if (loadingStartedAt <= 0 || !m_model->hasLoadingPlaceholders()) {
@@ -202,6 +237,7 @@ void PostFeedPage::clearFeedData()
 {
     m_loading = false;
     m_loadMoreScheduled = false;
+    m_feedRequestId.clear();
     m_nextOffset = 0;
     m_hasMore = true;
     stopLoadingAnimation();

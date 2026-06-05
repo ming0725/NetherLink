@@ -34,6 +34,12 @@ private slots:
 private:
     void scheduleLoadMore();
     void loadMore(qint64 loadingStartedAt, int generation);
+    void onFeedPageLoaded(const QString& requestId,
+                          int offset,
+                          int limit,
+                          bool followOnly,
+                          const QVector<PostSummary>& posts,
+                          bool hasMore);
     void clearFeedData();
     void reloadCurrentFeed();
     void showInitialLoadingPlaceholders();
@@ -45,6 +51,10 @@ private:
     QTimer* m_loadingAnimationTimer;
     PostSessionController* m_controller = nullptr;
     QMetaObject::Connection m_postUpdatedConnection;
+    QMetaObject::Connection m_feedLoadedConnection;
+    QString m_feedRequestId;
+    qint64 m_feedLoadingStartedAt = 0;
+    int m_feedRequestGeneration = 0;
     int m_nextOffset = 0;
     int m_loadGeneration = 0;
     bool m_hasMore = true;

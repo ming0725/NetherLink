@@ -7,7 +7,6 @@
 #include <QApplication>
 #include <QClipboard>
 #include <QColor>
-#include <QDebug>
 #include <QDesktopServices>
 #include <QEasingCurve>
 #include <QKeyEvent>
@@ -30,41 +29,7 @@ namespace {
 constexpr int kUserCopyFadeDurationMs = 160;
 constexpr int kUserMessageExpandDurationMs = 420;
 constexpr int kCodeBlockLoadingFrameMs = 16;
-constexpr bool kAiChatLayoutDebug = false;
 constexpr int kViewPaintWidthInset = 4;
-
-QString rectDebugString(const QRect& rect)
-{
-    return QStringLiteral("(%1,%2 %3x%4)")
-            .arg(rect.x())
-            .arg(rect.y())
-            .arg(rect.width())
-            .arg(rect.height());
-}
-
-QString pointDebugString(const QPoint& point)
-{
-    return QStringLiteral("(%1,%2)").arg(point.x()).arg(point.y());
-}
-
-QString messageActionDebugString(AiChatMessageDelegate::MessageAction action)
-{
-    switch (action) {
-    case AiChatMessageDelegate::MessageAction::None:
-        return QStringLiteral("None");
-    case AiChatMessageDelegate::MessageAction::Copy:
-        return QStringLiteral("Copy");
-    case AiChatMessageDelegate::MessageAction::Refresh:
-        return QStringLiteral("Refresh");
-    case AiChatMessageDelegate::MessageAction::Like:
-        return QStringLiteral("Like");
-    case AiChatMessageDelegate::MessageAction::Dislike:
-        return QStringLiteral("Dislike");
-    case AiChatMessageDelegate::MessageAction::ToggleExpansion:
-        return QStringLiteral("ToggleExpansion");
-    }
-    return QStringLiteral("Unknown");
-}
 
 QPoint mouseGlobalPosition(QMouseEvent* event)
 {
@@ -369,19 +334,6 @@ void AiChatMessageListView::mousePressEvent(QMouseEvent* event)
 
             const AiChatMessageDelegate::MessageAction messageAction =
                     m_delegate->messageActionAt(option, index, event->pos());
-            if (kAiChatLayoutDebug && index.data(AiChatMessageListModel::IsFromUserRole).toBool()) {
-                qDebug().noquote()
-                        << "AICHAT_LAYOUT mousePress"
-                        << "row=" << index.row()
-                        << "id=" << index.data(AiChatMessageListModel::MessageIdRole).toString()
-                        << "pos=" << pointDebugString(event->pos())
-                        << "visual=" << rectDebugString(visualRect(index))
-                        << "option=" << rectDebugString(option.rect)
-                        << "hitBubble=" << hitBubble
-                        << "action=" << messageActionDebugString(messageAction)
-                        << "scroll=" << verticalScrollBar()->value()
-                        << "max=" << verticalScrollBar()->maximum();
-            }
             if (messageAction != AiChatMessageDelegate::MessageAction::None) {
                 const QString messageId = index.data(AiChatMessageListModel::MessageIdRole).toString();
                 switch (messageAction) {
@@ -521,18 +473,6 @@ void AiChatMessageListView::mouseMoveEvent(QMouseEvent* event)
 {
     if (m_dragging && m_dragIndex.isValid()) {
         const int cursor = characterIndexForDrag(m_dragIndex, event->pos());
-        if (kAiChatLayoutDebug) {
-            qDebug().noquote()
-                    << "AICHAT_LAYOUT mouseDrag"
-                    << "row=" << m_dragIndex.row()
-                    << "id=" << m_dragIndex.data(AiChatMessageListModel::MessageIdRole).toString()
-                    << "pos=" << pointDebugString(event->pos())
-                    << "visual=" << rectDebugString(visualRect(m_dragIndex))
-                    << "anchor=" << m_dragAnchor
-                    << "cursor=" << cursor
-                    << "scroll=" << verticalScrollBar()->value()
-                    << "max=" << verticalScrollBar()->maximum();
-        }
         if (cursor >= 0) {
             m_delegate->setSelection(m_dragIndex, m_dragAnchor, cursor);
             viewport()->update();
@@ -584,20 +524,6 @@ void AiChatMessageListView::mouseMoveEvent(QMouseEvent* event)
                 overCodeCopyDisabled ||
                 overSettingAction ||
                 m_delegate->characterIndexAt(option, index, event->pos()) >= 0;
-        if (kAiChatLayoutDebug && index.data(AiChatMessageListModel::IsFromUserRole).toBool() &&
-                (overMessageAction || overUserCopyAction || m_delegate->bubbleHitTest(option, index, event->pos()))) {
-            qDebug().noquote()
-                    << "AICHAT_LAYOUT mouseMove"
-                    << "row=" << index.row()
-                    << "id=" << index.data(AiChatMessageListModel::MessageIdRole).toString()
-                    << "pos=" << pointDebugString(event->pos())
-                    << "visual=" << rectDebugString(visualRect(index))
-                    << "option=" << rectDebugString(option.rect)
-                    << "action=" << messageActionDebugString(messageAction)
-                    << "overText=" << overText
-                    << "scroll=" << verticalScrollBar()->value()
-                    << "max=" << verticalScrollBar()->maximum();
-        }
     }
     updateHoveredUserCopyIndex(hoveredUserCopyIndex);
     viewport()->setCursor(overCodeCopyDisabled ? Qt::ForbiddenCursor
@@ -790,16 +716,6 @@ int AiChatMessageListView::characterIndexForDrag(const QModelIndex& index, const
 
     const QStyleOptionViewItem option = viewOptionForIndex(index);
     const int cursor = m_delegate->characterIndexAt(option, index, pos, true);
-    if (kAiChatLayoutDebug) {
-        qDebug().noquote()
-                << "AICHAT_LAYOUT dragChar"
-                << "row=" << index.row()
-                << "id=" << index.data(AiChatMessageListModel::MessageIdRole).toString()
-                << "pos=" << pointDebugString(pos)
-                << "visual=" << rectDebugString(visualRect(index))
-                << "option=" << rectDebugString(option.rect)
-                << "cursor=" << cursor;
-    }
     if (cursor >= 0) {
         return cursor;
     }
@@ -1020,19 +936,6 @@ void AiChatMessageListView::toggleUserMessageExpansion(const QModelIndex& index)
     const qreal startProgress = m_delegate->userMessageExpansionProgress(messageId);
     const bool collapse = m_delegate->isUserMessageExpanded(messageId) && startProgress > 0.001;
     const qreal endProgress = collapse ? 0.0 : 1.0;
-    if (kAiChatLayoutDebug) {
-        qDebug().noquote()
-                << "AICHAT_LAYOUT toggleExpansion"
-                << "row=" << index.row()
-                << "id=" << messageId
-                << "collapse=" << collapse
-                << "startProgress=" << startProgress
-                << "endProgress=" << endProgress
-                << "visualBefore=" << rectDebugString(visualRect(index))
-                << "scroll=" << verticalScrollBar()->value()
-                << "max=" << verticalScrollBar()->maximum()
-                << "stickToBottom=" << m_stickToBottom;
-    }
     m_delegate->setUserMessageExpanded(messageId, true);
     m_delegate->setUserMessageExpansionProgress(messageId, startProgress);
 
@@ -1065,18 +968,6 @@ void AiChatMessageListView::toggleUserMessageExpansion(const QModelIndex& index)
 void AiChatMessageListView::refreshAnimatedMessageLayout(const QModelIndex& index)
 {
     const int previousValue = verticalScrollBar()->value();
-    const int previousMaximum = verticalScrollBar()->maximum();
-    const QRect previousVisualRect = index.isValid() ? visualRect(index) : QRect();
-    if (kAiChatLayoutDebug) {
-        qDebug().noquote()
-                << "AICHAT_LAYOUT refreshAnimated before"
-                << "row=" << index.row()
-                << "id=" << index.data(AiChatMessageListModel::MessageIdRole).toString()
-                << "visual=" << rectDebugString(previousVisualRect)
-                << "scroll=" << previousValue
-                << "max=" << previousMaximum
-                << "stickToBottom=" << m_stickToBottom;
-    }
     m_delegate->notifySizeHintChanged(index);
     doItemsLayout();
     updateGeometries();
@@ -1085,18 +976,6 @@ void AiChatMessageListView::refreshAnimatedMessageLayout(const QModelIndex& inde
     m_programmaticScrollChange = false;
     m_lastScrollValue = verticalScrollBar()->value();
     m_stickToBottom = isAtBottom();
-    if (kAiChatLayoutDebug) {
-        qDebug().noquote()
-                << "AICHAT_LAYOUT refreshAnimated after"
-                << "row=" << index.row()
-                << "id=" << index.data(AiChatMessageListModel::MessageIdRole).toString()
-                << "visual=" << rectDebugString(index.isValid() ? visualRect(index) : QRect())
-                << "scroll=" << verticalScrollBar()->value()
-                << "max=" << verticalScrollBar()->maximum()
-                << "previousScroll=" << previousValue
-                << "previousMax=" << previousMaximum
-                << "stickToBottom=" << m_stickToBottom;
-    }
     updateOverlayScrollBar();
     viewport()->update();
 }

@@ -4,7 +4,6 @@
 #include "HttpClient.h"
 #include "shared/services/AvatarSource.h"
 
-#include <QDebug>
 #include <QJsonObject>
 
 namespace {
@@ -52,13 +51,6 @@ AuthUser authUserFromObject(const QJsonObject& object)
             user.avatarVersion,
             user.avatarEtag,
             user.avatarContentHash);
-    qInfo().noquote() << "[Avatar] auth user parsed"
-                      << "userId=" << user.userId
-                      << "userUuid=" << user.userUuid
-                      << "source=" << user.avatarPath
-                      << "version=" << user.avatarVersion
-                      << "etag=" << user.avatarEtag
-                      << "hash=" << user.avatarContentHash;
     user.signature = object.value(QStringLiteral("signature")).toString();
     user.region = object.value(QStringLiteral("region")).toString();
     user.status = object.value(QStringLiteral("status")).toString();

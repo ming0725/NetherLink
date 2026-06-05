@@ -9,10 +9,11 @@
 - `LoginAccountRepository` 只读写全局 `global.sqlite` 的 `login_accounts` domain。
 - `UserRepository`、`GroupRepository`、`CurrentUserProfileRepository`、`UnreadStateRepository` 等账号态仓库只读写 `accounts/<account_hash>/data.sqlite`，并在账号切换或同步落库后重载内存快照；当前用户资料空缓存时返回空模型，不再构造“未登录用户”或默认头像 profile。
 - 帖子、评论、好友通知、群通知、AI 会话列表均读取 SQLite 快照；空库时返回空列表，由 `RemoteDataBootstrapper` 登录后拉取服务端数据填充。
-- 点赞状态、评论数增量、评论点赞状态、未读状态等用户交互状态写入账号库；最近登录账号写入全局库。
+- 点赞状态、评论数增量、评论点赞状态、未读状态等用户交互状态写入账号库；最近登录账号写入全局库。动态点赞、关注、评论、回复和评论/回复点赞均先调用远程 API，成功后再更新 `posts`、`post_comments`、`post_like_states`、`comment_like_states` 或 `reply_like_states`。
 - AI 聊天本地新建/编辑能力仍会写入 SQLite；文本回复已经接入后端 SSE，服务端完成态会覆盖本地临时消息并同步会话标题。
 - 好友申请和群入群申请的同意/拒绝按钮已经先调用远程 API，成功后再更新 `friend_notifications`、`group_notifications`、`users`、`groups`、`conversations` 等本地快照；搜索窗口发起好友申请和入群申请只发送远程请求，成功后记录本进程 pending 状态并提示已发送，不直接写入 `users` 或 `groups`；创建群、好友备注/分组编辑、删除好友、群资料编辑、群成员管理、转让群主、当前用户群备注/分组设置和退群也先调用远程 API，成功后再更新或移除本地缓存与会话；失败只显示错误提示，不把静态样例或纯本地结果当作后端确认。
 - 会话置顶、免打扰、隐藏、标记已读/未读、清空消息和消息撤回已经先调用远程 API，成功后再更新 `conversations` 和 `chat_messages` 本地快照；失败只提示错误，不把本地状态变化当作后端确认。
+- 动态信息流、详情和评论列表打开时会请求远程分页接口，服务端返回后覆盖/追加本地快照；请求失败只提示错误或保留已有缓存展示，不恢复静态样例数据，不把本地构造评论当作已确认评论。
 - 认证 token 仍只保存在 `AuthSession` 内存态；token 刷新失败后由 `NetworkService::sessionExpired` 通知应用壳清理当前用户并回到登录窗，不写入 SQLite。
 - 聊天列表不再生成演示历史消息或演示未读数；`MessageRepository` 中旧的 sample/synthetic 历史消息生成代码已删除。消息和未读状态必须来自服务端会话状态或用户真实本地操作。
 

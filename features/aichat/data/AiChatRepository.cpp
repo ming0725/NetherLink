@@ -132,6 +132,55 @@ QVector<AiChatListEntry> AiChatRepository::requestAiChatList(const AiChatListReq
             .request(query);
 }
 
+bool AiChatRepository::setAiChatListPage(const AiChatListRequest& query,
+                                         const QVector<AiChatListEntry>& entries)
+{
+    if (query.offset < 0 || query.limit <= 0) {
+        return false;
+    }
+
+    QMutexLocker locker(&m_mutex);
+    QHash<QString, bool> unreadDots;
+    for (const AiChatListEntry& entry : std::as_const(m_entries)) {
+        if (!entry.conversationId.isEmpty()) {
+            unreadDots.insert(entry.conversationId, entry.hasUnreadDot);
+        }
+    }
+
+    if (query.offset == 0) {
+        m_entries.clear();
+        LocalDataStore::instance().clearDomain(QStringLiteral("ai_chat_entries"));
+    }
+
+    for (AiChatListEntry entry : entries) {
+        if (entry.conversationId.isEmpty() || entry.title.trimmed().isEmpty() || !entry.time.isValid()) {
+            continue;
+        }
+
+        entry.title = entry.title.trimmed();
+        if (unreadDots.contains(entry.conversationId)) {
+            entry.hasUnreadDot = unreadDots.value(entry.conversationId);
+        }
+
+        const auto existingIt = std::find_if(m_entries.begin(), m_entries.end(), [&entry](const AiChatListEntry& existing) {
+            return existing.conversationId == entry.conversationId;
+        });
+        if (existingIt == m_entries.end()) {
+            m_entries.push_back(entry);
+        } else {
+            *existingIt = entry;
+        }
+        if (!m_messages.contains(entry.conversationId)) {
+            m_messages.insert(entry.conversationId, {});
+        }
+        LocalDataStore::instance().upsertValue(QStringLiteral("ai_chat_entries"),
+                                               entry.conversationId,
+                                               aiChatEntryToJson(entry));
+    }
+    m_contextUsages.clear();
+    return true;
+}
+
 QVector<AiChatMessage> AiChatRepository::requestAiChatMessages(const AiChatMessagesRequest& query) const
 {
     auto handler = [this](const AiChatMessagesRequest& request) {
@@ -145,7 +194,8 @@ QVector<AiChatMessage> AiChatRepository::requestAiChatMessages(const AiChatMessa
 
 QVector<AiChatMessage> AiChatRepository::requestAiChatMessages(const QString& conversationId) const
 {
-    return requestAiChatMessages({conversationId});
+    const AiChatMessagesRequest request {conversationId};
+    return requestAiChatMessages(request);
 }
 
 AiChatContextUsage AiChatRepository::requestAiChatContextUsage(const AiChatContextUsageRequest& request) const
@@ -185,6 +235,89 @@ QString AiChatRepository::createAiChatConversation(const QString& title, const Q
                                            conversationId,
                                            aiChatEntryToJson(entry));
     return conversationId;
+}
+
+QString AiChatRepository::createAiChatConversation(const QString& conversationId,
+                                                   const QString& title,
+                                                   const QDateTime& time)
+{
+    const QString trimmedTitle = title.trimmed();
+    if (conversationId.isEmpty() || trimmedTitle.isEmpty() || !time.isValid()) {
+        return {};
+    }
+
+    QMutexLocker locker(&m_mutex);
+    const auto existingIt = std::find_if(m_entries.cbegin(), m_entries.cend(), [&conversationId](const AiChatListEntry& entry) {
+        return entry.conversationId == conversationId;
+    });
+    if (existingIt != m_entries.cend()) {
+        return {};
+    }
+
+    const AiChatListEntry entry {conversationId, trimmedTitle, time, false};
+    m_entries.push_back(entry);
+    m_messages.insert(conversationId, {});
+    LocalDataStore::instance().upsertValue(QStringLiteral("ai_chat_entries"),
+                                           conversationId,
+                                           aiChatEntryToJson(entry));
+    return conversationId;
+}
+
+bool AiChatRepository::replaceAiChatConversationId(const QString& previousConversationId,
+                                                   const QString& conversationId)
+{
+    if (previousConversationId.isEmpty() ||
+            conversationId.isEmpty() ||
+            previousConversationId == conversationId) {
+        return false;
+    }
+
+    bool hadUnreadDot = false;
+    {
+        QMutexLocker locker(&m_mutex);
+        const auto previousIt = std::find_if(m_entries.begin(), m_entries.end(), [&previousConversationId](const AiChatListEntry& entry) {
+            return entry.conversationId == previousConversationId;
+        });
+        if (previousIt == m_entries.end()) {
+            return false;
+        }
+
+        const auto duplicateIt = std::find_if(m_entries.cbegin(), m_entries.cend(), [&conversationId](const AiChatListEntry& entry) {
+            return entry.conversationId == conversationId;
+        });
+        if (duplicateIt != m_entries.cend()) {
+            return false;
+        }
+
+        AiChatListEntry entry = *previousIt;
+        hadUnreadDot = entry.hasUnreadDot;
+        entry.conversationId = conversationId;
+        *previousIt = entry;
+
+        QVector<AiChatMessage> messages = m_messages.take(previousConversationId);
+        for (AiChatMessage& message : messages) {
+            message.conversationId = conversationId;
+            LocalDataStore::instance().upsertValue(QStringLiteral("ai_chat_messages"),
+                                                   message.messageId,
+                                                   aiChatMessageToJson(message));
+        }
+        m_messages.insert(conversationId, messages);
+
+        const AiChatContextUsage usage = m_contextUsages.take(previousConversationId);
+        if (usage.available) {
+            m_contextUsages.insert(conversationId, {conversationId, usage.usedTokens, usage.maxTokens, usage.available});
+        }
+
+        LocalDataStore::instance().removeValue(QStringLiteral("ai_chat_entries"), previousConversationId);
+        LocalDataStore::instance().upsertValue(QStringLiteral("ai_chat_entries"),
+                                               conversationId,
+                                               aiChatEntryToJson(entry));
+    }
+
+    if (hadUnreadDot) {
+        emit unreadDotStateChanged();
+    }
+    return true;
 }
 
 AiChatMessage AiChatRepository::addAiChatMessage(const QString& conversationId,
@@ -249,6 +382,49 @@ bool AiChatRepository::updateAiChatMessageText(const QString& conversationId,
     }
 
     return false;
+}
+
+bool AiChatRepository::setAiChatMessages(const QString& conversationId,
+                                         const QVector<AiChatMessage>& messages)
+{
+    if (conversationId.isEmpty()) {
+        return false;
+    }
+
+    QMutexLocker locker(&m_mutex);
+    if (std::none_of(m_entries.cbegin(), m_entries.cend(), [&conversationId](const AiChatListEntry& entry) {
+            return entry.conversationId == conversationId;
+        })) {
+        return false;
+    }
+
+    const QVector<AiChatMessage> previousMessages = m_messages.value(conversationId);
+    for (const AiChatMessage& message : previousMessages) {
+        LocalDataStore::instance().removeValue(QStringLiteral("ai_chat_messages"), message.messageId);
+    }
+
+    QVector<AiChatMessage> normalizedMessages;
+    normalizedMessages.reserve(messages.size());
+    for (AiChatMessage message : messages) {
+        if (message.conversationId != conversationId ||
+                message.messageId.isEmpty() ||
+                !message.time.isValid() ||
+                (!message.isFromUser && message.text.isNull())) {
+            continue;
+        }
+
+        message.text = message.isFromUser
+                ? normalizedMessageText(message.text)
+                : normalizedAiMessageText(message.text);
+        normalizedMessages.push_back(message);
+        LocalDataStore::instance().upsertValue(QStringLiteral("ai_chat_messages"),
+                                               message.messageId,
+                                               aiChatMessageToJson(message));
+    }
+
+    m_messages.insert(conversationId, normalizedMessages);
+    m_contextUsages.remove(conversationId);
+    return true;
 }
 
 bool AiChatRepository::replaceAiChatMessage(const QString& conversationId,
