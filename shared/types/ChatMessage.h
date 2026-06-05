@@ -4,6 +4,7 @@
 #include <QString>
 #include <QDateTime>
 #include <QUuid>
+#include <QtGlobal>
 #include <memory>
 
 enum class MessageType {
@@ -43,6 +44,8 @@ public:
     }
     QString getClientMessageId() const { return clientMessageId; }
     void setClientMessageId(const QString& id) { clientMessageId = id; }
+    int getMessageSeq() const { return messageSeq; }
+    void setMessageSeq(int seq) { messageSeq = qMax(0, seq); }
     bool isFromMe() const { return fromMe; }
     QString getSenderId() const { return senderId; }
     QDateTime getTimestamp() const { return timestamp; }
@@ -63,6 +66,7 @@ public:
 protected:
     QString messageId;
     QString clientMessageId;
+    int messageSeq = 0;
     bool fromMe;
     QString senderId;
     QDateTime timestamp;

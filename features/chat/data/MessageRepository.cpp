@@ -1,11 +1,13 @@
 #include "MessageRepository.h"
 
 #include <QMetaObject>
+#include <QEventLoop>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QRunnable>
 #include <QSet>
 #include <QThreadPool>
+#include <QTimer>
 #include <QUuid>
 
 #include <algorithm>
@@ -16,6 +18,7 @@
 #include "shared/data/LocalDataStore.h"
 #include "shared/data/RepositoryTemplate.h"
 #include "shared/network/AppEventBus.h"
+#include "shared/network/HttpClient.h"
 #include "features/friend/data/UserRepository.h"
 #include "app/state/CurrentUser.h"
 
@@ -148,6 +151,18 @@ QString clientMessageIdFromObject(const QJsonObject& object)
                                 QStringLiteral("client_message_id")});
 }
 
+int messageSeqFromObject(const QJsonObject& object)
+{
+    int seq = object.value(QStringLiteral("messageSeq")).toInt();
+    if (seq <= 0) {
+        seq = object.value(QStringLiteral("seq")).toInt();
+    }
+    if (seq <= 0) {
+        seq = object.value(QStringLiteral("serverSeq")).toInt();
+    }
+    return qMax(0, seq);
+}
+
 QString chatMessageCacheKey(const QString& conversationId, const QString& messageId)
 {
     if (conversationId.isEmpty() || messageId.isEmpty()) {
@@ -175,6 +190,22 @@ QString messageTypeToString(MessageType type)
     default:
         return QStringLiteral("text");
     }
+}
+
+QJsonArray messageArrayFromResponse(const QJsonObject& object)
+{
+    for (const QString& key : {QStringLiteral("messages"),
+                               QStringLiteral("items"),
+                               QStringLiteral("results"),
+                               QStringLiteral("data")}) {
+        if (object.value(key).isArray()) {
+            return object.value(key).toArray();
+        }
+    }
+    if (object.value(QStringLiteral("data")).isObject()) {
+        return messageArrayFromResponse(object.value(QStringLiteral("data")).toObject());
+    }
+    return {};
 }
 
 QString textContentFromMessageObject(const QJsonObject& object)
@@ -277,6 +308,7 @@ QSharedPointer<ChatMessage> chatMessageFromJson(const QJsonObject& object)
         message->setMessageId(messageId);
     }
     message->setClientMessageId(clientMessageIdFromObject(object));
+    message->setMessageSeq(messageSeqFromObject(object));
     const QDateTime timestamp = firstDateTime(object, {QStringLiteral("createdAt"),
                                                        QStringLiteral("serverReceivedAt"),
                                                        QStringLiteral("clientSentAt"),
@@ -309,6 +341,7 @@ QJsonObject chatMessageToJson(const QString& conversationId, const QSharedPointe
     QJsonObject object{
             {QStringLiteral("messageId"), message->getMessageId()},
             {QStringLiteral("conversationId"), conversationId},
+            {QStringLiteral("messageSeq"), message->getMessageSeq()},
             {QStringLiteral("senderId"), message->getSenderId()},
             {QStringLiteral("senderName"), message->getSenderName()},
             {QStringLiteral("type"), messageTypeToString(message->getType())},
@@ -851,6 +884,77 @@ void MessageRepository::cacheRemoteMessageObject(QJsonObject object, const QStri
     }
 }
 
+bool MessageRepository::fetchOlderMessagesBlocking(const QString& conversationId, int beforeMessageSeq, int limit)
+{
+    if (conversationId.isEmpty() || beforeMessageSeq <= 0 || limit <= 0) {
+        return false;
+    }
+
+    NetworkRequest request = NetworkRequest::json(
+            HttpMethod::Get,
+            QStringLiteral("/conversations/%1/messages").arg(conversationId),
+            {},
+            {{QStringLiteral("beforeMessageSeq"), beforeMessageSeq},
+             {QStringLiteral("limit"), limit}});
+    request.maxRetries = 3;
+
+    QEventLoop loop;
+    QTimer timeoutTimer;
+    timeoutTimer.setSingleShot(true);
+
+    bool completed = false;
+    bool fetchedAny = false;
+    QString requestId;
+    QMetaObject::Connection succeededConnection;
+    QMetaObject::Connection failedConnection;
+
+    succeededConnection = connect(&HttpClient::instance(),
+                                  &HttpClient::requestSucceeded,
+                                  &loop,
+                                  [&](const QString& completedRequestId, const NetworkResponse& response) {
+                                      if (completedRequestId != requestId) {
+                                          return;
+                                      }
+                                      const QJsonArray messages = messageArrayFromResponse(response.object());
+                                      for (const QJsonValue& value : messages) {
+                                          QJsonObject object = value.toObject();
+                                          if (!object.contains(QStringLiteral("conversationId"))) {
+                                              object.insert(QStringLiteral("conversationId"), conversationId);
+                                          }
+                                          cacheRemoteMessageObject(object, conversationId);
+                                          fetchedAny = true;
+                                      }
+                                      completed = true;
+                                      loop.quit();
+                                  });
+    failedConnection = connect(&HttpClient::instance(),
+                               &HttpClient::requestFailed,
+                               &loop,
+                               [&](const QString& completedRequestId, const NetworkError&) {
+                                   if (completedRequestId != requestId) {
+                                       return;
+                                   }
+                                   completed = true;
+                                   loop.quit();
+                               });
+    connect(&timeoutTimer, &QTimer::timeout, &loop, [&]() {
+        loop.quit();
+    });
+
+    requestId = HttpClient::instance().send(request);
+    if (requestId.isEmpty()) {
+        disconnect(succeededConnection);
+        disconnect(failedConnection);
+        return false;
+    }
+
+    timeoutTimer.start(request.timeoutMs + 1000);
+    loop.exec();
+    disconnect(succeededConnection);
+    disconnect(failedConnection);
+    return completed && fetchedAny;
+}
+
 QVector<ConversationSummary> MessageRepository::requestConversationList(const ConversationListRequest& query) const
 {
     QMutexLocker locker(&m_mutex);
@@ -894,6 +998,28 @@ ConversationThreadData MessageRepository::requestConversationThread(const Conver
 {
     ConversationThreadData thread;
     thread.meta = requestConversationMeta({query.conversationId});
+    if (query.conversationId.isEmpty()) {
+        return thread;
+    }
+
+    int cachedCount = 0;
+    int oldestMessageSeq = 0;
+    {
+        QMutexLocker locker(&m_mutex);
+        const ChatMessageList allMessages = m_store.value(query.conversationId);
+        cachedCount = allMessages.size();
+        if (!allMessages.isEmpty() && allMessages.first()) {
+            oldestMessageSeq = allMessages.first()->getMessageSeq();
+        }
+    }
+
+    const bool requestBeyondCachedOlderEdge = query.offsetFromLatest >= cachedCount && cachedCount > 0;
+    if (requestBeyondCachedOlderEdge && oldestMessageSeq > 1 && query.limit > 0) {
+        const_cast<MessageRepository*>(this)->fetchOlderMessagesBlocking(query.conversationId,
+                                                                         oldestMessageSeq,
+                                                                         query.limit);
+    }
+
     {
         QMutexLocker locker(&m_mutex);
         const ChatMessageList allMessages = m_store.value(query.conversationId);
@@ -905,6 +1031,15 @@ ConversationThreadData MessageRepository::requestConversationThread(const Conver
         thread.loadedMessageCount = qMin(allMessages.size(),
                                          qMax(0, query.offsetFromLatest) + thread.messages.size());
         thread.hasMoreBefore = thread.loadedMessageCount < allMessages.size();
+        if (!thread.hasMoreBefore &&
+            query.offsetFromLatest == 0 &&
+            query.limit > 0 &&
+            thread.messages.size() >= query.limit &&
+            !thread.messages.isEmpty() &&
+            thread.messages.first() &&
+            thread.messages.first()->getMessageSeq() > 1) {
+            thread.hasMoreBefore = true;
+        }
         thread.unreadCount = m_conversationStates.value(query.conversationId).unreadCount;
     }
     return thread;
@@ -924,16 +1059,33 @@ ConversationThreadData MessageRepository::requestConversationThreadUntilMessage(
     const int total = allMessages.size();
     const int offset = qBound(0, query.offsetFromLatest, total);
     const int end = total - offset;
+    int oldestMessageSeq = 0;
+    if (!allMessages.isEmpty() && allMessages.first()) {
+        oldestMessageSeq = allMessages.first()->getMessageSeq();
+    }
+    locker.unlock();
+
+    if (offset >= total && total > 0 && oldestMessageSeq > 1) {
+        const_cast<MessageRepository*>(this)->fetchOlderMessagesBlocking(query.conversationId,
+                                                                         oldestMessageSeq,
+                                                                         qMax(30, total));
+    }
+
+    locker.relock();
+    const ChatMessageList refreshedMessages = m_store.value(query.conversationId);
+    const int refreshedTotal = refreshedMessages.size();
+    const int refreshedOffset = qBound(0, query.offsetFromLatest, refreshedTotal);
+    const int refreshedEnd = refreshedTotal - refreshedOffset;
     thread.unreadCount = m_conversationStates.value(query.conversationId).unreadCount;
-    thread.loadedMessageCount = offset;
-    thread.hasMoreBefore = offset < total;
-    if (end <= 0) {
+    thread.loadedMessageCount = refreshedOffset;
+    thread.hasMoreBefore = refreshedOffset < refreshedTotal;
+    if (refreshedEnd <= 0) {
         return thread;
     }
 
     bool targetInUnloadedRange = false;
-    for (int index = 0; index < end; ++index) {
-        const QSharedPointer<ChatMessage>& message = allMessages.at(index);
+    for (int index = 0; index < refreshedEnd; ++index) {
+        const QSharedPointer<ChatMessage>& message = refreshedMessages.at(index);
         if (message && message->getMessageId() == query.messageId) {
             targetInUnloadedRange = true;
             break;
@@ -943,8 +1095,8 @@ ConversationThreadData MessageRepository::requestConversationThreadUntilMessage(
         return thread;
     }
 
-    thread.messages = allMessages.mid(0, end);
-    thread.loadedMessageCount = total;
+    thread.messages = refreshedMessages.mid(0, refreshedEnd);
+    thread.loadedMessageCount = refreshedTotal;
     thread.hasMoreBefore = false;
     return thread;
 }

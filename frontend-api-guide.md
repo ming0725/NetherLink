@@ -1196,6 +1196,7 @@ type Message = {
 - 文本消息通过 `POST /api/v1/conversations/{conversationId}/messages` 发送，body 使用 `type=text`、`content.text`、空 `attachments` 和稳定 `clientMessageId`。
 - 图片消息先通过 `UploadClient::uploadFile(path, "chat_image")` 上传文件，成功后使用返回的 `fileId` 作为 `type=image` 消息的附件发送，并填入本地读取到的 `width/height`。
 - 消息撤回通过 `POST /api/v1/conversations/{conversationId}/messages/{messageId}/recall` 发送；REST 成功响应中的 `message` / `replacementMessage` 和 WebSocket `chat.message.recalled` 会统一写回 `MessageRepository`，并按 `messageId/clientMessageId` 替换 `chat_messages` 缓存与当前聊天列表。
+- 历史消息分页已接入 `GET /api/v1/conversations/{conversationId}/messages?beforeMessageSeq=<oldestSeq>&limit=<pageSize>`；`ChatMessage` 保留服务端 `messageSeq`，上滑加载更多时用当前本地最早消息序号补拉更早消息，成功后写入 `chat_messages` 并复用现有 prepend UI。
 - `ChatArea` 保留现有乐观追加体验；发送失败显示全局失败提示。
 - 撤回失败只显示“消息撤回失败”，不把本地占位消息当作后端确认。
 - `ChatMessage`、`MessageRepository` 和 `ChatListModel` 已保存 `clientMessageId` 并按 `messageId/clientMessageId` 去重，避免 REST/WS 回包重复显示。

@@ -62,6 +62,7 @@ private:
     void reloadFromStore();
     void cacheRemoteMessageObject(QJsonObject object,
                                   const QString& fallbackConversationId = QString());
+    bool fetchOlderMessagesBlocking(const QString& conversationId, int beforeMessageSeq, int limit);
 
     QMap<QString, QVector<QSharedPointer<ChatMessage>>> m_store;
     QMap<QString, ConversationSyncState> m_conversationStates;
