@@ -259,6 +259,224 @@ QString GroupRemoteDataSource::leaveGroup(const QString& groupId, const QString&
     return requestId;
 }
 
+QString GroupRemoteDataSource::addMembers(const Group& group, const QStringList& userIds)
+{
+    if (group.groupId.isEmpty() || userIds.isEmpty()) {
+        return {};
+    }
+
+    QJsonArray userArray;
+    QSet<QString> seen;
+    for (const QString& userId : userIds) {
+        const QString normalizedId = userId.trimmed();
+        if (normalizedId.isEmpty() || seen.contains(normalizedId)) {
+            continue;
+        }
+        seen.insert(normalizedId);
+        userArray.append(normalizedId);
+    }
+    if (userArray.isEmpty()) {
+        return {};
+    }
+
+    QJsonObject body = bodyWithClientOperationId(newClientOperationId(QStringLiteral("op_group_members_add")));
+    body.insert(QStringLiteral("userUuids"), userArray);
+
+    PendingOperation pending;
+    pending.action = Action::AddMembers;
+    pending.groupId = group.groupId;
+    pending.group = group;
+    for (const QJsonValue& value : userArray) {
+        const QString userId = value.toString();
+        if (!pending.group.membersID.contains(userId)) {
+            pending.group.membersID.push_back(userId);
+        }
+    }
+    pending.group.memberNum = pending.group.membersID.size();
+    return sendOperation(Action::AddMembers,
+                         QStringLiteral("/groups/%1/members").arg(group.groupId),
+                         body,
+                         pending,
+                         HttpMethod::Post);
+}
+
+QString GroupRemoteDataSource::updateMemberNickname(const Group& group,
+                                                    const QString& userId,
+                                                    const QString& nickname)
+{
+    if (group.groupId.isEmpty() || userId.isEmpty()) {
+        return {};
+    }
+
+    Group next = group;
+    const QString nextNickname = nickname.trimmed();
+    if (nextNickname.isEmpty()) {
+        next.memberNicknames.remove(userId);
+    } else {
+        next.memberNicknames.insert(userId, nextNickname);
+    }
+
+    QJsonObject body = bodyWithClientOperationId(newClientOperationId(QStringLiteral("op_group_member_update")));
+    body.insert(QStringLiteral("nickname"), nextNickname);
+
+    PendingOperation pending;
+    pending.action = Action::UpdateMember;
+    pending.groupId = group.groupId;
+    pending.group = next;
+    return sendOperation(Action::UpdateMember,
+                         QStringLiteral("/groups/%1/members/%2").arg(group.groupId, userId),
+                         body,
+                         pending);
+}
+
+QString GroupRemoteDataSource::setMemberAdmin(const Group& group, const QString& userId, bool admin)
+{
+    if (group.groupId.isEmpty() || userId.isEmpty()) {
+        return {};
+    }
+
+    Group next = group;
+    if (admin && !next.adminsID.contains(userId)) {
+        next.adminsID.push_back(userId);
+    } else if (!admin) {
+        next.adminsID.removeAll(userId);
+    }
+
+    QJsonObject body = bodyWithClientOperationId(newClientOperationId(QStringLiteral("op_group_member_role")));
+    body.insert(QStringLiteral("role"), admin ? QStringLiteral("admin") : QStringLiteral("member"));
+
+    PendingOperation pending;
+    pending.action = Action::UpdateMember;
+    pending.groupId = group.groupId;
+    pending.group = next;
+    return sendOperation(Action::UpdateMember,
+                         QStringLiteral("/groups/%1/members/%2").arg(group.groupId, userId),
+                         body,
+                         pending);
+}
+
+QString GroupRemoteDataSource::removeMember(const Group& group, const QString& userId)
+{
+    if (group.groupId.isEmpty() || userId.isEmpty()) {
+        return {};
+    }
+
+    const QString clientOperationId = newClientOperationId(QStringLiteral("op_group_member_remove"));
+    Group next = group;
+    next.membersID.removeAll(userId);
+    next.adminsID.removeAll(userId);
+    next.memberNicknames.remove(userId);
+    next.memberNum = next.membersID.size();
+
+    PendingOperation pending;
+    pending.action = Action::RemoveMember;
+    pending.groupId = group.groupId;
+    pending.group = next;
+
+    QVariantMap query;
+    query.insert(QStringLiteral("clientOperationId"), clientOperationId);
+    NetworkRequest request = NetworkRequest::json(
+            HttpMethod::Delete,
+            QStringLiteral("/groups/%1/members/%2").arg(group.groupId, userId),
+            {},
+            query);
+    request.headers.insert("Idempotency-Key", clientOperationId.toUtf8());
+    request.maxRetries = 3;
+    const QString requestId = HttpClient::instance().send(request);
+    m_pendingOperations.insert(requestId, pending);
+    return requestId;
+}
+
+QStringList GroupRemoteDataSource::removeMembers(const Group& group, const QStringList& userIds)
+{
+    if (group.groupId.isEmpty() || userIds.isEmpty()) {
+        return {};
+    }
+
+    QStringList normalizedIds;
+    QSet<QString> seen;
+    for (const QString& userId : userIds) {
+        const QString normalizedId = userId.trimmed();
+        if (normalizedId.isEmpty() || seen.contains(normalizedId)) {
+            continue;
+        }
+        seen.insert(normalizedId);
+        normalizedIds.push_back(normalizedId);
+    }
+    if (normalizedIds.isEmpty()) {
+        return {};
+    }
+
+    Group next = group;
+    for (const QString& userId : std::as_const(normalizedIds)) {
+        next.membersID.removeAll(userId);
+        next.adminsID.removeAll(userId);
+        next.memberNicknames.remove(userId);
+    }
+    next.memberNum = next.membersID.size();
+
+    const QString batchId = newClientOperationId(QStringLiteral("op_group_members_remove_batch"));
+    PendingBatch batch;
+    batch.groupId = group.groupId;
+    batch.group = next;
+    batch.remaining = normalizedIds.size();
+
+    for (const QString& userId : std::as_const(normalizedIds)) {
+        const QString clientOperationId = newClientOperationId(QStringLiteral("op_group_member_remove"));
+        PendingOperation pending;
+        pending.action = Action::RemoveMembers;
+        pending.groupId = group.groupId;
+        pending.group = next;
+        pending.batchId = batchId;
+
+        QVariantMap query;
+        query.insert(QStringLiteral("clientOperationId"), clientOperationId);
+        NetworkRequest request = NetworkRequest::json(
+                HttpMethod::Delete,
+                QStringLiteral("/groups/%1/members/%2").arg(group.groupId, userId),
+                {},
+                query);
+        request.headers.insert("Idempotency-Key", clientOperationId.toUtf8());
+        request.maxRetries = 3;
+        const QString requestId = HttpClient::instance().send(request);
+        if (batch.representativeRequestId.isEmpty()) {
+            batch.representativeRequestId = requestId;
+        }
+        batch.requestIds.push_back(requestId);
+        m_pendingOperations.insert(requestId, pending);
+    }
+
+    m_pendingBatches.insert(batchId, batch);
+    return batch.requestIds;
+}
+
+QString GroupRemoteDataSource::transferOwner(const Group& group, const QString& userId)
+{
+    if (group.groupId.isEmpty() || userId.isEmpty()) {
+        return {};
+    }
+
+    Group next = group;
+    next.adminsID.removeAll(userId);
+    if (!next.ownerId.isEmpty() && !next.adminsID.contains(next.ownerId)) {
+        next.adminsID.push_back(next.ownerId);
+    }
+    next.ownerId = userId;
+
+    QJsonObject body = bodyWithClientOperationId(newClientOperationId(QStringLiteral("op_group_owner_transfer")));
+    body.insert(QStringLiteral("userUuid"), userId);
+
+    PendingOperation pending;
+    pending.action = Action::TransferOwner;
+    pending.groupId = group.groupId;
+    pending.group = next;
+    return sendOperation(Action::TransferOwner,
+                         QStringLiteral("/groups/%1/transfer-owner").arg(group.groupId),
+                         body,
+                         pending,
+                         HttpMethod::Post);
+}
+
 QString GroupRemoteDataSource::sendOperation(Action action,
                                              const QString& path,
                                              const QJsonObject& body,
@@ -306,6 +524,28 @@ void GroupRemoteDataSource::handleRequestSucceeded(const QString& requestId, con
     case Action::UpdateGroup:
         emit groupUpdated(requestId, pending.group);
         break;
+    case Action::AddMembers:
+    case Action::UpdateMember:
+    case Action::RemoveMember:
+    case Action::TransferOwner:
+        emit groupUpdated(requestId, pending.group);
+        break;
+    case Action::RemoveMembers: {
+        auto it = m_pendingBatches.find(pending.batchId);
+        if (it == m_pendingBatches.end()) {
+            break;
+        }
+        --it->remaining;
+        if (it->remaining <= 0) {
+            const QString representativeRequestId = it->representativeRequestId.isEmpty()
+                    ? requestId
+                    : it->representativeRequestId;
+            const Group group = it->group;
+            m_pendingBatches.erase(it);
+            emit groupUpdated(representativeRequestId, group);
+        }
+        break;
+    }
     case Action::UpdateMySettings:
         emit groupMySettingsUpdated(requestId, pending.group);
         break;
@@ -327,8 +567,22 @@ void GroupRemoteDataSource::handleRequestFailed(const QString& requestId, const 
         emit groupCreateFailed(requestId, error);
         break;
     case Action::UpdateGroup:
+    case Action::AddMembers:
+    case Action::UpdateMember:
+    case Action::RemoveMember:
+    case Action::TransferOwner:
         emit groupUpdateFailed(requestId, pending.groupId, error);
         break;
+    case Action::RemoveMembers: {
+        const PendingBatch batch = m_pendingBatches.take(pending.batchId);
+        for (const QString& pendingRequestId : batch.requestIds) {
+            if (pendingRequestId != requestId) {
+                m_pendingOperations.remove(pendingRequestId);
+            }
+        }
+        emit groupUpdateFailed(requestId, pending.groupId, error);
+        break;
+    }
     case Action::UpdateMySettings:
         emit groupMySettingsUpdateFailed(requestId, pending.groupId, error);
         break;

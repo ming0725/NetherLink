@@ -574,6 +574,7 @@ PATCH 请求：
 - `CurrentUser::setUserInfo()` 会主动拉取 `/me`；资料编辑保存会调用 `PATCH /me`。
 - PATCH 使用模型内 `etag` 生成 `If-Match`，使用模型内 `version` 生成 `expectedVersion`。
 - 当前资料编辑 UI 保存时只通过 `/me` PATCH 发送已有的昵称、签名、地区字段，不通过 `/me` PATCH 传本地头像路径。
+- `CurrentUserProfileRepository` 空缓存时返回空模型，不再构造“未登录用户”或默认头像 profile；登录/注册响应和 `/me` 响应仍是当前用户资料的真实来源。
 - 头像裁剪后仍先保存为本地 PNG 以便立即预览；保存资料时若头像路径为本地文件，则通过 `UploadClient::uploadAvatar()` 调用 `POST /api/v1/me/avatar?expectedVersion=<version>`，成功后用返回的 `avatarUrl/avatarVersion/avatarEtag/avatarContentHash/fileId` 更新当前用户资料缓存。
 - 左侧头像状态属于本地呈现状态，等待 presence 契约明确后再接后端。
 - `VERSION_CONFLICT` 等保存失败会显示全局失败通知，不写入静态 fallback。
@@ -1022,10 +1023,13 @@ POST /api/v1/group-join-requests/{requestId}/reject
 - 已新增 `GroupRemoteDataSource` 封装已有群资料、当前用户群设置和退群入口。
 - 创建群聊发送 `POST /api/v1/groups`，body 包含 UI 已有的默认群名、选中好友 `memberIds` 和稳定 `clientOperationId`；成功后保存服务端返回的 `group`，再打开会话。失败只提示“创建群聊失败”，不再生成 `g_custom_*` 本地群。
 - 群全局资料编辑发送 `PATCH /api/v1/groups/{groupId}`，body 包含 `name`、`introduction`、`announcement` 和稳定 `clientOperationId`；当前 `Group` 模型未承载群版本和 ETag，因此暂不发送 `expectedVersion` / `If-Match`。
+- 邀请群成员发送 `POST /api/v1/groups/{groupId}/members`，body 包含 `userUuids` 和稳定 `clientOperationId`；移除成员发送 `DELETE /api/v1/groups/{groupId}/members/{userUuid}?clientOperationId=<op>` 并携带 `Idempotency-Key`，批量移除会等待本批所有 DELETE 成功后再更新本地群成员快照。
+- 群成员昵称、管理员设置/取消发送 `PATCH /api/v1/groups/{groupId}/members/{userUuid}`，body 包含 `nickname` 或 `role` 和稳定 `clientOperationId`。
+- 转让群主发送 `POST /api/v1/groups/{groupId}/transfer-owner`，body 包含 `userUuid` 和稳定 `clientOperationId`。
 - 当前用户群备注、分组和免打扰设置发送 `PATCH /api/v1/groups/{groupId}/my-settings`，body 包含 `remark`、`listGroupId`、`listGroupName`、`isDnd` 和稳定 `clientOperationId`。
 - 退群发送 `DELETE /api/v1/groups/{groupId}/members/{currentUserUuid}?clientOperationId=<op>`，并携带同值 `Idempotency-Key`；`currentUserUuid` 优先来自当前用户资料中的 `userUuid`，缺失时才回退现有本地身份 ID。
 - 远程成功后再写入 `GroupRepository` 或清理本地群缓存与会话；远程失败展示“群资料保存失败”“群设置保存失败”或“退出群聊失败”，不回退到纯本地确认。
-- 成员管理、转让群主等写操作尚未接入远程；没有现有 UI 的复杂群管理仍不实现。
+- 没有现有 UI 的复杂群管理仍不实现。
 
 ## 7. 聊天 API
 

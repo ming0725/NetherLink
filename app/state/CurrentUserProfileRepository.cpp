@@ -13,8 +13,6 @@
 
 namespace {
 
-constexpr auto kDefaultAvatarPath = ":/resources/avatar/9.jpg";
-
 QString firstString(const QJsonObject& object, const QStringList& keys)
 {
     for (const QString& key : keys) {
@@ -58,16 +56,6 @@ void keepAvatarFromPrevious(CurrentUserProfile& profile, const CurrentUserProfil
     profile.avatarVersion = previous.avatarVersion;
     profile.avatarEtag = previous.avatarEtag;
     profile.avatarContentHash = previous.avatarContentHash;
-}
-
-CurrentUserProfile fallbackProfile(const QString& userId)
-{
-    CurrentUserProfile profile;
-    profile.userId = userId;
-    profile.nickName = userId.isEmpty() ? QStringLiteral("未登录用户") : userId;
-    profile.avatarPath = QString::fromLatin1(kDefaultAvatarPath);
-    profile.status = Offline;
-    return profile;
 }
 
 CurrentUserProfile identityOnly(CurrentUserProfile profile)
@@ -125,7 +113,7 @@ CurrentUserProfile profileFromJson(QJsonObject object, const QString& responseEt
     QString avatarPath = AvatarSource::fromAvatarFileId(avatarFileIdFrom(object));
     if (avatarPath.isEmpty()) {
         avatarPath = object.value(QStringLiteral("avatarPath")).toString(
-                object.value(QStringLiteral("avatarUrl")).toString(QString::fromLatin1(kDefaultAvatarPath)));
+                object.value(QStringLiteral("avatarUrl")).toString());
     }
     profile.avatarPath = AvatarSource::versioned(
             avatarPath,
@@ -183,7 +171,7 @@ public:
 private:
     CurrentUserProfile doRequest(const CurrentUserIdentityRequest& query) const override
     {
-        return identityOnly(m_profiles.value(query.userId, fallbackProfile(query.userId)));
+        return identityOnly(m_profiles.value(query.userId));
     }
 
     QMap<QString, CurrentUserProfile> m_profiles;
@@ -200,7 +188,7 @@ public:
 private:
     CurrentUserProfile doRequest(const CurrentUserProfileRequest& query) const override
     {
-        return m_profiles.value(query.userId, fallbackProfile(query.userId));
+        return m_profiles.value(query.userId);
     }
 
     QMap<QString, CurrentUserProfile> m_profiles;

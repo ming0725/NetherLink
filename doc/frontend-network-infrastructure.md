@@ -294,11 +294,15 @@
   - 创建群聊通过 `POST /api/v1/groups` 发送，body 包含 `name`、`memberIds` 和稳定 `clientOperationId`。
   - 群全局资料编辑通过 `PATCH /api/v1/groups/{groupId}` 发送，body 包含 `name`、`introduction`、`announcement` 和稳定 `clientOperationId`。
   - 当前用户群备注、分组和免打扰设置通过 `PATCH /api/v1/groups/{groupId}/my-settings` 发送，body 包含 `remark`、`listGroupId`、`listGroupName`、`isDnd` 和稳定 `clientOperationId`。
+  - 邀请群成员通过 `POST /api/v1/groups/{groupId}/members` 发送，body 包含 `userUuids` 和稳定 `clientOperationId`。
+  - 群成员昵称、管理员设置/取消通过 `PATCH /api/v1/groups/{groupId}/members/{userUuid}` 发送，body 包含 `nickname` 或 `role` 和稳定 `clientOperationId`。
+  - 移除群成员通过 `DELETE /api/v1/groups/{groupId}/members/{userUuid}?clientOperationId=<op>` 发送，并携带同值 `Idempotency-Key`；批量移除会等待本批所有 DELETE 成功后再写入本地群成员快照。
+  - 转让群主通过 `POST /api/v1/groups/{groupId}/transfer-owner` 发送，body 包含 `userUuid` 和稳定 `clientOperationId`。
   - 退群通过 `DELETE /api/v1/groups/{groupId}/members/{currentUserUuid}?clientOperationId=<op>` 发送，并携带同值 `Idempotency-Key`；`currentUserUuid` 优先来自当前用户资料中的 `userUuid`。
-  - 创建群成功后写入服务端返回的群资料并打开会话；群资料、我的群设置和退群远程成功后再写入 `GroupRepository`、移除本地会话和群缓存；好友页、群列表菜单和聊天资料页入口共用同一远程结果。
+  - 创建群成功后写入服务端返回的群资料并打开会话；群资料、成员管理、转让群主、我的群设置和退群远程成功后再写入 `GroupRepository`、移除本地会话和群缓存；好友页、群列表菜单和聊天资料页入口共用同一远程结果。
 - 搜索窗口发起申请会等待远程返回；成功只记录本进程 pending 状态并提示“申请已发送”，不直接把对方写成好友或把当前用户写入群成员。失败提示发送失败并允许重试。
 - 请求失败时通过 `FriendApplication` / `ChatArea` / 搜索窗口展示“好友申请处理失败”“入群申请处理失败”“好友申请发送失败”“入群申请发送失败”“创建群聊失败”“好友资料保存失败”“删除好友失败”“群资料保存失败”“群设置保存失败”或“退出群聊失败”，不回退到静态样例数据。
-- 当前只覆盖已有通知页的同意/拒绝按钮、好友搜索/群搜索发起申请、好友资料编辑和删除好友入口，已有创建群、群资料编辑、我的群设置和退群入口，会话置顶/免打扰/隐藏/已读/未读/清空入口，以及消息撤回入口；群成员管理、转让群主和消息历史分页尚未接入远程。
+- 当前只覆盖已有通知页的同意/拒绝按钮、好友搜索/群搜索发起申请、好友资料编辑和删除好友入口，已有创建群、群资料编辑、群成员管理、转让群主、我的群设置和退群入口，会话置顶/免打扰/隐藏/已读/未读/清空入口，以及消息撤回入口；消息历史分页尚未接入远程。
 
 ### 网络状态 UI 汇总
 

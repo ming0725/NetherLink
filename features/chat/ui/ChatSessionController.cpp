@@ -158,25 +158,6 @@ QString memberDisplayNameForId(const Group& group,
     return memberDisplayName(group, user);
 }
 
-void appendGroupSystemEvent(const QString& groupId,
-                            const QString& highlightedUserId,
-                            const QString& highlightedName,
-                            const QString& suffix,
-                            const QString& prefix = QString())
-{
-    if (groupId.isEmpty() || (highlightedName.isEmpty() && prefix.isEmpty() && suffix.isEmpty())) {
-        return;
-    }
-
-    MessageRepository::instance().addMessage(
-            groupId,
-            QSharedPointer<ChatMessage>(
-                    new GroupSystemEventMessage(highlightedName,
-                                                suffix,
-                                                prefix,
-                                                highlightedUserId)));
-}
-
 void appendPreviewMember(QVector<User>& members, QSet<QString>& seen, const QString& userId)
 {
     if (userId.isEmpty() || seen.contains(userId) || members.size() >= kPanelMemberPreviewLimit) {
@@ -575,20 +556,10 @@ void ChatSessionController::saveGroupMemberNickname(const QString& userId, const
         return;
     }
 
-    if (nextNickname.isEmpty()) {
-        group.memberNicknames.remove(userId);
-    } else {
-        group.memberNicknames.insert(userId, nextNickname);
-    }
     if (userId == currentUserId) {
         group.currentUserNickname = nextNickname;
     }
-
-    GroupRepository::instance().saveGroup(group);
-    MessageRepository::instance().refreshGroupMemberDisplayName(group.groupId,
-                                                                userId,
-                                                                memberDisplayNameForId(group, userId),
-                                                                memberRole(group, userId));
+    GroupRemoteDataSource::instance().updateMemberNickname(group, userId, nextNickname);
 }
 
 void ChatSessionController::promoteGroupMemberToAdmin(const QString& userId)
@@ -606,10 +577,7 @@ void ChatSessionController::promoteGroupMemberToAdmin(const QString& userId)
         return;
     }
 
-    group.adminsID.push_back(userId);
-    const QString memberName = memberDisplayNameForId(group, userId);
-    GroupRepository::instance().saveGroup(group);
-    appendGroupSystemEvent(group.groupId, userId, memberName, QStringLiteral("被设置为管理员"));
+    GroupRemoteDataSource::instance().setMemberAdmin(group, userId, true);
 }
 
 void ChatSessionController::cancelGroupMemberAdmin(const QString& userId)
@@ -623,11 +591,7 @@ void ChatSessionController::cancelGroupMemberAdmin(const QString& userId)
         return;
     }
 
-    if (group.adminsID.removeAll(userId) <= 0) {
-        return;
-    }
-
-    GroupRepository::instance().saveGroup(group);
+    GroupRemoteDataSource::instance().setMemberAdmin(group, userId, false);
 }
 
 void ChatSessionController::inviteGroupMembers(const QStringList& userIds)
@@ -669,23 +633,12 @@ void ChatSessionController::inviteGroupMembers(const QStringList& userIds)
     }
 
     for (const QString& userId : std::as_const(newUserIds)) {
-        group.membersID.push_back(userId);
         const User user = usersById.value(userId);
         const QString displayName = user.nick.trimmed().isEmpty() ? userId : user.nick.trimmed();
         group.memberNicknames.insert(userId, displayName);
     }
 
-    group.memberNum = group.membersID.size();
-    GroupRepository::instance().saveGroup(group);
-    const QString inviterId = CurrentUser::instance().getUserId();
-    const QString inviterName = memberDisplayNameForId(group, inviterId, usersById);
-    for (const QString& userId : std::as_const(newUserIds)) {
-        const QString memberName = memberDisplayNameForId(group, userId, usersById);
-        MessageRepository::instance().addMessage(
-                group.groupId,
-                QSharedPointer<ChatMessage>(
-                        new GroupMemberJoinedMessage(userId, memberName, inviterId, inviterName)));
-    }
+    GroupRemoteDataSource::instance().addMembers(group, newUserIds);
 }
 
 void ChatSessionController::removeGroupMember(const QString& userId)
@@ -699,15 +652,7 @@ void ChatSessionController::removeGroupMember(const QString& userId)
         return;
     }
 
-    const int removedMembers = group.membersID.removeAll(userId);
-    const int removedAdmins = group.adminsID.removeAll(userId);
-    const bool removedNickname = group.memberNicknames.remove(userId) > 0;
-    if (removedMembers <= 0 && removedAdmins <= 0 && !removedNickname) {
-        return;
-    }
-
-    group.memberNum = group.membersID.size();
-    GroupRepository::instance().saveGroup(group);
+    GroupRemoteDataSource::instance().removeMember(group, userId);
 }
 
 void ChatSessionController::removeGroupMembers(const QStringList& userIds)
@@ -733,30 +678,12 @@ void ChatSessionController::removeGroupMembers(const QStringList& userIds)
         return;
     }
 
-    QVector<QString> nextMembers;
-    nextMembers.reserve(group.membersID.size());
-    for (const QString& memberId : std::as_const(group.membersID)) {
-        if (!removableIds.contains(memberId)) {
-            nextMembers.push_back(memberId);
-        }
-    }
-
-    QVector<QString> nextAdmins;
-    nextAdmins.reserve(group.adminsID.size());
-    for (const QString& adminId : std::as_const(group.adminsID)) {
-        if (!removableIds.contains(adminId)) {
-            nextAdmins.push_back(adminId);
-        }
-    }
-
+    QStringList removableList;
+    removableList.reserve(removableIds.size());
     for (const QString& userId : std::as_const(removableIds)) {
-        group.memberNicknames.remove(userId);
+        removableList.push_back(userId);
     }
-
-    group.membersID = nextMembers;
-    group.adminsID = nextAdmins;
-    group.memberNum = group.membersID.size();
-    GroupRepository::instance().saveGroup(group);
+    GroupRemoteDataSource::instance().removeMembers(group, removableList);
 }
 
 void ChatSessionController::transferGroupOwner(const QString& userId)
@@ -770,9 +697,7 @@ void ChatSessionController::transferGroupOwner(const QString& userId)
         return;
     }
 
-    const QString memberName = memberDisplayNameForId(group, userId);
-    GroupRepository::instance().transferOwner(group.groupId, userId);
-    appendGroupSystemEvent(group.groupId, userId, memberName, QStringLiteral("成为新群主"));
+    GroupRemoteDataSource::instance().transferOwner(group, userId);
 }
 
 void ChatSessionController::saveGroupRemark(const QString& remark)
