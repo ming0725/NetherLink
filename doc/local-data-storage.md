@@ -11,10 +11,10 @@
 - 帖子、评论、好友通知、群通知、AI 会话列表均读取 SQLite 快照；空库时返回空列表，由 `RemoteDataBootstrapper` 登录后拉取服务端数据填充。
 - 点赞状态、评论数增量、评论点赞状态、未读状态等用户交互状态写入账号库；最近登录账号写入全局库。
 - AI 聊天本地新建/编辑能力仍会写入 SQLite；文本回复已经接入后端 SSE，服务端完成态会覆盖本地临时消息并同步会话标题。
-- 好友申请和群入群申请的同意/拒绝按钮已经先调用远程 API，成功后再更新 `friend_notifications`、`group_notifications`、`users`、`groups`、`conversations` 等本地快照；搜索窗口发起好友申请和入群申请只发送远程请求，成功后记录本进程 pending 状态并提示已发送，不直接写入 `users` 或 `groups`；好友备注/分组编辑、删除好友、群资料编辑、当前用户群备注/分组设置和退群也先调用远程 API，成功后再更新或移除本地缓存与会话；失败只显示错误提示，不把静态样例或纯本地结果当作后端确认。
+- 好友申请和群入群申请的同意/拒绝按钮已经先调用远程 API，成功后再更新 `friend_notifications`、`group_notifications`、`users`、`groups`、`conversations` 等本地快照；搜索窗口发起好友申请和入群申请只发送远程请求，成功后记录本进程 pending 状态并提示已发送，不直接写入 `users` 或 `groups`；创建群、好友备注/分组编辑、删除好友、群资料编辑、当前用户群备注/分组设置和退群也先调用远程 API，成功后再更新或移除本地缓存与会话；失败只显示错误提示，不把静态样例或纯本地结果当作后端确认。
 - 会话置顶、免打扰、隐藏、标记已读/未读、清空消息和消息撤回已经先调用远程 API，成功后再更新 `conversations` 和 `chat_messages` 本地快照；失败只提示错误，不把本地状态变化当作后端确认。
 - 认证 token 仍只保存在 `AuthSession` 内存态；token 刷新失败后由 `NetworkService::sessionExpired` 通知应用壳清理当前用户并回到登录窗，不写入 SQLite。
-- 聊天列表不再生成演示历史消息或演示未读数；消息和未读状态必须来自服务端会话状态或用户真实本地操作。
+- 聊天列表不再生成演示历史消息或演示未读数；`MessageRepository` 中旧的 sample/synthetic 历史消息生成代码已删除。消息和未读状态必须来自服务端会话状态或用户真实本地操作。
 
 ## 本地结构
 
@@ -159,7 +159,7 @@ Repository
 - 消息撤回由 `ChatRemoteDataSource` 发送远程请求；REST 成功响应或 `chat.message.recalled` 实时事件确认后，`MessageRepository` 才按 `messageId/clientMessageId` 替换 `chat_messages` 中的本地消息，当前打开的聊天窗口同步刷新。失败只显示错误提示。
 - 会话置顶、免打扰、隐藏、标记已读/未读和清空消息由 `ConversationRemoteDataSource` 先发送远程请求，成功后由 `MessageRepository` 更新 `conversations` 或 `chat_messages`。
 - 好友申请和群入群申请发起、同意、拒绝由 `FriendRemoteDataSource` 先发送远程请求；发起申请成功后不写本地账号态 SQLite，只在当前进程中过滤已发送目标，等待服务端通知或下次同步；同意/拒绝成功后复用现有 repository 更新本地通知、好友/群成员和会话提示消息；好友备注/分组编辑远程确认后写入 `users`；删除好友远程确认后清理 `users` 和 `conversations`。
-- 群全局资料、当前用户群备注/分组设置和退群由 `GroupRemoteDataSource` 先发送远程请求，成功后写入 `groups` 或清理 `groups` 和 `conversations`；暂未引入通用 `sync_outbox` 表。
+- 创建群、群全局资料、当前用户群备注/分组设置和退群由 `GroupRemoteDataSource` 先发送远程请求，成功后写入 `groups` 或清理 `groups` 和 `conversations`；暂未引入通用 `sync_outbox` 表。
 
 头像/图片缓存：
 

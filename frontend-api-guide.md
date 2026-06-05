@@ -1020,11 +1020,12 @@ POST /api/v1/group-join-requests/{requestId}/reject
 - 远程成功后复用 `GroupNotificationRepository` 更新通知状态、群成员、本地分组和会话提示；远程失败展示错误提示。
 - 群搜索发起入群申请发送 `POST /api/v1/group-join-requests`，body 包含 `groupId`、`message` 和稳定 `clientOperationId`；成功后只提示“入群申请已发送”并过滤当前进程搜索结果，不直接把当前用户写入本地群成员。
 - 已新增 `GroupRemoteDataSource` 封装已有群资料、当前用户群设置和退群入口。
+- 创建群聊发送 `POST /api/v1/groups`，body 包含 UI 已有的默认群名、选中好友 `memberIds` 和稳定 `clientOperationId`；成功后保存服务端返回的 `group`，再打开会话。失败只提示“创建群聊失败”，不再生成 `g_custom_*` 本地群。
 - 群全局资料编辑发送 `PATCH /api/v1/groups/{groupId}`，body 包含 `name`、`introduction`、`announcement` 和稳定 `clientOperationId`；当前 `Group` 模型未承载群版本和 ETag，因此暂不发送 `expectedVersion` / `If-Match`。
 - 当前用户群备注、分组和免打扰设置发送 `PATCH /api/v1/groups/{groupId}/my-settings`，body 包含 `remark`、`listGroupId`、`listGroupName`、`isDnd` 和稳定 `clientOperationId`。
 - 退群发送 `DELETE /api/v1/groups/{groupId}/members/{currentUserUuid}?clientOperationId=<op>`，并携带同值 `Idempotency-Key`；`currentUserUuid` 优先来自当前用户资料中的 `userUuid`，缺失时才回退现有本地身份 ID。
 - 远程成功后再写入 `GroupRepository` 或清理本地群缓存与会话；远程失败展示“群资料保存失败”“群设置保存失败”或“退出群聊失败”，不回退到纯本地确认。
-- 创建群、成员管理、转让群主等写操作尚未接入远程；没有现有 UI 的复杂群管理仍不实现。
+- 成员管理、转让群主等写操作尚未接入远程；没有现有 UI 的复杂群管理仍不实现。
 
 ## 7. 聊天 API
 

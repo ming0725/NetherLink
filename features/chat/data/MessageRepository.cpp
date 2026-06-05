@@ -6,11 +6,9 @@
 #include <QRunnable>
 #include <QSet>
 #include <QThreadPool>
-#include <QTime>
 #include <QUuid>
 
 #include <algorithm>
-#include <random>
 
 #include "features/chat/data/GroupRepository.h"
 #include "features/chat/data/ChatRemoteDataSource.h"
@@ -22,9 +20,6 @@
 #include "app/state/CurrentUser.h"
 
 namespace {
-
-constexpr int kFriendConversationSampleCount = 8;
-constexpr int kGroupConversationSampleCount = 6;
 
 QString userNameForIdentity(const QString& userId)
 {
@@ -45,56 +40,6 @@ GroupRole groupRoleForUser(const Group& group, const QString& userId)
     return GroupRole::Member;
 }
 
-struct SampleParticipant {
-    QString userId;
-    QString displayName;
-    GroupRole role = GroupRole::Member;
-};
-
-void appendGroupParticipant(QVector<SampleParticipant>& participants,
-                            QSet<QString>& seen,
-                            const Group& group,
-                            const QString& userId)
-{
-    if (userId.isEmpty() || seen.contains(userId)) {
-        return;
-    }
-
-    const CurrentUser& currentUser = CurrentUser::instance();
-    QString displayName = group.memberNicknames.value(userId).trimmed();
-    if (displayName.isEmpty() && currentUser.isCurrentUserId(userId) &&
-        !group.currentUserNickname.trimmed().isEmpty()) {
-        displayName = group.currentUserNickname.trimmed();
-    }
-    if (displayName.isEmpty() && currentUser.isCurrentUserId(userId)) {
-        displayName = currentUser.getUserName();
-    }
-    if (displayName.isEmpty()) {
-        displayName = userNameForIdentity(userId);
-    }
-    if (displayName.isEmpty()) {
-        displayName = userId;
-    }
-
-    participants.push_back(SampleParticipant{
-            userId,
-            displayName,
-            groupRoleForUser(group, userId)
-    });
-    seen.insert(userId);
-}
-
-bool isKnownNonFriendUser(const QString& userId)
-{
-    const CurrentUser& currentUser = CurrentUser::instance();
-    if (currentUser.isCurrentUserId(userId)) {
-        return false;
-    }
-
-    const User user = UserRepository::instance().requestUserDetail({userId});
-    return !user.id.isEmpty() && !user.isFriend;
-}
-
 bool isGroupSystemEventMessage(const QSharedPointer<ChatMessage>& message)
 {
     if (!message) {
@@ -102,59 +47,6 @@ bool isGroupSystemEventMessage(const QSharedPointer<ChatMessage>& message)
     }
     return message->getType() == MessageType::GroupMemberJoined ||
            message->getType() == MessageType::GroupSystemEvent;
-}
-
-QVector<SampleParticipant> sampleParticipantsForGroup(const Group& group, int ordinal)
-{
-    QVector<SampleParticipant> candidates;
-    QSet<QString> seen;
-    const CurrentUser& currentUser = CurrentUser::instance();
-
-    appendGroupParticipant(candidates, seen, group, currentUser.getUserId());
-    appendGroupParticipant(candidates, seen, group, group.ownerId);
-    for (const QString& adminId : group.adminsID) {
-        appendGroupParticipant(candidates, seen, group, adminId);
-    }
-    for (const QString& memberId : group.membersID) {
-        appendGroupParticipant(candidates, seen, group, memberId);
-    }
-
-    if (candidates.size() <= 2) {
-        return candidates;
-    }
-
-    const SampleParticipant currentUserParticipant = candidates.takeFirst();
-    std::mt19937 generator(20240521 + ordinal * 97);
-    std::shuffle(candidates.begin(), candidates.end(), generator);
-
-    QVector<SampleParticipant> activeParticipants;
-    activeParticipants.reserve(qMin(7, candidates.size() + 1));
-    activeParticipants.push_back(currentUserParticipant);
-
-    const int targetCount = qMin(candidates.size() + 1, qBound(3, 3 + (ordinal % 5), 7));
-    QSet<QString> activeUserIds;
-    activeUserIds.insert(currentUserParticipant.userId);
-    for (const SampleParticipant& candidate : candidates) {
-        if (activeParticipants.size() >= targetCount) {
-            break;
-        }
-        if (!isKnownNonFriendUser(candidate.userId)) {
-            continue;
-        }
-        activeParticipants.push_back(candidate);
-        activeUserIds.insert(candidate.userId);
-        break;
-    }
-    for (int index = 0; index < candidates.size() && activeParticipants.size() < targetCount; ++index) {
-        if (activeUserIds.contains(candidates.at(index).userId)) {
-            continue;
-        }
-        activeParticipants.push_back(candidates.at(index));
-        activeUserIds.insert(candidates.at(index).userId);
-    }
-
-    std::shuffle(activeParticipants.begin(), activeParticipants.end(), generator);
-    return activeParticipants;
 }
 
 QString buildPreviewText(const QSharedPointer<ChatMessage>& message,
@@ -192,162 +84,6 @@ QString userDisplayName(const User& user)
     return user.remark.isEmpty() ? user.nick : user.remark;
 }
 
-int sampleUnreadCount(int ordinal, int messageCount)
-{
-    switch (ordinal % 5) {
-    case 0:
-        return 3;
-    case 1:
-        return 18;
-    case 2:
-        return 128;
-    case 3:
-        return 7;
-    default:
-        return messageCount > 99 ? 101 : 12;
-    }
-}
-
-QDateTime unreadMessageTimeAfter(const QVector<QDateTime>& timeline,
-                                 int unreadIndex,
-                                 int unreadCount)
-{
-    const QDateTime latestAllowedTime = QDateTime::currentDateTime().addSecs(-30);
-    const QDateTime baseTime = timeline.isEmpty()
-            ? latestAllowedTime.addSecs(-qMax(60, unreadCount * 60))
-            : timeline.last();
-    const qint64 availableSecs = qMax<qint64>(1, baseTime.secsTo(latestAllowedTime));
-    const qint64 offsetSecs = qBound<qint64>(
-            1,
-            ((unreadIndex + 1) * availableSecs) / qMax(1, unreadCount + 1),
-            availableSecs);
-    const QDateTime timestamp = baseTime.addSecs(offsetSecs);
-    return timestamp > latestAllowedTime ? latestAllowedTime : timestamp;
-}
-
-void appendSyntheticUnreadMessage(QVector<QSharedPointer<ChatMessage>>& messages,
-                                  const QString& content,
-                                  const QDateTime& timestamp,
-                                  const QString& senderId,
-                                  const QString& senderName,
-                                  bool isGroupChat,
-                                  GroupRole role)
-{
-    if (senderId.isEmpty()) {
-        return;
-    }
-
-    auto msg = QSharedPointer<ChatMessage>(new TextMessage(
-            content,
-            false,
-            senderId,
-            isGroupChat,
-            senderName,
-            role));
-    msg->setTimestamp(timestamp);
-    messages.push_back(msg);
-}
-
-void appendSyntheticDirectUnreadMessages(QVector<QSharedPointer<ChatMessage>>& messages,
-                                         const QVector<QDateTime>& timeline,
-                                         const QString& peerId,
-                                         const QString& peerName,
-                                         int unreadCount)
-{
-    for (int index = 0; index < unreadCount; ++index) {
-        appendSyntheticUnreadMessage(messages,
-                                     QStringLiteral("未读消息%1").arg(index + 1),
-                                     unreadMessageTimeAfter(timeline, index, unreadCount),
-                                     peerId,
-                                     peerName,
-                                     false,
-                                     GroupRole::Member);
-    }
-}
-
-SampleParticipant syntheticUnreadSenderForGroup(const QVector<SampleParticipant>& participants)
-{
-    const CurrentUser& currentUser = CurrentUser::instance();
-    for (const SampleParticipant& participant : participants) {
-        if (!currentUser.isCurrentUserId(participant.userId) &&
-            isKnownNonFriendUser(participant.userId)) {
-            return participant;
-        }
-    }
-    for (const SampleParticipant& participant : participants) {
-        if (!currentUser.isCurrentUserId(participant.userId)) {
-            return participant;
-        }
-    }
-    return {};
-}
-
-void appendSyntheticGroupUnreadMessages(QVector<QSharedPointer<ChatMessage>>& messages,
-                                        const QVector<QDateTime>& timeline,
-                                        const QVector<SampleParticipant>& participants,
-                                        int unreadCount)
-{
-    const SampleParticipant sender = syntheticUnreadSenderForGroup(participants);
-    if (sender.userId.isEmpty()) {
-        return;
-    }
-
-    for (int index = 0; index < unreadCount; ++index) {
-        appendSyntheticUnreadMessage(messages,
-                                     QStringLiteral("未读消息%1").arg(index + 1),
-                                     unreadMessageTimeAfter(timeline, index, unreadCount),
-                                     sender.userId,
-                                     sender.displayName,
-                                     true,
-                                     sender.role);
-    }
-}
-
-void addLongGapReferenceSamples(QVector<QSharedPointer<ChatMessage>>& messages)
-{
-    const int messageCount = static_cast<int>(messages.size());
-    if (messageCount < 42) {
-        return;
-    }
-
-    struct ReferencePair {
-        int referencedIndex = 0;
-        int replyIndex = 0;
-    };
-
-    const QVector<ReferencePair> pairs = {
-            {1, messageCount - 3},
-            {qMax(2, messageCount / 5), messageCount - 12},
-            {qMax(3, messageCount / 2 - 8), messageCount - 24}
-    };
-
-    QSet<int> usedReplyIndexes;
-    for (const ReferencePair& pair : pairs) {
-        if (pair.referencedIndex < 0 ||
-                pair.referencedIndex >= messages.size() ||
-                pair.replyIndex < 0 ||
-                pair.replyIndex >= messages.size() ||
-                pair.referencedIndex >= pair.replyIndex ||
-                usedReplyIndexes.contains(pair.replyIndex)) {
-            continue;
-        }
-
-        const QSharedPointer<ChatMessage>& referencedMessage = messages.at(pair.referencedIndex);
-        const QSharedPointer<ChatMessage>& replyMessage = messages.at(pair.replyIndex);
-        if (referencedMessage.isNull() || replyMessage.isNull()) {
-            continue;
-        }
-
-        replyMessage->setReferencedMessageId(referencedMessage->getMessageId());
-        usedReplyIndexes.insert(pair.replyIndex);
-    }
-}
-
-bool sampleDoNotDisturb(int ordinal)
-{
-    return ordinal % 5 == 1 || ordinal % 7 == 3;
-}
-
 bool matchesConversationKeyword(const Group& group, const QString& keyword)
 {
     return keyword.isEmpty() ||
@@ -360,11 +96,6 @@ bool matchesConversationKeyword(const FriendSummary& friendSummary, const QStrin
     return keyword.isEmpty() ||
            friendSummary.nickName.contains(keyword, Qt::CaseInsensitive) ||
            friendSummary.remark.contains(keyword, Qt::CaseInsensitive);
-}
-
-QDateTime dateTimeAt(const QDate& date, int hour, int minute)
-{
-    return QDateTime(date, QTime(hour, minute));
 }
 
 QString firstString(const QJsonObject& object, const QStringList& keys)
@@ -629,98 +360,6 @@ QJsonObject conversationObjectFromPayload(QJsonObject payload)
         object.insert(QStringLiteral("conversationId"), conversationId);
     }
     return object;
-}
-
-enum class SampleLatestBucket {
-    Today,
-    Yesterday,
-    DaysAgo,
-    OneMonthAgo,
-    MonthsAgo,
-    OneYearAgo,
-    YearsAgo
-};
-
-SampleLatestBucket sampleLatestBucket(int ordinal)
-{
-    switch (ordinal % 7) {
-    case 0:
-        return SampleLatestBucket::Today;
-    case 1:
-        return SampleLatestBucket::Yesterday;
-    case 2:
-        return SampleLatestBucket::DaysAgo;
-    case 3:
-        return SampleLatestBucket::OneMonthAgo;
-    case 4:
-        return SampleLatestBucket::MonthsAgo;
-    case 5:
-        return SampleLatestBucket::OneYearAgo;
-    default:
-        return SampleLatestBucket::YearsAgo;
-    }
-}
-
-int sampleHistoryMessageCount(int ordinal)
-{
-    return 50 + (ordinal * 37) % 151;
-}
-
-QDateTime sampleLatestMessageTime(int ordinal)
-{
-    const QDateTime now = QDateTime::currentDateTime();
-    const int hourOffset = (ordinal % 3) * 2;
-    const int minuteOffset = (ordinal % 4) * 3;
-
-    switch (sampleLatestBucket(ordinal)) {
-    case SampleLatestBucket::Today:
-        return now.addSecs((-12 - ordinal % 9) * 60);
-    case SampleLatestBucket::Yesterday:
-        return dateTimeAt(now.date().addDays(-1), 18 + hourOffset, 10 + minuteOffset);
-    case SampleLatestBucket::DaysAgo:
-        return dateTimeAt(now.date().addDays(-3), 15 + hourOffset, 8 + minuteOffset);
-    case SampleLatestBucket::OneMonthAgo:
-        return dateTimeAt(now.date().addMonths(-1), 11 + hourOffset, 9 + minuteOffset);
-    case SampleLatestBucket::MonthsAgo:
-        return dateTimeAt(now.date().addMonths(-4), 10 + hourOffset, 18 + minuteOffset);
-    case SampleLatestBucket::OneYearAgo:
-        return dateTimeAt(now.date().addYears(-1), 9 + hourOffset, 6 + minuteOffset);
-    case SampleLatestBucket::YearsAgo:
-    default:
-        return dateTimeAt(now.date().addYears(-2), 8 + hourOffset, 12 + minuteOffset);
-    }
-}
-
-QVector<QDateTime> buildHistoryTimeline(int ordinal)
-{
-    const int messageCount = sampleHistoryMessageCount(ordinal);
-    QVector<QDateTime> timeline;
-    timeline.resize(messageCount);
-
-    QDateTime cursor = sampleLatestMessageTime(ordinal);
-    for (int reverseIndex = 0; reverseIndex < messageCount; ++reverseIndex) {
-        timeline[messageCount - reverseIndex - 1] = cursor;
-
-        int gapMinutes = 3 + ((ordinal + reverseIndex * 7) % 11);
-        if (reverseIndex % 12 == 11) {
-            gapMinutes += 35 + (ordinal + reverseIndex) % 75;
-        }
-        if (reverseIndex % 37 == 36) {
-            gapMinutes += (24 + (ordinal + reverseIndex) % 48) * 60;
-        }
-        cursor = cursor.addSecs(-gapMinutes * 60);
-    }
-
-    return timeline;
-}
-
-QVector<FriendSummary> sampledFriendsForMessages()
-{
-    QVector<FriendSummary> friends = UserRepository::instance().requestFriendList();
-    std::mt19937 generator(20240521);
-    std::shuffle(friends.begin(), friends.end(), generator);
-    friends.resize(qMin(kFriendConversationSampleCount, friends.size()));
-    return friends;
 }
 
 class ConversationMessagesRequestOperation final

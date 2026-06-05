@@ -316,6 +316,7 @@ private:
     QVector<CreateGroupChatSourceGroup> m_friendGroups;
     QString m_sourceGroupId;
     QString m_sourceGroupName;
+    QString m_createGroupRequestId;
     QString m_title = QStringLiteral("创建群聊");
     QString m_countUnit = QStringLiteral("好友");
     bool m_useCustomContacts = false;

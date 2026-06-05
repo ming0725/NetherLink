@@ -7,6 +7,7 @@
 #include <QJsonObject>
 #include <QObject>
 #include <QString>
+#include <QStringList>
 #include <QVariantMap>
 
 class GroupRemoteDataSource final : public QObject
@@ -16,20 +17,24 @@ class GroupRemoteDataSource final : public QObject
 public:
     static GroupRemoteDataSource& instance();
 
+    QString createGroup(const QString& name, const QStringList& memberIds);
     QString updateGroup(const Group& group);
     QString updateMySettings(const Group& group);
     QString leaveGroup(const QString& groupId, const QString& currentUserUuid);
 
 signals:
+    void groupCreated(const QString& requestId, const Group& group);
     void groupUpdated(const QString& requestId, const Group& group);
     void groupMySettingsUpdated(const QString& requestId, const Group& group);
     void groupLeft(const QString& requestId, const QString& groupId);
+    void groupCreateFailed(const QString& requestId, const NetworkError& error);
     void groupUpdateFailed(const QString& requestId, const QString& groupId, const NetworkError& error);
     void groupMySettingsUpdateFailed(const QString& requestId, const QString& groupId, const NetworkError& error);
     void groupLeaveFailed(const QString& requestId, const QString& groupId, const NetworkError& error);
 
 private:
     enum class Action {
+        CreateGroup,
         UpdateGroup,
         UpdateMySettings,
         LeaveGroup

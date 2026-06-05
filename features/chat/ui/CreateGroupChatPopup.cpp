@@ -10,13 +10,13 @@
 #include <QPalette>
 #include <QScrollBar>
 #include <QTimer>
-#include <QUuid>
 #include <QVariantAnimation>
 
 #include <utility>
 
 #include "app/state/CurrentUser.h"
 #include "features/chat/data/GroupRepository.h"
+#include "features/chat/data/GroupRemoteDataSource.h"
 #include "features/chat/data/MessageRepository.h"
 #include "features/friend/data/UserRepository.h"
 #include "shared/services/AppFonts.h"
@@ -24,6 +24,7 @@
 #include "shared/theme/ThemeManager.h"
 #include "shared/ui/IconLineEdit.h"
 #include "shared/ui/StatefulPushButton.h"
+#include "shared/ui/GlobalNotification.h"
 #include "shared/ui/popup/InWindowPopupOverlay.h"
 #include "shared/ui/renderers/MediaPlaceholderRenderer.h"
 
@@ -1499,6 +1500,34 @@ CreateGroupChatPopup::CreateGroupChatPopup(QWidget* parent)
         }
         createGroup();
     });
+    connect(&GroupRemoteDataSource::instance(),
+            &GroupRemoteDataSource::groupCreated,
+            this,
+            [this](const QString& requestId, const Group& group) {
+                if (requestId != m_createGroupRequestId) {
+                    return;
+                }
+                m_createGroupRequestId.clear();
+                if (m_okButton) {
+                    m_okButton->setEnabled(true);
+                }
+                GroupRepository::instance().saveGroup(group);
+                MessageRepository::instance().touchConversation(group.groupId, QDateTime::currentDateTime());
+                emit accepted(group.groupId);
+            });
+    connect(&GroupRemoteDataSource::instance(),
+            &GroupRemoteDataSource::groupCreateFailed,
+            this,
+            [this](const QString& requestId, const NetworkError&) {
+                if (requestId != m_createGroupRequestId) {
+                    return;
+                }
+                m_createGroupRequestId.clear();
+                if (m_okButton) {
+                    m_okButton->setEnabled(!m_selectedContacts.isEmpty());
+                }
+                GlobalNotification::showFailure(this, QStringLiteral("创建群聊失败"));
+            });
 
     QTimer::singleShot(0, m_searchInput, [this]() {
         m_searchInput->setFocus(Qt::PopupFocusReason);
@@ -1803,46 +1832,38 @@ void CreateGroupChatPopup::refreshSelectedView()
 
 void CreateGroupChatPopup::createGroup()
 {
-    if (m_selectedContacts.isEmpty()) {
+    if (m_selectedContacts.isEmpty() || !m_createGroupRequestId.isEmpty()) {
         return;
     }
 
     const CurrentUser& currentUser = CurrentUser::instance();
-    Group group;
-    group.groupId = QStringLiteral("g_custom_%1")
-            .arg(QUuid::createUuid().toString(QUuid::WithoutBraces).left(8));
+    QString groupName;
     if (m_selectedContacts.size() == 1) {
-        group.groupName = QStringLiteral("%1、%2").arg(currentUser.getUserName(),
+        groupName = QStringLiteral("%1、%2").arg(currentUser.getUserName(),
                                                       m_selectedContacts.first().displayName);
     } else {
-        group.groupName = QStringLiteral("%1等%2人群聊")
+        groupName = QStringLiteral("%1等%2人群聊")
                 .arg(m_selectedContacts.first().displayName)
                 .arg(m_selectedContacts.size() + 1);
     }
-    group.memberNum = m_selectedContacts.size() + 1;
-    group.ownerId = currentUser.getUserId();
-    group.groupAvatarPath = m_selectedContacts.first().avatarPath.isEmpty()
-            ? QStringLiteral(":/resources/avatar/10.jpg")
-            : m_selectedContacts.first().avatarPath;
-    group.currentUserNickname = currentUser.getUserName();
-    group.listGroupId = QStringLiteral("gg_joined");
-    group.listGroupName = QStringLiteral("我加入的群聊");
-    group.membersID.push_back(currentUser.getUserId());
-    group.memberNicknames.insert(currentUser.getUserId(), currentUser.getUserName());
 
+    QStringList memberIds;
+    memberIds.reserve(m_selectedContacts.size());
     for (const FriendSummary& contact : std::as_const(m_selectedContacts)) {
-        if (contact.userId.isEmpty() || group.membersID.contains(contact.userId)) {
+        if (contact.userId.isEmpty() || memberIds.contains(contact.userId)) {
             continue;
         }
-        group.membersID.push_back(contact.userId);
-        group.memberNicknames.insert(contact.userId,
-                                     contact.nickName.isEmpty() ? contact.displayName : contact.nickName);
+        memberIds.push_back(contact.userId);
     }
-    group.memberNum = group.membersID.size();
 
-    GroupRepository::instance().saveGroup(group);
-    MessageRepository::instance().touchConversation(group.groupId, QDateTime::currentDateTime());
-    emit accepted(group.groupId);
+    m_createGroupRequestId = GroupRemoteDataSource::instance().createGroup(groupName, memberIds);
+    if (m_createGroupRequestId.isEmpty()) {
+        GlobalNotification::showFailure(this, QStringLiteral("创建群聊失败"));
+        return;
+    }
+    if (m_okButton) {
+        m_okButton->setEnabled(false);
+    }
 }
 
 void CreateGroupChatPopup::acceptSelection()
