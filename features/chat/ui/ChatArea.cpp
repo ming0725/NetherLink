@@ -437,6 +437,14 @@ ChatArea::ChatArea(QWidget *parent)
             [this](const QString&, const NetworkError&) {
                 GlobalNotification::showFailure(this, QStringLiteral("图片上传失败"));
             });
+    connect(&ChatRemoteDataSource::instance(),
+            &ChatRemoteDataSource::messageRecallFailed,
+            this,
+            [this](const QString&, const QString& changedConversationId, const QString&, const NetworkError&) {
+                if (changedConversationId == conversationId()) {
+                    GlobalNotification::showFailure(this, QStringLiteral("消息撤回失败"));
+                }
+            });
     connect(inputBar, &FloatingInputBar::inputFocused,
             this, &ChatArea::clearMessageSelection);
     connect(chatDelegate, &ChatItemDelegate::deleteRequested,
@@ -456,6 +464,8 @@ ChatArea::ChatArea(QWidget *parent)
             });
     connect(&MessageRepository::instance(), &MessageRepository::lastMessageChanged,
             this, &ChatArea::appendRepositoryMessage);
+    connect(&MessageRepository::instance(), &MessageRepository::messageUpdated,
+            this, &ChatArea::replaceRepositoryMessage);
     connect(&GroupRepository::instance(), &GroupRepository::groupListChanged,
             this, &ChatArea::refreshCurrentGroupMessageDisplayNames);
     connect(sessionController, &ChatSessionController::directPanelDataLoaded,
@@ -585,6 +595,42 @@ void ChatArea::appendRepositoryMessage(const QString& changedConversationId,
             }
         });
     }
+}
+
+void ChatArea::replaceRepositoryMessage(const QString& changedConversationId,
+                                        const ChatMessagePtr& message)
+{
+    if (changedConversationId.isEmpty() ||
+            changedConversationId != conversationId() ||
+            m_state.loadingInitialMessages ||
+            message.isNull() ||
+            !chatModel) {
+        return;
+    }
+
+    const QModelIndex messageIndex = chatModel->indexForMessageId(message->getMessageId());
+    if (!messageIndex.isValid()) {
+        return;
+    }
+
+    const QSharedPointer<ChatMessage> previousMessage = chatModel->sharedMessageAt(messageIndex.row());
+    if (previousMessage.isNull()) {
+        return;
+    }
+
+    const auto ordinalIt = m_state.peerMessageOrdinals.constFind(previousMessage.get());
+    if (ordinalIt != m_state.peerMessageOrdinals.cend() && !message->isFromMe()) {
+        m_state.peerMessageOrdinals.insert(message.get(), ordinalIt.value());
+    }
+    removeUnreadCandidate(previousMessage.get());
+    chatModel->replaceMessage(messageIndex.row(), message);
+    if (message->getType() == MessageType::Recall) {
+        const QSharedPointer<RecallMessage> recallMessage = message.dynamicCast<RecallMessage>();
+        scheduleReeditExpiry(recallMessage);
+    }
+    updateHistoryUnreadNotifier();
+    updateNewMessageNotifier();
+    adjustBottomSpace();
 }
 
 void ChatArea::refreshCurrentGroupMessageDisplayNames()
@@ -2301,7 +2347,20 @@ void ChatArea::recallMessageAtRow(int row,
 
 void ChatArea::onRecallMessageRequested(int row)
 {
-    recallMessageAtRow(row);
+    if (conversationId().isEmpty() || !chatModel) {
+        return;
+    }
+
+    const QSharedPointer<ChatMessage> message = chatModel->sharedMessageAt(row);
+    if (message.isNull() || !canRecallMessage(message.get())) {
+        return;
+    }
+
+    const QString requestId = ChatRemoteDataSource::instance().recallMessage(conversationId(),
+                                                                             message->getMessageId());
+    if (requestId.isEmpty()) {
+        GlobalNotification::showFailure(this, QStringLiteral("消息撤回失败"));
+    }
 }
 
 void ChatArea::onReferenceMessageRequested(int row)

@@ -149,6 +149,26 @@ QString ChatRemoteDataSource::sendImageMessage(const QString& conversationId,
     return resolvedClientMessageId;
 }
 
+QString ChatRemoteDataSource::recallMessage(const QString& conversationId, const QString& messageId)
+{
+    if (conversationId.isEmpty() || messageId.isEmpty()) {
+        return {};
+    }
+
+    NetworkRequest request = NetworkRequest::json(
+            HttpMethod::Post,
+            QStringLiteral("/conversations/%1/messages/%2/recall").arg(conversationId, messageId),
+            {});
+    request.maxRetries = 3;
+    const QString requestId = HttpClient::instance().send(request);
+    if (requestId.isEmpty()) {
+        return {};
+    }
+
+    m_pendingRecallsByRequest.insert(requestId, PendingRecall{conversationId, messageId});
+    return requestId;
+}
+
 QString ChatRemoteDataSource::sendMessageRequest(const QString& conversationId,
                                                  const QJsonObject& body,
                                                  const QString& clientMessageId)
@@ -211,20 +231,45 @@ void ChatRemoteDataSource::handleUploadFailed(const QString& requestId, const Ne
     emit imageUploadFailed(pending.clientMessageId, error);
 }
 
-void ChatRemoteDataSource::handleRequestSucceeded(const QString& requestId, const NetworkResponse&)
+void ChatRemoteDataSource::handleRequestSucceeded(const QString& requestId, const NetworkResponse& response)
 {
-    if (!m_clientMessageIdsByRequest.contains(requestId)) {
+    if (m_clientMessageIdsByRequest.contains(requestId)) {
+        emit messageSendSucceeded(m_clientMessageIdsByRequest.take(requestId));
         return;
     }
 
-    emit messageSendSucceeded(m_clientMessageIdsByRequest.take(requestId));
+    if (!m_pendingRecallsByRequest.contains(requestId)) {
+        return;
+    }
+
+    const PendingRecall pending = m_pendingRecallsByRequest.take(requestId);
+    QJsonObject message = response.object().value(QStringLiteral("message")).toObject();
+    if (message.isEmpty()) {
+        message = response.object().value(QStringLiteral("replacementMessage")).toObject();
+    }
+    if (message.isEmpty()) {
+        message = response.object();
+    }
+    if (!message.contains(QStringLiteral("conversationId"))) {
+        message.insert(QStringLiteral("conversationId"), pending.conversationId);
+    }
+    if (!message.contains(QStringLiteral("messageId"))) {
+        message.insert(QStringLiteral("messageId"), pending.messageId);
+    }
+    emit messageRecallSucceeded(requestId, pending.conversationId, message);
 }
 
 void ChatRemoteDataSource::handleRequestFailed(const QString& requestId, const NetworkError& error)
 {
-    if (!m_clientMessageIdsByRequest.contains(requestId)) {
+    if (m_clientMessageIdsByRequest.contains(requestId)) {
+        emit messageSendFailed(m_clientMessageIdsByRequest.take(requestId), error);
         return;
     }
 
-    emit messageSendFailed(m_clientMessageIdsByRequest.take(requestId), error);
+    if (!m_pendingRecallsByRequest.contains(requestId)) {
+        return;
+    }
+
+    const PendingRecall pending = m_pendingRecallsByRequest.take(requestId);
+    emit messageRecallFailed(requestId, pending.conversationId, pending.messageId, error);
 }

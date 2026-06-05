@@ -272,7 +272,7 @@ Authorization: Bearer <accessToken>
 - `NetworkService` 会把实时连接状态转发给应用壳；连接失败时主窗口提示正在重试，恢复 ready 后提示已恢复。
 - token 刷新失败会清空内存会话，停止实时连接，并回到登录窗；refresh token 仍不落 SQLite。
 - `sync.required` 已触发 `RemoteDataBootstrapper::syncAll()`。
-- `MessageRepository` 已接入 `chat.message.created`、`chat.message.sent`、`chat.conversation.updated`、`chat.conversation.sync.updated`、`chat.read.updated` 的同步缓存 handler，会把消息写入 `chat_messages`、把会话状态写入 `conversations`，并从这两个 domain 重建会话列表。
+- `MessageRepository` 已接入 `chat.message.created`、`chat.message.sent`、`chat.message.recalled`、`chat.conversation.updated`、`chat.conversation.sync.updated`、`chat.read.updated` 的同步缓存 handler，会把消息写入或替换到 `chat_messages`、把会话状态写入 `conversations`，并从这两个 domain 重建会话列表。
 - `FriendNotificationRepository` 已接入 `friend.request.*`，会更新 `friend_notifications` 和 `friend_requests` 未读 scope。
 - `GroupNotificationRepository` 已接入 `group.notification.created` 与 `group.join_request.*`，会更新 `group_notifications` domain 和同名未读 scope。
 - 当前业务 handler 都是同步本地缓存写入；`RealtimeEventDispatcher` 在 `AppEventBus::publish()` 返回后推进游标。后续若 handler 需要等待异步补拉，再升级为 ack 模式。
@@ -1190,7 +1190,9 @@ type Message = {
 - 已新增 `ChatRemoteDataSource` 封装聊天发送。
 - 文本消息通过 `POST /api/v1/conversations/{conversationId}/messages` 发送，body 使用 `type=text`、`content.text`、空 `attachments` 和稳定 `clientMessageId`。
 - 图片消息先通过 `UploadClient::uploadFile(path, "chat_image")` 上传文件，成功后使用返回的 `fileId` 作为 `type=image` 消息的附件发送，并填入本地读取到的 `width/height`。
+- 消息撤回通过 `POST /api/v1/conversations/{conversationId}/messages/{messageId}/recall` 发送；REST 成功响应中的 `message` / `replacementMessage` 和 WebSocket `chat.message.recalled` 会统一写回 `MessageRepository`，并按 `messageId/clientMessageId` 替换 `chat_messages` 缓存与当前聊天列表。
 - `ChatArea` 保留现有乐观追加体验；发送失败显示全局失败提示。
+- 撤回失败只显示“消息撤回失败”，不把本地占位消息当作后端确认。
 - `ChatMessage`、`MessageRepository` 和 `ChatListModel` 已保存 `clientMessageId` 并按 `messageId/clientMessageId` 去重，避免 REST/WS 回包重复显示。
 - 仍不接入聊天文件、音频、视频和多附件选择。
 
@@ -1591,7 +1593,7 @@ POST /api/v1/ai/messages/{messageId}/feedback
 | `sync.required` | 全量重新拉取关键列表 |
 | `client.error` | 根据 `payload.requestType` 和 `payload.code` 处理失败命令 |
 
-当前 Qt 前端已落地 `chat.message.created`、`chat.message.sent`、`chat.conversation.updated`、`chat.conversation.sync.updated`、`chat.read.updated`、`friend.request.*`、`group.notification.created`、`group.join_request.*` 的同步缓存处理。尚未接入的事件继续安全忽略或由已有 `profile.updated`、`group.updated` 等局部 handler 消费。
+当前 Qt 前端已落地 `chat.message.created`、`chat.message.sent`、`chat.message.recalled`、`chat.conversation.updated`、`chat.conversation.sync.updated`、`chat.read.updated`、`friend.request.*`、`group.notification.created`、`group.join_request.*` 的同步缓存处理。尚未接入的事件继续安全忽略或由已有 `profile.updated`、`group.updated` 等局部 handler 消费。
 
 ## 12. 前端实现建议
 

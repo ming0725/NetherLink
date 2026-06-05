@@ -159,6 +159,8 @@ private:
     void recalculateNewUnreadCount();
     void appendRepositoryMessage(const QString& changedConversationId,
                                  const ChatMessagePtr& message);
+    void replaceRepositoryMessage(const QString& changedConversationId,
+                                  const ChatMessagePtr& message);
     void refreshCurrentGroupMessageDisplayNames();
     void reconcileHistoryUnreadAfterHistoryExhausted();
     void adjustBottomSpace();

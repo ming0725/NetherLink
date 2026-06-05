@@ -232,7 +232,7 @@
 已在现有 repository 层接入首批业务实时事件 handler：
 
 - `MessageRepository`
-  - 监听 `chat.message.created` 和 `chat.message.sent`。
+  - 监听 `chat.message.created`、`chat.message.sent` 和 `chat.message.recalled`。
   - 将后端 `Message` payload 转成现有 `TextMessage`、`ImageMessage` 或撤回占位消息。
   - 按 `messageId` 去重后写入内存消息列表，并同步持久化到 `LocalDataStore` 的 `chat_messages` domain。
   - 监听 `chat.conversation.updated`、`chat.conversation.sync.updated`、`chat.read.updated`，把会话状态写入 `conversations` domain。
@@ -258,6 +258,8 @@
 - `ChatArea` 继续先创建本地乐观消息并保留现有 UI 体验；发送失败用现有全局通知提示。
 - `ChatMessage`、`MessageRepository` 和 `ChatListModel` 已保留并按 `clientMessageId` 去重，避免 REST 成功或 WebSocket `chat.message.sent/chat.message.created` 回包重复追加同一条本端消息。
 - 当前只接入已有文本消息和单张图片消息入口，不新增聊天文件、语音、视频或多附件 UI。
+- 消息撤回通过 `POST /api/v1/conversations/{conversationId}/messages/{messageId}/recall` 发送。
+- REST 成功响应中的 `message` / `replacementMessage` 和 WebSocket `chat.message.recalled` 会走同一缓存更新路径：`MessageRepository` 按 `messageId/clientMessageId` 替换本地消息、写入 `chat_messages`，当前打开的 `ChatArea` 收到 `messageUpdated` 后替换对应行；失败只提示“消息撤回失败”，不做本地确认。
 
 ### 会话设置、已读和清空
 
@@ -295,7 +297,7 @@
   - 远程成功后再写入 `GroupRepository`、移除本地会话和群缓存；好友页、群列表菜单和聊天资料页入口共用同一远程结果。
 - 搜索窗口发起申请会等待远程返回；成功只记录本进程 pending 状态并提示“申请已发送”，不直接把对方写成好友或把当前用户写入群成员。失败提示发送失败并允许重试。
 - 请求失败时通过 `FriendApplication` / `ChatArea` / 搜索窗口展示“好友申请处理失败”“入群申请处理失败”“好友申请发送失败”“入群申请发送失败”“好友资料保存失败”“删除好友失败”“群资料保存失败”“群设置保存失败”或“退出群聊失败”，不回退到静态样例数据。
-- 当前只覆盖已有通知页的同意/拒绝按钮、好友搜索/群搜索发起申请、好友资料编辑和删除好友入口，已有群资料编辑、我的群设置和退群入口，以及会话置顶/免打扰/隐藏/已读/未读/清空入口；创建群、群成员管理、转让群主、消息历史分页和消息撤回等写操作尚未接入远程。
+- 当前只覆盖已有通知页的同意/拒绝按钮、好友搜索/群搜索发起申请、好友资料编辑和删除好友入口，已有群资料编辑、我的群设置和退群入口，会话置顶/免打扰/隐藏/已读/未读/清空入口，以及消息撤回入口；创建群、群成员管理、转让群主和消息历史分页尚未接入远程。
 
 ### 网络状态 UI 汇总
 

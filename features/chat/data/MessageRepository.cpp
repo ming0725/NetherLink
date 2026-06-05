@@ -13,6 +13,7 @@
 #include <random>
 
 #include "features/chat/data/GroupRepository.h"
+#include "features/chat/data/ChatRemoteDataSource.h"
 #include "features/chat/data/ConversationRemoteDataSource.h"
 #include "shared/data/LocalDataStore.h"
 #include "shared/data/RepositoryTemplate.h"
@@ -964,12 +965,7 @@ MessageRepository::MessageRepository(QObject* parent)
                     if (object.isEmpty()) {
                         object = payload;
                     }
-                    const QString conversationId = conversationIdFromMessageObject(object);
-                    const QSharedPointer<ChatMessage> message = chatMessageFromJson(object);
-                    if (conversationId.isEmpty() || message.isNull()) {
-                        return;
-                    }
-                    addMessage(conversationId, message);
+                    cacheRemoteMessageObject(object);
 
                     const QJsonObject conversation = conversationObjectFromPayload(payload);
                     const QString stateConversationId = firstString(conversation, {QStringLiteral("conversationId"), QStringLiteral("id")});
@@ -978,6 +974,20 @@ MessageRepository::MessageRepository(QObject* parent)
                                                                stateConversationId,
                                                                conversation);
                     }
+                    return;
+                }
+
+                if (type == QStringLiteral("chat.message.recalled")) {
+                    const QString conversationId = firstString(payload, {QStringLiteral("conversationId"),
+                                                                         QStringLiteral("id")});
+                    QJsonObject object = payload.value(QStringLiteral("replacementMessage")).toObject();
+                    if (object.isEmpty()) {
+                        object = payload.value(QStringLiteral("message")).toObject();
+                    }
+                    if (object.isEmpty()) {
+                        object = payload;
+                    }
+                    cacheRemoteMessageObject(object, conversationId);
                     return;
                 }
 
@@ -1029,6 +1039,12 @@ MessageRepository::MessageRepository(QObject* parent)
             this,
             [this](const QString&, const QString& conversationId) {
                 clearConversationMessages(conversationId);
+            });
+    connect(&ChatRemoteDataSource::instance(),
+            &ChatRemoteDataSource::messageRecallSucceeded,
+            this,
+            [this](const QString&, const QString& conversationId, const QJsonObject& message) {
+                cacheRemoteMessageObject(message, conversationId);
             });
 }
 
@@ -1107,6 +1123,93 @@ void MessageRepository::reloadFromStore()
 
     emit lastMessageChanged({}, {});
     emit conversationListChanged({});
+}
+
+void MessageRepository::cacheRemoteMessageObject(QJsonObject object, const QString& fallbackConversationId)
+{
+    QString conversationId = conversationIdFromMessageObject(object);
+    if (conversationId.isEmpty()) {
+        conversationId = fallbackConversationId;
+        if (!conversationId.isEmpty() && !object.contains(QStringLiteral("conversationId"))) {
+            object.insert(QStringLiteral("conversationId"), conversationId);
+        }
+    }
+    if (conversationId.isEmpty()) {
+        return;
+    }
+
+    if (!object.contains(QStringLiteral("type")) && object.contains(QStringLiteral("recalledAt"))) {
+        object.insert(QStringLiteral("type"), QStringLiteral("recall"));
+    }
+
+    const QSharedPointer<ChatMessage> message = chatMessageFromJson(object);
+    if (message.isNull()) {
+        return;
+    }
+
+    QSharedPointer<ChatMessage> lastMsg;
+    bool replaced = false;
+    bool added = false;
+    bool affectedLast = false;
+    {
+        QMutexLocker locker(&m_mutex);
+        QVector<QSharedPointer<ChatMessage>>& messages = m_store[conversationId];
+        for (int index = 0; index < messages.size(); ++index) {
+            const QSharedPointer<ChatMessage>& existing = messages.at(index);
+            if (!existing) {
+                continue;
+            }
+            const bool sameMessageId = !message->getMessageId().isEmpty() &&
+                                       existing->getMessageId() == message->getMessageId();
+            const bool sameClientMessageId = !message->getClientMessageId().isEmpty() &&
+                                             existing->getClientMessageId() == message->getClientMessageId();
+            if (!sameMessageId && !sameClientMessageId) {
+                continue;
+            }
+
+            messages[index] = message;
+            replaced = true;
+            affectedLast = index == messages.size() - 1;
+            break;
+        }
+
+        if (!replaced) {
+            messages.push_back(message);
+            added = true;
+        }
+
+        std::sort(messages.begin(), messages.end(), [](const QSharedPointer<ChatMessage>& lhs,
+                                                       const QSharedPointer<ChatMessage>& rhs) {
+            if (!lhs || !rhs) {
+                return !rhs.isNull();
+            }
+            return lhs->getTimestamp() < rhs->getTimestamp();
+        });
+
+        if (!messages.isEmpty()) {
+            lastMsg = messages.last();
+            affectedLast = affectedLast || lastMsg.data() == message.data();
+            ConversationSyncState& state = m_conversationStates[conversationId];
+            state.conversationId = conversationId;
+            state.messageListTime = lastMsg->getTimestamp();
+        }
+    }
+
+    const QJsonObject cachedObject = chatMessageToJson(conversationId, message);
+    const QString key = chatMessageCacheKey(conversationId, message->getMessageId());
+    if (!cachedObject.isEmpty() && !key.isEmpty()) {
+        LocalDataStore::instance().upsertValue(QStringLiteral("chat_messages"), key, cachedObject);
+    }
+
+    if (replaced) {
+        emit messageUpdated(conversationId, message);
+    }
+    if (added || affectedLast) {
+        emit lastMessageChanged(conversationId, lastMsg);
+    }
+    if (added || replaced) {
+        emit conversationListChanged(conversationId);
+    }
 }
 
 QVector<ConversationSummary> MessageRepository::requestConversationList(const ConversationListRequest& query) const

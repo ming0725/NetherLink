@@ -4,6 +4,7 @@
 #include <QMap>
 #include <QVector>
 #include <QMutex>
+#include <QJsonObject>
 #include <QSharedPointer>
 #include "shared/types/RepositoryTypes.h"
 #include "shared/types/ChatMessage.h"
@@ -49,6 +50,8 @@ signals:
     // conversationId 对应的最后一条消息已更新（nullptr 表示已无消息）
     void lastMessageChanged(const QString& conversationId,
                             QSharedPointer<ChatMessage> lastMessage);
+    void messageUpdated(const QString& conversationId,
+                        QSharedPointer<ChatMessage> message);
     void conversationListChanged(const QString& conversationId);
     void conversationThreadReady(const QString& requestId,
                                  const ConversationThreadData& thread);
@@ -57,6 +60,8 @@ private:
     explicit MessageRepository(QObject* parent = nullptr);
     Q_DISABLE_COPY(MessageRepository)
     void reloadFromStore();
+    void cacheRemoteMessageObject(QJsonObject object,
+                                  const QString& fallbackConversationId = QString());
 
     QMap<QString, QVector<QSharedPointer<ChatMessage>>> m_store;
     QMap<QString, ConversationSyncState> m_conversationStates;

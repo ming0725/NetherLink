@@ -3,6 +3,7 @@
 #include "shared/network/NetworkTypes.h"
 
 #include <QHash>
+#include <QJsonObject>
 #include <QObject>
 #include <QString>
 
@@ -21,11 +22,19 @@ public:
                              const QString& imagePath,
                              const QString& referencedMessageId = {},
                              const QString& clientMessageId = {});
+    QString recallMessage(const QString& conversationId, const QString& messageId);
 
 signals:
     void messageSendSucceeded(const QString& clientMessageId);
     void messageSendFailed(const QString& clientMessageId, const NetworkError& error);
     void imageUploadFailed(const QString& clientMessageId, const NetworkError& error);
+    void messageRecallSucceeded(const QString& requestId,
+                                const QString& conversationId,
+                                const QJsonObject& message);
+    void messageRecallFailed(const QString& requestId,
+                             const QString& conversationId,
+                             const QString& messageId,
+                             const NetworkError& error);
 
 private:
     struct PendingImage {
@@ -36,6 +45,11 @@ private:
         QString clientSentAt;
         int width = 0;
         int height = 0;
+    };
+
+    struct PendingRecall {
+        QString conversationId;
+        QString messageId;
     };
 
     explicit ChatRemoteDataSource(QObject* parent = nullptr);
@@ -51,4 +65,5 @@ private:
 
     QHash<QString, PendingImage> m_pendingImagesByUploadRequest;
     QHash<QString, QString> m_clientMessageIdsByRequest;
+    QHash<QString, PendingRecall> m_pendingRecallsByRequest;
 };
