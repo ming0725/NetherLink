@@ -948,7 +948,7 @@ POST /api/v1/friend-requests/{requestId}/reject
 - 远程成功后复用 `FriendNotificationRepository` 更新通知状态、好友关系和本地会话提示；远程失败展示错误提示，不回退到纯本地确认。
 - 好友资料编辑远程成功后再写入 `UserRepository`；好友详情页、好友列表分组菜单和聊天资料页备注入口共用 `FriendRemoteDataSource`。
 - 删除好友远程成功后再清理本地好友缓存和会话；好友页、好友列表右键菜单和聊天资料页入口共用 `FriendRemoteDataSource`。
-- 好友搜索发起申请等写操作尚未接入远程。
+- 好友搜索发起申请发送 `POST /api/v1/friend-requests`，body 包含 `toUserUuid`、`message`、`sourceType=search`、空 `sourceGroupId/sourceFriendUuid` 和稳定 `clientOperationId`；成功后只提示“好友申请已发送”并过滤当前进程搜索结果，不直接把对方写成本地好友。
 
 ### 6.3 群组
 
@@ -1018,6 +1018,7 @@ POST /api/v1/group-join-requests/{requestId}/reject
 - 同意请求发送 `POST /api/v1/group-join-requests/{requestId}/accept`，body 包含稳定 `clientOperationId`；前端选择的群备注和本地分组继续只更新当前 UI 的本地缓存。
 - 拒绝请求发送 `POST /api/v1/group-join-requests/{requestId}/reject`，body 包含稳定 `clientOperationId`。
 - 远程成功后复用 `GroupNotificationRepository` 更新通知状态、群成员、本地分组和会话提示；远程失败展示错误提示。
+- 群搜索发起入群申请发送 `POST /api/v1/group-join-requests`，body 包含 `groupId`、`message` 和稳定 `clientOperationId`；成功后只提示“入群申请已发送”并过滤当前进程搜索结果，不直接把当前用户写入本地群成员。
 - 已新增 `GroupRemoteDataSource` 封装已有群资料、当前用户群设置和退群入口。
 - 群全局资料编辑发送 `PATCH /api/v1/groups/{groupId}`，body 包含 `name`、`introduction`、`announcement` 和稳定 `clientOperationId`；当前 `Group` 模型未承载群版本和 ETag，因此暂不发送 `expectedVersion` / `If-Match`。
 - 当前用户群备注、分组和免打扰设置发送 `PATCH /api/v1/groups/{groupId}/my-settings`，body 包含 `remark`、`listGroupId`、`listGroupName`、`isDnd` 和稳定 `clientOperationId`。

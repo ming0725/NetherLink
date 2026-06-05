@@ -24,6 +24,8 @@ public:
                                    const QString& categoryId = {},
                                    const QString& categoryName = {});
     QString rejectGroupJoinRequest(const QString& notificationId);
+    QString createFriendRequest(const QString& toUserUuid, const QString& message);
+    QString createGroupJoinRequest(const QString& groupId, const QString& message);
     QString updateFriend(const User& user);
     QString deleteFriend(const QString& userId);
 
@@ -40,8 +42,16 @@ signals:
                                   const QString& categoryId,
                                   const QString& categoryName);
     void groupJoinRequestRejected(const QString& requestId, const QString& notificationId);
+    void friendRequestCreated(const QString& requestId, const QString& userId);
+    void groupJoinRequestCreated(const QString& requestId, const QString& groupId);
     void friendUpdated(const QString& requestId, const User& user);
     void friendDeleted(const QString& requestId, const QString& userId);
+    void friendRequestCreateFailed(const QString& requestId,
+                                   const QString& userId,
+                                   const NetworkError& error);
+    void groupJoinRequestCreateFailed(const QString& requestId,
+                                      const QString& groupId,
+                                      const NetworkError& error);
     void friendRequestActionFailed(const QString& requestId,
                                    const QString& notificationId,
                                    const NetworkError& error);
@@ -57,6 +67,8 @@ private:
         RejectFriendRequest,
         AcceptGroupJoinRequest,
         RejectGroupJoinRequest,
+        CreateFriendRequest,
+        CreateGroupJoinRequest,
         UpdateFriend,
         DeleteFriend
     };

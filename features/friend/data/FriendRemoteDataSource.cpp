@@ -127,6 +127,47 @@ QString FriendRemoteDataSource::rejectGroupJoinRequest(const QString& notificati
                          pending);
 }
 
+QString FriendRemoteDataSource::createFriendRequest(const QString& toUserUuid, const QString& message)
+{
+    if (toUserUuid.isEmpty()) {
+        return {};
+    }
+
+    QJsonObject body = bodyWithClientOperationId(newClientOperationId(QStringLiteral("op_friend_request")));
+    body.insert(QStringLiteral("toUserUuid"), toUserUuid);
+    body.insert(QStringLiteral("message"), message);
+    body.insert(QStringLiteral("sourceType"), QStringLiteral("search"));
+    body.insert(QStringLiteral("sourceGroupId"), QJsonValue(QJsonValue::Null));
+    body.insert(QStringLiteral("sourceFriendUuid"), QJsonValue(QJsonValue::Null));
+
+    PendingOperation pending;
+    pending.action = Action::CreateFriendRequest;
+    pending.userId = toUserUuid;
+    return sendOperation(Action::CreateFriendRequest,
+                         QStringLiteral("/friend-requests"),
+                         body,
+                         pending);
+}
+
+QString FriendRemoteDataSource::createGroupJoinRequest(const QString& groupId, const QString& message)
+{
+    if (groupId.isEmpty()) {
+        return {};
+    }
+
+    QJsonObject body = bodyWithClientOperationId(newClientOperationId(QStringLiteral("op_group_join_request")));
+    body.insert(QStringLiteral("groupId"), groupId);
+    body.insert(QStringLiteral("message"), message);
+
+    PendingOperation pending;
+    pending.action = Action::CreateGroupJoinRequest;
+    pending.groupId = groupId;
+    return sendOperation(Action::CreateGroupJoinRequest,
+                         QStringLiteral("/group-join-requests"),
+                         body,
+                         pending);
+}
+
 QString FriendRemoteDataSource::updateFriend(const User& user)
 {
     if (user.id.isEmpty()) {
@@ -214,6 +255,12 @@ void FriendRemoteDataSource::handleRequestSucceeded(const QString& requestId, co
     case Action::RejectGroupJoinRequest:
         emit groupJoinRequestRejected(requestId, pending.notificationId);
         break;
+    case Action::CreateFriendRequest:
+        emit friendRequestCreated(requestId, pending.userId);
+        break;
+    case Action::CreateGroupJoinRequest:
+        emit groupJoinRequestCreated(requestId, pending.groupId);
+        break;
     case Action::UpdateFriend:
         emit friendUpdated(requestId, pending.user);
         break;
@@ -238,6 +285,12 @@ void FriendRemoteDataSource::handleRequestFailed(const QString& requestId, const
     case Action::AcceptGroupJoinRequest:
     case Action::RejectGroupJoinRequest:
         emit groupJoinRequestActionFailed(requestId, pending.notificationId, error);
+        break;
+    case Action::CreateFriendRequest:
+        emit friendRequestCreateFailed(requestId, pending.userId, error);
+        break;
+    case Action::CreateGroupJoinRequest:
+        emit groupJoinRequestCreateFailed(requestId, pending.groupId, error);
         break;
     case Action::UpdateFriend:
         emit friendUpdateFailed(requestId, pending.userId, error);

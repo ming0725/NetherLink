@@ -2,10 +2,13 @@
 
 #include "app/state/CurrentUser.h"
 #include "features/chat/data/GroupRepository.h"
+#include "features/friend/data/FriendRemoteDataSource.h"
 #include "features/friend/data/UserRepository.h"
+#include "shared/data/LocalDataStore.h"
 #include "shared/services/AppFonts.h"
 #include "shared/services/ImageService.h"
 #include "shared/theme/ThemeManager.h"
+#include "shared/ui/GlobalNotification.h"
 #include "shared/ui/IconLineEdit.h"
 #include "shared/ui/popup/InWindowPopupOverlay.h"
 #include "shared/ui/InlineEditableText.h"
@@ -41,6 +44,7 @@
 #include <QPushButton>
 #include <QScrollBar>
 #include <QScreen>
+#include <QSet>
 #include <QTextEdit>
 #include <QTimer>
 #include <QToolButton>
@@ -89,6 +93,29 @@ constexpr int kRequestPopupMessageHeight = 86;
 constexpr int kRequestPopupButtonWidth = 92;
 constexpr int kRequestPopupButtonHeight = 34;
 
+QSet<QString>& pendingFriendRequestUserIds()
+{
+    static QSet<QString> ids;
+    return ids;
+}
+
+QSet<QString>& pendingGroupJoinRequestGroupIds()
+{
+    static QSet<QString> ids;
+    return ids;
+}
+
+QString firstString(const QJsonObject& object, const QStringList& keys)
+{
+    for (const QString& key : keys) {
+        const QString value = object.value(key).toString();
+        if (!value.isEmpty()) {
+            return value;
+        }
+    }
+    return {};
+}
+
 QString userDisplayText(const User& user)
 {
     if (user.id.isEmpty()) {
@@ -104,6 +131,129 @@ bool currentUserHasJoinedGroup(const Group& group)
             && (group.ownerId == currentUserId
                 || group.adminsID.contains(currentUserId)
                 || group.membersID.contains(currentUserId));
+}
+
+QString userUuidForRequest(const User& user)
+{
+    QJsonObject object = LocalDataStore::instance().value(QStringLiteral("users"), user.id);
+    if (object.isEmpty()) {
+        for (const QJsonObject& candidate : LocalDataStore::instance().values(QStringLiteral("users"))) {
+            const QString id = firstString(candidate, {QStringLiteral("id"),
+                                                       QStringLiteral("userId"),
+                                                       QStringLiteral("userUuid"),
+                                                       QStringLiteral("friendUserUuid")});
+            if (id == user.id) {
+                object = candidate;
+                break;
+            }
+        }
+    }
+
+    const QString userUuid = firstString(object, {QStringLiteral("userUuid"),
+                                                  QStringLiteral("friendUserUuid")});
+    return userUuid.isEmpty() ? user.id : userUuid;
+}
+
+bool waitForFriendRequestCreated(const QString& requestId, const QString& userId, QWidget* host)
+{
+    QPointer<QWidget> notificationHost(host);
+    if (requestId.isEmpty()) {
+        GlobalNotification::showFailure(notificationHost.data(), QStringLiteral("好友申请发送失败"));
+        return false;
+    }
+
+    bool finished = false;
+    bool success = false;
+    QEventLoop loop;
+    const QMetaObject::Connection successConnection = QObject::connect(
+            &FriendRemoteDataSource::instance(),
+            &FriendRemoteDataSource::friendRequestCreated,
+            &loop,
+            [&](const QString& completedRequestId, const QString&) {
+                if (completedRequestId != requestId) {
+                    return;
+                }
+                finished = true;
+                success = true;
+                loop.quit();
+            });
+    const QMetaObject::Connection failureConnection = QObject::connect(
+            &FriendRemoteDataSource::instance(),
+            &FriendRemoteDataSource::friendRequestCreateFailed,
+            &loop,
+            [&](const QString& failedRequestId, const QString&, const NetworkError&) {
+                if (failedRequestId != requestId) {
+                    return;
+                }
+                finished = true;
+                loop.quit();
+            });
+
+    if (!finished) {
+        loop.exec();
+    }
+    QObject::disconnect(successConnection);
+    QObject::disconnect(failureConnection);
+
+    if (success) {
+        pendingFriendRequestUserIds().insert(userId);
+        GlobalNotification::showSuccess(notificationHost.data(), QStringLiteral("好友申请已发送"));
+        return true;
+    }
+
+    GlobalNotification::showFailure(notificationHost.data(), QStringLiteral("好友申请发送失败"));
+    return false;
+}
+
+bool waitForGroupJoinRequestCreated(const QString& requestId, const QString& groupId, QWidget* host)
+{
+    QPointer<QWidget> notificationHost(host);
+    if (requestId.isEmpty()) {
+        GlobalNotification::showFailure(notificationHost.data(), QStringLiteral("入群申请发送失败"));
+        return false;
+    }
+
+    bool finished = false;
+    bool success = false;
+    QEventLoop loop;
+    const QMetaObject::Connection successConnection = QObject::connect(
+            &FriendRemoteDataSource::instance(),
+            &FriendRemoteDataSource::groupJoinRequestCreated,
+            &loop,
+            [&](const QString& completedRequestId, const QString&) {
+                if (completedRequestId != requestId) {
+                    return;
+                }
+                finished = true;
+                success = true;
+                loop.quit();
+            });
+    const QMetaObject::Connection failureConnection = QObject::connect(
+            &FriendRemoteDataSource::instance(),
+            &FriendRemoteDataSource::groupJoinRequestCreateFailed,
+            &loop,
+            [&](const QString& failedRequestId, const QString&, const NetworkError&) {
+                if (failedRequestId != requestId) {
+                    return;
+                }
+                finished = true;
+                loop.quit();
+            });
+
+    if (!finished) {
+        loop.exec();
+    }
+    QObject::disconnect(successConnection);
+    QObject::disconnect(failureConnection);
+
+    if (success) {
+        pendingGroupJoinRequestGroupIds().insert(groupId);
+        GlobalNotification::showSuccess(notificationHost.data(), QStringLiteral("入群申请已发送"));
+        return true;
+    }
+
+    GlobalNotification::showFailure(notificationHost.data(), QStringLiteral("入群申请发送失败"));
+    return false;
 }
 
 const QStringList& editableCategoryOrder()
@@ -466,47 +616,6 @@ ContactRequestData showRequestPopup(QWidget* parent,
     QObject::connect(overlay, &InWindowPopupOverlay::dismissed, &loop, &QEventLoop::quit);
     loop.exec();
     return result;
-}
-
-bool applyFriendRequest(const User& user, const ContactRequestData& request)
-{
-    if (user.id.isEmpty() || !request.accepted) {
-        return false;
-    }
-
-    User nextUser = user;
-    nextUser.isFriend = true;
-    nextUser.remark = request.remark;
-    nextUser.friendGroupId = request.groupId.isEmpty() ? QStringLiteral("default") : request.groupId;
-    nextUser.friendGroupName = request.groupName.isEmpty() ? QStringLiteral("默认分组") : request.groupName;
-    UserRepository::instance().saveUser(nextUser);
-    return true;
-}
-
-bool applyGroupRequest(const Group& group, const ContactRequestData& request)
-{
-    if (group.groupId.isEmpty() || !request.accepted) {
-        return false;
-    }
-
-    Group nextGroup = group;
-    const QString currentUserId = CurrentUser::instance().getUserId();
-    if (!currentUserId.isEmpty()
-            && nextGroup.ownerId != currentUserId
-            && !nextGroup.adminsID.contains(currentUserId)
-            && !nextGroup.membersID.contains(currentUserId)) {
-        nextGroup.membersID.push_back(currentUserId);
-    }
-    nextGroup.memberNum = nextGroup.membersID.size();
-    nextGroup.remark = request.remark;
-    nextGroup.currentUserNickname = CurrentUser::instance().getUserName();
-    if (!currentUserId.isEmpty()) {
-        nextGroup.memberNicknames.insert(currentUserId, nextGroup.currentUserNickname);
-    }
-    nextGroup.listGroupId = request.groupId.isEmpty() ? QStringLiteral("gg_joined") : request.groupId;
-    nextGroup.listGroupName = request.groupName.isEmpty() ? QStringLiteral("我加入的群聊") : request.groupName;
-    GroupRepository::instance().saveGroup(nextGroup);
-    return true;
 }
 
 QString searchPlaceholderForMode(AddContactModeBar::Mode mode)
@@ -1362,7 +1471,14 @@ bool AddContactSearchWindow::openUserRequest(const QString& userId, QWidget* anc
                                                         QStringLiteral("好友分组"),
                                                         true,
                                                         QStringLiteral("发送申请"));
-    return applyFriendRequest(user, request);
+    if (!request.accepted) {
+        return false;
+    }
+
+    const QString requestId = FriendRemoteDataSource::instance().createFriendRequest(
+            userUuidForRequest(user),
+            request.requestMessage);
+    return waitForFriendRequestCreated(requestId, user.id, anchor);
 }
 
 bool AddContactSearchWindow::openGroupRequest(const QString& groupId, QWidget* anchor)
@@ -1406,7 +1522,14 @@ bool AddContactSearchWindow::openGroupRequest(const QString& groupId, QWidget* a
                                                         QStringLiteral("群分组"),
                                                         true,
                                                         QStringLiteral("发送申请"));
-    return applyGroupRequest(group, request);
+    if (!request.accepted) {
+        return false;
+    }
+
+    const QString requestId = FriendRemoteDataSource::instance().createGroupJoinRequest(
+            group.groupId,
+            request.requestMessage);
+    return waitForGroupJoinRequestCreated(requestId, group.groupId, anchor);
 }
 
 bool AddContactSearchWindow::openFriendApproval(const QString& userId,
@@ -1668,7 +1791,9 @@ QVector<AddContactSearchItem> AddContactSearchWindow::searchUsers(const QString&
     const QVector<User> users = UserRepository::instance().requestUserSearch(keyword, -1);
     items.reserve(qMin(users.size(), kSearchResultLimit));
     for (const User& user : users) {
-        if (user.isFriend || CurrentUser::instance().isCurrentUserId(user.id)) {
+        if (user.isFriend ||
+            CurrentUser::instance().isCurrentUserId(user.id) ||
+            pendingFriendRequestUserIds().contains(user.id)) {
             continue;
         }
         AddContactSearchItem item;
@@ -1689,7 +1814,8 @@ QVector<AddContactSearchItem> AddContactSearchWindow::searchGroups(const QString
     items.reserve(qMin(groups.size(), kSearchResultLimit));
     int visibleGroupIndex = 0;
     for (const Group& group : groups) {
-        if (currentUserHasJoinedGroup(group)) {
+        if (currentUserHasJoinedGroup(group) ||
+            pendingGroupJoinRequestGroupIds().contains(group.groupId)) {
             continue;
         }
         AddContactSearchItem item;

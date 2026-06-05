@@ -265,6 +265,8 @@
 
 - 好友申请同意通过 `POST /api/v1/friend-requests/{requestId}/accept` 发送，body 包含 `remark`、`groupId` 和稳定 `clientOperationId`。
 - 好友申请拒绝通过 `POST /api/v1/friend-requests/{requestId}/reject` 发送，body 包含稳定 `clientOperationId`。
+- 好友搜索发起申请通过 `POST /api/v1/friend-requests` 发送，body 包含 `toUserUuid`、`message`、`sourceType=search`、空 `sourceGroupId/sourceFriendUuid` 和稳定 `clientOperationId`。
+- 群搜索发起入群申请通过 `POST /api/v1/group-join-requests` 发送，body 包含 `groupId`、`message` 和稳定 `clientOperationId`。
 - 群入群申请同意通过 `POST /api/v1/group-join-requests/{requestId}/accept` 发送，body 包含稳定 `clientOperationId`；前端选择的群备注和本地分组仍只用于现有本地 UI 状态。
 - 群入群申请拒绝通过 `POST /api/v1/group-join-requests/{requestId}/reject` 发送，body 包含稳定 `clientOperationId`。
 - 好友备注、分组和免打扰状态通过 `PATCH /api/v1/friends/{friendUserUuid}` 发送，body 包含 `remark`、`groupId`、`isDnd` 和稳定 `clientOperationId`；本地默认分组 `default` 映射为后端 `null`。
@@ -277,8 +279,9 @@
   - 当前用户群备注、分组和免打扰设置通过 `PATCH /api/v1/groups/{groupId}/my-settings` 发送，body 包含 `remark`、`listGroupId`、`listGroupName`、`isDnd` 和稳定 `clientOperationId`。
   - 退群通过 `DELETE /api/v1/groups/{groupId}/members/{currentUserUuid}?clientOperationId=<op>` 发送，并携带同值 `Idempotency-Key`；`currentUserUuid` 优先来自当前用户资料中的 `userUuid`。
   - 远程成功后再写入 `GroupRepository`、移除本地会话和群缓存；好友页、群列表菜单和聊天资料页入口共用同一远程结果。
-- 请求失败时通过 `FriendApplication` / `ChatArea` 展示“好友申请处理失败”“入群申请处理失败”“好友资料保存失败”“删除好友失败”“群资料保存失败”“群设置保存失败”或“退出群聊失败”，不回退到静态样例数据。
-- 当前只覆盖已有通知页的同意/拒绝按钮、好友资料编辑和删除好友入口，以及已有群资料编辑、我的群设置和退群入口；好友搜索发起申请、创建群、群成员管理、转让群主等写操作尚未接入远程。
+- 搜索窗口发起申请会等待远程返回；成功只记录本进程 pending 状态并提示“申请已发送”，不直接把对方写成好友或把当前用户写入群成员。失败提示发送失败并允许重试。
+- 请求失败时通过 `FriendApplication` / `ChatArea` / 搜索窗口展示“好友申请处理失败”“入群申请处理失败”“好友申请发送失败”“入群申请发送失败”“好友资料保存失败”“删除好友失败”“群资料保存失败”“群设置保存失败”或“退出群聊失败”，不回退到静态样例数据。
+- 当前只覆盖已有通知页的同意/拒绝按钮、好友搜索/群搜索发起申请、好友资料编辑和删除好友入口，以及已有群资料编辑、我的群设置和退群入口；创建群、群成员管理、转让群主等写操作尚未接入远程。
 
 ### 网络状态 UI 汇总
 
