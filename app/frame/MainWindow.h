@@ -49,6 +49,7 @@ private:
     void layoutWindow();
     void showRealtimeFailureNotice(const QString& message);
     void handleRealtimeStateChanged(RealtimeClient::State state);
+    void handleSessionRevoked(const QString& accountId, const QString& message);
 
     ApplicationBar *appBar;
     QWidget *titleBar;
@@ -66,4 +67,5 @@ private:
     QElapsedTimer m_realtimeNoticeClock;
     bool m_realtimeHadFailure = false;
     bool m_systemFloatingBarsSuppressed = false;
+    bool m_sessionRevokedDialogVisible = false;
 };

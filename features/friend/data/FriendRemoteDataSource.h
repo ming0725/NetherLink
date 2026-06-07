@@ -24,7 +24,7 @@ public:
                                    const QString& categoryId = {},
                                    const QString& categoryName = {});
     QString rejectGroupJoinRequest(const QString& notificationId);
-    QString createFriendRequest(const QString& toUserUuid, const QString& message);
+    QString createFriendRequest(const QString& toUserId, const QString& message);
     QString createGroupJoinRequest(const QString& groupId, const QString& message);
     QString updateFriend(const User& user);
     QString deleteFriend(const QString& userId);

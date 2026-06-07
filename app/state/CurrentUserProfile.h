@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QDateTime>
 #include <QString>
 
 #include "shared/types/User.h"
@@ -13,6 +14,7 @@ struct CurrentUserProfile {
     QString avatarEtag;
     QString avatarContentHash;
     UserStatus status = Offline;
+    QDateTime lastSeenAt;
     QString signature;
     QString region;
     int version = 0;

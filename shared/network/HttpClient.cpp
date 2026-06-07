@@ -1,7 +1,9 @@
 #include "HttpClient.h"
 
 #include "AuthSession.h"
+#include "NetworkLog.h"
 
+#include <QElapsedTimer>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QNetworkAccessManager>
@@ -17,6 +19,7 @@ struct HttpClient::Operation {
     NetworkRequest request;
     int attempts = 0;
     bool replayedAfterRefresh = false;
+    QElapsedTimer attemptTimer;
 };
 
 namespace {
@@ -65,6 +68,14 @@ QString HttpClient::send(const NetworkRequest& request)
     auto operation = QSharedPointer<Operation>::create();
     operation->id = QUuid::createUuid().toString(QUuid::WithoutBraces);
     operation->request = request;
+    if (m_authRequestsBlocked && request.requiresAuth) {
+        const QString requestId = operation->id;
+        const NetworkError error = m_authBlockError;
+        QTimer::singleShot(0, this, [this, requestId, error]() {
+            emit requestFailed(requestId, error);
+        });
+        return requestId;
+    }
     m_operations.insert(operation->id, operation);
     emit requestStarted(operation->id, request);
     startOperation(operation);
@@ -73,6 +84,11 @@ QString HttpClient::send(const NetworkRequest& request)
 
 void HttpClient::refreshAccessToken()
 {
+    if (m_authRequestsBlocked) {
+        emit authRefreshFailed(m_authBlockError);
+        flushRefreshQueue(false, m_authBlockError);
+        return;
+    }
     if (m_refreshing) {
         return;
     }
@@ -98,24 +114,43 @@ void HttpClient::refreshAccessToken()
     request.maxRetries = 0;
 
     QNetworkRequest networkRequest = buildNetworkRequest(request);
+    const QString requestId = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    auto timer = QSharedPointer<QElapsedTimer>::create();
+    timer->start();
+    NetworkLog::httpRequest(requestId, request, networkRequest.url(), 1);
+
     QNetworkReply* reply = m_manager->post(networkRequest, request.body.toJson(QJsonDocument::Compact));
-    connect(reply, &QNetworkReply::finished, this, [this, reply]() {
+    connect(reply, &QNetworkReply::finished, this, [this, reply, request, requestId, timer]() {
         const QByteArray body = reply->readAll();
         const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        if (m_authRequestsBlocked) {
+            NetworkLog::httpError(requestId, request, m_authBlockError, timer->elapsed());
+            m_refreshing = false;
+            emit authRefreshFailed(m_authBlockError);
+            flushRefreshQueue(false, m_authBlockError);
+            reply->deleteLater();
+            return;
+        }
         if (status >= 200 && status < 300) {
+            NetworkResponse response = responseFromReply(reply);
+            response.rawBody = body;
+            response.body = QJsonDocument::fromJson(body);
+            NetworkLog::httpResponse(requestId, request, response, timer->elapsed());
+
             const QJsonObject object = QJsonDocument::fromJson(body).object();
             const QString accessToken = object.value(QStringLiteral("accessToken")).toString();
             const QString refreshToken = object.value(QStringLiteral("refreshToken")).toString(AuthSession::instance().refreshToken());
             const int expiresIn = object.value(QStringLiteral("expiresIn")).toInt(900);
             AuthSession::instance().setTokens(accessToken, refreshToken, expiresIn);
             m_refreshing = false;
-            emit authRefreshSucceeded();
+            emit authRefreshSucceeded(accessToken, refreshToken, expiresIn);
             flushRefreshQueue(true);
         } else {
             NetworkError error = errorFromReply(reply, body);
             if (error.code.isEmpty()) {
                 error.code = QStringLiteral("TOKEN_REFRESH_FAILED");
             }
+            NetworkLog::httpError(requestId, request, error, timer->elapsed());
             m_refreshing = false;
             AuthSession::instance().clear();
             emit authRefreshFailed(error);
@@ -125,14 +160,69 @@ void HttpClient::refreshAccessToken()
     });
 }
 
+void HttpClient::blockAuthenticatedRequests(const NetworkError& error)
+{
+    m_authRequestsBlocked = true;
+    m_authBlockError = error;
+    if (m_authBlockError.httpStatus == 0) {
+        m_authBlockError.httpStatus = 401;
+    }
+    if (m_authBlockError.code.isEmpty()) {
+        m_authBlockError.code = QStringLiteral("TOKEN_INVALID");
+    }
+    if (m_authBlockError.message.isEmpty()) {
+        m_authBlockError.message = QStringLiteral("Session revoked.");
+    }
+
+    const QVector<QSharedPointer<Operation>> queued = m_refreshQueue;
+    m_refreshQueue.clear();
+    for (const QSharedPointer<Operation>& operation : queued) {
+        if (!operation || !m_operations.contains(operation->id)) {
+            continue;
+        }
+        m_operations.remove(operation->id);
+        emit requestFailed(operation->id, m_authBlockError);
+    }
+
+    QVector<QSharedPointer<Operation>> operations;
+    operations.reserve(m_operations.size());
+    for (auto it = m_operations.constBegin(); it != m_operations.constEnd(); ++it) {
+        operations.push_back(it.value());
+    }
+    for (const QSharedPointer<Operation>& operation : operations) {
+        if (!operation || !operation->request.requiresAuth || !m_operations.contains(operation->id)) {
+            continue;
+        }
+        m_operations.remove(operation->id);
+        emit requestFailed(operation->id, m_authBlockError);
+    }
+}
+
+void HttpClient::clearAuthenticationBlock()
+{
+    m_authRequestsBlocked = false;
+    m_authBlockError = {};
+}
+
 void HttpClient::startOperation(const QSharedPointer<Operation>& operation)
 {
     if (!operation) {
         return;
     }
+    if (!m_operations.contains(operation->id)) {
+        return;
+    }
+    if (m_authRequestsBlocked && operation->request.requiresAuth) {
+        m_operations.remove(operation->id);
+        emit requestFailed(operation->id, m_authBlockError);
+        return;
+    }
 
     ++operation->attempts;
     QNetworkRequest networkRequest = buildNetworkRequest(operation->request);
+    operation->attemptTimer.restart();
+    NetworkLog::httpRequest(operation->id, operation->request, networkRequest.url(), operation->attempts);
+
     QByteArray body;
     if (operation->request.hasJsonBody) {
         body = operation->request.body.toJson(QJsonDocument::Compact);
@@ -166,18 +256,29 @@ void HttpClient::startOperation(const QSharedPointer<Operation>& operation)
 
 void HttpClient::handleReply(const QSharedPointer<Operation>& operation, QNetworkReply* reply)
 {
+    if (!operation || !m_operations.contains(operation->id)) {
+        return;
+    }
     const QByteArray body = reply->readAll();
     const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+    if (m_authRequestsBlocked && operation->request.requiresAuth) {
+        NetworkLog::httpError(operation->id, operation->request, m_authBlockError, operation->attemptTimer.elapsed());
+        m_operations.remove(operation->id);
+        emit requestFailed(operation->id, m_authBlockError);
+        return;
+    }
     if (status >= 200 && status < 300) {
         NetworkResponse response = responseFromReply(reply);
         response.rawBody = body;
         response.body = QJsonDocument::fromJson(body);
+        NetworkLog::httpResponse(operation->id, operation->request, response, operation->attemptTimer.elapsed());
         m_operations.remove(operation->id);
         emit requestSucceeded(operation->id, response);
         return;
     }
 
     NetworkError error = errorFromReply(reply, body);
+    NetworkLog::httpError(operation->id, operation->request, error, operation->attemptTimer.elapsed());
     if (operation->request.requiresAuth &&
         error.isTokenExpired() &&
         !operation->replayedAfterRefresh &&
@@ -197,7 +298,9 @@ void HttpClient::handleReply(const QSharedPointer<Operation>& operation, QNetwor
 
 void HttpClient::retryLater(const QSharedPointer<Operation>& operation)
 {
-    QTimer::singleShot(retryDelayMs(operation->attempts), this, [this, operation]() {
+    const int delayMs = retryDelayMs(operation->attempts);
+    NetworkLog::httpRetry(operation->id, operation->attempts + 1, delayMs);
+    QTimer::singleShot(delayMs, this, [this, operation]() {
         if (m_operations.contains(operation->id)) {
             startOperation(operation);
         }
@@ -206,8 +309,14 @@ void HttpClient::retryLater(const QSharedPointer<Operation>& operation)
 
 void HttpClient::queueForTokenRefresh(const QSharedPointer<Operation>& operation)
 {
+    if (m_authRequestsBlocked) {
+        m_operations.remove(operation->id);
+        emit requestFailed(operation->id, m_authBlockError);
+        return;
+    }
     operation->replayedAfterRefresh = true;
     m_refreshQueue.push_back(operation);
+    NetworkLog::authRefreshQueued(m_refreshQueue.size());
     refreshAccessToken();
 }
 

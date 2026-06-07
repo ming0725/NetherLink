@@ -34,6 +34,7 @@ QString avatarFileIdFrom(const QJsonObject& object)
 
 AuthUser authUserFromObject(const QJsonObject& object)
 {
+    const QJsonObject presence = object.value(QStringLiteral("presence")).toObject();
     AuthUser user;
     user.userUuid = object.value(QStringLiteral("userUuid")).toString();
     user.userId = object.value(QStringLiteral("userId")).toString(user.userUuid);
@@ -53,7 +54,8 @@ AuthUser authUserFromObject(const QJsonObject& object)
             user.avatarContentHash);
     user.signature = object.value(QStringLiteral("signature")).toString();
     user.region = object.value(QStringLiteral("region")).toString();
-    user.status = object.value(QStringLiteral("status")).toString();
+    user.status = presence.value(QStringLiteral("status")).toString(
+            object.value(QStringLiteral("status")).toString());
     user.version = object.value(QStringLiteral("version")).toInt();
     user.etag = object.value(QStringLiteral("etag")).toString();
     return user;
@@ -79,6 +81,7 @@ AuthApiClient::AuthApiClient(QObject* parent)
     : QObject(parent)
 {
     qRegisterMetaType<AuthResult>("AuthResult");
+    qRegisterMetaType<AuthTokenResult>("AuthTokenResult");
 
     connect(&HttpClient::instance(),
             &HttpClient::requestSucceeded,
@@ -122,6 +125,17 @@ QString AuthApiClient::registerAccount(const QString& email,
     return requestId;
 }
 
+QString AuthApiClient::refreshSession(const QString& refreshToken)
+{
+    const QJsonObject body{
+            {QStringLiteral("refreshToken"), refreshToken},
+            {QStringLiteral("deviceId"), AuthSession::instance().deviceId()}
+    };
+    const QString requestId = HttpClient::instance().send(authRequest(QStringLiteral("/auth/refresh"), body));
+    m_pendingRequests.insert(requestId, RequestKind::Refresh);
+    return requestId;
+}
+
 QString AuthApiClient::logout()
 {
     NetworkRequest request = NetworkRequest::json(
@@ -144,6 +158,23 @@ void AuthApiClient::handleRequestSucceeded(const QString& requestId, const Netwo
     const RequestKind kind = m_pendingRequests.take(requestId);
     if (kind == RequestKind::Logout) {
         emit logoutFinished(requestId, true, {});
+        return;
+    }
+
+    if (kind == RequestKind::Refresh) {
+        const AuthTokenResult result = authTokenResultFromObject(response.object());
+        if (!result.isValid()) {
+            NetworkError error;
+            error.httpStatus = response.httpStatus;
+            error.code = QStringLiteral("AUTH_REFRESH_RESPONSE_INVALID");
+            error.message = QStringLiteral("Refresh response is missing required fields.");
+            error.requestId = response.requestId;
+            emit refreshFailed(requestId, error);
+            return;
+        }
+
+        AuthSession::instance().setTokens(result.accessToken, result.refreshToken, result.expiresIn);
+        emit refreshSucceeded(requestId, result);
         return;
     }
 
@@ -184,6 +215,9 @@ void AuthApiClient::handleRequestFailed(const QString& requestId, const NetworkE
     case RequestKind::Register:
         emit registerFailed(requestId, error);
         break;
+    case RequestKind::Refresh:
+        emit refreshFailed(requestId, error);
+        break;
     case RequestKind::Logout:
         emit logoutFinished(requestId, false, error);
         break;
@@ -195,6 +229,15 @@ AuthResult AuthApiClient::authResultFromObject(const QJsonObject& object) const
     AuthResult result;
     result.user = authUserFromObject(object.value(QStringLiteral("user")).toObject());
     result.preferences = object.value(QStringLiteral("preferences")).toObject();
+    result.accessToken = object.value(QStringLiteral("accessToken")).toString();
+    result.refreshToken = object.value(QStringLiteral("refreshToken")).toString();
+    result.expiresIn = object.value(QStringLiteral("expiresIn")).toInt(900);
+    return result;
+}
+
+AuthTokenResult AuthApiClient::authTokenResultFromObject(const QJsonObject& object) const
+{
+    AuthTokenResult result;
     result.accessToken = object.value(QStringLiteral("accessToken")).toString();
     result.refreshToken = object.value(QStringLiteral("refreshToken")).toString();
     result.expiresIn = object.value(QStringLiteral("expiresIn")).toInt(900);

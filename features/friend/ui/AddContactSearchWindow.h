@@ -6,6 +6,7 @@
 #include <QStyledItemDelegate>
 #include <QVariantAnimation>
 
+#include "shared/network/NetworkTypes.h"
 #include "shared/types/Group.h"
 #include "shared/types/User.h"
 
@@ -178,11 +179,14 @@ private:
     void setMode(AddContactModeBar::Mode mode);
     void scheduleSearch();
     void performSearch();
+    void handleSearchSucceeded(const QString& requestId, const NetworkResponse& response);
+    void handleSearchFailed(const QString& requestId, const NetworkError& error);
     void loadMoreResults();
     void maybeLoadMoreResults();
     void resetSearchState();
-    QVector<AddContactSearchItem> searchUsers(const QString& keyword) const;
-    QVector<AddContactSearchItem> searchGroups(const QString& keyword) const;
+    void setSearchResults(QVector<AddContactSearchItem> results);
+    QVector<AddContactSearchItem> searchUsers(const QJsonObject& response) const;
+    QVector<AddContactSearchItem> searchGroups(const QJsonObject& response) const;
     void handleResultAction(const QModelIndex& index);
 
     QWidget* m_content = nullptr;
@@ -202,4 +206,7 @@ private:
     QVector<AddContactSearchItem> m_searchResults;
     int m_loadedResultCount = 0;
     bool m_isLoadingMore = false;
+    QString m_activeSearchRequestId;
+    QString m_activeSearchKeyword;
+    AddContactModeBar::Mode m_activeSearchMode = AddContactModeBar::Mode::Users;
 };

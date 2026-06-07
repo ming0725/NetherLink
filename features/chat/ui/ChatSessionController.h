@@ -87,4 +87,5 @@ private:
     Group m_group;
     int m_panelLoadToken = 0;
     int m_memberPageLoadToken = 0;
+    QString m_memberPageRequestId;
 };

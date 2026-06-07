@@ -26,6 +26,7 @@
 #include <QBuffer>
 #include <QCloseEvent>
 #include <QCryptographicHash>
+#include <QDateTime>
 #include <QDir>
 #include <QFutureWatcher>
 #include <QGuiApplication>
@@ -65,6 +66,7 @@ constexpr int kSocialButtonAreaWidth = kSocialButtonSize * 3 + kSocialButtonGap 
 constexpr int kSocialBottomSpacing = 12 - (kSocialButtonGeometrySize - kSocialButtonSize);
 constexpr int kBackgroundFrameMs = 16;
 constexpr int kBackgroundLayerRefreshMs = 16;
+constexpr int kAutoLoginDelayMs = 300;
 constexpr int kShowMainWindowDelayMs = 1600;
 constexpr int kAccountPopupGap = 5;
 constexpr int kAccountPopupRowHeight = 52;
@@ -115,17 +117,35 @@ QString loginAccountDisplayText(const LoginAccount& account)
     return QStringLiteral("%1 (%2)").arg(account.displayName, account.accountId);
 }
 
+LoginAccount firstAvailableLoginAccount()
+{
+    const QVector<LoginAccount> accounts = LoginAccountRepository::instance().requestLoginAccounts({-1});
+    for (const LoginAccount& account : accounts) {
+        if (!account.loggedInOnDevice) {
+            return account;
+        }
+    }
+    return {};
+}
+
 UserStatus statusFromAuthStatus(const QString& value)
 {
     const QString normalized = value.trimmed().toLower();
     if (normalized == QStringLiteral("active") || normalized == QStringLiteral("online")) {
         return Online;
     }
-    if (normalized == QStringLiteral("mining")) {
+    if (normalized == QStringLiteral("mining") ||
+        normalized == QStringLiteral("busy") ||
+        normalized == QStringLiteral("dnd")) {
         return Mining;
     }
-    if (normalized == QStringLiteral("flying")) {
+    if (normalized == QStringLiteral("airplane") ||
+        normalized == QStringLiteral("flying") ||
+        normalized == QStringLiteral("away")) {
         return Flying;
+    }
+    if (normalized == QStringLiteral("invisible")) {
+        return Invisible;
     }
     return normalized.isEmpty() ? Online : Offline;
 }
@@ -268,8 +288,14 @@ bool cachedAvatarMatches(const LoginAccount& cachedAccount, const LoginAccount& 
 LoginAccount loginAccountFromAuthResult(const AuthResult& result, const QString& password)
 {
     LoginAccount account;
+    account.userUuid = result.user.userUuid;
     account.accountId = result.user.userId.isEmpty() ? result.user.userUuid : result.user.userId;
     account.password = password;
+    account.accessToken = result.accessToken;
+    account.refreshToken = result.refreshToken;
+    account.tokenExpiresAtUtcMs = QDateTime::currentDateTimeUtc()
+                                          .addSecs(qMax(0, result.expiresIn))
+                                          .toMSecsSinceEpoch();
     account.displayName = result.user.nickName.isEmpty() ? account.accountId : result.user.nickName;
     account.avatarSource = result.user.avatarPath;
     account.avatarVersion = result.user.avatarVersion;
@@ -988,6 +1014,11 @@ LoginWindow::~LoginWindow()
     qApp->removeEventFilter(this);
 }
 
+void LoginWindow::suppressNextAutoLogin()
+{
+    m_suppressNextAutoLogin = true;
+}
+
 void LoginWindow::setupUi()
 {
     auto* rootLayout = new QVBoxLayout(this);
@@ -1029,8 +1060,7 @@ void LoginWindow::setupUi()
     contentLayout->addWidget(m_avatarView, 0, Qt::AlignHCenter);
     contentLayout->addSpacing(34);
 
-    const QVector<LoginAccount> initialAccounts = LoginAccountRepository::instance().requestLoginAccounts({1});
-    const LoginAccount initialAccount = initialAccounts.isEmpty() ? LoginAccount{} : initialAccounts.first();
+    const LoginAccount initialAccount = firstAvailableLoginAccount();
 
     m_accountField = new LoginInputField(content);
     m_accountField->setFixedWidth(kFormWidth);
@@ -1047,7 +1077,7 @@ void LoginWindow::setupUi()
     m_passwordField->setFixedWidth(kFormWidth);
     m_passwordField->setPasswordMode(true);
     m_passwordField->setPlaceholderText(QStringLiteral("密码"));
-    m_passwordField->setText(initialAccount.password);
+    m_passwordField->setText(initialAccount.rememberPassword ? initialAccount.password : QString());
     contentLayout->addWidget(m_passwordField, 0, Qt::AlignHCenter);
     contentLayout->addSpacing(6);
 
@@ -1059,7 +1089,8 @@ void LoginWindow::setupUi()
     optionsLayout->setSpacing(0);
     m_rememberButton = new LoginCheckButton(QStringLiteral("记住密码"), optionsHost);
     m_autoLoginButton = new LoginCheckButton(QStringLiteral("自动登录"), optionsHost);
-    m_rememberButton->setChecked(true);
+    m_rememberButton->setChecked(initialAccount.accountId.isEmpty() ? true : initialAccount.rememberPassword);
+    m_autoLoginButton->setChecked(initialAccount.autoLogin);
     optionsLayout->addWidget(m_rememberButton);
     optionsLayout->addStretch();
     optionsLayout->addWidget(m_autoLoginButton);
@@ -1103,16 +1134,6 @@ void LoginWindow::setupUi()
     contentLayout->addWidget(registerButton, 0, Qt::AlignHCenter);
 
     connect(m_accountField, &LoginInputField::dropdownRequested, this, &LoginWindow::showAccountPopup);
-    connect(m_rememberButton, &QAbstractButton::toggled, this, [this](bool checked) {
-        if (!checked && m_autoLoginButton->isChecked()) {
-            m_autoLoginButton->setChecked(false);
-        }
-    });
-    connect(m_autoLoginButton, &QAbstractButton::toggled, this, [this](bool checked) {
-        if (checked && !m_rememberButton->isChecked()) {
-            m_rememberButton->setChecked(true);
-        }
-    });
     setTabOrder(m_accountField->lineEdit(), m_passwordField->lineEdit());
     connect(m_passwordField->lineEdit(), &QLineEdit::returnPressed, this, &LoginWindow::attemptLogin);
     connect(m_loginButton, &QPushButton::clicked, this, &LoginWindow::attemptLogin);
@@ -1124,6 +1145,11 @@ void LoginWindow::setupUi()
         }
 
         LoginAccount account = loginAccountFromAuthResult(result, m_pendingLoginPassword);
+        account.rememberPassword = m_rememberButton && m_rememberButton->isChecked();
+        account.autoLogin = m_autoLoginButton && m_autoLoginButton->isChecked();
+        if (!account.rememberPassword) {
+            account.password.clear();
+        }
         if (account.accountId.isEmpty()) {
             resetLoginPending();
             m_errorLabel->setText(QStringLiteral("登录响应缺少用户信息"));
@@ -1146,6 +1172,49 @@ void LoginWindow::setupUi()
         m_errorLabel->setText(error.isAuthFailure()
                                       ? QStringLiteral("账号或密码不正确")
                                       : QStringLiteral("登录服务暂不可用"));
+        GlobalNotification::showFailure(this, QStringLiteral("登录失败"));
+    });
+    connect(&NetworkService::instance(), &NetworkService::sessionRestoreSucceeded, this, [this](const QString& requestId,
+                                                                                                const AuthTokenResult& result) {
+        if (requestId != m_sessionRestoreRequestId) {
+            return;
+        }
+
+        LoginAccount account = LoginAccountRepository::instance().requestLoginAccount({m_pendingLoginAccountId});
+        if (account.accountId.isEmpty()) {
+            resetLoginPending();
+            m_errorLabel->setText(QStringLiteral("账号信息不存在"));
+            GlobalNotification::showFailure(this, QStringLiteral("登录失败"));
+            return;
+        }
+
+        account.accessToken = result.accessToken;
+        account.refreshToken = result.refreshToken;
+        account.tokenExpiresAtUtcMs = QDateTime::currentDateTimeUtc()
+                                              .addSecs(qMax(0, result.expiresIn))
+                                              .toMSecsSinceEpoch();
+        account.rememberPassword = m_rememberButton && m_rememberButton->isChecked();
+        account.autoLogin = m_autoLoginButton && m_autoLoginButton->isChecked();
+        LoginAccountRepository::instance().saveAuthenticatedAccount(account);
+        finishLogin(account, profileFromLoginAccount(account));
+    });
+    connect(&NetworkService::instance(), &NetworkService::sessionRestoreFailed, this, [this](const QString& requestId,
+                                                                                            const NetworkError& error) {
+        if (requestId != m_sessionRestoreRequestId) {
+            return;
+        }
+
+        const QString accountId = m_pendingLoginAccountId;
+        resetLoginPending();
+        if (error.isAuthFailure()) {
+            LoginAccountRepository::instance().clearAccountTokens(accountId);
+            if (m_autoLoginButton) {
+                m_autoLoginButton->setChecked(false);
+            }
+            m_errorLabel->setText(QStringLiteral("登录已过期，请重新输入密码"));
+        } else {
+            m_errorLabel->setText(QStringLiteral("登录服务暂不可用"));
+        }
         GlobalNotification::showFailure(this, QStringLiteral("登录失败"));
     });
 
@@ -1218,6 +1287,11 @@ void LoginWindow::showEvent(QShowEvent* event)
     SystemWindow::showEvent(event);
     centerOnPrimaryScreen();
     setFocus(Qt::OtherFocusReason);
+    if (m_suppressNextAutoLogin) {
+        m_suppressNextAutoLogin = false;
+        return;
+    }
+    scheduleAutoLoginIfNeeded();
 }
 
 void LoginWindow::updateBackdropTheme()
@@ -1227,9 +1301,56 @@ void LoginWindow::updateBackdropTheme()
 
 void LoginWindow::updateAutoLoginRules()
 {
-    if (m_autoLoginButton->isChecked() && !m_rememberButton->isChecked()) {
-        m_rememberButton->setChecked(true);
+}
+
+void LoginWindow::applyAccountToForm(const LoginAccount& account)
+{
+    if (m_accountField) {
+        m_accountField->setText(account.accountId);
     }
+    if (m_passwordField) {
+        m_passwordField->setText(account.rememberPassword ? account.password : QString());
+        m_passwordField->lineEdit()->setFocus(Qt::OtherFocusReason);
+    }
+    if (m_rememberButton) {
+        m_rememberButton->setChecked(account.rememberPassword);
+    }
+    if (m_autoLoginButton) {
+        m_autoLoginButton->setChecked(account.autoLogin);
+    }
+    updateAvatarForAccount(account.accountId);
+}
+
+void LoginWindow::scheduleAutoLoginIfNeeded()
+{
+    if (m_autoLoginScheduled || m_loginPending || !m_autoLoginButton || !m_autoLoginButton->isChecked()) {
+        return;
+    }
+
+    const LoginAccount account = LoginAccountRepository::instance().requestLoginAccount({
+            m_accountField ? m_accountField->text().trimmed() : QString()});
+    if (account.accountId.isEmpty() || !account.autoLogin || account.refreshToken.isEmpty()
+        || account.loggedInOnDevice) {
+        return;
+    }
+
+    m_autoLoginScheduled = true;
+    QTimer::singleShot(kAutoLoginDelayMs, this, [this, accountId = account.accountId]() {
+        m_autoLoginScheduled = false;
+        if (m_loginPending || !isVisible() || !m_loginButton || !m_autoLoginButton
+            || !m_autoLoginButton->isChecked()) {
+            return;
+        }
+        if (!m_accountField || m_accountField->text().trimmed() != accountId) {
+            return;
+        }
+        const LoginAccount latestAccount = LoginAccountRepository::instance().requestLoginAccount({accountId});
+        if (latestAccount.accountId.isEmpty() || !latestAccount.autoLogin
+            || latestAccount.refreshToken.isEmpty() || latestAccount.loggedInOnDevice) {
+            return;
+        }
+        attemptSessionRestore(latestAccount);
+    });
 }
 
 void LoginWindow::updateAvatarForAccount(const QString& accountId)
@@ -1253,19 +1374,60 @@ void LoginWindow::attemptLogin()
     updateAutoLoginRules();
     const QString accountId = m_accountField->text().trimmed();
     const QString password = m_passwordField->text();
-    if (accountId.isEmpty() || password.isEmpty()) {
-        m_errorLabel->setText(QStringLiteral("请输入账号和密码"));
+    if (accountId.isEmpty()) {
+        m_errorLabel->setText(QStringLiteral("请输入账号"));
         GlobalNotification::showFailure(this, QStringLiteral("登录失败"));
         return;
     }
 
+    const LoginAccount cachedAccount = LoginAccountRepository::instance().requestLoginAccount({accountId});
+    if (cachedAccount.loggedInOnDevice) {
+        m_errorLabel->setText(QStringLiteral("该账号已在该设备登录"));
+        GlobalNotification::showFailure(this, QStringLiteral("登录失败"));
+        return;
+    }
+
+    const bool canRestoreSession = !cachedAccount.refreshToken.isEmpty() && password.isEmpty();
+    if (canRestoreSession) {
+        attemptSessionRestore(cachedAccount);
+        return;
+    }
+
+    if (password.isEmpty()) {
+        m_errorLabel->setText(QStringLiteral("请输入密码"));
+        GlobalNotification::showFailure(this, QStringLiteral("登录失败"));
+        return;
+    }
+
+    attemptPasswordLogin(accountId, password);
+}
+
+void LoginWindow::attemptPasswordLogin(const QString& accountId, const QString& password)
+{
     m_errorLabel->clear();
     m_loginPending = true;
     m_pendingLoginAccountId = accountId;
     m_pendingLoginPassword = password;
+    m_sessionRestoreRequestId.clear();
     m_loginButton->setEnabled(false);
     m_loginButton->setText(QStringLiteral("正在登录"));
     m_loginRequestId = NetworkService::instance().login(accountId, password);
+}
+
+void LoginWindow::attemptSessionRestore(const LoginAccount& account)
+{
+    m_errorLabel->clear();
+    m_loginPending = true;
+    m_pendingLoginAccountId = account.accountId;
+    m_pendingLoginPassword.clear();
+    m_loginRequestId.clear();
+    m_loginButton->setEnabled(false);
+    m_loginButton->setText(QStringLiteral("正在恢复登录"));
+
+    const QString accountKey = account.userUuid.isEmpty() ? account.accountId : account.userUuid;
+    m_sessionRestoreRequestId = NetworkService::instance().restoreSession(account.accountId,
+                                                                          accountKey,
+                                                                          account.refreshToken);
 }
 
 void LoginWindow::cacheAuthenticatedAvatar(LoginAccount account, CurrentUserProfile authenticatedProfile)
@@ -1384,7 +1546,16 @@ void LoginWindow::finishLogin(const LoginAccount& account, const CurrentUserProf
     }
 
     m_loginRequestId.clear();
-    LoginAccountRepository::instance().recordSuccessfulLogin(account.accountId, account.password);
+    m_sessionRestoreRequestId.clear();
+    AuthSession::instance().setLoginAccountId(account.accountId);
+    if (!LoginAccountRepository::instance().setAccountLoggedInOnDevice(account.accountId, true)) {
+        AuthSession::instance().clear();
+        resetLoginPending();
+        m_errorLabel->setText(QStringLiteral("该账号已在该设备登录"));
+        GlobalNotification::showFailure(this, QStringLiteral("登录失败"));
+        return;
+    }
+    LoginAccountRepository::instance().recordSuccessfulLogin(account.accountId);
     const CurrentUserProfile profile = authenticatedProfile.isValid()
             ? authenticatedProfile
             : profileFromLoginAccount(account);
@@ -1396,7 +1567,7 @@ void LoginWindow::finishLogin(const LoginAccount& account, const CurrentUserProf
     }
 
     QTimer::singleShot(kShowMainWindowDelayMs, this, [this]() {
-        emit loginAccepted();
+        emit loginAccepted(AuthSession::instance().loginAccountId());
     });
 }
 
@@ -1404,6 +1575,7 @@ void LoginWindow::resetLoginPending(const QString& buttonText)
 {
     m_loginPending = false;
     m_loginRequestId.clear();
+    m_sessionRestoreRequestId.clear();
     m_pendingLoginAccountId.clear();
     m_pendingLoginPassword.clear();
     if (m_loginButton) {
@@ -1464,14 +1636,8 @@ void LoginWindow::showAccountPopup()
         popup = new AccountHistoryPopup(this);
         m_accountPopup = popup;
         popup->setAccountSelectedCallback([this](const LoginAccount& account) {
-            if (m_accountField) {
-                m_accountField->setText(account.accountId);
-            }
-            updateAvatarForAccount(account.accountId);
-            if (m_passwordField) {
-                m_passwordField->setText(account.password);
-                m_passwordField->lineEdit()->setFocus(Qt::OtherFocusReason);
-            }
+            applyAccountToForm(account);
+            m_errorLabel->clear();
         });
         popup->setAccountDeletedCallback([this](const QString& accountId) {
             LoginAccountRepository::instance().removeLoginAccount(accountId);

@@ -7,6 +7,7 @@
 #include "shared/services/ImageService.h"
 #include "shared/theme/ThemeManager.h"
 #include "shared/ui/GlobalNotification.h"
+#include "shared/ui/renderers/LoadingSpinnerRenderer.h"
 #include "shared/ui/renderers/MediaPlaceholderRenderer.h"
 #include <QAbstractTextDocumentLayout>
 #include <QPainter>
@@ -141,6 +142,46 @@ bool isGroupSystemEventMessage(const ChatMessage* message)
     }
     return message->getType() == MessageType::GroupMemberJoined ||
            message->getType() == MessageType::GroupSystemEvent;
+}
+
+QSize declaredImageSize(const ImageMessage* message)
+{
+    if (!message) {
+        return {};
+    }
+
+    QSize size = message->getImageSize();
+    if (!size.isValid()) {
+        size = ImageService::instance().sourceSize(message->getImageSource());
+    }
+    return size;
+}
+
+QSize imageBubbleSize(const ImageMessage* message, int maxWidth)
+{
+    constexpr int kImageMaxHeight = 200;
+    QSize sourceSize = declaredImageSize(message);
+    if (!sourceSize.isValid()) {
+        sourceSize = QSize(qMin(maxWidth, 180), 135);
+    }
+
+    return sourceSize.scaled(maxWidth,
+                             kImageMaxHeight,
+                             Qt::KeepAspectRatio);
+}
+
+void drawPlainImagePlaceholder(QPainter* painter, const QRect& rect, int radius)
+{
+    if (!painter || rect.isEmpty()) {
+        return;
+    }
+
+    painter->save();
+    painter->setRenderHint(QPainter::Antialiasing, true);
+    painter->setPen(Qt::NoPen);
+    painter->setBrush(ThemeManager::instance().color(ThemeColor::ImagePlaceholder));
+    painter->drawRoundedRect(rect, radius, radius);
+    painter->restore();
 }
 
 QString referenceSenderName(const ChatMessage* referencedMessage)
@@ -375,6 +416,10 @@ void ChatItemDelegate::paint(QPainter* painter, const QStyleOptionViewItem& opti
         if (!referenceRect.isEmpty()) {
             drawMessageReference(painter, referenceRect, referencedMessage);
         }
+        const QRect indicatorRect = sendStateIndicatorRect(option, index);
+        if (!indicatorRect.isEmpty()) {
+            drawSendStateIndicator(painter, indicatorRect, message->getSendState());
+        }
     }
     painter->restore();
 }
@@ -399,6 +444,13 @@ bool ChatItemDelegate::editorEvent(QEvent* event, QAbstractItemModel* model,
 
         const ChatMessage* message = index.data(Qt::UserRole).value<ChatMessage*>();
         if (!message) return false;
+
+        if (mouseEvent->button() == Qt::LeftButton &&
+                message->getSendState() == MessageSendState::Failed &&
+                sendStateIndicatorRect(option, index).contains(mouseEvent->pos())) {
+            emit retrySendRequested(index.row());
+            return true;
+        }
 
         if (message->getType() == MessageType::Recall) {
             const RecallMessage* recallMessage = static_cast<const RecallMessage*>(message);
@@ -739,6 +791,35 @@ QPersistentModelIndex ChatItemDelegate::selectionIndex() const
     return m_selectionIndex;
 }
 
+QRect ChatItemDelegate::sendStateIndicatorRect(const QStyleOptionViewItem& option,
+                                               const QModelIndex& index) const
+{
+    const ChatMessage* message = index.data(Qt::UserRole).value<ChatMessage*>();
+    if (!message ||
+        !message->isFromMe() ||
+        message->getType() == MessageType::Recall ||
+        isGroupSystemEventMessage(message)) {
+        return {};
+    }
+    const MessageSendState state = message->getSendState();
+    if (state != MessageSendState::Uploading &&
+        state != MessageSendState::Sending &&
+        state != MessageSendState::Failed) {
+        return {};
+    }
+
+    const int maxBubbleWidth = calculateMaxBubbleWidth(option.rect);
+    const QRect bubbleRect = calculatePaintedBubbleRect(option.rect, message, maxBubbleWidth);
+    if (bubbleRect.isEmpty()) {
+        return {};
+    }
+
+    return QRect(bubbleRect.left() - SEND_STATE_INDICATOR_GAP - SEND_STATE_INDICATOR_SIZE,
+                 bubbleRect.center().y() - SEND_STATE_INDICATOR_SIZE / 2,
+                 SEND_STATE_INDICATOR_SIZE,
+                 SEND_STATE_INDICATOR_SIZE);
+}
+
 bool ChatItemDelegate::reeditHitTest(const QStyleOptionViewItem& option,
                                      const QModelIndex& index,
                                      const QPoint& viewportPos) const
@@ -777,7 +858,7 @@ void ChatItemDelegate::drawBubble(QPainter* painter, const QRect& rect,
     }
     if (message->getType() == MessageType::Image) {
         const ImageMessage* imgMsg = static_cast<const ImageMessage*>(message);
-        drawImageMessage(painter, rect, imgMsg->getImageSource(), isSelected);
+        drawImageMessage(painter, rect, imgMsg, isSelected);
         return;
     }
 
@@ -856,7 +937,7 @@ void ChatItemDelegate::drawMessageReference(QPainter* painter,
             clipPath.addRoundedRect(imageRect, REFERENCE_IMAGE_RADIUS, REFERENCE_IMAGE_RADIUS);
             painter->setClipPath(clipPath);
             if (image.isNull()) {
-                MediaPlaceholderRenderer::drawImage(painter, imageRect, REFERENCE_IMAGE_RADIUS);
+                drawPlainImagePlaceholder(painter, imageRect, REFERENCE_IMAGE_RADIUS);
             } else {
                 painter->drawPixmap(imageRect, image);
             }
@@ -1030,16 +1111,15 @@ void ChatItemDelegate::drawGroupSystemEventMessage(QPainter* painter,
 }
 
 void ChatItemDelegate::drawImageMessage(QPainter* painter, const QRect& rect,
-                                      const QString& imageSource,
-                                      bool isSelected) const
+                                        const ImageMessage* message,
+                                        bool isSelected) const
 {
-    const QSize sourceSize = ImageService::instance().sourceSize(imageSource);
-    if (!sourceSize.isValid()) {
-        MediaPlaceholderRenderer::drawImage(painter, rect, IMAGE_RADIUS);
+    if (!message) {
+        drawPlainImagePlaceholder(painter, rect, IMAGE_RADIUS);
         return;
     }
 
-    const QPixmap image = ImageService::instance().scaled(imageSource,
+    const QPixmap image = ImageService::instance().scaled(message->getImageSource(),
                                                           rect.size(),
                                                           Qt::KeepAspectRatio,
                                                           painter->device()->devicePixelRatioF());
@@ -1049,13 +1129,52 @@ void ChatItemDelegate::drawImageMessage(QPainter* painter, const QRect& rect,
     painter->save();
     painter->setClipPath(clipPath);
     if (image.isNull()) {
-        MediaPlaceholderRenderer::drawImage(painter, rect, IMAGE_RADIUS);
+        drawPlainImagePlaceholder(painter, rect, IMAGE_RADIUS);
     } else {
         painter->drawPixmap(rect, image);
     }
     if (isSelected) {
         painter->fillRect(rect, ThemeManager::instance().color(ThemeColor::ScrollThumb));
     }
+    painter->restore();
+}
+
+void ChatItemDelegate::drawSendStateIndicator(QPainter* painter,
+                                              const QRect& rect,
+                                              MessageSendState state) const
+{
+    if (!painter || rect.isEmpty()) {
+        return;
+    }
+    if (state != MessageSendState::Uploading &&
+        state != MessageSendState::Sending &&
+        state != MessageSendState::Failed) {
+        return;
+    }
+
+    painter->save();
+    painter->setRenderHint(QPainter::Antialiasing, true);
+    if (state == MessageSendState::Failed) {
+        const QColor danger = ThemeManager::instance().color(ThemeColor::DangerText);
+        painter->setPen(Qt::NoPen);
+        painter->setBrush(danger);
+        painter->drawEllipse(rect);
+
+        QFont font = AppFonts::applicationPixelSizedFont(13);
+        font.setBold(true);
+        painter->setFont(font);
+        painter->setPen(ThemeManager::textColorOn(danger));
+        painter->drawText(rect, Qt::AlignCenter, QStringLiteral("!"));
+        painter->restore();
+        return;
+    }
+
+    QColor color = ThemeManager::instance().color(ThemeColor::TertiaryText);
+    if (state == MessageSendState::Uploading) {
+        color = ThemeManager::instance().color(ThemeColor::Accent);
+    }
+    const qreal progress = (QDateTime::currentMSecsSinceEpoch() % 1000) / 1000.0;
+    LoadingSpinnerRenderer::drawCircularSpinner(painter, rect, color, progress);
     painter->restore();
 }
 
@@ -1232,13 +1351,7 @@ QSize ChatItemDelegate::sizeHint(const QStyleOptionViewItem& option,
             bubbleHeight = textSize.height() + 2 * BUBBLE_PADDING;
         } else if (message->getType() == MessageType::Image) {
             const ImageMessage* imgMsg = static_cast<const ImageMessage*>(message);
-            const QSize sourceSize = ImageService::instance().sourceSize(imgMsg->getImageSource());
-            if (sourceSize.isValid()) {
-                QSize scaledSize = sourceSize.scaled(maxBubbleWidth,
-                                                     IMAGE_MAX_HEIGHT,
-                                                     Qt::KeepAspectRatio);
-                bubbleHeight = scaledSize.height();
-            }
+            bubbleHeight = imageBubbleSize(imgMsg, maxBubbleWidth).height();
         }
 
         int referenceHeight = 0;
@@ -1277,14 +1390,9 @@ QRect ChatItemDelegate::calculateBubbleRect(const QRect& contentRect,
         bubbleHeight = textSize.height() + 2 * BUBBLE_PADDING;
     } else if (message->getType() == MessageType::Image) {
         const ImageMessage* imgMsg = static_cast<const ImageMessage*>(message);
-        const QSize sourceSize = ImageService::instance().sourceSize(imgMsg->getImageSource());
-        if (sourceSize.isValid()) {
-            QSize scaledSize = sourceSize.scaled(maxWidth,
-                                                 IMAGE_MAX_HEIGHT,
-                                                 Qt::KeepAspectRatio);
-            bubbleWidth = scaledSize.width();
-            bubbleHeight = scaledSize.height();
-        }
+        const QSize scaledSize = imageBubbleSize(imgMsg, maxWidth);
+        bubbleWidth = scaledSize.width();
+        bubbleHeight = scaledSize.height();
     }
 
     bubbleWidth = qMin(bubbleWidth, maxWidth);
@@ -1334,7 +1442,7 @@ QRect ChatItemDelegate::calculateReferenceRect(const QRect& contentRect,
     QSize contentSize;
     if (referencedMessage && referencedMessage->getType() == MessageType::Image) {
         const auto* imageMessage = static_cast<const ImageMessage*>(referencedMessage);
-        const QSize sourceSize = ImageService::instance().sourceSize(imageMessage->getImageSource());
+        const QSize sourceSize = declaredImageSize(imageMessage);
         if (sourceSize.isValid()) {
             const QFontMetrics fm(referenceFont());
             const int imageSide = qMin(maxContentWidth,
@@ -1373,7 +1481,7 @@ QRect ChatItemDelegate::calculateReferenceImageRect(const QRect& referenceRect,
     }
 
     const auto* imageMessage = static_cast<const ImageMessage*>(referencedMessage);
-    const QSize sourceSize = ImageService::instance().sourceSize(imageMessage->getImageSource());
+    const QSize sourceSize = declaredImageSize(imageMessage);
     if (!sourceSize.isValid()) {
         return {};
     }

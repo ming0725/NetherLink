@@ -29,6 +29,7 @@ public:
     BackendEnvironment environment() const;
     void setEnvironment(const BackendEnvironment& environment);
     bool isConnected() const;
+    QString currentSessionId() const;
 
 public slots:
     void connectToServer();
@@ -36,6 +37,7 @@ public slots:
     void sendPing();
     void sendResume();
     void sendJson(const QJsonObject& message);
+    void sendPresenceUpdate(const QString& status);
 
 signals:
     void stateChanged(RealtimeClient::State state);
@@ -43,6 +45,7 @@ signals:
     void disconnected();
     void eventReceived(const RealtimeEvent& event);
     void connectionError(const QString& message);
+    void sessionRevoked(const QString& sessionId, const QString& message);
 
 private:
     explicit RealtimeClient(QObject* parent = nullptr);
@@ -52,11 +55,14 @@ private:
     void scheduleReconnect(bool immediate = false);
     void resetHeartbeat();
     void handleTextMessage(const QString& message);
+    void handleRealtimeReady(const RealtimeEvent& event);
+    bool handleSessionRevoked(const RealtimeEvent& event);
     void handleClientError(const RealtimeEvent& event);
     int reconnectDelayMs() const;
 
     QWebSocket* m_socket = nullptr;
     BackendEnvironment m_environment;
+    QString m_currentSessionId;
     State m_state = State::Idle;
     QTimer m_pingTimer;
     QTimer m_staleTimer;
@@ -66,4 +72,5 @@ private:
     bool m_suppressNextReconnect = false;
     int m_reconnectAttempt = 0;
     bool m_userClosed = false;
+    bool m_sessionRevoked = false;
 };

@@ -237,10 +237,8 @@ ChatSessionController::ChatSessionController(QObject* parent)
                 if (m_meta.isGroup || !hasCurrentConversation(userId)) {
                     return;
                 }
-                MessageRepository::instance().removeConversation(userId);
                 UserRepository::instance().removeUser(userId);
-                close();
-                emit conversationRemoved();
+                refreshSessionData(true);
             });
     connect(&FriendRemoteDataSource::instance(),
             &FriendRemoteDataSource::friendUpdateFailed,
@@ -313,6 +311,57 @@ ChatSessionController::ChatSessionController(QObject* parent)
                 if (m_meta.isGroup && hasCurrentConversation(groupId)) {
                     emit groupLeaveFailed(groupId, error);
                 }
+            });
+    connect(&GroupRemoteDataSource::instance(),
+            &GroupRemoteDataSource::groupMembersFetched,
+            this,
+            [this](const QString& requestId,
+                   const QString& groupId,
+                   const QString& keyword,
+                   int offset,
+                   int limit,
+                   const QVector<User>& members,
+                   int totalCount,
+                   bool hasMore) {
+                if (requestId != m_memberPageRequestId ||
+                    !m_meta.isGroup ||
+                    !hasCurrentConversation(groupId)) {
+                    return;
+                }
+
+                GroupMembersPage page;
+                page.groupId = groupId;
+                page.keyword = keyword;
+                page.offset = offset;
+                page.totalCount = totalCount;
+                page.members = members.mid(0, limit);
+                page.hasMore = hasMore;
+                m_memberPageRequestId.clear();
+                emit groupMembersPageLoaded(m_meta, page);
+            });
+    connect(&GroupRemoteDataSource::instance(),
+            &GroupRemoteDataSource::groupMembersFetchFailed,
+            this,
+            [this](const QString& requestId,
+                   const QString& groupId,
+                   const QString& keyword,
+                   int offset,
+                   int,
+                   const NetworkError&) {
+                if (requestId != m_memberPageRequestId ||
+                    !m_meta.isGroup ||
+                    !hasCurrentConversation(groupId)) {
+                    return;
+                }
+
+                GroupMembersPage page;
+                page.groupId = groupId;
+                page.keyword = keyword;
+                page.offset = offset;
+                page.totalCount = offset;
+                page.hasMore = false;
+                m_memberPageRequestId.clear();
+                emit groupMembersPageLoaded(m_meta, page);
             });
     connect(&ConversationRemoteDataSource::instance(),
             &ConversationRemoteDataSource::pinnedUpdated,
@@ -469,46 +518,21 @@ void ChatSessionController::loadGroupMembersPage(const QString& keyword, int off
         return;
     }
 
-    const int token = ++m_memberPageLoadToken;
-    const ConversationMeta meta = m_meta;
     const QString normalizedKeyword = keyword.trimmed();
     const int safeOffset = qMax(0, offset);
     const int safeLimit = qMax(1, limit);
-    QPointer<ChatSessionController> controller(this);
-
-    QThread* thread = QThread::create([controller, token, meta, normalizedKeyword, safeOffset, safeLimit]() {
-        const Group group = GroupRepository::instance().requestGroupDetail({meta.conversationId});
-        const QVector<User> members = sortedGroupMembers(group,
-                                                         requestGroupMembers(group),
-                                                         normalizedKeyword);
-        GroupMembersPage page;
-        page.groupId = group.groupId;
-        page.keyword = normalizedKeyword;
-        page.offset = qBound(0, safeOffset, members.size());
-        page.totalCount = members.size();
-        page.members = members.mid(page.offset, safeLimit);
-        page.hasMore = page.offset + page.members.size() < members.size();
-
-        if (!controller) {
-            return;
-        }
-        QMetaObject::invokeMethod(controller.data(), [controller, token, meta, page]() {
-            if (!controller || token != controller->m_memberPageLoadToken ||
-                meta.conversationId != controller->m_meta.conversationId) {
-                return;
-            }
-
-            emit controller->groupMembersPageLoaded(meta, page);
-        }, Qt::QueuedConnection);
-    });
-    connect(thread, &QThread::finished, thread, &QObject::deleteLater);
-    thread->start();
+    ++m_memberPageLoadToken;
+    m_memberPageRequestId = GroupRemoteDataSource::instance().fetchMembers(m_meta.conversationId,
+                                                                           normalizedKeyword,
+                                                                           safeOffset,
+                                                                           safeLimit);
 }
 
 void ChatSessionController::cancelPanelLoads()
 {
     ++m_panelLoadToken;
     ++m_memberPageLoadToken;
+    m_memberPageRequestId.clear();
 }
 
 void ChatSessionController::saveGroupName(const QString& name)
@@ -747,6 +771,8 @@ void ChatSessionController::clearMessages()
         return;
     }
 
+    MessageRepository::instance().clearConversationMessages(m_meta.conversationId);
+    emit messagesCleared();
     ConversationRemoteDataSource::instance().clearMessages(m_meta.conversationId);
 }
 

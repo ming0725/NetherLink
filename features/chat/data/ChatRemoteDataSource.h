@@ -27,6 +27,8 @@ public:
 signals:
     void messageSendSucceeded(const QString& clientMessageId);
     void messageSendFailed(const QString& clientMessageId, const NetworkError& error);
+    void messageSendBlocked(const NetworkError& error);
+    void imageUploadSucceeded(const QString& clientMessageId);
     void imageUploadFailed(const QString& clientMessageId, const NetworkError& error);
     void messageRecallSucceeded(const QString& requestId,
                                 const QString& conversationId,
@@ -52,6 +54,13 @@ private:
         QString messageId;
     };
 
+    struct UploadedImage {
+        QString fileId;
+        QString displayName;
+        int width = 0;
+        int height = 0;
+    };
+
     explicit ChatRemoteDataSource(QObject* parent = nullptr);
     Q_DISABLE_COPY(ChatRemoteDataSource)
 
@@ -62,8 +71,14 @@ private:
     void handleUploadFailed(const QString& requestId, const NetworkError& error);
     void handleRequestSucceeded(const QString& requestId, const NetworkResponse& response);
     void handleRequestFailed(const QString& requestId, const NetworkError& error);
+    QString sendUploadedImageMessage(const QString& conversationId,
+                                     const UploadedImage& image,
+                                     const QString& referencedMessageId,
+                                     const QString& clientMessageId,
+                                     const QString& clientSentAt);
 
     QHash<QString, PendingImage> m_pendingImagesByUploadRequest;
+    QHash<QString, UploadedImage> m_uploadedImagesByClientMessageId;
     QHash<QString, QString> m_clientMessageIdsByRequest;
     QHash<QString, PendingRecall> m_pendingRecallsByRequest;
 };

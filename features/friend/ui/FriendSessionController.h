@@ -3,6 +3,7 @@
 #include <QObject>
 #include <QImage>
 #include <QMap>
+#include <QSet>
 #include <QString>
 #include <QVector>
 
@@ -90,6 +91,7 @@ signals:
     void groupMySettingsUpdateFailed(const QString& groupId, const NetworkError& error);
     void groupLeaveSucceeded(const QString& groupId);
     void groupLeaveFailed(const QString& groupId, const NetworkError& error);
+    void notificationMarkReadFailed(const QString& scope, const NetworkError& error);
 
 private:
     void ensureUserRepositoryConnections() const;
@@ -101,4 +103,6 @@ private:
     mutable bool m_groupRepositoryConnectionsReady = false;
     mutable bool m_friendNotificationRepositoryConnectionsReady = false;
     mutable bool m_groupNotificationRepositoryConnectionsReady = false;
+    QString m_pendingFriendNotificationsReadRequestId;
+    QSet<QString> m_pendingGroupNotificationsReadRequestIds;
 };

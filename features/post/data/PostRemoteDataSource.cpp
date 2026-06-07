@@ -1,6 +1,7 @@
 #include "PostRemoteDataSource.h"
 
 #include "shared/network/HttpClient.h"
+#include "shared/network/ReferenceDataResolver.h"
 
 #include <QJsonObject>
 #include <QJsonValue>
@@ -210,6 +211,7 @@ void PostRemoteDataSource::handleRequestSucceeded(const QString& requestId, cons
 
     const PendingOperation pending = m_pendingOperations.take(requestId);
     const QJsonObject object = response.object();
+    ReferenceDataResolver::instance().consumePayload(object);
     switch (pending.operation) {
     case Operation::FetchFeed:
         emit feedFetched(requestId, pending.offset, pending.limit, pending.flag, object);

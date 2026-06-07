@@ -34,6 +34,14 @@ struct AuthResult {
     bool isValid() const { return user.isValid() && !accessToken.isEmpty(); }
 };
 
+struct AuthTokenResult {
+    QString accessToken;
+    QString refreshToken;
+    int expiresIn = 0;
+
+    bool isValid() const { return !accessToken.isEmpty() && !refreshToken.isEmpty(); }
+};
+
 class AuthApiClient : public QObject
 {
     Q_OBJECT
@@ -46,6 +54,7 @@ public:
                             const QString& password,
                             const QString& displayName,
                             const QString& userId);
+    QString refreshSession(const QString& refreshToken);
     QString logout();
 
 signals:
@@ -53,12 +62,15 @@ signals:
     void loginFailed(const QString& requestId, const NetworkError& error);
     void registerSucceeded(const QString& requestId, const AuthResult& result);
     void registerFailed(const QString& requestId, const NetworkError& error);
+    void refreshSucceeded(const QString& requestId, const AuthTokenResult& result);
+    void refreshFailed(const QString& requestId, const NetworkError& error);
     void logoutFinished(const QString& requestId, bool success, const NetworkError& error);
 
 private:
     enum class RequestKind {
         Login,
         Register,
+        Refresh,
         Logout
     };
 
@@ -68,8 +80,10 @@ private:
     void handleRequestSucceeded(const QString& requestId, const NetworkResponse& response);
     void handleRequestFailed(const QString& requestId, const NetworkError& error);
     AuthResult authResultFromObject(const QJsonObject& object) const;
+    AuthTokenResult authTokenResultFromObject(const QJsonObject& object) const;
 
     QHash<QString, RequestKind> m_pendingRequests;
 };
 
 Q_DECLARE_METATYPE(AuthResult)
+Q_DECLARE_METATYPE(AuthTokenResult)

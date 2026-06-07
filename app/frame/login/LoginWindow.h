@@ -29,9 +29,10 @@ class LoginWindow : public SystemWindow
 public:
     explicit LoginWindow(QWidget* parent = nullptr);
     ~LoginWindow() override;
+    void suppressNextAutoLogin();
 
 signals:
-    void loginAccepted();
+    void loginAccepted(const QString& accountId);
 
 protected:
     bool eventFilter(QObject* watched, QEvent* event) override;
@@ -60,6 +61,10 @@ private:
     void setupUi();
     void updateBackdropTheme();
     void updateAutoLoginRules();
+    void applyAccountToForm(const LoginAccount& account);
+    void scheduleAutoLoginIfNeeded();
+    void attemptPasswordLogin(const QString& accountId, const QString& password);
+    void attemptSessionRestore(const LoginAccount& account);
     void updateAvatarForAccount(const QString& accountId);
     void attemptLogin();
     void cacheAuthenticatedAvatar(LoginAccount account, CurrentUserProfile authenticatedProfile);
@@ -91,6 +96,7 @@ private:
     QVector<BackgroundLight> m_backgroundLights;
     QImage m_blurredBackgroundLayer;
     QString m_loginRequestId;
+    QString m_sessionRestoreRequestId;
     QString m_pendingLoginAccountId;
     QString m_pendingLoginPassword;
     QFutureWatcher<QImage>* m_backgroundLayerWatcher = nullptr;
@@ -99,4 +105,6 @@ private:
     bool m_backgroundLayerInFlight = false;
     bool m_backgroundLayerUpdatePending = false;
     bool m_loginPending = false;
+    bool m_autoLoginScheduled = false;
+    bool m_suppressNextAutoLogin = false;
 };

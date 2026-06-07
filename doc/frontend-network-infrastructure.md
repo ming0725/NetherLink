@@ -207,6 +207,7 @@
   - ready 后发送 `resume`。
 - 收到 WebSocket 文本消息后解析为 `RealtimeEvent`，并交给 `RealtimeEventDispatcher` 分发。
 - 收到 `client.error` 且 code 为 `TOKEN_EXPIRED` 时触发 HTTP token refresh。
+- 收到 `client.error` 且 `payload.requestType=chat.message.send`、`payload.code=NOT_FRIEND` 时，将当前 pending 发送标记失败，提示“你们已不是好友，无法发送消息”，并刷新当前私聊关系状态。
 
 ### 事件分发与游标存储
 
@@ -254,9 +255,12 @@
 已新增 `features/chat/data/ChatRemoteDataSource.h/.cpp`：
 
 - 文本消息通过 `POST /api/v1/conversations/{conversationId}/messages` 发送。
-- 聊天图片先调用 `UploadClient::uploadFile(path, "chat_image")` 上传到 `/files`，成功后用返回的 `fileId` 作为 `image` 消息附件发送。
+- 聊天图片先调用 `UploadClient::uploadFile(path, "chat_image")` 上传到 `/files`，上传接口成功返回后立即用返回的 `fileId` 作为 `image` 消息附件发送，不等待文件 `processingStatus=ready`。
+- 发送消息请求体不放 `senderId`；后端从 token 决定发送者。`ChatArea` 创建本地 pending 消息时使用当前用户 UUID 对齐后端返回的 `senderUuid`，避免用公开 ID 做归属判断。
 - 每条本端发送消息都生成稳定 `clientMessageId`，失败重试由 `HttpClient` 按幂等消息规则处理。
 - `ChatArea` 继续先创建本地乐观消息并保留现有 UI 体验；发送失败用现有全局通知提示。
+- HTTP 失败响应按 `{ code, message, requestId }` 解析；发送消息返回 `NOT_FRIEND` 或 WebSocket 返回 `client.error` / `chat.message.send` / `NOT_FRIEND` 时，pending 消息标记为失败，提示“你们已不是好友，无法发送消息”，并把对应私聊关系置为非好友状态。
+- 私聊关系已解除时，`MessageList` 保留历史消息并在最底部追加“你们已不是好友，无法发送消息”的本地系统提示；继续尝试发送新文本或图片时只追加本地失败消息，不再发起远端发送，并把该失败消息写入本地 `chat_messages` 缓存以便下次打开仍显示失败标记。
 - `ChatMessage`、`MessageRepository` 和 `ChatListModel` 已保留并按 `clientMessageId` 去重，避免 REST 成功或 WebSocket `chat.message.sent/chat.message.created` 回包重复追加同一条本端消息。
 - 当前只接入已有文本消息和单张图片消息入口，不新增聊天文件、语音、视频或多附件 UI。
 - 消息撤回通过 `POST /api/v1/conversations/{conversationId}/messages/{messageId}/recall` 发送。
@@ -273,29 +277,37 @@
 - 标记已读通过 `POST /api/v1/conversations/{conversationId}/read` 发送。
 - 标记未读通过 `POST /api/v1/conversations/{conversationId}/unread` 发送。
 - 清空聊天记录通过 `DELETE /api/v1/conversations/{conversationId}/messages` 发送。
-- `MessageRepository` 监听远程成功信号后再更新本地会话状态、未读数、清空消息或移除会话；失败通过会话列表提示，不把纯本地操作当作后端确认。
+- 会话端点要求 `{conversationId}` 为后端 UUID；当前仍是好友号/群号等本地 ID 的会话不会调用这些远端会话端点，避免稳定触发后端 `conversationId must be a UUID` 校验错误。
+- 移除会话和清空聊天记录走本地优先：前端会立即删除 `MessageRepository` 内存态和 `LocalDataStore` 中的 `conversations/chat_messages` 缓存，再尝试同步远端隐藏或远端清空；远端失败只提示同步失败，不回滚本地删除。
+- `MessageRepository` 监听远程成功信号后继续更新本地会话状态、未读数、清空消息或移除会话；这些更新保持幂等，以兼容本地优先路径。
 - 当前 `ConversationMeta` / `ConversationSummary` 尚未承载 `version/etag`，因此设置和清空暂不发送 `expectedVersion` / `If-Match`。
 
 ### 好友/群组申请远程写入
 
 已新增 `features/friend/data/FriendRemoteDataSource.h/.cpp`：
 
-- 好友申请同意通过 `POST /api/v1/friend-requests/{requestId}/accept` 发送，body 包含 `remark`、`groupId` 和稳定 `clientOperationId`。
+- 添加联系人搜索窗口已经接入远程搜索：
+  - 用户搜索请求 `GET /api/v1/users?keyword=<keyword>&limit=<n>&offset=0`。
+  - 群搜索请求 `GET /api/v1/groups?keyword=<keyword>&limit=<n>&offset=0`。
+  - 成功响应会转换为现有 `User` / `Group` UI 模型，并把 `userUuid`、头像 URL/版本和群资料写入账号态 SQLite 快照；失败显示“用户搜索失败”或“群搜索失败”，不回退到静态样例。
+- 好友申请同意通过 `POST /api/v1/friend-requests/{requestId}/accept` 发送，body 包含稳定 `clientOperationId`；有备注时附带 `remark`，选择本地虚拟默认分组 `default` 时不发送 `groupId` / `friendGroupId`。
 - 好友申请拒绝通过 `POST /api/v1/friend-requests/{requestId}/reject` 发送，body 包含稳定 `clientOperationId`。
-- 好友搜索发起申请通过 `POST /api/v1/friend-requests` 发送，body 包含 `toUserUuid`、`message`、`sourceType=search`、空 `sourceGroupId/sourceFriendUuid` 和稳定 `clientOperationId`。
+- 好友搜索发起申请通过 `POST /api/v1/friend-requests` 发送，body 包含可读 `toUserId`、`message`、`sourceType=search`、空 `sourceGroupId/sourceFriendUuid` 和稳定 `clientOperationId`；`userUuid/requestId` 只作为隐藏操作键，UI 展示人时只使用昵称和可读 `userId`。
 - 群搜索发起入群申请通过 `POST /api/v1/group-join-requests` 发送，body 包含 `groupId`、`message` 和稳定 `clientOperationId`。
 - 群入群申请同意通过 `POST /api/v1/group-join-requests/{requestId}/accept` 发送，body 包含稳定 `clientOperationId`；前端选择的群备注和本地分组仍只用于现有本地 UI 状态。
 - 群入群申请拒绝通过 `POST /api/v1/group-join-requests/{requestId}/reject` 发送，body 包含稳定 `clientOperationId`。
-- 好友备注、分组和免打扰状态通过 `PATCH /api/v1/friends/{friendUserUuid}` 发送，body 包含 `remark`、`groupId`、`isDnd` 和稳定 `clientOperationId`；本地默认分组 `default` 映射为后端 `null`。
+- 好友备注、分组和免打扰状态通过 `PATCH /api/v1/friends/{friendUserUuid}` 发送，body 包含 `remark`、`groupId`、`isDnd` 和稳定 `clientOperationId`；本地默认分组 `default` 映射为后端 `null`，好友列表中 `friendGroupId` 缺失或为 `null` 时归入前端虚拟“默认分组”。
 - 删除好友通过 `DELETE /api/v1/friends/{friendUserUuid}?clientOperationId=<op>` 发送，同时携带 `Idempotency-Key`。
 - `FriendSessionController` 保持 UI 层现有调用入口不变，远程请求成功后复用 `FriendNotificationRepository` / `GroupNotificationRepository` 原有本地缓存更新逻辑。
 - 好友资料更新成功后再写入 `UserRepository`；好友详情页、好友列表菜单和聊天资料页的备注/分组编辑共用同一远程结果。
-- 删除好友成功后再移除本地会话和好友缓存；好友页、好友列表菜单和聊天资料页的删除入口共用同一远程结果。
+- 删除好友成功或收到 `friend.deleted` 推送后，只移除好友列表关系并清理备注、分组和免打扰缓存，不删除本地会话和 `MessageList` 历史；好友页、好友列表菜单和聊天资料页的删除入口共用同一远程结果。
+- `friend.deleted` payload 中 `userUuid` 为删除发起方、`friendUserUuid` 为被删除方；删除者和被删除者都会收到该事件。前端按当前用户身份取另一方 UUID，从好友列表移除该关系，并让对应私聊进入不可发送状态。
 - 已新增 `features/chat/data/GroupRemoteDataSource.h/.cpp`：
   - 创建群聊通过 `POST /api/v1/groups` 发送，body 包含 `name`、`memberIds` 和稳定 `clientOperationId`。
   - 群全局资料编辑通过 `PATCH /api/v1/groups/{groupId}` 发送，body 包含 `name`、`introduction`、`announcement` 和稳定 `clientOperationId`。
   - 当前用户群备注、分组和免打扰设置通过 `PATCH /api/v1/groups/{groupId}/my-settings` 发送，body 包含 `remark`、`listGroupId`、`listGroupName`、`isDnd` 和稳定 `clientOperationId`。
   - 邀请群成员通过 `POST /api/v1/groups/{groupId}/members` 发送，body 包含 `userUuids` 和稳定 `clientOperationId`。
+  - 群成员面板分页和搜索通过 `GET /api/v1/groups/{groupId}/members?keyword=<keyword>&limit=<n>&offset=<n>` 加载，成功后直接填充已有成员分页 UI，并缓存返回的成员用户资料；失败返回空页，不把本地群成员快照当作远程页。
   - 群成员昵称、管理员设置/取消通过 `PATCH /api/v1/groups/{groupId}/members/{userUuid}` 发送，body 包含 `nickname` 或 `role` 和稳定 `clientOperationId`。
   - 移除群成员通过 `DELETE /api/v1/groups/{groupId}/members/{userUuid}?clientOperationId=<op>` 发送，并携带同值 `Idempotency-Key`；批量移除会等待本批所有 DELETE 成功后再写入本地群成员快照。
   - 转让群主通过 `POST /api/v1/groups/{groupId}/transfer-owner` 发送，body 包含 `userUuid` 和稳定 `clientOperationId`。
@@ -341,6 +353,14 @@
 - 实时连接恢复到 ready，且此前出现过连接失败时，显示“实时连接已恢复”。
 - token 刷新失败时，当前用户状态会被清理，主窗口提示“登录状态已过期”，随后回到登录窗。
 
+### 通知已读
+
+已新增 `shared/network/NotificationRemoteDataSource.h/.cpp`：
+
+- 好友通知页进入时调用 `POST /api/v1/notifications/read-all`，body 包含 `type=friend.request.created`。
+- 群通知页进入时分别调用 `type=group.notification.created` 和 `type=group.join_request.created`。
+- 所有对应远程已读请求成功后才清理本地 `UnreadStateRepository` 未读点；失败显示“通知已读同步失败”，不再先把 UI 徽标强制置 0。
+
 ## 下一步
 
 建议按以下顺序接入业务，避免一次性重写导致边界混乱：
@@ -355,6 +375,7 @@
    - 每个 feature 增加独立 remote data source。当前已覆盖 `ChatRemoteDataSource`、`ConversationRemoteDataSource`、`FriendRemoteDataSource`、`GroupRemoteDataSource`、`PostRemoteDataSource` 和 AI 文本 SSE 入口。
    - repository 保留统一业务入口，但不再以静态样例数据作为 fallback；本地只保留缓存、临时 pending 状态、游标和必要的 UI 状态。
    - UI 层只观察 repository/model，不直接调用网络 client。
+   - 剩余结构性问题：当前聊天 UI 和 `MessageRepository` 仍把单聊 `conversationId` 当好友 ID、把群聊 `conversationId` 当群 ID 使用；后端契约中的 `/conversations/direct`、`/conversations/group` 返回独立会话 ID。完整接入这两个打开会话接口需要先给前端会话模型增加 peer/group 目标 ID 映射，否则会影响资料面板、消息发送、好友/群管理入口。
 
 2. 配置和安全存储
    - 将 base URL、代理、超时接入设置页。

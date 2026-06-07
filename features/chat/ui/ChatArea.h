@@ -67,6 +67,7 @@ private slots:
     void onReferenceMessageCloseRequested();
     void onReferencedMessageClicked(const QString& messageId);
     void onReeditMessageRequested(int row);
+    void onRetryMessageRequested(int row);
     void onRecallLatestPeerMessageRequested();
     void onInfoButtonClicked();
     void confirmClearChatHistory();
@@ -103,6 +104,17 @@ private:
         QHash<const ChatMessage*, int> peerMessageOrdinals;
         int minPeerMessageOrdinal = 0;
         int maxPeerMessageOrdinal = -1;
+        bool directRelationshipDeleted = false;
+    };
+
+    struct PendingLocalSend {
+        QString conversationId;
+        QString clientMessageId;
+        QString text;
+        QString imagePath;
+        QString referencedMessageId;
+        bool isImage = false;
+        int attempt = 0;
     };
 
     ChatListView* chatView;
@@ -174,6 +186,20 @@ private:
     bool ensureMessageLoaded(const QString& messageId);
     void scrollToMessageAndHighlight(const QString& messageId);
     void applyPendingReference(const ChatMessagePtr& message);
+    void registerPendingLocalSend(const PendingLocalSend& pending,
+                                  const ChatMessagePtr& message);
+    void schedulePendingLocalSendTimeout(const QString& clientMessageId);
+    void setLocalSendState(const QString& clientMessageId,
+                           MessageSendState state);
+    void markLocalSendSucceeded(const QString& clientMessageId);
+    void markLocalSendFailed(const QString& clientMessageId);
+    void failPendingLocalSendsForCurrentConversation();
+    bool isDirectRelationshipUnavailable() const;
+    QString directRelationshipDeletedNoticeMessageId() const;
+    void updateDirectRelationshipState(bool scrollToNotice = false);
+    void appendDirectRelationshipDeletedNotice(bool scrollToNotice);
+    void removeDirectRelationshipDeletedNotice();
+    void updateMessageAnimationTimer();
     QWidget* activeInfoPanel() const;
     QWidget* inactiveInfoPanel() const;
     QWidget* ensureActiveInfoPanel();
@@ -217,6 +243,7 @@ private:
     void scheduleReeditExpiry(const QSharedPointer<RecallMessage>& message);
     void removeUnreadCandidate(const ChatMessage* message);
     QString m_pendingReferenceMessageId;
+    QHash<QString, PendingLocalSend> m_pendingLocalSends;
 };
 
 #endif // CHATAREA_H 

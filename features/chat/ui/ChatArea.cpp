@@ -40,6 +40,8 @@
 #include <QLabel>
 #include <QVBoxLayout>
 #include <QVariant>
+#include <QUuid>
+#include <utility>
 
 namespace {
 
@@ -67,6 +69,8 @@ static constexpr int kInfoPanelAnimationDuration = 220;
 static constexpr int kChatInfoRightMargin = 18;
 static constexpr int kHistoryUnreadScrollDelayMs = 16;
 static constexpr int kHistoryUnreadNotifierLoadDelayMs = 120;
+static constexpr int kMessageSendAckTimeoutMs = 12000;
+static constexpr auto kDirectRelationshipDeletedNoticeText = "你们已不是好友，无法发送消息";
 
 static constexpr int kMessageLoadingSkeletonFrameMs = 40;
 static constexpr int kNewMessageNotifierMinBottomDistance = 220;
@@ -150,6 +154,10 @@ GroupRole groupRoleForUser(const Group& group, const QString& userId)
 QString groupMemberDisplayName(const Group& group, const QString& userId)
 {
     const CurrentUser& currentUser = CurrentUser::instance();
+    const QString cachedNickname = GroupRepository::instance().requestGroupMemberNickname(group.groupId, userId).trimmed();
+    if (!cachedNickname.isEmpty()) {
+        return cachedNickname;
+    }
     const QString groupNickname = group.memberNicknames.value(userId).trimmed();
     if (!groupNickname.isEmpty()) {
         return groupNickname;
@@ -185,6 +193,12 @@ QString simulatedPeerIdForGroup(const Group& group)
         }
     }
     return {};
+}
+
+QString currentUserSenderId()
+{
+    const CurrentUserProfile profile = CurrentUser::instance().identity();
+    return profile.userUuid.isEmpty() ? CurrentUser::instance().getUserId() : profile.userUuid;
 }
 
 QString groupRoleLabel(GroupRole role)
@@ -428,13 +442,49 @@ ChatArea::ChatArea(QWidget *parent)
     connect(&ChatRemoteDataSource::instance(),
             &ChatRemoteDataSource::messageSendFailed,
             this,
-            [this](const QString&, const NetworkError&) {
-                GlobalNotification::showFailure(this, QStringLiteral("消息发送失败"));
+            [this](const QString& clientMessageId, const NetworkError& error) {
+                markLocalSendFailed(clientMessageId);
+                if (error.code == QStringLiteral("NOT_FRIEND")) {
+                    if (!conversationId().isEmpty() && !isGroupMode()) {
+                        UserRepository::instance().removeUser(conversationId());
+                    }
+                    updateDirectRelationshipState(true);
+                    GlobalNotification::showFailure(this, QStringLiteral("你们已不是好友，无法发送消息"));
+                } else {
+                    GlobalNotification::showFailure(this, QStringLiteral("消息发送失败"));
+                }
+            });
+    connect(&ChatRemoteDataSource::instance(),
+            &ChatRemoteDataSource::messageSendBlocked,
+            this,
+            [this](const NetworkError& error) {
+                if (error.code != QStringLiteral("NOT_FRIEND")) {
+                    return;
+                }
+                if (!conversationId().isEmpty() && !isGroupMode()) {
+                    UserRepository::instance().removeUser(conversationId());
+                }
+                failPendingLocalSendsForCurrentConversation();
+                updateDirectRelationshipState(true);
+                GlobalNotification::showFailure(this, QStringLiteral("你们已不是好友，无法发送消息"));
+            });
+    connect(&ChatRemoteDataSource::instance(),
+            &ChatRemoteDataSource::messageSendSucceeded,
+            this,
+            [this](const QString& clientMessageId) {
+                markLocalSendSucceeded(clientMessageId);
+            });
+    connect(&ChatRemoteDataSource::instance(),
+            &ChatRemoteDataSource::imageUploadSucceeded,
+            this,
+            [this](const QString& clientMessageId) {
+                setLocalSendState(clientMessageId, MessageSendState::Sending);
             });
     connect(&ChatRemoteDataSource::instance(),
             &ChatRemoteDataSource::imageUploadFailed,
             this,
-            [this](const QString&, const NetworkError&) {
+            [this](const QString& clientMessageId, const NetworkError&) {
+                markLocalSendFailed(clientMessageId);
                 GlobalNotification::showFailure(this, QStringLiteral("图片上传失败"));
             });
     connect(&ChatRemoteDataSource::instance(),
@@ -455,6 +505,8 @@ ChatArea::ChatArea(QWidget *parent)
             this, &ChatArea::onReferenceMessageRequested);
     connect(chatDelegate, &ChatItemDelegate::reeditRequested,
             this, &ChatArea::onReeditMessageRequested);
+    connect(chatDelegate, &ChatItemDelegate::retrySendRequested,
+            this, &ChatArea::onRetryMessageRequested);
     connect(infoButton, &QPushButton::clicked,
             this, &ChatArea::onInfoButtonClicked);
     connect(&ThemeManager::instance(), &ThemeManager::themeChanged, this, applyHeaderTheme);
@@ -468,6 +520,14 @@ ChatArea::ChatArea(QWidget *parent)
             this, &ChatArea::replaceRepositoryMessage);
     connect(&GroupRepository::instance(), &GroupRepository::groupListChanged,
             this, &ChatArea::refreshCurrentGroupMessageDisplayNames);
+    connect(&UserRepository::instance(), &UserRepository::friendListChanged,
+            this, [this]() {
+                refreshCurrentGroupMessageDisplayNames();
+                updateDirectRelationshipState(true);
+                if (chatView && chatView->viewport()) {
+                    chatView->viewport()->update();
+                }
+            });
     connect(sessionController, &ChatSessionController::directPanelDataLoaded,
             this, &ChatArea::onDirectPanelDataLoaded);
     connect(sessionController, &ChatSessionController::groupPanelDataLoaded,
@@ -608,7 +668,10 @@ void ChatArea::replaceRepositoryMessage(const QString& changedConversationId,
         return;
     }
 
-    const QModelIndex messageIndex = chatModel->indexForMessageId(message->getMessageId());
+    QModelIndex messageIndex = chatModel->indexForMessageId(message->getMessageId());
+    if (!messageIndex.isValid() && !message->getClientMessageId().isEmpty()) {
+        messageIndex = chatModel->indexForClientMessageId(message->getClientMessageId());
+    }
     if (!messageIndex.isValid()) {
         return;
     }
@@ -617,6 +680,15 @@ void ChatArea::replaceRepositoryMessage(const QString& changedConversationId,
     if (previousMessage.isNull()) {
         return;
     }
+    if (message->getType() == MessageType::Image &&
+        previousMessage->getType() == MessageType::Image) {
+        auto* imageMessage = static_cast<ImageMessage*>(message.data());
+        const auto* previousImageMessage = static_cast<const ImageMessage*>(previousMessage.data());
+        if (!imageMessage->getImageSize().isValid() &&
+            previousImageMessage->getImageSize().isValid()) {
+            imageMessage->setImageSize(previousImageMessage->getImageSize());
+        }
+    }
 
     const auto ordinalIt = m_state.peerMessageOrdinals.constFind(previousMessage.get());
     if (ordinalIt != m_state.peerMessageOrdinals.cend() && !message->isFromMe()) {
@@ -624,6 +696,10 @@ void ChatArea::replaceRepositoryMessage(const QString& changedConversationId,
     }
     removeUnreadCandidate(previousMessage.get());
     chatModel->replaceMessage(messageIndex.row(), message);
+    if (!message->getClientMessageId().isEmpty()) {
+        m_pendingLocalSends.remove(message->getClientMessageId());
+        updateMessageAnimationTimer();
+    }
     if (message->getType() == MessageType::Recall) {
         const QSharedPointer<RecallMessage> recallMessage = message.dynamicCast<RecallMessage>();
         scheduleReeditExpiry(recallMessage);
@@ -1443,6 +1519,216 @@ void ChatArea::addTextMessage(QSharedPointer<TextMessage> message,
     addMessage(std::move(message));
 }
 
+void ChatArea::registerPendingLocalSend(const PendingLocalSend& pending,
+                                        const ChatMessagePtr& message)
+{
+    if (pending.clientMessageId.isEmpty() || message.isNull()) {
+        return;
+    }
+
+    m_pendingLocalSends.insert(pending.clientMessageId, pending);
+    schedulePendingLocalSendTimeout(pending.clientMessageId);
+    updateMessageAnimationTimer();
+}
+
+void ChatArea::schedulePendingLocalSendTimeout(const QString& clientMessageId)
+{
+    if (clientMessageId.isEmpty()) {
+        return;
+    }
+
+    const int attempt = m_pendingLocalSends.value(clientMessageId).attempt;
+    QTimer::singleShot(kMessageSendAckTimeoutMs, this, [this, clientMessageId, attempt]() {
+        const PendingLocalSend pending = m_pendingLocalSends.value(clientMessageId);
+        if (pending.clientMessageId.isEmpty() ||
+            pending.conversationId != conversationId() ||
+            pending.attempt != attempt ||
+            !chatModel) {
+            return;
+        }
+
+        const QModelIndex messageIndex = chatModel->indexForClientMessageId(clientMessageId);
+        const QSharedPointer<ChatMessage> message = messageIndex.isValid()
+                ? chatModel->sharedMessageAt(messageIndex.row())
+                : QSharedPointer<ChatMessage>();
+        if (message.isNull()) {
+            return;
+        }
+        const MessageSendState state = message->getSendState();
+        if (state == MessageSendState::Uploading || state == MessageSendState::Sending) {
+            markLocalSendFailed(clientMessageId);
+        }
+    });
+}
+
+void ChatArea::setLocalSendState(const QString& clientMessageId,
+                                 MessageSendState state)
+{
+    if (clientMessageId.isEmpty() || !chatModel) {
+        return;
+    }
+
+    const QModelIndex messageIndex = chatModel->indexForClientMessageId(clientMessageId);
+    if (!messageIndex.isValid()) {
+        return;
+    }
+
+    const QSharedPointer<ChatMessage> message = chatModel->sharedMessageAt(messageIndex.row());
+    if (message.isNull() || message->getSendState() == state) {
+        return;
+    }
+
+    message->setSendState(state);
+    if (state == MessageSendState::Failed || state == MessageSendState::Sent) {
+        MessageRepository::instance().persistMessage(conversationId(), message);
+    }
+    chatModel->notifyMessageChanged(message.get());
+    if (chatView && chatView->viewport()) {
+        chatView->viewport()->update();
+    }
+    updateMessageAnimationTimer();
+}
+
+void ChatArea::markLocalSendSucceeded(const QString& clientMessageId)
+{
+    if (clientMessageId.isEmpty()) {
+        return;
+    }
+
+    m_pendingLocalSends.remove(clientMessageId);
+    setLocalSendState(clientMessageId, MessageSendState::Sent);
+    updateMessageAnimationTimer();
+}
+
+void ChatArea::markLocalSendFailed(const QString& clientMessageId)
+{
+    if (clientMessageId.isEmpty()) {
+        return;
+    }
+
+    if (!m_pendingLocalSends.contains(clientMessageId)) {
+        return;
+    }
+    setLocalSendState(clientMessageId, MessageSendState::Failed);
+    updateMessageAnimationTimer();
+}
+
+void ChatArea::failPendingLocalSendsForCurrentConversation()
+{
+    if (conversationId().isEmpty()) {
+        return;
+    }
+
+    const QList<QString> clientMessageIds = m_pendingLocalSends.keys();
+    for (const QString& clientMessageId : clientMessageIds) {
+        const PendingLocalSend pending = m_pendingLocalSends.value(clientMessageId);
+        if (pending.conversationId == conversationId()) {
+            markLocalSendFailed(clientMessageId);
+        }
+    }
+}
+
+bool ChatArea::isDirectRelationshipUnavailable() const
+{
+    return !conversationId().isEmpty() &&
+           !isGroupMode() &&
+           !UserRepository::instance().isFriend(conversationId());
+}
+
+QString ChatArea::directRelationshipDeletedNoticeMessageId() const
+{
+    return QStringLiteral("__direct_relationship_deleted_notice_%1").arg(conversationId());
+}
+
+void ChatArea::updateDirectRelationshipState(bool scrollToNotice)
+{
+    const bool unavailable = isDirectRelationshipUnavailable();
+    if (m_state.directRelationshipDeleted == unavailable) {
+        if (unavailable) {
+            appendDirectRelationshipDeletedNotice(scrollToNotice);
+        }
+        return;
+    }
+
+    m_state.directRelationshipDeleted = unavailable;
+    if (unavailable) {
+        appendDirectRelationshipDeletedNotice(scrollToNotice);
+    } else {
+        removeDirectRelationshipDeletedNotice();
+    }
+}
+
+void ChatArea::appendDirectRelationshipDeletedNotice(bool scrollToNotice)
+{
+    if (!chatModel || conversationId().isEmpty() || isGroupMode()) {
+        return;
+    }
+
+    const QString noticeId = directRelationshipDeletedNoticeMessageId();
+    if (chatModel->messageById(noticeId)) {
+        return;
+    }
+
+    auto notice = QSharedPointer<GroupSystemEventMessage>::create(
+            QString(),
+            QString::fromUtf8(kDirectRelationshipDeletedNoticeText));
+    notice->setMessageId(noticeId);
+    chatModel->addMessage(notice);
+    adjustBottomSpace();
+
+    if (scrollToNotice && chatView && chatView->isBottomLocked()) {
+        QTimer::singleShot(0, this, [this]() {
+            scrollToBottom(true);
+        });
+    }
+}
+
+void ChatArea::removeDirectRelationshipDeletedNotice()
+{
+    if (!chatModel || conversationId().isEmpty()) {
+        return;
+    }
+
+    const QModelIndex noticeIndex =
+            chatModel->indexForMessageId(directRelationshipDeletedNoticeMessageId());
+    if (!noticeIndex.isValid()) {
+        return;
+    }
+    chatModel->removeMessage(noticeIndex.row());
+    adjustBottomSpace();
+}
+
+void ChatArea::updateMessageAnimationTimer()
+{
+    if (!messageLoadingAnimationTimer) {
+        return;
+    }
+
+    bool hasAnimatingSend = false;
+    if (chatModel) {
+        for (const PendingLocalSend& pending : std::as_const(m_pendingLocalSends)) {
+            const QModelIndex index = chatModel->indexForClientMessageId(pending.clientMessageId);
+            const QSharedPointer<ChatMessage> message = index.isValid()
+                    ? chatModel->sharedMessageAt(index.row())
+                    : QSharedPointer<ChatMessage>();
+            if (message &&
+                (message->getSendState() == MessageSendState::Uploading ||
+                 message->getSendState() == MessageSendState::Sending)) {
+                hasAnimatingSend = true;
+                break;
+            }
+        }
+    }
+
+    if (hasAnimatingSend || m_state.loadingInitialMessages) {
+        if (!messageLoadingAnimationTimer->isActive()) {
+            messageLoadingAnimationTimer->start();
+        }
+    } else if (messageLoadingAnimationTimer->isActive()) {
+        messageLoadingAnimationTimer->stop();
+    }
+}
+
 void ChatArea::applyConversationMeta()
 {
     if (infoPanelOpen) {
@@ -1937,6 +2223,7 @@ void ChatArea::onSessionMessagesCleared()
     m_state.hasMoreBefore = false;
     m_state.loadingOlderMessages = false;
     m_state.loadingInitialMessages = false;
+    m_pendingLocalSends.clear();
     if (messageLoadingAnimationTimer) {
         messageLoadingAnimationTimer->stop();
     }
@@ -2069,63 +2356,143 @@ void ChatArea::updateInputBarPosition() {
 
 void ChatArea::onSendImage(const QString &path)
 {
-    if (ImageService::instance().sourceSize(path).isValid()) {
+    const QSize imageSize = ImageService::instance().sourceSize(path);
+    if (imageSize.isValid()) {
+        const QString referencedMessageId = m_pendingReferenceMessageId;
+        if (isDirectRelationshipUnavailable()) {
+            const QString clientMessageId = QStringLiteral("msg_%1").arg(
+                    QUuid::createUuid().toString(QUuid::WithoutBraces));
+            const QString senderId = currentUserSenderId();
+            auto ptr = QSharedPointer<ImageMessage>::create(path,
+                                                            true,
+                                                            senderId,
+                                                            false,
+                                                            CurrentUser::instance().getUserName(),
+                                                            GroupRole::Member,
+                                                            imageSize);
+            ptr->setClientMessageId(clientMessageId);
+            ptr->setSendState(MessageSendState::Failed);
+            applyPendingReference(ptr);
+            addMessage(ptr);
+            registerPendingLocalSend(PendingLocalSend{
+                                             conversationId(),
+                                             clientMessageId,
+                                             {},
+                                             path,
+                                             referencedMessageId,
+                                             true
+                                     },
+                                     ptr);
+            updateDirectRelationshipState(true);
+            GlobalNotification::showFailure(this, QStringLiteral("你们已不是好友，无法发送消息"));
+            return;
+        }
         const QString clientMessageId = ChatRemoteDataSource::instance().sendImageMessage(
                 conversationId(),
                 path,
-                m_pendingReferenceMessageId);
+                referencedMessageId);
         if (clientMessageId.isEmpty()) {
             GlobalNotification::showFailure(this, QStringLiteral("图片发送失败"));
             return;
         }
         GroupRole role = GroupRole::Member;
         QString senderName = CurrentUser::instance().getUserName();
+        const QString senderId = currentUserSenderId();
         if (isGroupMode()) {
             const Group group = GroupRepository::instance().requestGroupDetail({conversationId()});
-            role = groupRoleForUser(group, CurrentUser::instance().getUserId());
-            senderName = groupMemberDisplayName(group, CurrentUser::instance().getUserId());
+            role = groupRoleForUser(group, senderId);
+            senderName = groupMemberDisplayName(group, senderId);
         }
         auto ptr =
                 QSharedPointer<ImageMessage>::create(path,
                                                true,
-                                               CurrentUser::instance().getUserId(),
+                                               senderId,
                                                isGroupMode(),
                                                senderName,
-                                               role);
+                                               role,
+                                               imageSize);
         ptr->setClientMessageId(clientMessageId);
+        ptr->setSendState(MessageSendState::Uploading);
         applyPendingReference(ptr);
         addMessage(ptr);
+        registerPendingLocalSend(PendingLocalSend{
+                                         conversationId(),
+                                         clientMessageId,
+                                         {},
+                                         path,
+                                         referencedMessageId,
+                                         true
+                                 },
+                                 ptr);
     }
 }
 
 void ChatArea::onSendText(const QString &text)
 {
     if (!text.trimmed().isEmpty()) {
+        const QString referencedMessageId = m_pendingReferenceMessageId;
+        if (isDirectRelationshipUnavailable()) {
+            const QString clientMessageId = QStringLiteral("msg_%1").arg(
+                    QUuid::createUuid().toString(QUuid::WithoutBraces));
+            auto ptr = QSharedPointer<TextMessage>::create(text,
+                                                           true,
+                                                           currentUserSenderId(),
+                                                           false,
+                                                           CurrentUser::instance().getUserName(),
+                                                           GroupRole::Member);
+            ptr->setClientMessageId(clientMessageId);
+            ptr->setSendState(MessageSendState::Failed);
+            applyPendingReference(ptr);
+            addMessage(ptr);
+            registerPendingLocalSend(PendingLocalSend{
+                                             conversationId(),
+                                             clientMessageId,
+                                             text,
+                                             {},
+                                             referencedMessageId,
+                                             false
+                                     },
+                                     ptr);
+            updateDirectRelationshipState(true);
+            GlobalNotification::showFailure(this, QStringLiteral("你们已不是好友，无法发送消息"));
+            return;
+        }
         const QString clientMessageId = ChatRemoteDataSource::instance().sendTextMessage(
                 conversationId(),
                 text,
-                m_pendingReferenceMessageId);
+                referencedMessageId);
         if (clientMessageId.isEmpty()) {
             GlobalNotification::showFailure(this, QStringLiteral("消息发送失败"));
             return;
         }
         GroupRole role = GroupRole::Member;
         QString senderName = CurrentUser::instance().getUserName();
+        const QString senderId = currentUserSenderId();
         if (isGroupMode()) {
             const Group group = GroupRepository::instance().requestGroupDetail({conversationId()});
-            role = groupRoleForUser(group, CurrentUser::instance().getUserId());
-            senderName = groupMemberDisplayName(group, CurrentUser::instance().getUserId());
+            role = groupRoleForUser(group, senderId);
+            senderName = groupMemberDisplayName(group, senderId);
         }
         auto ptr =
                 QSharedPointer<TextMessage>::create(text,
                                                true,
-                                               CurrentUser::instance().getUserId(),
+                                               senderId,
                                                isGroupMode(),
                                                senderName,
                                                role);
         ptr->setClientMessageId(clientMessageId);
+        ptr->setSendState(MessageSendState::Sending);
         applyPendingReference(ptr);
         addMessage(ptr);
+        registerPendingLocalSend(PendingLocalSend{
+                                         conversationId(),
+                                         clientMessageId,
+                                         text,
+                                         {},
+                                         referencedMessageId,
+                                         false
+                                 },
+                                 ptr);
     }
 }
 
@@ -2158,6 +2525,68 @@ void ChatArea::onSendTextAsPeer(const QString& text)
                                                    role);
     applyPendingReference(ptr);
     addMessage(ptr);
+}
+
+void ChatArea::onRetryMessageRequested(int row)
+{
+    if (!chatModel || conversationId().isEmpty()) {
+        return;
+    }
+
+    const QSharedPointer<ChatMessage> message = chatModel->sharedMessageAt(row);
+    if (message.isNull() ||
+        !message->isFromMe() ||
+        message->getSendState() != MessageSendState::Failed ||
+        message->getClientMessageId().isEmpty()) {
+        return;
+    }
+
+    const QString clientMessageId = message->getClientMessageId();
+    const PendingLocalSend pending = m_pendingLocalSends.value(clientMessageId);
+    if (pending.clientMessageId.isEmpty() || pending.conversationId != conversationId()) {
+        return;
+    }
+
+    if (isDirectRelationshipUnavailable()) {
+        markLocalSendFailed(clientMessageId);
+        updateDirectRelationshipState(true);
+        GlobalNotification::showFailure(this, QStringLiteral("你们已不是好友，无法发送消息"));
+        return;
+    }
+
+    const MessageSendState retryState = pending.isImage
+            ? MessageSendState::Uploading
+            : MessageSendState::Sending;
+    PendingLocalSend nextPending = pending;
+    ++nextPending.attempt;
+    m_pendingLocalSends.insert(clientMessageId, nextPending);
+    setLocalSendState(clientMessageId, retryState);
+
+    QString returnedClientMessageId;
+    if (nextPending.isImage) {
+        returnedClientMessageId = ChatRemoteDataSource::instance().sendImageMessage(
+                nextPending.conversationId,
+                nextPending.imagePath,
+                nextPending.referencedMessageId,
+                nextPending.clientMessageId);
+    } else {
+        returnedClientMessageId = ChatRemoteDataSource::instance().sendTextMessage(
+                nextPending.conversationId,
+                nextPending.text,
+                nextPending.referencedMessageId,
+                nextPending.clientMessageId);
+    }
+
+    if (returnedClientMessageId.isEmpty()) {
+        markLocalSendFailed(clientMessageId);
+        GlobalNotification::showFailure(this, nextPending.isImage
+                                        ? QStringLiteral("图片发送失败")
+                                        : QStringLiteral("消息发送失败"));
+        return;
+    }
+
+    schedulePendingLocalSendTimeout(clientMessageId);
+    updateMessageAnimationTimer();
 }
 
 bool ChatArea::canRecallMessage(const ChatMessage* message) const
@@ -2490,6 +2919,7 @@ void ChatArea::clearConversation(bool closeInfoPanel)
     chatModel->clearRowHighlight();
     chatView->clearTextSelection();
     m_pendingReferenceMessageId.clear();
+    m_pendingLocalSends.clear();
     if (referenceMessageNotifier) {
         referenceMessageNotifier->hide();
     }
@@ -2845,6 +3275,7 @@ void ChatArea::openConversation(const ConversationThreadData& conversation)
     m_state.newUnreadMessageCount = 0;
     m_state.newMessageNotifierRevealedByDownScroll = false;
     m_state.loadingInitialMessages = false;
+    updateMessageAnimationTimer();
     m_state.hasMoreBefore = conversation.hasMoreBefore;
     m_state.allowOlderMessageFetch = false;
     assignInitialPeerMessageOrdinals(conversation.messages);
@@ -2866,6 +3297,7 @@ void ChatArea::openConversation(const ConversationThreadData& conversation)
     const bool listUpdatesWereEnabled = chatView->updatesEnabled();
     chatView->setUpdatesEnabled(false);
     chatModel->setMessages(conversation.messages);
+    updateDirectRelationshipState(false);
     chatView->jumpToBottom();
     chatView->setUpdatesEnabled(listUpdatesWereEnabled);
     if (chatView->viewport()) {

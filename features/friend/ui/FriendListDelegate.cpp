@@ -79,6 +79,7 @@ QString cachedStatusText(UserStatus userStatus)
     static const QString offline = QStringLiteral("离线");
     static const QString flying = QStringLiteral("飞行模式");
     static const QString mining = QStringLiteral("挖矿中");
+    static const QString invisible = QStringLiteral("隐身");
 
     if (userStatus == Online) {
         return online;
@@ -88,6 +89,9 @@ QString cachedStatusText(UserStatus userStatus)
     }
     if (userStatus == Flying) {
         return flying;
+    }
+    if (userStatus == Invisible) {
+        return invisible;
     }
     return mining;
 }
@@ -98,6 +102,7 @@ QString cachedStatusIconPath(UserStatus userStatus)
     static const QString offline = QStringLiteral(":/resources/icon/offline.png");
     static const QString flying = QStringLiteral(":/resources/icon/flying.png");
     static const QString mining = QStringLiteral(":/resources/icon/mining.png");
+    static const QString invisible = QStringLiteral(":/resources/icon/invisible.png");
 
     if (userStatus == Online) {
         return online;
@@ -107,6 +112,9 @@ QString cachedStatusIconPath(UserStatus userStatus)
     }
     if (userStatus == Flying) {
         return flying;
+    }
+    if (userStatus == Invisible) {
+        return invisible;
     }
     return mining;
 }

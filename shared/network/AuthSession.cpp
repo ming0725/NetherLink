@@ -2,7 +2,25 @@
 
 #include <QCoreApplication>
 #include <QMutexLocker>
+#include <QSettings>
 #include <QUuid>
+
+namespace {
+
+QString stableDeviceId()
+{
+    QSettings settings;
+    const QString existing = settings.value(QStringLiteral("auth/deviceId")).toString().trimmed();
+    if (!existing.isEmpty()) {
+        return existing;
+    }
+
+    const QString created = QStringLiteral("qt-%1").arg(QUuid::createUuid().toString(QUuid::WithoutBraces));
+    settings.setValue(QStringLiteral("auth/deviceId"), created);
+    return created;
+}
+
+} // namespace
 
 AuthSession& AuthSession::instance()
 {
@@ -12,7 +30,7 @@ AuthSession& AuthSession::instance()
 
 AuthSession::AuthSession(QObject* parent)
     : QObject(parent)
-    , m_deviceId(QStringLiteral("qt-%1").arg(QUuid::createUuid().toString(QUuid::WithoutBraces)))
+    , m_deviceId(stableDeviceId())
 {
     m_deviceName = QCoreApplication::applicationName().isEmpty()
             ? QStringLiteral("NetherLink Qt")
@@ -35,6 +53,12 @@ QString AuthSession::deviceId() const
 {
     QMutexLocker locker(&m_mutex);
     return m_deviceId;
+}
+
+QString AuthSession::loginAccountId() const
+{
+    QMutexLocker locker(&m_mutex);
+    return m_loginAccountId;
 }
 
 QDateTime AuthSession::expiresAt() const
@@ -61,10 +85,20 @@ void AuthSession::setDevice(const QString& deviceId, const QString& deviceName)
         QMutexLocker locker(&m_mutex);
         if (!deviceId.trimmed().isEmpty()) {
             m_deviceId = deviceId.trimmed();
+            QSettings().setValue(QStringLiteral("auth/deviceId"), m_deviceId);
         }
         if (!deviceName.trimmed().isEmpty()) {
             m_deviceName = deviceName.trimmed();
         }
+    }
+    emit tokensChanged();
+}
+
+void AuthSession::setLoginAccountId(const QString& accountId)
+{
+    {
+        QMutexLocker locker(&m_mutex);
+        m_loginAccountId = accountId.trimmed();
     }
     emit tokensChanged();
 }
@@ -104,6 +138,7 @@ void AuthSession::clear()
         QMutexLocker locker(&m_mutex);
         m_accessToken.clear();
         m_refreshToken.clear();
+        m_loginAccountId.clear();
         m_expiresAt = {};
     }
     emit sessionCleared();

@@ -20,6 +20,8 @@ public:
     ConversationSummary selectedConversation() const;
     void setCurrentConversation(const QString& conversationId);
     void clearCurrentConversationSelection();
+    void setReadReceiptsEnabled(bool enabled);
+    bool readReceiptsEnabled() const { return m_readReceiptsEnabled; }
 
 signals:
     void conversationActivated(const QString& conversationId);
@@ -40,6 +42,7 @@ private:
     };
 
     void restoreSelection(const QString& conversationId);
+    void requestMarkReadIfNeeded(const QString& conversationId);
     void showConversationMenu(const QPoint& globalPos, const QModelIndex& index);
     QString previewTextForMessage(const QString& conversationId,
                                   const QSharedPointer<ChatMessage>& message) const;
@@ -48,5 +51,7 @@ private:
     MessageListDelegate* m_delegate;
     QTimer* m_searchDebounceTimer;
     ViewState m_state;
+    QString m_selectedConversationId;
     bool m_restoringSelection = false;
+    bool m_readReceiptsEnabled = true;
 };

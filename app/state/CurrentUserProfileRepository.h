@@ -25,6 +25,7 @@ public:
     CurrentUserProfile requestCurrentUserProfile(const CurrentUserProfileRequest& query) const;
     void saveCurrentUserProfile(const CurrentUserProfile& profile);
     void saveCurrentUserProfileObject(const QJsonObject& object, const QString& responseEtag = {});
+    bool updatePresence(const QString& userUuid, const QString& status, const QString& lastSeenAt = {});
 
 signals:
     void currentUserProfileChanged(const QString& userId);

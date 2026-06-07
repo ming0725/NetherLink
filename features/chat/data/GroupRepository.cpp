@@ -65,6 +65,39 @@ QString currentUserId()
     return CurrentUser::instance().getUserId();
 }
 
+QString groupMemberKey(const QString& groupId, const QString& userId)
+{
+    if (groupId.isEmpty() || userId.isEmpty()) {
+        return {};
+    }
+    return groupId + QLatin1Char(':') + userId;
+}
+
+QString groupMemberRoleToString(GroupMemberRoleValue role)
+{
+    switch (role) {
+    case GroupMemberRoleValue::Owner:
+        return QStringLiteral("owner");
+    case GroupMemberRoleValue::Admin:
+        return QStringLiteral("admin");
+    case GroupMemberRoleValue::Member:
+    default:
+        return QStringLiteral("member");
+    }
+}
+
+GroupMemberRoleValue groupMemberRoleFromString(const QString& value)
+{
+    const QString normalized = value.trimmed().toLower();
+    if (normalized == QStringLiteral("owner")) {
+        return GroupMemberRoleValue::Owner;
+    }
+    if (normalized == QStringLiteral("admin")) {
+        return GroupMemberRoleValue::Admin;
+    }
+    return GroupMemberRoleValue::Member;
+}
+
 bool isCurrentUserOwnerOf(const Group& group)
 {
     return !group.ownerId.isEmpty() && group.ownerId == currentUserId();
@@ -428,6 +461,40 @@ QJsonObject groupToJson(const Group& group)
     };
 }
 
+GroupMemberProfile groupMemberFromJson(QJsonObject object)
+{
+    const QJsonObject member = object.value(QStringLiteral("member")).toObject();
+    if (!member.isEmpty()) {
+        object = member;
+    }
+
+    GroupMemberProfile profile;
+    profile.groupId = firstString(object, {QStringLiteral("groupId"),
+                                           QStringLiteral("groupID")});
+    profile.userUuid = firstString(object, {QStringLiteral("userUuid"),
+                                            QStringLiteral("userId"),
+                                            QStringLiteral("memberUserUuid"),
+                                            QStringLiteral("id")});
+    profile.nickname = firstString(object, {QStringLiteral("nickname"),
+                                            QStringLiteral("nickName"),
+                                            QStringLiteral("groupNickname"),
+                                            QStringLiteral("memberNickname")});
+    profile.role = groupMemberRoleFromString(object.value(QStringLiteral("role")).toString());
+    profile.version = object.value(QStringLiteral("version")).toInt();
+    return profile;
+}
+
+QJsonObject groupMemberToJson(const GroupMemberProfile& profile)
+{
+    return {
+            {QStringLiteral("groupId"), profile.groupId},
+            {QStringLiteral("userUuid"), profile.userUuid},
+            {QStringLiteral("nickname"), profile.nickname},
+            {QStringLiteral("role"), groupMemberRoleToString(profile.role)},
+            {QStringLiteral("version"), profile.version}
+    };
+}
+
 } // namespace
 
 GroupRepository::GroupRepository(QObject* parent)
@@ -512,9 +579,36 @@ void GroupRepository::reloadFromStore()
         }
     }
 
+    QMap<QString, GroupMemberProfile> nextMembers;
+    for (const QJsonObject& object : LocalDataStore::instance().values(QStringLiteral("group_members"))) {
+        const GroupMemberProfile member = groupMemberFromJson(object);
+        const QString key = groupMemberKey(member.groupId, member.userUuid);
+        if (!key.isEmpty()) {
+            nextMembers.insert(key, member);
+            Group& group = nextGroups[member.groupId];
+            group.groupId = member.groupId;
+            if (!group.membersID.contains(member.userUuid)) {
+                group.membersID.push_back(member.userUuid);
+            }
+            if (!member.nickname.isEmpty()) {
+                group.memberNicknames.insert(member.userUuid, member.nickname);
+            }
+            if (member.role == GroupMemberRoleValue::Owner) {
+                group.ownerId = member.userUuid;
+            } else if (member.role == GroupMemberRoleValue::Admin &&
+                       !group.adminsID.contains(member.userUuid)) {
+                group.adminsID.push_back(member.userUuid);
+            }
+            if (group.memberNum <= 0) {
+                group.memberNum = group.membersID.size();
+            }
+        }
+    }
+
     {
         QMutexLocker locker(&mutex);
         groupMap = nextGroups;
+        groupMemberMap = nextMembers;
     }
     emit groupListChanged();
 }
@@ -630,6 +724,22 @@ bool GroupRepository::contains(const QString& groupId) const
     return groupMap.contains(groupId);
 }
 
+GroupMemberProfile GroupRepository::requestGroupMember(const QString& groupId, const QString& userId) const
+{
+    QMutexLocker locker(&mutex);
+    return groupMemberMap.value(groupMemberKey(groupId, userId), GroupMemberProfile{});
+}
+
+QString GroupRepository::requestGroupMemberNickname(const QString& groupId, const QString& userId) const
+{
+    return requestGroupMember(groupId, userId).nickname;
+}
+
+int GroupRepository::requestGroupMemberVersion(const QString& groupId, const QString& userId) const
+{
+    return requestGroupMember(groupId, userId).version;
+}
+
 void GroupRepository::saveGroup(const Group& group)
 {
     const QString oldAvatarPath = requestGroupAvatarPath(group.groupId);
@@ -641,6 +751,99 @@ void GroupRepository::saveGroup(const Group& group)
         ImageService::instance().invalidateSource(oldAvatarPath);
     }
     emit groupListChanged();
+}
+
+bool GroupRepository::upsertGroupMember(const QJsonObject& object)
+{
+    QJsonObject memberObject = object.value(QStringLiteral("member")).toObject();
+    if (memberObject.isEmpty()) {
+        memberObject = object;
+    }
+
+    const QJsonObject userObject = memberObject.value(QStringLiteral("user")).toObject();
+    if (!userObject.isEmpty()) {
+        UserRepository::instance().upsertUserProfile(userObject);
+        if (!memberObject.contains(QStringLiteral("userUuid"))) {
+            memberObject.insert(QStringLiteral("userUuid"),
+                                firstString(userObject, {QStringLiteral("userUuid"),
+                                                         QStringLiteral("id"),
+                                                         QStringLiteral("userId")}));
+        }
+    }
+
+    GroupMemberProfile member = groupMemberFromJson(memberObject);
+    const QString key = groupMemberKey(member.groupId, member.userUuid);
+    if (key.isEmpty()) {
+        return false;
+    }
+
+    bool changed = false;
+    {
+        QMutexLocker locker(&mutex);
+        const GroupMemberProfile previous = groupMemberMap.value(key);
+        if (previous.version > 0 && member.version > 0 && member.version < previous.version) {
+            return false;
+        }
+
+        changed = previous.groupId != member.groupId ||
+                  previous.userUuid != member.userUuid ||
+                  previous.nickname != member.nickname ||
+                  previous.role != member.role ||
+                  previous.version != member.version;
+        groupMemberMap.insert(key, member);
+
+        Group group = groupMap.value(member.groupId);
+        if (group.groupId.isEmpty()) {
+            group.groupId = member.groupId;
+        }
+        if (!group.membersID.contains(member.userUuid)) {
+            group.membersID.push_back(member.userUuid);
+            changed = true;
+        }
+        if (!member.nickname.isEmpty() &&
+            group.memberNicknames.value(member.userUuid) != member.nickname) {
+            group.memberNicknames.insert(member.userUuid, member.nickname);
+            changed = true;
+        }
+        if (member.role == GroupMemberRoleValue::Owner &&
+            group.ownerId != member.userUuid) {
+            group.ownerId = member.userUuid;
+            changed = true;
+        }
+        const bool shouldBeAdmin = member.role == GroupMemberRoleValue::Admin;
+        if (shouldBeAdmin && !group.adminsID.contains(member.userUuid)) {
+            group.adminsID.push_back(member.userUuid);
+            changed = true;
+        } else if (!shouldBeAdmin && group.adminsID.removeAll(member.userUuid) > 0) {
+            changed = true;
+        }
+        if (group.memberNum <= 0 || group.memberNum < group.membersID.size()) {
+            group.memberNum = group.membersID.size();
+            changed = true;
+        }
+        groupMap.insert(group.groupId, group);
+    }
+
+    LocalDataStore::instance().upsertValue(QStringLiteral("group_members"), key, groupMemberToJson(member));
+    const Group group = requestGroupDetail({member.groupId});
+    if (!group.groupId.isEmpty()) {
+        LocalDataStore::instance().upsertValue(QStringLiteral("groups"), group.groupId, groupToJson(group));
+    }
+    if (changed) {
+        emit groupListChanged();
+    }
+    return true;
+}
+
+bool GroupRepository::needsGroupMemberRefresh(const QString& groupId,
+                                              const QString& userId,
+                                              int remoteVersion) const
+{
+    const GroupMemberProfile member = requestGroupMember(groupId, userId);
+    if (member.userUuid.isEmpty()) {
+        return true;
+    }
+    return remoteVersion > 0 && (member.version <= 0 || member.version < remoteVersion);
 }
 
 void GroupRepository::addMember(const QString& groupId, const QString& userId)

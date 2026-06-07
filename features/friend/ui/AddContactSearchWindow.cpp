@@ -5,7 +5,9 @@
 #include "features/friend/data/FriendRemoteDataSource.h"
 #include "features/friend/data/UserRepository.h"
 #include "shared/data/LocalDataStore.h"
+#include "shared/network/HttpClient.h"
 #include "shared/services/AppFonts.h"
+#include "shared/services/AvatarSource.h"
 #include "shared/services/ImageService.h"
 #include "shared/theme/ThemeManager.h"
 #include "shared/ui/GlobalNotification.h"
@@ -34,6 +36,9 @@
 #include <QGraphicsDropShadowEffect>
 #include <QGuiApplication>
 #include <QHBoxLayout>
+#include <QJsonArray>
+#include <QJsonObject>
+#include <QJsonValue>
 #include <QKeyEvent>
 #include <QLabel>
 #include <QLineEdit>
@@ -48,6 +53,7 @@
 #include <QTextEdit>
 #include <QTimer>
 #include <QToolButton>
+#include <QUuid>
 #include <QVBoxLayout>
 
 #include <utility>
@@ -116,12 +122,227 @@ QString firstString(const QJsonObject& object, const QStringList& keys)
     return {};
 }
 
+QJsonArray arrayFromResponse(const QJsonObject& object, const QString& primaryKey)
+{
+    const QStringList keys = {primaryKey,
+                              QStringLiteral("items"),
+                              QStringLiteral("data"),
+                              QStringLiteral("results")};
+    for (const QString& key : keys) {
+        const QJsonArray array = object.value(key).toArray();
+        if (!array.isEmpty()) {
+            return array;
+        }
+    }
+    return {};
+}
+
+QJsonObject nestedObject(const QJsonObject& object, const QString& key)
+{
+    const QJsonObject nested = object.value(key).toObject();
+    return nested.isEmpty() ? object : nested;
+}
+
+QString avatarFileIdFrom(const QJsonObject& object)
+{
+    const QJsonObject avatar = object.value(QStringLiteral("avatar")).toObject();
+    const QString nestedFileId = firstString(avatar, {QStringLiteral("fileId"), QStringLiteral("id")});
+    if (!nestedFileId.isEmpty()) {
+        return nestedFileId;
+    }
+    return firstString(object, {QStringLiteral("avatarFileId"),
+                                QStringLiteral("avatar_file_id"),
+                                QStringLiteral("fileId")});
+}
+
+QString versionedAvatarSource(const QJsonObject& object, const QString& pathKey)
+{
+    QString avatarPath = AvatarSource::fromAvatarFileId(avatarFileIdFrom(object));
+    if (avatarPath.isEmpty()) {
+        avatarPath = object.value(pathKey).toString(object.value(QStringLiteral("avatarUrl")).toString());
+    }
+    return AvatarSource::versioned(avatarPath,
+                                   object.value(QStringLiteral("avatarVersion")).toInt(),
+                                   object.value(QStringLiteral("avatarEtag")).toString(),
+                                   object.value(QStringLiteral("avatarContentHash")).toString());
+}
+
+QJsonObject normalizedRemoteUserObject(QJsonObject object)
+{
+    const QJsonObject wrapper = object;
+    object = nestedObject(object, QStringLiteral("user"));
+    const QJsonObject relation = object.value(QStringLiteral("relation")).toObject().isEmpty()
+            ? wrapper.value(QStringLiteral("relation")).toObject()
+            : object.value(QStringLiteral("relation")).toObject();
+    const QString userUuid = firstString(object, {QStringLiteral("userUuid"),
+                                                  QStringLiteral("uuid"),
+                                                  QStringLiteral("id")});
+    const QString publicId = firstString(object, {QStringLiteral("userId"),
+                                                  QStringLiteral("publicId"),
+                                                  QStringLiteral("public_id")});
+    const QString modelId = publicId.isEmpty() ? userUuid : publicId;
+    object.insert(QStringLiteral("id"), modelId);
+    if (!userUuid.isEmpty()) {
+        object.insert(QStringLiteral("userUuid"), userUuid);
+    }
+    if (!publicId.isEmpty()) {
+        object.insert(QStringLiteral("userId"), publicId);
+    }
+    if (!object.contains(QStringLiteral("nick"))) {
+        object.insert(QStringLiteral("nick"),
+                      firstString(object, {QStringLiteral("nickName"), QStringLiteral("displayName")}));
+    }
+    if (relation.contains(QStringLiteral("isFriend"))) {
+        object.insert(QStringLiteral("isFriend"), relation.value(QStringLiteral("isFriend")).toBool());
+    }
+    if (relation.contains(QStringLiteral("remark"))) {
+        object.insert(QStringLiteral("remark"), relation.value(QStringLiteral("remark")));
+    }
+    if (relation.contains(QStringLiteral("friendGroupId"))) {
+        object.insert(QStringLiteral("friendGroupId"), relation.value(QStringLiteral("friendGroupId")));
+    }
+    if (relation.contains(QStringLiteral("isDnd"))) {
+        object.insert(QStringLiteral("isDnd"), relation.value(QStringLiteral("isDnd")));
+    }
+    return object;
+}
+
+User userFromRemoteObject(const QJsonObject& source)
+{
+    const QJsonObject object = normalizedRemoteUserObject(source);
+    User user;
+    user.id = object.value(QStringLiteral("id")).toString();
+    user.userUuid = object.value(QStringLiteral("userUuid")).toString();
+    user.userId = object.value(QStringLiteral("userId")).toString();
+    user.nick = object.value(QStringLiteral("nick")).toString();
+    user.remark = object.value(QStringLiteral("remark")).toString();
+    user.avatarPath = versionedAvatarSource(object, QStringLiteral("avatarPath"));
+    user.status = Offline;
+    user.signature = object.value(QStringLiteral("signature")).toString();
+    user.isDnd = object.value(QStringLiteral("isDnd")).toBool(false);
+    user.isFriend = object.value(QStringLiteral("isFriend")).toBool(false);
+    user.friendGroupId = object.value(QStringLiteral("friendGroupId")).toString(QStringLiteral("default"));
+    user.friendGroupName = object.value(QStringLiteral("friendGroupName")).toString(QStringLiteral("默认分组"));
+    user.region = object.value(QStringLiteral("region")).toString();
+
+    const User previous = UserRepository::instance().requestUserDetail({user.id});
+    if (!previous.id.isEmpty()) {
+        user.isFriend = previous.isFriend || user.isFriend;
+        user.remark = user.remark.isEmpty() ? previous.remark : user.remark;
+        user.friendGroupId = previous.friendGroupId.isEmpty() ? user.friendGroupId : previous.friendGroupId;
+        user.friendGroupName = previous.friendGroupName.isEmpty() ? user.friendGroupName : previous.friendGroupName;
+        user.isDnd = previous.isDnd;
+    }
+    return user;
+}
+
+QJsonObject normalizedRemoteGroupObject(QJsonObject object)
+{
+    const QJsonObject wrapper = object;
+    object = nestedObject(object, QStringLiteral("group"));
+    const QJsonObject viewer = object.value(QStringLiteral("viewer")).toObject().isEmpty()
+            ? wrapper.value(QStringLiteral("viewer")).toObject()
+            : object.value(QStringLiteral("viewer")).toObject();
+    const QJsonObject relation = object.value(QStringLiteral("relation")).toObject().isEmpty()
+            ? wrapper.value(QStringLiteral("relation")).toObject()
+            : object.value(QStringLiteral("relation")).toObject();
+    object.insert(QStringLiteral("groupId"),
+                  firstString(object, {QStringLiteral("groupId"), QStringLiteral("id")}));
+    if (!object.contains(QStringLiteral("groupName"))) {
+        object.insert(QStringLiteral("groupName"),
+                      firstString(object, {QStringLiteral("name"), QStringLiteral("title")}));
+    }
+    if (object.contains(QStringLiteral("memberCount")) && !object.contains(QStringLiteral("memberNum"))) {
+        object.insert(QStringLiteral("memberNum"), object.value(QStringLiteral("memberCount")));
+    }
+    if ((viewer.value(QStringLiteral("isMember")).toBool(false) ||
+         relation.value(QStringLiteral("isMember")).toBool(false)) &&
+        !object.contains(QStringLiteral("membersID"))) {
+        object.insert(QStringLiteral("membersID"), QJsonArray{CurrentUser::instance().getUserId()});
+    }
+    return object;
+}
+
+Group groupFromRemoteObject(const QJsonObject& source)
+{
+    const QJsonObject object = normalizedRemoteGroupObject(source);
+    Group group;
+    group.groupId = object.value(QStringLiteral("groupId")).toString();
+    group.groupName = object.value(QStringLiteral("groupName")).toString();
+    group.memberNum = object.value(QStringLiteral("memberNum")).toInt();
+    group.ownerId = object.value(QStringLiteral("ownerId")).toString(object.value(QStringLiteral("ownerUuid")).toString());
+    group.groupAvatarPath = versionedAvatarSource(object, QStringLiteral("groupAvatarPath"));
+    group.remark = object.value(QStringLiteral("remark")).toString();
+    group.introduction = object.value(QStringLiteral("introduction")).toString();
+    group.announcement = object.value(QStringLiteral("announcement")).toString();
+    for (const QJsonValue& value : object.value(QStringLiteral("adminsID")).toArray()) {
+        const QString id = value.toString();
+        if (!id.isEmpty()) {
+            group.adminsID.push_back(id);
+        }
+    }
+    for (const QJsonValue& value : object.value(QStringLiteral("membersID")).toArray()) {
+        const QString id = value.toString();
+        if (!id.isEmpty()) {
+            group.membersID.push_back(id);
+        }
+    }
+    if (group.memberNum <= 0 && !group.membersID.isEmpty()) {
+        group.memberNum = group.membersID.size();
+    }
+    return group;
+}
+
+void cacheRemoteUserObject(const QJsonObject& object)
+{
+    const QJsonObject normalized = normalizedRemoteUserObject(object);
+    const QString key = normalized.value(QStringLiteral("id")).toString();
+    if (!key.isEmpty()) {
+        LocalDataStore::instance().upsertValue(QStringLiteral("users"), key, normalized);
+    }
+}
+
+void cacheRemoteGroupObject(const QJsonObject& object)
+{
+    const QJsonObject normalized = normalizedRemoteGroupObject(object);
+    const QString key = normalized.value(QStringLiteral("groupId")).toString();
+    if (!key.isEmpty()) {
+        LocalDataStore::instance().upsertValue(QStringLiteral("groups"), key, normalized);
+    }
+}
+
 QString userDisplayText(const User& user)
 {
-    if (user.id.isEmpty()) {
+    const QString publicId = user.userId.isEmpty()
+            ? (QUuid::fromString(user.id).isNull() ? user.id : QString())
+            : user.userId;
+    if (publicId.isEmpty()) {
         return {};
     }
-    return QStringLiteral("%1（%2）").arg(user.nick, user.id);
+    const QString name = user.nick.isEmpty() ? publicId : user.nick;
+    if (name == publicId) {
+        return name;
+    }
+    return QStringLiteral("%1（%2）").arg(name, publicId);
+}
+
+bool looksLikeUuid(const QString& value)
+{
+    return !value.isEmpty() && !QUuid::fromString(value).isNull();
+}
+
+QString readableUserId(const User& user, const QString& fallback = {})
+{
+    if (!user.userId.isEmpty()) {
+        return user.userId;
+    }
+    if (!fallback.isEmpty() && !looksLikeUuid(fallback)) {
+        return fallback;
+    }
+    if (!user.id.isEmpty() && !looksLikeUuid(user.id)) {
+        return user.id;
+    }
+    return {};
 }
 
 bool currentUserHasJoinedGroup(const Group& group)
@@ -133,7 +354,7 @@ bool currentUserHasJoinedGroup(const Group& group)
                 || group.membersID.contains(currentUserId));
 }
 
-QString userUuidForRequest(const User& user)
+QString userPublicIdForRequest(const User& user)
 {
     QJsonObject object = LocalDataStore::instance().value(QStringLiteral("users"), user.id);
     if (object.isEmpty()) {
@@ -149,9 +370,13 @@ QString userUuidForRequest(const User& user)
         }
     }
 
-    const QString userUuid = firstString(object, {QStringLiteral("userUuid"),
-                                                  QStringLiteral("friendUserUuid")});
-    return userUuid.isEmpty() ? user.id : userUuid;
+    const QString publicId = firstString(object, {QStringLiteral("userId"),
+                                                  QStringLiteral("publicId"),
+                                                  QStringLiteral("public_id")});
+    if (!publicId.isEmpty()) {
+        return publicId;
+    }
+    return readableUserId(user);
 }
 
 bool waitForFriendRequestCreated(const QString& requestId, const QString& userId, QWidget* host)
@@ -1406,6 +1631,14 @@ AddContactSearchWindow::AddContactSearchWindow(InitialMode mode, QWidget* parent
     connect(m_debounceTimer, &QTimer::timeout, this, &AddContactSearchWindow::performSearch);
     connect(m_searchInput, &QLineEdit::textChanged, this, &AddContactSearchWindow::scheduleSearch);
     connect(m_modeBar, &AddContactModeBar::modeChanged, this, &AddContactSearchWindow::setMode);
+    connect(&HttpClient::instance(),
+            &HttpClient::requestSucceeded,
+            this,
+            &AddContactSearchWindow::handleSearchSucceeded);
+    connect(&HttpClient::instance(),
+            &HttpClient::requestFailed,
+            this,
+            &AddContactSearchWindow::handleSearchFailed);
     connect(&ThemeManager::instance(), &ThemeManager::themeChanged, this, [this]() {
         applyTheme();
     });
@@ -1459,7 +1692,7 @@ bool AddContactSearchWindow::openUserRequest(const QString& userId, QWidget* anc
                                                         QStringLiteral("申请添加好友"),
                                                         user.avatarPath,
                                                         user.nick,
-                                                        QStringLiteral("ID %1").arg(user.id),
+                                                        QStringLiteral("ID %1").arg(readableUserId(user)),
                                                         QStringLiteral("输入申请信息"),
                                                         user.remark,
                                                         friendGroups.isEmpty()
@@ -1476,7 +1709,7 @@ bool AddContactSearchWindow::openUserRequest(const QString& userId, QWidget* anc
     }
 
     const QString requestId = FriendRemoteDataSource::instance().createFriendRequest(
-            userUuidForRequest(user),
+            userPublicIdForRequest(user),
             request.requestMessage);
     return waitForFriendRequestCreated(requestId, user.id, anchor);
 }
@@ -1538,9 +1771,20 @@ bool AddContactSearchWindow::openFriendApproval(const QString& userId,
                                                 QString* groupId,
                                                 QString* groupName)
 {
-    const User user = UserRepository::instance().requestUserDetail({userId});
-    if (user.id.isEmpty()) {
+    if (userId.isEmpty()) {
         return false;
+    }
+
+    User user = UserRepository::instance().requestUserDetail({userId});
+    if (user.id.isEmpty()) {
+        user.id = userId;
+        if (looksLikeUuid(userId)) {
+            user.userUuid = userId;
+            user.nick = QStringLiteral("未知用户");
+        } else {
+            user.userId = userId;
+            user.nick = userId;
+        }
     }
 
     const QMap<QString, QString> friendGroups = UserRepository::instance().requestFriendGroups();
@@ -1556,7 +1800,7 @@ bool AddContactSearchWindow::openFriendApproval(const QString& userId,
                                                         QStringLiteral("同意好友申请"),
                                                         user.avatarPath,
                                                         user.nick,
-                                                        QStringLiteral("ID %1").arg(user.id),
+                                                        QStringLiteral("ID %1").arg(readableUserId(user, userId)),
                                                         QString(),
                                                         user.remark,
                                                         groups,
@@ -1779,18 +2023,66 @@ void AddContactSearchWindow::performSearch()
     }
 
     resetSearchState();
-    m_searchResults = m_mode == AddContactModeBar::Mode::Users
-            ? searchUsers(keyword)
-            : searchGroups(keyword);
+    m_activeSearchKeyword = keyword;
+    m_activeSearchMode = m_mode;
+
+    const QString path = m_mode == AddContactModeBar::Mode::Users
+            ? QStringLiteral("/users")
+            : QStringLiteral("/groups");
+    NetworkRequest request = NetworkRequest::json(HttpMethod::Get,
+                                                  path,
+                                                  {},
+                                                  {{QStringLiteral("keyword"), keyword},
+                                                   {QStringLiteral("limit"), kSearchResultLimit},
+                                                   {QStringLiteral("offset"), 0}});
+    request.maxRetries = 3;
+    m_activeSearchRequestId = HttpClient::instance().send(request);
+}
+
+void AddContactSearchWindow::handleSearchSucceeded(const QString& requestId, const NetworkResponse& response)
+{
+    if (requestId != m_activeSearchRequestId) {
+        return;
+    }
+
+    m_activeSearchRequestId.clear();
+    setSearchResults(m_activeSearchMode == AddContactModeBar::Mode::Users
+                             ? searchUsers(response.object())
+                             : searchGroups(response.object()));
+}
+
+void AddContactSearchWindow::handleSearchFailed(const QString& requestId, const NetworkError&)
+{
+    if (requestId != m_activeSearchRequestId) {
+        return;
+    }
+
+    m_activeSearchRequestId.clear();
+    resetSearchState();
+    GlobalNotification::showFailure(this,
+                                    m_activeSearchMode == AddContactModeBar::Mode::Users
+                                            ? QStringLiteral("用户搜索失败")
+                                            : QStringLiteral("群搜索失败"));
+}
+
+void AddContactSearchWindow::setSearchResults(QVector<AddContactSearchItem> results)
+{
+    m_searchResults = std::move(results);
+    m_loadedResultCount = 0;
+    m_isLoadingMore = false;
+    m_model->clear();
     loadMoreResults();
 }
 
-QVector<AddContactSearchItem> AddContactSearchWindow::searchUsers(const QString& keyword) const
+QVector<AddContactSearchItem> AddContactSearchWindow::searchUsers(const QJsonObject& response) const
 {
     QVector<AddContactSearchItem> items;
-    const QVector<User> users = UserRepository::instance().requestUserSearch(keyword, -1);
+    const QJsonArray users = arrayFromResponse(response, QStringLiteral("users"));
     items.reserve(qMin(users.size(), kSearchResultLimit));
-    for (const User& user : users) {
+    for (const QJsonValue& value : users) {
+        const QJsonObject object = value.toObject();
+        cacheRemoteUserObject(object);
+        const User user = userFromRemoteObject(object);
         if (user.isFriend ||
             CurrentUser::instance().isCurrentUserId(user.id) ||
             pendingFriendRequestUserIds().contains(user.id)) {
@@ -1807,13 +2099,16 @@ QVector<AddContactSearchItem> AddContactSearchWindow::searchUsers(const QString&
     return items;
 }
 
-QVector<AddContactSearchItem> AddContactSearchWindow::searchGroups(const QString& keyword) const
+QVector<AddContactSearchItem> AddContactSearchWindow::searchGroups(const QJsonObject& response) const
 {
     QVector<AddContactSearchItem> items;
-    const QVector<Group> groups = GroupRepository::instance().requestGroupSearch(keyword, -1);
+    const QJsonArray groups = arrayFromResponse(response, QStringLiteral("groups"));
     items.reserve(qMin(groups.size(), kSearchResultLimit));
     int visibleGroupIndex = 0;
-    for (const Group& group : groups) {
+    for (const QJsonValue& value : groups) {
+        const QJsonObject object = value.toObject();
+        cacheRemoteGroupObject(object);
+        const Group group = groupFromRemoteObject(object);
         if (currentUserHasJoinedGroup(group) ||
             pendingGroupJoinRequestGroupIds().contains(group.groupId)) {
             continue;
@@ -1889,6 +2184,7 @@ void AddContactSearchWindow::maybeLoadMoreResults()
 
 void AddContactSearchWindow::resetSearchState()
 {
+    m_activeSearchRequestId.clear();
     m_searchResults.clear();
     m_loadedResultCount = 0;
     m_isLoadingMore = false;

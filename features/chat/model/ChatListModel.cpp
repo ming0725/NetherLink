@@ -276,6 +276,25 @@ QModelIndex ChatListModel::indexForMessageId(const QString& messageId) const
     return {};
 }
 
+QModelIndex ChatListModel::indexForClientMessageId(const QString& clientMessageId) const
+{
+    if (clientMessageId.isEmpty()) {
+        return {};
+    }
+
+    for (int row = 0; row < items.size(); ++row) {
+        if (!items.at(row).isHeader &&
+                !items.at(row).isBottomSpace &&
+                !items.at(row).isNewMessageDivider &&
+                !items.at(row).isLoadingPlaceholder &&
+                items.at(row).message &&
+                items.at(row).message->getClientMessageId() == clientMessageId) {
+            return index(row, 0);
+        }
+    }
+    return {};
+}
+
 void ChatListModel::clearSelection()
 {
     if (selectedMessageIndex >= 0) {

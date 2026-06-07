@@ -3,16 +3,16 @@
 #include <algorithm>
 #include <QJsonObject>
 #include <QStringList>
+#include <QUuid>
 
 #include "app/state/CurrentUser.h"
 #include "features/chat/data/GroupRepository.h"
-#include "features/chat/data/MessageRepository.h"
 #include "features/friend/data/UserRepository.h"
 #include "shared/data/LocalDataStore.h"
 #include "shared/data/RepositoryTemplate.h"
 #include "shared/data/UnreadStateRepository.h"
 #include "shared/network/AppEventBus.h"
-#include "shared/types/ChatMessage.h"
+#include "shared/network/ReferenceDataResolver.h"
 
 namespace {
 
@@ -104,11 +104,17 @@ NotificationStatus notificationStatusFromString(const QString& value)
     return NotificationStatus::Pending;
 }
 
+bool looksLikeUuid(const QString& value)
+{
+    return !value.isEmpty() && !QUuid::fromString(value).isNull();
+}
+
 QJsonObject notificationToJson(const FriendNotification& notification)
 {
     return {
             {QStringLiteral("id"), notification.id},
             {QStringLiteral("fromUserId"), notification.fromUserId},
+            {QStringLiteral("fromUserUuid"), notification.fromUserUuid},
             {QStringLiteral("message"), notification.message},
             {QStringLiteral("requestDate"), notification.requestDate.toString(Qt::ISODateWithMs)},
             {QStringLiteral("sourceType"), notificationSourceTypeToString(notification.sourceType)},
@@ -130,9 +136,35 @@ FriendNotification notificationFromJson(const QJsonObject& object)
                                            QStringLiteral("notificationId"),
                                            QStringLiteral("sourceId")});
     notification.fromUserId = firstString(object, {QStringLiteral("fromUserId"),
-                                                   QStringLiteral("fromUserUuid"),
                                                    QStringLiteral("actorUserId"),
-                                                   QStringLiteral("actorUuid")});
+                                                   QStringLiteral("senderUserId")});
+    notification.fromUserUuid = firstString(object, {QStringLiteral("fromUserUuid"),
+                                                     QStringLiteral("actorUuid"),
+                                                     QStringLiteral("senderUserUuid")});
+    if (notification.fromUserId.isEmpty() || notification.fromUserUuid.isEmpty()) {
+        for (const QString& key : {QStringLiteral("fromUser"),
+                                   QStringLiteral("actor"),
+                                   QStringLiteral("sender"),
+                                   QStringLiteral("user")}) {
+            const QJsonObject user = object.value(key).toObject();
+            if (notification.fromUserId.isEmpty()) {
+                notification.fromUserId = firstString(user, {QStringLiteral("userId"),
+                                                             QStringLiteral("publicId"),
+                                                             QStringLiteral("public_id")});
+            }
+            if (notification.fromUserUuid.isEmpty()) {
+                notification.fromUserUuid = firstString(user, {QStringLiteral("userUuid"),
+                                                               QStringLiteral("uuid")});
+            }
+            if (!notification.fromUserId.isEmpty() && !notification.fromUserUuid.isEmpty()) {
+                break;
+            }
+        }
+    }
+    if (notification.fromUserUuid.isEmpty() && looksLikeUuid(notification.fromUserId)) {
+        notification.fromUserUuid = notification.fromUserId;
+        notification.fromUserId.clear();
+    }
     notification.message = object.value(QStringLiteral("message")).toString();
     notification.requestDate = QDateTime::fromString(firstString(object, {QStringLiteral("requestDate"),
                                                                           QStringLiteral("createdAt"),
@@ -147,6 +179,185 @@ FriendNotification notificationFromJson(const QJsonObject& object)
     notification.sourceFriendName = object.value(QStringLiteral("sourceFriendName")).toString();
     notification.status = notificationStatusFromString(object.value(QStringLiteral("status")).toString());
     return notification;
+}
+
+QStringList currentUserIdentifiers()
+{
+    const CurrentUserProfile profile = CurrentUser::instance().identity();
+    QStringList ids;
+    for (const QString& id : {CurrentUser::instance().getUserId(), profile.userUuid}) {
+        const QString trimmed = id.trimmed();
+        if (!trimmed.isEmpty() && !ids.contains(trimmed)) {
+            ids.push_back(trimmed);
+        }
+    }
+    return ids;
+}
+
+bool matchesCurrentUser(const QString& id)
+{
+    const QString trimmed = id.trimmed();
+    if (trimmed.isEmpty()) {
+        return false;
+    }
+    return currentUserIdentifiers().contains(trimmed);
+}
+
+QString requestRecipientId(const QJsonObject& object)
+{
+    const QString direct = firstString(object, {QStringLiteral("toUserId"),
+                                                QStringLiteral("toUserUuid"),
+                                                QStringLiteral("recipientUserId"),
+                                                QStringLiteral("recipientUserUuid"),
+                                                QStringLiteral("receiverUserId"),
+                                                QStringLiteral("receiverUserUuid"),
+                                                QStringLiteral("targetUserId"),
+                                                QStringLiteral("targetUserUuid")});
+    if (!direct.isEmpty()) {
+        return direct;
+    }
+
+    for (const QString& key : {QStringLiteral("toUser"),
+                               QStringLiteral("recipient"),
+                               QStringLiteral("receiver"),
+                               QStringLiteral("targetUser")}) {
+        const QJsonObject user = object.value(key).toObject();
+        const QString id = firstString(user, {QStringLiteral("userId"),
+                                              QStringLiteral("publicId"),
+                                              QStringLiteral("id"),
+                                              QStringLiteral("userUuid"),
+                                              QStringLiteral("uuid")});
+        if (!id.isEmpty()) {
+            return id;
+        }
+    }
+    return {};
+}
+
+QString requestSenderId(const QJsonObject& object)
+{
+    const QString direct = firstString(object, {QStringLiteral("fromUserId"),
+                                                QStringLiteral("fromUserUuid"),
+                                                QStringLiteral("actorUserId"),
+                                                QStringLiteral("actorUuid"),
+                                                QStringLiteral("senderUserId"),
+                                                QStringLiteral("senderUserUuid")});
+    if (!direct.isEmpty()) {
+        return direct;
+    }
+
+    for (const QString& key : {QStringLiteral("fromUser"),
+                               QStringLiteral("actor"),
+                               QStringLiteral("sender"),
+                               QStringLiteral("user")}) {
+        const QJsonObject user = object.value(key).toObject();
+        const QString id = firstString(user, {QStringLiteral("userId"),
+                                              QStringLiteral("publicId"),
+                                              QStringLiteral("id"),
+                                              QStringLiteral("userUuid"),
+                                              QStringLiteral("uuid")});
+        if (!id.isEmpty()) {
+            return id;
+        }
+    }
+    return {};
+}
+
+bool shouldStoreFriendRequestEvent(const QString& type, const QJsonObject& object)
+{
+    const QString recipientId = requestRecipientId(object);
+    if (!recipientId.isEmpty()) {
+        return matchesCurrentUser(recipientId);
+    }
+
+    if (type.endsWith(QStringLiteral(".created"))) {
+        const QString senderId = requestSenderId(object);
+        if (!senderId.isEmpty() && matchesCurrentUser(senderId)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+QJsonObject senderUserObject(const QJsonObject& object)
+{
+    for (const QString& key : {QStringLiteral("fromUser"),
+                               QStringLiteral("actor"),
+                               QStringLiteral("sender"),
+                               QStringLiteral("user"),
+                               QStringLiteral("profile")}) {
+        const QJsonObject user = object.value(key).toObject();
+        if (!user.isEmpty()) {
+            return user;
+        }
+    }
+    return {};
+}
+
+void cacheApplicantUser(const QJsonObject& object, const FriendNotification& notification)
+{
+    QJsonObject userObject = senderUserObject(object);
+    if (userObject.isEmpty() && notification.fromUserId.isEmpty() && notification.fromUserUuid.isEmpty()) {
+        return;
+    }
+    if (!notification.fromUserId.isEmpty() && !userObject.contains(QStringLiteral("userId"))) {
+        userObject.insert(QStringLiteral("userId"), notification.fromUserId);
+    }
+    if (!notification.fromUserUuid.isEmpty() && !userObject.contains(QStringLiteral("userUuid"))) {
+        userObject.insert(QStringLiteral("userUuid"), notification.fromUserUuid);
+    }
+    if (!userObject.isEmpty()) {
+        UserRepository::instance().upsertUserProfile(userObject);
+        return;
+    }
+
+    const QString publicId = notification.fromUserId.isEmpty()
+            ? firstString(userObject, {QStringLiteral("userId"),
+                                       QStringLiteral("publicId"),
+                                       QStringLiteral("public_id")})
+            : notification.fromUserId;
+    const QString userUuid = notification.fromUserUuid.isEmpty()
+            ? firstString(userObject, {QStringLiteral("userUuid"), QStringLiteral("uuid")})
+            : notification.fromUserUuid;
+    const QString lookupId = publicId.isEmpty() ? userUuid : publicId;
+    if (lookupId.isEmpty()) {
+        return;
+    }
+
+    User user = UserRepository::instance().requestUserDetail({lookupId});
+    user.id = userUuid.isEmpty() ? publicId : userUuid;
+    user.userUuid = userUuid;
+    user.userId = publicId;
+    const QString nick = firstString(userObject, {QStringLiteral("nick"),
+                                                  QStringLiteral("nickName"),
+                                                  QStringLiteral("displayName"),
+                                                  QStringLiteral("name")});
+    if (!nick.isEmpty()) {
+        user.nick = nick;
+    } else if (user.nick.isEmpty()) {
+        user.nick = publicId.isEmpty() ? QStringLiteral("未知用户") : publicId;
+    }
+    const QString avatarPath = firstString(userObject, {QStringLiteral("avatarPath"),
+                                                        QStringLiteral("avatarUrl")});
+    if (!avatarPath.isEmpty()) {
+        user.avatarPath = avatarPath;
+    }
+    if (userObject.contains(QStringLiteral("avatarVersion"))) {
+        user.avatarVersion = userObject.value(QStringLiteral("avatarVersion")).toInt();
+    }
+    if (userObject.contains(QStringLiteral("avatarEtag"))) {
+        user.avatarEtag = userObject.value(QStringLiteral("avatarEtag")).toString();
+    }
+    if (userObject.contains(QStringLiteral("avatarContentHash"))) {
+        user.avatarContentHash = userObject.value(QStringLiteral("avatarContentHash")).toString();
+    }
+    if (user.friendGroupId.isEmpty()) {
+        user.friendGroupId = QStringLiteral("default");
+    }
+    if (user.friendGroupName.isEmpty()) {
+        user.friendGroupName = QStringLiteral("默认分组");
+    }
+    UserRepository::instance().saveUser(user);
 }
 
 } // namespace
@@ -182,6 +393,7 @@ FriendNotificationRepository::FriendNotificationRepository(QObject* parent)
                 if (!type.startsWith(QStringLiteral("friend.request."))) {
                     return;
                 }
+                ReferenceDataResolver::instance().consumePayload(payload);
 
                 QJsonObject object = payload.value(QStringLiteral("request")).toObject();
                 if (object.isEmpty()) {
@@ -190,10 +402,16 @@ FriendNotificationRepository::FriendNotificationRepository(QObject* parent)
                 if (object.isEmpty()) {
                     object = payload;
                 }
+                if (!shouldStoreFriendRequestEvent(type, object)) {
+                    return;
+                }
+                ReferenceDataResolver::instance().upsertUserObject(object.value(QStringLiteral("fromUser")).toObject());
+                ReferenceDataResolver::instance().upsertUserObject(object.value(QStringLiteral("toUser")).toObject());
                 FriendNotification notification = notificationFromJson(object);
                 if (notification.id.isEmpty()) {
                     return;
                 }
+                cacheApplicantUser(object, notification);
 
                 ensureLoaded();
                 for (const FriendNotification& previous : m_notifications) {
@@ -202,6 +420,9 @@ FriendNotificationRepository::FriendNotificationRepository(QObject* parent)
                     }
                     if (notification.fromUserId.isEmpty()) {
                         notification.fromUserId = previous.fromUserId;
+                    }
+                    if (notification.fromUserUuid.isEmpty()) {
+                        notification.fromUserUuid = previous.fromUserUuid;
                     }
                     if (notification.message.isEmpty()) {
                         notification.message = previous.message;
@@ -255,6 +476,7 @@ void FriendNotificationRepository::ensureLoaded() const
     for (const QJsonObject& object : store.values(QStringLiteral("friend_notifications"))) {
         const FriendNotification notification = notificationFromJson(object);
         if (!notification.id.isEmpty()) {
+            cacheApplicantUser(object, notification);
             self->m_notifications.push_back(notification);
         }
     }
@@ -294,9 +516,8 @@ QVector<FriendNotification> FriendNotificationRepository::requestNotificationLis
 
 int FriendNotificationRepository::unreadCount() const
 {
-    return m_loaded
-            ? UnreadStateRepository::instance().unreadCount(kFriendRequestUnreadScope)
-            : 0;
+    ensureLoaded();
+    return UnreadStateRepository::instance().unreadCount(kFriendRequestUnreadScope);
 }
 
 int FriendNotificationRepository::notificationCount() const
@@ -324,29 +545,31 @@ bool FriendNotificationRepository::acceptRequest(const QString& notificationId,
             continue;
         }
 
-        const QDateTime acceptedAt = QDateTime::currentDateTime();
         notification.status = NotificationStatus::Accepted;
         LocalDataStore::instance().upsertValue(QStringLiteral("friend_notifications"),
                                                notification.id,
                                                notificationToJson(notification));
-        User user = UserRepository::instance().requestUserDetail({notification.fromUserId});
-        if (!user.id.isEmpty()) {
+        const QString applicantLookupId = notification.fromUserId.isEmpty()
+                ? notification.fromUserUuid
+                : notification.fromUserId;
+        if (!applicantLookupId.isEmpty()) {
+            User user = UserRepository::instance().requestUserDetail({applicantLookupId});
+            if (user.id.isEmpty()) {
+                user.id = notification.fromUserUuid.isEmpty()
+                        ? notification.fromUserId
+                        : notification.fromUserUuid;
+                user.userUuid = notification.fromUserUuid;
+                user.userId = notification.fromUserId;
+                user.nick = notification.fromUserId.isEmpty()
+                        ? QStringLiteral("未知用户")
+                        : notification.fromUserId;
+            }
             user.isFriend = true;
             user.remark = remark;
             user.friendGroupId = groupId.isEmpty() ? QStringLiteral("default") : groupId;
             user.friendGroupName = groupName.isEmpty() ? QStringLiteral("默认分组") : groupName;
             UserRepository::instance().saveUser(user);
         }
-
-        auto message = QSharedPointer<ChatMessage>(new TextMessage(
-            QStringLiteral("我们已经是好友了，现在可以开始聊天了"),
-            true,
-            CurrentUser::instance().getUserId(),
-            false,
-            CurrentUser::instance().getUserName()));
-        message->setTimestamp(acceptedAt);
-        MessageRepository::instance().addMessage(notification.fromUserId, message);
-        MessageRepository::instance().markConversationRead(notification.fromUserId);
 
         emit notificationListChanged();
         return true;
@@ -371,4 +594,53 @@ bool FriendNotificationRepository::rejectRequest(const QString& notificationId)
         return true;
     }
     return false;
+}
+
+bool FriendNotificationRepository::syncRequestStatus(const QString& notificationId,
+                                                     NotificationStatus status)
+{
+    ensureLoaded();
+    for (FriendNotification& notification : m_notifications) {
+        if (notification.id != notificationId) {
+            continue;
+        }
+
+        notification.status = status;
+        notification.unread = false;
+        LocalDataStore::instance().upsertValue(QStringLiteral("friend_notifications"),
+                                               notification.id,
+                                               notificationToJson(notification));
+        UnreadStateRepository::instance().setUnread(kFriendRequestUnreadScope,
+                                                    notification.id,
+                                                    false);
+        emit notificationListChanged();
+        return true;
+    }
+    return false;
+}
+
+bool FriendNotificationRepository::removeRequest(const QString& notificationId)
+{
+    if (notificationId.isEmpty()) {
+        return false;
+    }
+
+    ensureLoaded();
+    const auto previousSize = m_notifications.size();
+    m_notifications.erase(std::remove_if(m_notifications.begin(),
+                                         m_notifications.end(),
+                                         [&notificationId](const FriendNotification& notification) {
+                                             return notification.id == notificationId;
+                                         }),
+                          m_notifications.end());
+    UnreadStateRepository::instance().setUnread(kFriendRequestUnreadScope,
+                                                notificationId,
+                                                false);
+    const bool removed = LocalDataStore::instance().removeValue(QStringLiteral("friend_notifications"),
+                                                               notificationId) ||
+            m_notifications.size() != previousSize;
+    if (removed) {
+        emit notificationListChanged();
+    }
+    return removed;
 }

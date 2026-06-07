@@ -28,6 +28,8 @@ public:
                        const QString& groupId = QStringLiteral("default"),
                        const QString& groupName = QStringLiteral("默认分组"));
     bool rejectRequest(const QString& notificationId);
+    bool syncRequestStatus(const QString& notificationId, NotificationStatus status);
+    bool removeRequest(const QString& notificationId);
 
 signals:
     void notificationListChanged();

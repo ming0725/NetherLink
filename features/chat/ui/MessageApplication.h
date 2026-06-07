@@ -15,6 +15,7 @@ public:
     explicit MessageApplication(QWidget* parent = nullptr);
     void handleGlobalMousePress(const QPoint& globalPos);
     void setSystemFloatingBarsSuppressed(bool suppressed);
+    void setAppBarActive(bool active);
 
 public slots:
     void openConversationFromContact(const QString& conversationId);
@@ -22,6 +23,8 @@ public slots:
 protected:
     void resizeEvent(QResizeEvent* event) override;
     void paintEvent(QPaintEvent* event) override;
+    void showEvent(QShowEvent* event) override;
+    void hideEvent(QHideEvent* event) override;
 private slots:
     void onMessageClicked(const QString& conversationId);
     void onCurrentConversationDeleted();
@@ -47,13 +50,17 @@ private:
 
     void ensureChatArea();
     void applyLoadedConversation(int token, const ConversationThreadData& conversation);
+    void applyVisibleConversationState(bool visible);
+    QString activeConversationId() const;
     LeftPane*            m_leftPane;
     QSplitter*          m_splitter;
     QStackedWidget*     m_rightStack;
     DefaultPage*        m_defaultPage;
     ChatArea*           m_chatArea = nullptr;
     bool m_systemFloatingBarsSuppressed = false;
+    bool m_appBarActive = true;
     int m_openConversationLoadToken = 0;
     bool m_openConversationLoadPending = false;
     QString m_openConversationRequestId;
+    QString m_openDirectConversationRequestId;
 };

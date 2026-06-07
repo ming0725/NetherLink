@@ -103,7 +103,10 @@ void FriendNotificationPage::handleAcceptRequest(const QString& notificationId)
         QString remark;
         QString groupId;
         QString groupName;
-        if (AddContactSearchWindow::openFriendApproval(notification.fromUserId,
+        const QString applicantLookupId = notification.fromUserId.isEmpty()
+                ? notification.fromUserUuid
+                : notification.fromUserId;
+        if (AddContactSearchWindow::openFriendApproval(applicantLookupId,
                                                        this,
                                                        &remark,
                                                        &groupId,

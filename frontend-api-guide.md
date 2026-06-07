@@ -917,7 +917,7 @@ POST /api/v1/friend-requests/{requestId}/reject
 
 ```json
 {
-  "toUserUuid": "uuid",
+  "toUserId": "ming_001",
   "message": "我是...",
   "sourceType": "search",
   "sourceGroupId": null,
@@ -932,6 +932,8 @@ POST /api/v1/friend-requests/{requestId}/reject
 { "remark": "Ming", "groupId": "uuid", "clientOperationId": "op_x" }
 ```
 
+选择“默认分组”时前端使用虚拟分组 `{ "label": "默认分组", "friendGroupId": null }`，同意请求不发送 `groupId` / `friendGroupId`；后端以 `friendships.friend_group_id = NULL` 表示默认分组，好友列表返回 `friendGroupId: null` 时前端归类显示到“默认分组”。
+
 拒绝可以只带：
 
 ```json
@@ -942,14 +944,15 @@ POST /api/v1/friend-requests/{requestId}/reject
 
 - 好友列表、好友通知列表仍由登录 bootstrap、实时事件和本地账号库快照驱动。
 - 已新增 `FriendRemoteDataSource` 封装通知页已有的好友申请同意/拒绝按钮。
-- 同意请求发送 `POST /api/v1/friend-requests/{requestId}/accept`，body 包含 `remark`、`groupId` 和稳定 `clientOperationId`。
+- 同意请求发送 `POST /api/v1/friend-requests/{requestId}/accept`，body 包含稳定 `clientOperationId`；有备注时附带 `remark`，选择本地虚拟默认分组 `default` 时不发送 `groupId` / `friendGroupId`。
 - 拒绝请求发送 `POST /api/v1/friend-requests/{requestId}/reject`，body 包含稳定 `clientOperationId`。
 - 好友资料编辑发送 `PATCH /api/v1/friends/{friendUserUuid}`，body 包含 `remark`、`groupId`、`isDnd` 和稳定 `clientOperationId`；本地默认分组 `default` 会作为 `null` 发送给后端。
 - 删除好友发送 `DELETE /api/v1/friends/{friendUserUuid}?clientOperationId=<op>`，并携带同值 `Idempotency-Key` 让失败重试保持幂等。
 - 远程成功后复用 `FriendNotificationRepository` 更新通知状态、好友关系和本地会话提示；远程失败展示错误提示，不回退到纯本地确认。
 - 好友资料编辑远程成功后再写入 `UserRepository`；好友详情页、好友列表分组菜单和聊天资料页备注入口共用 `FriendRemoteDataSource`。
-- 删除好友远程成功后再清理本地好友缓存和会话；好友页、好友列表右键菜单和聊天资料页入口共用 `FriendRemoteDataSource`。
-- 好友搜索发起申请发送 `POST /api/v1/friend-requests`，body 包含 `toUserUuid`、`message`、`sourceType=search`、空 `sourceGroupId/sourceFriendUuid` 和稳定 `clientOperationId`；成功后只提示“好友申请已发送”并过滤当前进程搜索结果，不直接把对方写成本地好友。
+- 删除好友远程成功后只清理本地好友关系、备注、分组和免打扰缓存，不删除本地会话和 `MessageList` 历史；好友页、好友列表右键菜单和聊天资料页入口共用 `FriendRemoteDataSource`。
+- 好友搜索发起申请发送 `POST /api/v1/friend-requests`，body 包含可读 `toUserId`、`message`、`sourceType=search`、空 `sourceGroupId/sourceFriendUuid` 和稳定 `clientOperationId`；成功后只提示“好友申请已发送”并过滤当前进程搜索结果，不直接把对方写成本地好友。
+- 添加联系人窗口的用户搜索已经接入 `GET /api/v1/users`，成功响应会缓存 `userUuid` 和可读 `userId`；发起好友申请时发送 `toUserId`，UI 展示只使用 `nickName/userId`，不展示 `userUuid`；失败只提示“用户搜索失败”。
 
 ### 6.3 群组
 
@@ -1020,10 +1023,12 @@ POST /api/v1/group-join-requests/{requestId}/reject
 - 拒绝请求发送 `POST /api/v1/group-join-requests/{requestId}/reject`，body 包含稳定 `clientOperationId`。
 - 远程成功后复用 `GroupNotificationRepository` 更新通知状态、群成员、本地分组和会话提示；远程失败展示错误提示。
 - 群搜索发起入群申请发送 `POST /api/v1/group-join-requests`，body 包含 `groupId`、`message` 和稳定 `clientOperationId`；成功后只提示“入群申请已发送”并过滤当前进程搜索结果，不直接把当前用户写入本地群成员。
+- 添加联系人窗口的群搜索已经接入 `GET /api/v1/groups`；失败只提示“群搜索失败”。
 - 已新增 `GroupRemoteDataSource` 封装已有群资料、当前用户群设置和退群入口。
 - 创建群聊发送 `POST /api/v1/groups`，body 包含 UI 已有的默认群名、选中好友 `memberIds` 和稳定 `clientOperationId`；成功后保存服务端返回的 `group`，再打开会话。失败只提示“创建群聊失败”，不再生成 `g_custom_*` 本地群。
 - 群全局资料编辑发送 `PATCH /api/v1/groups/{groupId}`，body 包含 `name`、`introduction`、`announcement` 和稳定 `clientOperationId`；当前 `Group` 模型未承载群版本和 ETag，因此暂不发送 `expectedVersion` / `If-Match`。
 - 邀请群成员发送 `POST /api/v1/groups/{groupId}/members`，body 包含 `userUuids` 和稳定 `clientOperationId`；移除成员发送 `DELETE /api/v1/groups/{groupId}/members/{userUuid}?clientOperationId=<op>` 并携带 `Idempotency-Key`，批量移除会等待本批所有 DELETE 成功后再更新本地群成员快照。
+- 群成员面板分页和搜索已经接入 `GET /api/v1/groups/{groupId}/members`，成功后填充已有成员 UI 并缓存用户资料；失败返回空页，不使用本地成员快照伪装成功。
 - 群成员昵称、管理员设置/取消发送 `PATCH /api/v1/groups/{groupId}/members/{userUuid}`，body 包含 `nickname` 或 `role` 和稳定 `clientOperationId`。
 - 转让群主发送 `POST /api/v1/groups/{groupId}/transfer-owner`，body 包含 `userUuid` 和稳定 `clientOperationId`。
 - 当前用户群备注、分组和免打扰设置发送 `PATCH /api/v1/groups/{groupId}/my-settings`，body 包含 `remark`、`listGroupId`、`listGroupName`、`isDnd` 和稳定 `clientOperationId`。
@@ -1123,6 +1128,8 @@ POST /api/v1/conversations/{conversationId}/messages/{messageId}/recall
 }
 ```
 
+请求体不要包含 `senderId`；后端从 token 决定发送者。
+
 消息类型：
 
 ```text
@@ -1194,10 +1201,13 @@ type Message = {
 - 当前 `ConversationMeta` / `ConversationSummary` 未承载 `version/etag`，暂不发送 `expectedVersion` / `If-Match`。
 - 已新增 `ChatRemoteDataSource` 封装聊天发送。
 - 文本消息通过 `POST /api/v1/conversations/{conversationId}/messages` 发送，body 使用 `type=text`、`content.text`、空 `attachments` 和稳定 `clientMessageId`。
-- 图片消息先通过 `UploadClient::uploadFile(path, "chat_image")` 上传文件，成功后使用返回的 `fileId` 作为 `type=image` 消息的附件发送，并填入本地读取到的 `width/height`。
+- 图片消息先通过 `UploadClient::uploadFile(path, "chat_image")` 上传文件，上传接口成功返回后立即使用返回的 `fileId` 作为 `type=image` 消息的附件发送，并填入本地读取到的 `width/height`；聊天图片不等待 `processingStatus=ready`。
+- `ChatArea` 创建本地 pending 消息时使用当前用户 UUID 对齐后端返回的 `senderUuid`，避免用公开 ID 做归属判断。
 - 消息撤回通过 `POST /api/v1/conversations/{conversationId}/messages/{messageId}/recall` 发送；REST 成功响应中的 `message` / `replacementMessage` 和 WebSocket `chat.message.recalled` 会统一写回 `MessageRepository`，并按 `messageId/clientMessageId` 替换 `chat_messages` 缓存与当前聊天列表。
 - 历史消息分页已接入 `GET /api/v1/conversations/{conversationId}/messages?beforeMessageSeq=<oldestSeq>&limit=<pageSize>`；`ChatMessage` 保留服务端 `messageSeq`，上滑加载更多时用当前本地最早消息序号补拉更早消息，成功后写入 `chat_messages` 并复用现有 prepend UI。
 - `ChatArea` 保留现有乐观追加体验；发送失败显示全局失败提示。
+- REST 失败响应按 `{ code, message, requestId }` 解析；发送消息收到 `NOT_FRIEND` 或 WS `client.error` / `chat.message.send` / `NOT_FRIEND` 时，将 pending 消息标记失败，提示“你们已不是好友，无法发送消息”，刷新好友关系状态，并在对应私聊 `MessageList` 底部追加“你们已不是好友，无法发送消息”的本地系统提示。
+- 私聊关系已解除后，历史消息继续保留；继续发送新文本或图片时只追加本地失败消息并显示失败标记，不发起远端发送，并将失败消息写入本地 `chat_messages` 缓存。
 - 撤回失败只显示“消息撤回失败”，不把本地占位消息当作后端确认。
 - `ChatMessage`、`MessageRepository` 和 `ChatListModel` 已保存 `clientMessageId` 并按 `messageId/clientMessageId` 去重，避免 REST/WS 回包重复显示。
 - 仍不接入聊天文件、音频、视频和多附件选择。
@@ -1277,6 +1287,12 @@ POST /api/v1/notifications/{notificationId}/read
 ```json
 { "ok": true, "updated": 3, "unreadCount": 0 }
 ```
+
+当前 Qt 前端接入状态：
+
+- 好友通知页进入时通过 `NotificationRemoteDataSource` 调用 `POST /api/v1/notifications/read-all`，body 为 `{ "type": "friend.request.created" }`。
+- 群通知页进入时分别调用 `{ "type": "group.notification.created" }` 和 `{ "type": "group.join_request.created" }`。
+- 远程成功后才清理本地 `unread_state` 徽标；失败显示“通知已读同步失败”。
 
 ## 9. 帖子 API
 
@@ -1617,7 +1633,7 @@ POST /api/v1/ai/messages/{messageId}/feedback
 | `sync.required` | 全量重新拉取关键列表 |
 | `client.error` | 根据 `payload.requestType` 和 `payload.code` 处理失败命令 |
 
-当前 Qt 前端已落地 `chat.message.created`、`chat.message.sent`、`chat.message.recalled`、`chat.conversation.updated`、`chat.conversation.sync.updated`、`chat.read.updated`、`friend.request.*`、`group.notification.created`、`group.join_request.*` 的同步缓存处理。尚未接入的事件继续安全忽略或由已有 `profile.updated`、`group.updated` 等局部 handler 消费。
+当前 Qt 前端已落地 `chat.message.created`、`chat.message.sent`、`chat.message.recalled`、`chat.conversation.updated`、`chat.conversation.sync.updated`、`chat.read.updated`、`friend.deleted`、`friend.request.*`、`group.notification.created`、`group.join_request.*` 和发送消息 `client.error/NOT_FRIEND` 的同步缓存处理。尚未接入的事件继续安全忽略或由已有 `profile.updated`、`group.updated` 等局部 handler 消费。
 
 ## 12. 前端实现建议
 

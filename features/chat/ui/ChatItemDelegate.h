@@ -66,6 +66,8 @@ public:
     QPersistentModelIndex selectionIndex() const;
     void setRecallEligibilityCallback(std::function<bool(const ChatMessage*)> callback);
     void setReferenceResolver(std::function<const ChatMessage*(const QString&)> resolver);
+    QRect sendStateIndicatorRect(const QStyleOptionViewItem& option,
+                                 const QModelIndex& index) const;
     bool reeditHitTest(const QStyleOptionViewItem& option,
                        const QModelIndex& index,
                        const QPoint& viewportPos) const;
@@ -78,6 +80,7 @@ signals:
     void recallRequested(int row);
     void referenceRequested(int row);
     void reeditRequested(int row);
+    void retrySendRequested(int row);
 
 private:
     struct TextRange {
@@ -137,6 +140,8 @@ private:
     static constexpr int REFERENCE_IMAGE_GAP = 6;
     static constexpr int REFERENCE_IMAGE_MAX_LINES = 2;
     static constexpr int REFERENCE_IMAGE_RADIUS = 5;
+    static constexpr int SEND_STATE_INDICATOR_SIZE = 18;
+    static constexpr int SEND_STATE_INDICATOR_GAP = 7;
     
     void drawBubble(QPainter* painter, const QRect& rect,
                     bool isFromMe, const ChatMessage* message, bool isSelected,
@@ -146,7 +151,10 @@ private:
                          const QColor& textColor,
                          const QModelIndex& index) const;
     void drawImageMessage(QPainter* painter, const QRect& rect,
-                         const QString& imageSource, bool isSelected) const;
+                          const ImageMessage* message, bool isSelected) const;
+    void drawSendStateIndicator(QPainter* painter,
+                                const QRect& rect,
+                                MessageSendState state) const;
     void drawAvatar(QPainter* painter, const QRect& rect,
                     const QString& userId) const;
     void drawGroupInfo(QPainter* painter, const QRect& rect,

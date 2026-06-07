@@ -3,6 +3,7 @@
 
 #include <QString>
 #include <QDateTime>
+#include <QSize>
 #include <QUuid>
 #include <QtGlobal>
 #include <memory>
@@ -15,6 +16,13 @@ enum class MessageType {
     Recall,
     GroupMemberJoined,
     GroupSystemEvent
+};
+
+enum class MessageSendState {
+    Sent,
+    Uploading,
+    Sending,
+    Failed
 };
 
 enum class GroupRole {
@@ -47,6 +55,7 @@ public:
     int getMessageSeq() const { return messageSeq; }
     void setMessageSeq(int seq) { messageSeq = qMax(0, seq); }
     bool isFromMe() const { return fromMe; }
+    void setFromMe(bool value) { fromMe = value; }
     QString getSenderId() const { return senderId; }
     QDateTime getTimestamp() const { return timestamp; }
     void setTimestamp(const QDateTime& newTimestamp) { timestamp = newTimestamp; }
@@ -62,6 +71,8 @@ public:
     void setRole(GroupRole nextRole) { role = nextRole; }
     QString getReferencedMessageId() const { return referencedMessageId; }
     void setReferencedMessageId(const QString& id) { referencedMessageId = id; }
+    MessageSendState getSendState() const { return sendState; }
+    void setSendState(MessageSendState state) { sendState = state; }
 
 protected:
     QString messageId;
@@ -77,6 +88,7 @@ protected:
     QString senderName;
     GroupRole role;
     QString referencedMessageId;
+    MessageSendState sendState = MessageSendState::Sent;
 };
 
 class TextMessage : public ChatMessage {
@@ -98,15 +110,22 @@ class ImageMessage : public ChatMessage {
 public:
     ImageMessage(const QString& imageSource, bool isFromMe, const QString& senderId,
                 bool isGroupChat = false, const QString& senderName = QString(),
-                GroupRole role = GroupRole::Member)
-        : ChatMessage(isFromMe, senderId, isGroupChat, senderName, role), imageSource(imageSource) {}
+                GroupRole role = GroupRole::Member, const QSize& imageSize = QSize())
+        : ChatMessage(isFromMe, senderId, isGroupChat, senderName, role)
+        , imageSource(imageSource)
+        , imageSize(imageSize)
+    {
+    }
     
     QString getContent() const override { return "[图片]"; }
     MessageType getType() const override { return MessageType::Image; }
     QString getImageSource() const { return imageSource; }
+    QSize getImageSize() const { return imageSize; }
+    void setImageSize(const QSize& size) { imageSize = size; }
 
 private:
     QString imageSource;
+    QSize imageSize;
 };
 
 class RecallMessage : public ChatMessage {

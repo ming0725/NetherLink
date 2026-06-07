@@ -2,6 +2,7 @@
 
 #include <QObject>
 #include <QMap>
+#include <QHash>
 #include <QVector>
 #include <QMutex>
 #include <QJsonObject>
@@ -23,6 +24,8 @@ public:
     ConversationThreadData requestConversationThreadUntilMessage(
             const ConversationThreadUntilMessageRequest& query) const;
     QString requestConversationThreadAsync(const ConversationThreadRequest& query);
+    void setActiveVisibleConversation(const QString& conversationId, bool visible);
+    bool isActiveVisibleConversation(const QString& conversationId) const;
 
 public slots:
     void touchConversation(const QString& conversationId,
@@ -35,6 +38,8 @@ public slots:
     void removeConversation(const QString& conversationId);
     void addMessage(const QString& conversationId,
                     QSharedPointer<ChatMessage> message);
+    void persistMessage(const QString& conversationId,
+                        const QSharedPointer<ChatMessage>& message);
     void refreshGroupMemberDisplayName(const QString& groupId,
                                        const QString& userId,
                                        const QString& displayName,
@@ -60,11 +65,25 @@ private:
     explicit MessageRepository(QObject* parent = nullptr);
     Q_DISABLE_COPY(MessageRepository)
     void reloadFromStore();
+    void scheduleReloadFromStore();
+    bool shouldIgnoreStoreChange(const QString& domain);
+    void ignoreNextStoreChange(const QString& domain);
+    bool localUnreadOverride(const QString& conversationId, int* unreadCount = nullptr) const;
+    void applyConversationStateObject(const QJsonObject& conversation, bool emitChange = true);
     void cacheRemoteMessageObject(QJsonObject object,
-                                  const QString& fallbackConversationId = QString());
+                                  const QString& fallbackConversationId = QString(),
+                                  bool updateUnread = true);
     bool fetchOlderMessagesBlocking(const QString& conversationId, int beforeMessageSeq, int limit);
+    bool fetchLatestMessagesBlocking(const QString& conversationId, int limit);
+    bool fetchNewerMessagesBlocking(const QString& conversationId, int afterMessageSeq, int limit);
 
     QMap<QString, QVector<QSharedPointer<ChatMessage>>> m_store;
     QMap<QString, ConversationSyncState> m_conversationStates;
+    QMap<QString, QString> m_directConversationPeers;
+    QString m_activeVisibleConversationId;
+    bool m_hasActiveVisibleConversation = false;
+    QHash<QString, int> m_ignoredStoreChangeCounts;
+    QHash<QString, int> m_localUnreadOverrides;
+    bool m_reloadFromStoreScheduled = false;
     mutable QMutex m_mutex;
 };

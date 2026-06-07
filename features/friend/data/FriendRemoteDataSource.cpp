@@ -1,5 +1,6 @@
 #include "FriendRemoteDataSource.h"
 
+#include "features/friend/data/FriendNotificationRepository.h"
 #include "shared/network/HttpClient.h"
 
 #include <QJsonObject>
@@ -26,6 +27,83 @@ QJsonValue backendFriendGroupId(const QString& groupId)
         return QJsonValue(QJsonValue::Null);
     }
     return QJsonValue(groupId);
+}
+
+bool isDefaultFriendGroup(const QString& groupId)
+{
+    return groupId.isEmpty() || groupId == QStringLiteral("default");
+}
+
+QString handledStatusFromDetails(const NetworkError& error)
+{
+    const QJsonObject request = error.details.value(QStringLiteral("request")).toObject();
+    QString status = request.value(QStringLiteral("status")).toString();
+    if (status.isEmpty()) {
+        status = error.details.value(QStringLiteral("currentStatus")).toString();
+    }
+    return status.trimmed().toLower();
+}
+
+bool statusFromBackend(const QString& status, NotificationStatus* out)
+{
+    if (!out) {
+        return false;
+    }
+    if (status == QStringLiteral("accepted")) {
+        *out = NotificationStatus::Accepted;
+        return true;
+    }
+    if (status == QStringLiteral("rejected")) {
+        *out = NotificationStatus::Rejected;
+        return true;
+    }
+    if (status == QStringLiteral("pending")) {
+        *out = NotificationStatus::Pending;
+        return true;
+    }
+    return false;
+}
+
+QString requestIdFromDetails(const NetworkError& error, const QString& fallback)
+{
+    const QJsonObject request = error.details.value(QStringLiteral("request")).toObject();
+    for (const QString& key : {QStringLiteral("requestId"),
+                               QStringLiteral("id"),
+                               QStringLiteral("notificationId")}) {
+        const QString requestId = request.value(key).toString();
+        if (!requestId.isEmpty()) {
+            return requestId;
+        }
+    }
+    return fallback;
+}
+
+bool syncStaleFriendRequestCache(const QString& notificationId, const NetworkError& error)
+{
+    const QString requestId = requestIdFromDetails(error, notificationId);
+    if (requestId.isEmpty()) {
+        return false;
+    }
+
+    if (error.httpStatus == 404 || error.code == QStringLiteral("NOT_FOUND")) {
+        return FriendNotificationRepository::instance().removeRequest(requestId);
+    }
+
+    const QString actorRole = error.details.value(QStringLiteral("actorRole")).toString().trimmed().toLower();
+    if (error.code == QStringLiteral("FRIEND_REQUEST_NOT_RECIPIENT") &&
+        actorRole == QStringLiteral("sender")) {
+        return FriendNotificationRepository::instance().removeRequest(requestId);
+    }
+
+    if (error.code != QStringLiteral("FRIEND_REQUEST_ALREADY_HANDLED")) {
+        return false;
+    }
+
+    NotificationStatus status = NotificationStatus::Pending;
+    if (!statusFromBackend(handledStatusFromDetails(error), &status)) {
+        return false;
+    }
+    return FriendNotificationRepository::instance().syncRequestStatus(requestId, status);
 }
 
 } // namespace
@@ -60,16 +138,19 @@ QString FriendRemoteDataSource::acceptFriendRequest(const QString& notificationI
 
     const QString clientOperationId = newClientOperationId(QStringLiteral("op_friend_accept"));
     QJsonObject body = bodyWithClientOperationId(clientOperationId);
-    body.insert(QStringLiteral("remark"), remark);
-    body.insert(QStringLiteral("groupId"),
-                groupId.isEmpty() ? QJsonValue(QJsonValue::Null) : QJsonValue(groupId));
+    if (!remark.isEmpty()) {
+        body.insert(QStringLiteral("remark"), remark);
+    }
+    if (!isDefaultFriendGroup(groupId)) {
+        body.insert(QStringLiteral("groupId"), groupId);
+    }
 
     PendingOperation pending;
     pending.action = Action::AcceptFriendRequest;
     pending.notificationId = notificationId;
     pending.remark = remark;
-    pending.groupId = groupId;
-    pending.groupName = groupName;
+    pending.groupId = isDefaultFriendGroup(groupId) ? QStringLiteral("default") : groupId;
+    pending.groupName = groupName.isEmpty() ? QStringLiteral("默认分组") : groupName;
     return sendOperation(Action::AcceptFriendRequest,
                          QStringLiteral("/friend-requests/%1/accept").arg(notificationId),
                          body,
@@ -127,14 +208,14 @@ QString FriendRemoteDataSource::rejectGroupJoinRequest(const QString& notificati
                          pending);
 }
 
-QString FriendRemoteDataSource::createFriendRequest(const QString& toUserUuid, const QString& message)
+QString FriendRemoteDataSource::createFriendRequest(const QString& toUserId, const QString& message)
 {
-    if (toUserUuid.isEmpty()) {
+    if (toUserId.isEmpty()) {
         return {};
     }
 
     QJsonObject body = bodyWithClientOperationId(newClientOperationId(QStringLiteral("op_friend_request")));
-    body.insert(QStringLiteral("toUserUuid"), toUserUuid);
+    body.insert(QStringLiteral("toUserId"), toUserId);
     body.insert(QStringLiteral("message"), message);
     body.insert(QStringLiteral("sourceType"), QStringLiteral("search"));
     body.insert(QStringLiteral("sourceGroupId"), QJsonValue(QJsonValue::Null));
@@ -142,7 +223,7 @@ QString FriendRemoteDataSource::createFriendRequest(const QString& toUserUuid, c
 
     PendingOperation pending;
     pending.action = Action::CreateFriendRequest;
-    pending.userId = toUserUuid;
+    pending.userId = toUserId;
     return sendOperation(Action::CreateFriendRequest,
                          QStringLiteral("/friend-requests"),
                          body,
@@ -280,6 +361,9 @@ void FriendRemoteDataSource::handleRequestFailed(const QString& requestId, const
     switch (pending.action) {
     case Action::AcceptFriendRequest:
     case Action::RejectFriendRequest:
+        if (syncStaleFriendRequestCache(pending.notificationId, error)) {
+            return;
+        }
         emit friendRequestActionFailed(requestId, pending.notificationId, error);
         break;
     case Action::AcceptGroupJoinRequest:

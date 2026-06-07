@@ -1350,4 +1350,6 @@ void DirectConversationInfoPanel::setConversationMeta(const ConversationMeta& me
     m_remarkText->setText(showDirectState ? remark : QString());
     m_pinSwitch->setLampChecked(showDirectState && meta.isPinned, animated);
     m_doNotDisturbSwitch->setLampChecked(showDirectState && meta.isDoNotDisturb, animated);
+    m_deleteFriendButton->setEnabled(showDirectState &&
+                                     UserRepository::instance().isFriend(meta.conversationId));
 }

@@ -18,6 +18,47 @@
 #include "features/chat/data/MessageRepository.h"
 #include "shared/ui/GlobalNotification.h"
 
+namespace {
+
+QString groupMemberDisplayName(const QString& conversationId, const QString& userId)
+{
+    if (userId.isEmpty()) {
+        return {};
+    }
+
+    const QString cachedNickname = GroupRepository::instance()
+            .requestGroupMemberNickname(conversationId, userId)
+            .trimmed();
+    if (!cachedNickname.isEmpty()) {
+        return cachedNickname;
+    }
+
+    const Group group = GroupRepository::instance().requestGroupDetail({conversationId});
+    const QString groupNickname = group.memberNicknames.value(userId).trimmed();
+    if (!groupNickname.isEmpty()) {
+        return groupNickname;
+    }
+
+    const CurrentUser& currentUser = CurrentUser::instance();
+    if (currentUser.isCurrentUserId(userId)) {
+        return currentUser.getUserName();
+    }
+
+    const User user = UserRepository::instance().requestUserDetail({userId});
+    if (!user.remark.trimmed().isEmpty()) {
+        return user.remark.trimmed();
+    }
+    if (!user.nick.trimmed().isEmpty()) {
+        return user.nick.trimmed();
+    }
+    if (!user.userId.trimmed().isEmpty()) {
+        return user.userId.trimmed();
+    }
+    return userId;
+}
+
+} // namespace
+
 MessageListWidget::MessageListWidget(QWidget* parent)
     : OverlayScrollListView(parent)
     , m_model(new MessageListModel(this))
@@ -79,12 +120,12 @@ MessageListWidget::MessageListWidget(QWidget* parent)
                 } else if (operation == QStringLiteral("setDoNotDisturb")) {
                     GlobalNotification::showFailure(this, QStringLiteral("会话免打扰设置失败"));
                 } else if (operation == QStringLiteral("hideConversation")) {
-                    GlobalNotification::showFailure(this, QStringLiteral("删除会话失败"));
+                    GlobalNotification::showFailure(this, QStringLiteral("会话已本地删除，远端同步失败"));
                 } else if (operation == QStringLiteral("markRead") ||
                            operation == QStringLiteral("markUnread")) {
                     GlobalNotification::showFailure(this, QStringLiteral("会话已读状态更新失败"));
                 } else if (operation == QStringLiteral("clearMessages")) {
-                    GlobalNotification::showFailure(this, QStringLiteral("清空聊天记录失败"));
+                    GlobalNotification::showFailure(this, QStringLiteral("聊天记录已本地清空，远端同步失败"));
                 }
             });
     connect(&ImageService::instance(), &ImageService::previewReady,
@@ -104,7 +145,8 @@ void MessageListWidget::setKeyword(const QString& keyword)
 
 QString MessageListWidget::selectedConversationId() const
 {
-    return m_model->conversationIdAt(currentIndex());
+    const QString currentId = m_model->conversationIdAt(currentIndex());
+    return currentId.isEmpty() ? m_selectedConversationId : currentId;
 }
 
 ConversationSummary MessageListWidget::selectedConversation() const
@@ -124,11 +166,12 @@ void MessageListWidget::setCurrentConversation(const QString& conversationId)
         return;
     }
 
+    m_selectedConversationId = conversationId;
     const QModelIndex index = m_model->index(row, 0);
-    ConversationRemoteDataSource::instance().markRead(conversationId);
     m_restoringSelection = true;
     selectionModel()->setCurrentIndex(index, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
     m_restoringSelection = false;
+    requestMarkReadIfNeeded(conversationId);
     scrollTo(index);
     viewport()->update();
 }
@@ -143,8 +186,21 @@ void MessageListWidget::clearCurrentConversationSelection()
     clearSelection();
     selectionModel()->clearCurrentIndex();
     setCurrentIndex(QModelIndex());
+    m_selectedConversationId.clear();
     m_restoringSelection = false;
     viewport()->update();
+}
+
+void MessageListWidget::setReadReceiptsEnabled(bool enabled)
+{
+    if (m_readReceiptsEnabled == enabled) {
+        return;
+    }
+
+    m_readReceiptsEnabled = enabled;
+    if (m_readReceiptsEnabled) {
+        requestMarkReadIfNeeded(selectedConversationId());
+    }
 }
 
 void MessageListWidget::mousePressEvent(QMouseEvent* event)
@@ -173,16 +229,24 @@ void MessageListWidget::onCurrentChanged(const QModelIndex& current, const QMode
     }
 
     if (!m_restoringSelection && conversationId != m_model->conversationIdAt(previous)) {
+        m_selectedConversationId = conversationId;
         emit conversationActivated(conversationId);
+    } else if (m_restoringSelection) {
+        m_selectedConversationId = conversationId;
     }
 
-    ConversationRemoteDataSource::instance().markRead(conversationId);
+    requestMarkReadIfNeeded(conversationId);
     update(current);
 }
 
 void MessageListWidget::onRepositoryLastMessageChanged(const QString& conversationId,
                                                        QSharedPointer<ChatMessage> lastMessage)
 {
+    if (conversationId.isEmpty()) {
+        reloadConversations();
+        return;
+    }
+
     m_model->updateConversationPreview(conversationId,
                                        previewTextForMessage(conversationId, lastMessage),
                                        lastMessage ? lastMessage->getTimestamp() : QDateTime());
@@ -240,6 +304,12 @@ void MessageListWidget::showConversationMenu(const QPoint& globalPos, const QMod
                                       ThemeManager::instance().color(ThemeColor::DestructiveActionText));
     connect(deleteAction, &QAction::triggered, this,
             [this, conversationId = conversation.conversationId]() {
+        const bool deletingSelectedConversation = selectedConversationId() == conversationId;
+        MessageRepository::instance().removeConversation(conversationId);
+        if (deletingSelectedConversation) {
+            clearCurrentConversationSelection();
+            emit currentConversationDeleted();
+        }
         ConversationRemoteDataSource::instance().hideConversation(conversationId);
     });
 
@@ -276,10 +346,25 @@ void MessageListWidget::restoreSelection(const QString& conversationId)
         return;
     }
 
+    m_selectedConversationId = conversationId;
     const QModelIndex index = m_model->index(row, 0);
     m_restoringSelection = true;
     selectionModel()->setCurrentIndex(index, QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
     m_restoringSelection = false;
+}
+
+void MessageListWidget::requestMarkReadIfNeeded(const QString& conversationId)
+{
+    if (!m_readReceiptsEnabled || conversationId.isEmpty()) {
+        return;
+    }
+
+    const ConversationSummary conversation = m_model->conversationById(conversationId);
+    if (conversation.conversationId.isEmpty() || conversation.unreadCount <= 0) {
+        return;
+    }
+
+    ConversationRemoteDataSource::instance().markRead(conversationId);
 }
 
 QString MessageListWidget::previewTextForMessage(const QString& conversationId,
@@ -299,12 +384,6 @@ QString MessageListWidget::previewTextForMessage(const QString& conversationId,
         return message->getContent();
     }
 
-    QString senderName = message->getSenderName();
-    if (senderName.isEmpty()) {
-        const CurrentUser& currentUser = CurrentUser::instance();
-        senderName = currentUser.isCurrentUserId(message->getSenderId())
-                ? currentUser.getUserName()
-                : UserRepository::instance().requestUserName(message->getSenderId());
-    }
+    const QString senderName = groupMemberDisplayName(conversationId, message->getSenderId());
     return QString("%1：%2").arg(senderName, message->getContent());
 }

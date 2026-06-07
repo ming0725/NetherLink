@@ -4,6 +4,20 @@
 #include <QString>
 #include <QVector>
 
+enum class GroupMemberRoleValue {
+    Member,
+    Admin,
+    Owner
+};
+
+struct GroupMemberProfile {
+    QString groupId;
+    QString userUuid;
+    QString nickname;
+    GroupMemberRoleValue role = GroupMemberRoleValue::Member;
+    int version = 0;
+};
+
 struct Group {
     QString groupId;
     QString groupName;

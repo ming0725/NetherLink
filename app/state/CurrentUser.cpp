@@ -145,6 +145,19 @@ CurrentUserProfile CurrentUser::profile() const
     return m_profile;
 }
 
+bool CurrentUser::isCurrentUserId(const QString& userId) const
+{
+    if (userId.isEmpty() || m_userId.isEmpty()) {
+        return false;
+    }
+    if (userId == m_userId) {
+        return true;
+    }
+    ensureProfileLoaded(ProfileLoadLevel::Identity);
+    return (!m_profile.userUuid.isEmpty() && userId == m_profile.userUuid) ||
+           (!m_profile.userId.isEmpty() && userId == m_profile.userId);
+}
+
 void CurrentUser::refreshIdentity()
 {
     if (m_userId.isEmpty()) {
@@ -235,7 +248,8 @@ void CurrentUser::applyProfile(CurrentUserProfile profile, ProfileLoadLevel leve
             || m_profile.avatarVersion != profile.avatarVersion
             || m_profile.avatarEtag != profile.avatarEtag
             || m_profile.avatarContentHash != profile.avatarContentHash
-            || m_profile.status != profile.status;
+            || m_profile.status != profile.status
+            || m_profile.lastSeenAt != profile.lastSeenAt;
     const bool fullChangedValue = identityChangedValue
             || m_profile.signature != profile.signature
             || m_profile.region != profile.region

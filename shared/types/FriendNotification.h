@@ -18,6 +18,7 @@ enum class NotificationStatus {
 struct FriendNotification {
     QString id;
     QString fromUserId;
+    QString fromUserUuid;
     QString message;
     QDateTime requestDate;
     NotificationSourceType sourceType = NotificationSourceType::IdSearch;

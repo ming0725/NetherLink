@@ -16,10 +16,12 @@
 #include <QShowEvent>
 #include <QTimer>
 #include <QToolButton>
+#include <QUuid>
 #include <QVariant>
 
 #include "app/state/CurrentUser.h"
 #include "app/state/CurrentUserProfile.h"
+#include "features/friend/data/UserRepository.h"
 #include "features/friend/ui/FriendSessionController.h"
 #include "shared/services/AppFonts.h"
 #include "shared/services/ImageService.h"
@@ -89,6 +91,26 @@ void applyPrimaryButtonStyle(StatefulPushButton* button)
 {
     button->setRadius(8);
     button->setPrimaryStyle();
+}
+
+QString readableUserId(const User& user)
+{
+    if (!user.userId.isEmpty()) {
+        return user.userId;
+    }
+    if (!user.id.isEmpty() && !QUuid::fromString(user.id).isNull()) {
+        return {};
+    }
+    return user.id;
+}
+
+QString readableUserName(const User& user)
+{
+    if (!user.nick.isEmpty()) {
+        return user.nick;
+    }
+    const QString publicId = readableUserId(user);
+    return publicId.isEmpty() ? QStringLiteral("未知用户") : publicId;
 }
 
 } // namespace
@@ -184,6 +206,20 @@ FriendProfilePopup::FriendProfilePopup(QWidget* parent)
         if (m_isCurrentUser) {
             setUser(currentUserAsUser(), true);
         }
+    });
+    connect(&UserRepository::instance(), &UserRepository::friendListChanged, this, [this]() {
+        if (!m_hasUser || m_isCurrentUser) {
+            return;
+        }
+
+        const User refreshedUser = UserRepository::instance().requestUserDetail({m_user.id});
+        if (refreshedUser.id.isEmpty()) {
+            return;
+        }
+        m_user = refreshedUser;
+        m_statusLabel->setText(statusText(m_user.status));
+        updateInfoRows();
+        update();
     });
 
     applyTheme();
@@ -398,10 +434,11 @@ void FriendProfilePopup::setUser(const User& user, bool isCurrentUser)
     m_hasUser = true;
     m_isCurrentUser = isCurrentUser;
 
-    m_idPrefixLabel->show();
-    m_idLabel->setText(m_user.id);
-    m_copyIdButton->setEnabled(true);
-    m_copyIdButton->show();
+    const QString publicId = readableUserId(m_user);
+    m_idPrefixLabel->setVisible(!publicId.isEmpty());
+    m_idLabel->setText(publicId);
+    m_copyIdButton->setEnabled(!publicId.isEmpty());
+    m_copyIdButton->setVisible(!publicId.isEmpty());
     m_statusLabel->setText(statusText(m_user.status));
     updateAvatar();
     updateInfoRows();
@@ -410,6 +447,11 @@ void FriendProfilePopup::setUser(const User& user, bool isCurrentUser)
     updatePopupHeight();
     updateElidedTexts();
     QTimer::singleShot(0, this, &FriendProfilePopup::updateElidedTexts);
+
+    if (!m_isCurrentUser) {
+        const QString userUuid = m_user.userUuid.isEmpty() ? m_user.id : m_user.userUuid;
+        UserRepository::instance().refreshPresenceBatch({userUuid});
+    }
 }
 
 void FriendProfilePopup::openAvatarViewer()
@@ -530,7 +572,7 @@ void FriendProfilePopup::layoutPopup()
     const int copyButtonWidth = m_copyIdButton->width();
     const int maxIdWidth = qMax(0, identityWidth - idPrefixWidth - idGap * 2 - copyButtonWidth);
     const int idTextWidth = qMin(maxIdWidth,
-                                 QFontMetrics(m_idLabel->font()).horizontalAdvance(m_user.id));
+                                 QFontMetrics(m_idLabel->font()).horizontalAdvance(readableUserId(m_user)));
 
     m_contentWidget->setGeometry(kHorizontalMargin, 0, contentWidth, height());
     m_nameLabel->setGeometry(identityX, nameY, identityWidth, nameHeight);
@@ -611,8 +653,8 @@ void FriendProfilePopup::updateElidedTexts()
         label->setText(metrics.elidedText(text, Qt::ElideRight, availableWidth));
     };
 
-    elided(m_nameLabel, m_user.nick.isEmpty() ? m_user.id : m_user.nick);
-    elided(m_idLabel, m_user.id);
+    elided(m_nameLabel, readableUserName(m_user));
+    elided(m_idLabel, readableUserId(m_user));
     elided(m_statusLabel, statusText(m_user.status));
     m_regionLabel->setText(m_user.region.trimmed());
     m_remarkLabel->setText(m_user.remark.trimmed().isEmpty()
@@ -643,11 +685,12 @@ void FriendProfilePopup::applyTheme()
 
 void FriendProfilePopup::copyCurrentId()
 {
-    if (!m_hasUser || m_user.id.isEmpty()) {
+    const QString publicId = readableUserId(m_user);
+    if (!m_hasUser || publicId.isEmpty()) {
         return;
     }
 
-    QApplication::clipboard()->setText(m_user.id);
+    QApplication::clipboard()->setText(publicId);
     GlobalNotification::showSuccess(notificationHost(), QStringLiteral("复制成功"));
 }
 

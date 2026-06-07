@@ -23,7 +23,7 @@ public:
     CurrentUserProfile identity() const;
     CurrentUserProfile profile() const;
     bool isUserSet() const { return !m_userId.isEmpty(); }
-    bool isCurrentUserId(const QString& userId) const { return !m_userId.isEmpty() && userId == m_userId; }
+    bool isCurrentUserId(const QString& userId) const;
     void refreshIdentity();
     void refreshProfile();
     QString saveProfile(const CurrentUserProfile& profile);

@@ -66,7 +66,6 @@ private:
     QPointer<InWindowPopupOverlay> currentUserStatusPopup;
     QPointer<InWindowPopupOverlay> currentUserEditProfilePopup;
     QString avatarSource;
-    bool privateInvisibleStatus = false;
     QVector<ApplicationBarItem*> topItems;
     QVector<ApplicationBarItem*> bottomItems;
     const int marginTop     = 20;

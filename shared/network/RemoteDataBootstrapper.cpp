@@ -2,7 +2,9 @@
 
 #include "AppEventBus.h"
 #include "HttpClient.h"
+#include "ReferenceDataResolver.h"
 #include "shared/data/LocalDataStore.h"
+#include "shared/data/UnreadStateRepository.h"
 #include "shared/services/AvatarSource.h"
 
 #include <QJsonArray>
@@ -11,6 +13,8 @@
 namespace {
 
 constexpr int kPageLimit = 100;
+const QString kFriendRequestUnreadScope = QStringLiteral("friend_requests");
+const QString kGroupNotificationUnreadScope = QStringLiteral("group_notifications");
 
 QString firstString(const QJsonObject& object, const QStringList& keys)
 {
@@ -219,6 +223,73 @@ QJsonObject notificationObject(QJsonObject object)
     return object;
 }
 
+QString notificationUnreadScope(const QString& type)
+{
+    if (type == QStringLiteral("friend.request.created")) {
+        return kFriendRequestUnreadScope;
+    }
+    if (type == QStringLiteral("group.notification.created") ||
+        type == QStringLiteral("group.join_request.created")) {
+        return kGroupNotificationUnreadScope;
+    }
+    return {};
+}
+
+QString notificationUnreadItemId(const QJsonObject& object)
+{
+    const QString direct = firstString(object, {QStringLiteral("sourceId"),
+                                                QStringLiteral("requestId"),
+                                                QStringLiteral("notificationId"),
+                                                QStringLiteral("id")});
+    if (!direct.isEmpty()) {
+        return direct;
+    }
+
+    const QJsonObject payload = object.value(QStringLiteral("payload")).toObject();
+    const QString payloadId = firstString(payload, {QStringLiteral("sourceId"),
+                                                    QStringLiteral("requestId"),
+                                                    QStringLiteral("notificationId"),
+                                                    QStringLiteral("id")});
+    if (!payloadId.isEmpty()) {
+        return payloadId;
+    }
+
+    for (const QString& key : {QStringLiteral("request"), QStringLiteral("notification")}) {
+        const QJsonObject nested = payload.value(key).toObject();
+        const QString nestedId = firstString(nested, {QStringLiteral("sourceId"),
+                                                      QStringLiteral("requestId"),
+                                                      QStringLiteral("notificationId"),
+                                                      QStringLiteral("id")});
+        if (!nestedId.isEmpty()) {
+            return nestedId;
+        }
+    }
+    return {};
+}
+
+bool notificationUnreadValue(const QJsonObject& object)
+{
+    if (object.contains(QStringLiteral("unread"))) {
+        return object.value(QStringLiteral("unread")).toBool();
+    }
+    if (object.contains(QStringLiteral("readAt"))) {
+        const QJsonValue readAt = object.value(QStringLiteral("readAt"));
+        return readAt.isNull() || readAt.toString().isEmpty();
+    }
+    return false;
+}
+
+void updateUnreadStateFromNotification(const QJsonObject& object)
+{
+    const QString scope = notificationUnreadScope(object.value(QStringLiteral("type")).toString());
+    const QString itemId = notificationUnreadItemId(object);
+    if (scope.isEmpty() || itemId.isEmpty()) {
+        return;
+    }
+
+    UnreadStateRepository::instance().setUnread(scope, itemId, notificationUnreadValue(object));
+}
+
 QJsonObject aiConversationObject(QJsonObject object)
 {
     const QString conversationId = firstString(object, {QStringLiteral("conversationId"), QStringLiteral("id")});
@@ -376,6 +447,7 @@ void RemoteDataBootstrapper::cacheResponse(const FetchSpec& spec,
                                            int* itemCount)
 {
     const QJsonObject root = response.object();
+    ReferenceDataResolver::instance().consumePayload(root);
     QJsonArray items = arrayFromResponse(root, spec.arrayKey);
     if (items.isEmpty() && spec.arrayKey.isEmpty() && !root.isEmpty()) {
         items.append(root);
@@ -392,6 +464,9 @@ void RemoteDataBootstrapper::cacheResponse(const FetchSpec& spec,
         const QString key = cacheKeyFor(object, spec.keyFields, index);
         if (!key.isEmpty()) {
             store.upsertValue(spec.domain, key, object);
+        }
+        if (spec.domain == QStringLiteral("notifications")) {
+            updateUnreadStateFromNotification(object);
         }
         ++index;
     }

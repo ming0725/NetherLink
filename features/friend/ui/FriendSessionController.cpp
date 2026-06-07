@@ -8,6 +8,7 @@
 #include "features/friend/data/GroupNotificationRepository.h"
 #include "features/friend/data/UserRepository.h"
 #include "app/state/CurrentUser.h"
+#include "shared/network/NotificationRemoteDataSource.h"
 
 namespace {
 
@@ -82,7 +83,6 @@ FriendSessionController::FriendSessionController(QObject* parent)
                     return;
                 }
                 ensureUserRepositoryConnections();
-                MessageRepository::instance().removeConversation(userId);
                 UserRepository::instance().removeUser(userId);
             });
     connect(&FriendRemoteDataSource::instance(),
@@ -158,6 +158,38 @@ FriendSessionController::FriendSessionController(QObject* parent)
             this,
             [this](const QString&, const QString& groupId, const NetworkError& error) {
                 emit groupLeaveFailed(groupId, error);
+            });
+    connect(&NotificationRemoteDataSource::instance(),
+            &NotificationRemoteDataSource::markAllReadSucceeded,
+            this,
+            [this](const QString& requestId, const QString&) {
+                if (requestId == m_pendingFriendNotificationsReadRequestId) {
+                    m_pendingFriendNotificationsReadRequestId.clear();
+                    ensureFriendNotificationRepositoryConnections();
+                    FriendNotificationRepository::instance().markAllRead();
+                    return;
+                }
+
+                if (m_pendingGroupNotificationsReadRequestIds.remove(requestId) &&
+                    m_pendingGroupNotificationsReadRequestIds.isEmpty()) {
+                    ensureGroupNotificationRepositoryConnections();
+                    GroupNotificationRepository::instance().markAllRead();
+                }
+            });
+    connect(&NotificationRemoteDataSource::instance(),
+            &NotificationRemoteDataSource::markAllReadFailed,
+            this,
+            [this](const QString& requestId, const QString&, const NetworkError& error) {
+                if (requestId == m_pendingFriendNotificationsReadRequestId) {
+                    m_pendingFriendNotificationsReadRequestId.clear();
+                    emit notificationMarkReadFailed(QStringLiteral("friend_requests"), error);
+                    return;
+                }
+
+                if (m_pendingGroupNotificationsReadRequestIds.remove(requestId)) {
+                    m_pendingGroupNotificationsReadRequestIds.clear();
+                    emit notificationMarkReadFailed(QStringLiteral("group_notifications"), error);
+                }
             });
 }
 
@@ -247,7 +279,10 @@ QString FriendSessionController::userNickname(const QString& userId) const
     if (user.id.isEmpty()) {
         return userId;
     }
-    return user.nick.isEmpty() ? user.id : user.nick;
+    if (!user.nick.isEmpty()) {
+        return user.nick;
+    }
+    return user.userId.isEmpty() ? user.id : user.userId;
 }
 
 QString FriendSessionController::userAvatarPath(const QString& userId) const
@@ -341,6 +376,10 @@ QString FriendSessionController::groupDisplayName(const QString& groupId) const
 
 QString FriendSessionController::groupNicknameFor(const QString& groupId, const QString& userId) const
 {
+    const QString cachedNickname = GroupRepository::instance().requestGroupMemberNickname(groupId, userId).trimmed();
+    if (!cachedNickname.isEmpty()) {
+        return cachedNickname;
+    }
     const Group group = loadGroup(groupId);
     const QString groupNickname = group.memberNicknames.value(userId);
     return groupNickname.isEmpty() ? userNickname(userId) : groupNickname;
@@ -467,7 +506,12 @@ int FriendSessionController::friendUnreadCount() const
 void FriendSessionController::markFriendNotificationsRead()
 {
     ensureFriendNotificationRepositoryConnections();
-    FriendNotificationRepository::instance().markAllRead();
+    if (FriendNotificationRepository::instance().unreadCount() <= 0 ||
+        !m_pendingFriendNotificationsReadRequestId.isEmpty()) {
+        return;
+    }
+    m_pendingFriendNotificationsReadRequestId =
+            NotificationRemoteDataSource::instance().markAllRead(QStringLiteral("friend.request.created"));
 }
 
 bool FriendSessionController::acceptFriendRequest(const QString& notificationId,
@@ -509,7 +553,21 @@ int FriendSessionController::groupUnreadCount() const
 void FriendSessionController::markGroupNotificationsRead()
 {
     ensureGroupNotificationRepositoryConnections();
-    GroupNotificationRepository::instance().markAllRead();
+    if (GroupNotificationRepository::instance().unreadCount() <= 0 ||
+        !m_pendingGroupNotificationsReadRequestIds.isEmpty()) {
+        return;
+    }
+
+    const QString notificationRequestId =
+            NotificationRemoteDataSource::instance().markAllRead(QStringLiteral("group.notification.created"));
+    const QString joinRequestId =
+            NotificationRemoteDataSource::instance().markAllRead(QStringLiteral("group.join_request.created"));
+    if (!notificationRequestId.isEmpty()) {
+        m_pendingGroupNotificationsReadRequestIds.insert(notificationRequestId);
+    }
+    if (!joinRequestId.isEmpty()) {
+        m_pendingGroupNotificationsReadRequestIds.insert(joinRequestId);
+    }
 }
 
 bool FriendSessionController::acceptGroupJoinRequest(const QString& notificationId,

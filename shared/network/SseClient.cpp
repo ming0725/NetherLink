@@ -1,6 +1,7 @@
 #include "SseClient.h"
 
 #include "AuthSession.h"
+#include "NetworkLog.h"
 
 #include <QJsonDocument>
 #include <QNetworkAccessManager>
@@ -36,6 +37,7 @@ QString SseClient::start(const NetworkRequest& request)
     }
 
     const QByteArray body = request.hasJsonBody ? request.body.toJson(QJsonDocument::Compact) : request.rawBody;
+    NetworkLog::sseRequest(m_requestId, request, networkRequest.url());
     m_reply = m_manager->post(networkRequest, body);
     QPointer<QNetworkReply> reply = m_reply;
     const QString requestId = m_requestId;
@@ -56,6 +58,7 @@ QString SseClient::start(const NetworkRequest& request)
             if (!m_buffer.trimmed().isEmpty()) {
                 emitEventBlock(m_buffer);
             }
+            NetworkLog::sseFinished(requestId, status);
             emit streamFinished(requestId);
         } else {
             NetworkError error;
@@ -69,6 +72,7 @@ QString SseClient::start(const NetworkRequest& request)
             error.message = object.value(QStringLiteral("message")).toString(reply->errorString());
             error.requestId = object.value(QStringLiteral("requestId")).toString();
             error.details = object.value(QStringLiteral("details")).toObject();
+            NetworkLog::sseError(requestId, error);
             emit streamFailed(requestId, error);
         }
         reply->deleteLater();
@@ -137,5 +141,7 @@ void SseClient::emitEventBlock(const QByteArray& block)
     if (eventName.isEmpty() && data.isEmpty()) {
         return;
     }
-    emit eventReceived(m_requestId, eventName, QJsonDocument::fromJson(data).object());
+    const QJsonObject payload = QJsonDocument::fromJson(data).object();
+    NetworkLog::sseEvent(m_requestId, eventName, payload);
+    emit eventReceived(m_requestId, eventName, payload);
 }

@@ -2,8 +2,10 @@
 
 #include <QObject>
 #include <QImage>
+#include <QJsonObject>
 #include <QMap>
 #include <QStringList>
+#include <QSet>
 #include <QVector>
 #include <QMutex>
 #include "shared/types/RepositoryTypes.h"
@@ -25,9 +27,14 @@ public:
     QString requestUserName(const QString& userId) const;
     QString requestUserAvatarPath(const QString& userId) const;
     QString requestUserAvatarImageAsync(const QString& userId, int delayMs = 120);
+    int requestUserVersion(const QString& userId) const;
     bool isFriend(const QString& userId) const;
 
     void saveUser(const User& user);
+    bool upsertUserProfile(const QJsonObject& object, bool preserveFriendFields = true);
+    bool upsertPresence(const QString& userUuid, const QString& status, const QString& lastSeenAt = {});
+    QString refreshPresenceBatch(const QStringList& userUuids);
+    bool needsUserRefresh(const QString& userUuid, int remoteVersion) const;
     void addFriend(const QString& userId,
                    const QString& groupId = QStringLiteral("default"),
                    const QString& groupName = QStringLiteral("默认分组"));
@@ -44,5 +51,6 @@ private:
     void reloadFromStore();
 
     QMap<QString, User> userMap;
+    QSet<QString> m_pendingPresenceBatchRequestIds;
     mutable QMutex mutex; // 用于线程安全
 };

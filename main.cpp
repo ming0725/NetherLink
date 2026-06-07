@@ -1,9 +1,12 @@
 #include <QApplication>
 #include <QTimer>
 #include "app/frame/login/LoginWindow.h"
+#include "app/frame/login/LoginAccountRepository.h"
 #include "app/frame/MainWindow.h"
 #include "app/state/CurrentUser.h"
 #include "shared/network/AuthSession.h"
+#include "shared/network/HttpClient.h"
+#include "shared/network/NetworkLog.h"
 #include "shared/network/NetworkService.h"
 #include "shared/services/AudioService.h"
 #include "shared/theme/ThemeManager.h"
@@ -16,23 +19,39 @@
 int main(int argc, char *argv[])
 {
     QApplication a(argc, argv);
+    NetworkLog::installApplicationMessageHandler();
     a.setQuitOnLastWindowClosed(true);
     ThemeManager::instance().applyToApplication(a);
     AudioService::instance().preloadUiSounds();
 
     QPointer<LoginWindow> loginWindow;
     QPointer<MainWindow> mainWindow;
+    QString activeLoginAccountId;
 
-    std::function<void()> showLoginWindow;
+    auto clearActiveLoginMarker = [&]() {
+        const QString accountId = activeLoginAccountId.isEmpty()
+                ? AuthSession::instance().loginAccountId()
+                : activeLoginAccountId;
+        if (!accountId.isEmpty()) {
+            LoginAccountRepository::instance().setAccountLoggedInOnDevice(accountId, false);
+        }
+        activeLoginAccountId.clear();
+    };
+
+    std::function<void(bool)> showLoginWindow;
     std::function<void()> showMainWindow;
 
-    showLoginWindow = [&]() {
+    showLoginWindow = [&](bool suppressAutoLogin) {
         auto* window = new LoginWindow;
+        if (suppressAutoLogin) {
+            window->suppressNextAutoLogin();
+        }
         loginWindow = window;
 
-        QObject::connect(window, &LoginWindow::loginAccepted, window, [&]() {
+        QObject::connect(window, &LoginWindow::loginAccepted, window, [&](const QString& accountId) {
             LoginWindow* acceptedLoginWindow = loginWindow;
             loginWindow = nullptr;
+            activeLoginAccountId = accountId.trimmed();
             if (acceptedLoginWindow) {
                 acceptedLoginWindow->hide();
                 acceptedLoginWindow->deleteLater();
@@ -56,11 +75,12 @@ int main(int argc, char *argv[])
         auto* window = new MainWindow;
         mainWindow = window;
 
-        auto completeLogout = [&]() {
+        auto completeLogout = [&](bool suppressAutoLogin) {
+            clearActiveLoginMarker();
             MainWindow* loggedOutMainWindow = mainWindow;
             mainWindow = nullptr;
             if (!loginWindow) {
-                showLoginWindow();
+                showLoginWindow(suppressAutoLogin);
             }
             if (loggedOutMainWindow) {
                 loggedOutMainWindow->hide();
@@ -69,17 +89,26 @@ int main(int argc, char *argv[])
         };
 
         QObject::connect(window, &MainWindow::logoutRequested, window, [&, completeLogout]() {
+            const QString loggedOutAccountId = activeLoginAccountId.isEmpty()
+                    ? AuthSession::instance().loginAccountId()
+                    : activeLoginAccountId;
             if (!AuthSession::instance().hasAccessToken() && !AuthSession::instance().hasRefreshToken()) {
                 NetworkService::instance().stopRealtime();
                 AuthSession::instance().clear();
                 CurrentUser::instance().clear();
-                completeLogout();
+                if (!loggedOutAccountId.isEmpty()) {
+                    LoginAccountRepository::instance().clearAccountTokens(loggedOutAccountId);
+                }
+                completeLogout(true);
                 return;
             }
 
             NetworkService::instance().logout();
             CurrentUser::instance().clear();
-            completeLogout();
+            if (!loggedOutAccountId.isEmpty()) {
+                LoginAccountRepository::instance().clearAccountTokens(loggedOutAccountId);
+            }
+            completeLogout(true);
         });
         QObject::connect(&NetworkService::instance(),
                          &NetworkService::sessionExpired,
@@ -88,15 +117,24 @@ int main(int argc, char *argv[])
             if (mainWindow != window) {
                 return;
             }
+            const QString expiredAccountId = activeLoginAccountId.isEmpty()
+                    ? AuthSession::instance().loginAccountId()
+                    : activeLoginAccountId;
+            if (!expiredAccountId.isEmpty()) {
+                LoginAccountRepository::instance().clearAccountTokens(expiredAccountId);
+            }
             CurrentUser::instance().clear();
             GlobalNotification::showFailure(window, QStringLiteral("登录状态已过期"));
             QTimer::singleShot(900, window, [&, window, completeLogout]() {
                 if (mainWindow == window) {
-                    completeLogout();
+                    completeLogout(true);
                 }
             });
         });
         QObject::connect(window, &QObject::destroyed, &a, [&, window]() {
+            if (mainWindow == window) {
+                clearActiveLoginMarker();
+            }
             if (mainWindow == window) {
                 mainWindow = nullptr;
             }
@@ -107,6 +145,21 @@ int main(int argc, char *argv[])
         window->activateWindow();
     };
 
-    showLoginWindow();
+    QObject::connect(&a, &QCoreApplication::aboutToQuit, &a, clearActiveLoginMarker);
+
+    QObject::connect(&HttpClient::instance(),
+                     &HttpClient::authRefreshSucceeded,
+                     &a,
+                     [](const QString& accessToken, const QString& refreshToken, int expiresInSeconds) {
+        const QString accountId = AuthSession::instance().loginAccountId();
+        if (!accountId.isEmpty()) {
+            LoginAccountRepository::instance().saveAccountTokens(accountId,
+                                                                 accessToken,
+                                                                 refreshToken,
+                                                                 expiresInSeconds);
+        }
+    });
+
+    showLoginWindow(false);
     return a.exec();
 }

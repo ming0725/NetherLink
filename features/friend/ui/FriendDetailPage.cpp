@@ -15,10 +15,12 @@
 #include <QStyle>
 #include <QTimer>
 #include <QToolButton>
+#include <QUuid>
 #include <QVariant>
 #include <QVBoxLayout>
 
 #include "features/friend/ui/FriendSessionController.h"
+#include "features/friend/data/UserRepository.h"
 #include "shared/services/ImageService.h"
 #include "shared/ui/ImageViewer.h"
 #include "shared/ui/popup/InWindowPopupDialogs.h"
@@ -82,6 +84,26 @@ void applyDangerOutlineButtonStyle(StatefulPushButton* button)
     button->setBorderWidth(1);
 }
 
+QString readableUserId(const User& user)
+{
+    if (!user.userId.isEmpty()) {
+        return user.userId;
+    }
+    if (!user.id.isEmpty() && !QUuid::fromString(user.id).isNull()) {
+        return {};
+    }
+    return user.id;
+}
+
+QString readableUserName(const User& user)
+{
+    if (!user.nick.isEmpty()) {
+        return user.nick;
+    }
+    const QString publicId = readableUserId(user);
+    return publicId.isEmpty() ? user.id : publicId;
+}
+
 } // namespace
 
 FriendDetailPage::FriendDetailPage(QWidget* parent)
@@ -104,6 +126,20 @@ FriendDetailPage::FriendDetailPage(QWidget* parent)
 {
     connect(&ImageService::instance(), &ImageService::previewReady, this, [this]() {
         update(avatarRect());
+    });
+    connect(&UserRepository::instance(), &UserRepository::friendListChanged, this, [this]() {
+        if (!m_hasUser) {
+            return;
+        }
+
+        const User refreshedUser = UserRepository::instance().requestUserDetail({m_user.id});
+        if (refreshedUser.id.isEmpty()) {
+            return;
+        }
+        m_user.status = refreshedUser.status;
+        m_user.lastSeenAt = refreshedUser.lastSeenAt;
+        m_statusLabel->setText(statusText(m_user.status));
+        updateAvatar();
     });
 
     auto* root = new QVBoxLayout(this);
@@ -402,11 +438,12 @@ void FriendDetailPage::setUser(const User& user)
     m_hasUser = true;
     m_remarkEdit->finishEditing();
 
-    m_nameLabel->setText(m_user.nick);
-    m_idPrefixLabel->setVisible(true);
-    m_idLabel->setText(m_user.id);
-    m_copyIdButton->setEnabled(true);
-    m_copyIdButton->setVisible(true);
+    m_nameLabel->setText(readableUserName(m_user));
+    const QString publicId = readableUserId(m_user);
+    m_idPrefixLabel->setVisible(!publicId.isEmpty());
+    m_idLabel->setText(publicId);
+    m_copyIdButton->setEnabled(!publicId.isEmpty());
+    m_copyIdButton->setVisible(!publicId.isEmpty());
     m_regionLabel->setText(m_user.region);
     m_regionRow->setVisible(!m_user.region.isEmpty());
     m_statusLabel->setText(statusText(m_user.status));
@@ -415,6 +452,9 @@ void FriendDetailPage::setUser(const User& user)
     updateGroupButtonText();
     updateSignatureText();
     QTimer::singleShot(0, this, &FriendDetailPage::updateSignatureText);
+
+    const QString userUuid = m_user.userUuid.isEmpty() ? m_user.id : m_user.userUuid;
+    UserRepository::instance().refreshPresenceBatch({userUuid});
 }
 
 void FriendDetailPage::openAvatarViewer()
@@ -504,11 +544,12 @@ void FriendDetailPage::updateSignatureText()
 
 void FriendDetailPage::copyCurrentId()
 {
-    if (!m_hasUser || m_user.id.isEmpty()) {
+    const QString publicId = readableUserId(m_user);
+    if (!m_hasUser || publicId.isEmpty()) {
         return;
     }
 
-    QApplication::clipboard()->setText(m_user.id);
+    QApplication::clipboard()->setText(publicId);
     GlobalNotification::showSuccess(this, QStringLiteral("复制成功"));
 }
 

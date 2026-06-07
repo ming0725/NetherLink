@@ -8,6 +8,8 @@
 #include "features/friend/data/GroupNotificationRepository.h"
 #include "features/friend/ui/FriendProfilePopup.h"
 #include "app/state/CurrentUserProfileRepository.h"
+#include "shared/data/UnreadStateRepository.h"
+#include "shared/network/NetworkService.h"
 #include "shared/network/NetworkTypes.h"
 #include "shared/services/AppFonts.h"
 #include "shared/services/ImageService.h"
@@ -115,6 +117,15 @@ ApplicationBar::ApplicationBar(QWidget* parent)
             this, [this]() { refreshFriendBadge(); });
     connect(&GroupNotificationRepository::instance(), &GroupNotificationRepository::notificationListChanged,
             this, [this]() { refreshFriendBadge(); });
+    connect(&UnreadStateRepository::instance(),
+            &UnreadStateRepository::unreadCountChanged,
+            this,
+            [this](const QString& scope, int) {
+                if (scope == QStringLiteral("friend_requests") ||
+                    scope == QStringLiteral("group_notifications")) {
+                    refreshFriendBadge();
+                }
+            });
     refreshChatBadge();
     refreshAiChatBadge();
     refreshFriendBadge();
@@ -516,24 +527,20 @@ void ApplicationBar::showCurrentUserStatusPopup()
 
 QString ApplicationBar::avatarStatusIconSource() const
 {
-    if (privateInvisibleStatus) {
-        return QStringLiteral(":/resources/icon/invisible.png");
-    }
     return statusIconPath(CurrentUser::instance().getStatus());
 }
 
 int ApplicationBar::avatarStatusChoiceIndex() const
 {
-    if (privateInvisibleStatus) {
-        return 3;
-    }
-
     const UserStatus status = CurrentUser::instance().getStatus();
     if (status == Mining) {
         return 1;
     }
     if (status == Flying) {
         return 2;
+    }
+    if (status == Invisible) {
+        return 3;
     }
     return 0;
 }
@@ -544,14 +551,14 @@ void ApplicationBar::setAvatarStatusChoiceIndex(int index)
         return;
     }
 
-    if (index == 3) {
-        privateInvisibleStatus = true;
-        update();
-        return;
-    }
+    const UserStatus status = index == 1 ? Mining : (index == 2 ? Flying : (index == 3 ? Invisible : Online));
+    const QString presenceStatus = index == 1
+            ? QStringLiteral("mining")
+            : (index == 2
+               ? QStringLiteral("airplane")
+               : (index == 3 ? QStringLiteral("invisible") : QStringLiteral("online")));
+    NetworkService::instance().updatePresence(presenceStatus);
 
-    privateInvisibleStatus = false;
-    const UserStatus status = index == 1 ? Mining : (index == 2 ? Flying : Online);
     CurrentUserProfile profile = CurrentUser::instance().profile();
     if (profile.isValid() && profile.status != status) {
         profile.status = status;

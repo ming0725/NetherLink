@@ -15,11 +15,13 @@ public:
     QString accessToken() const;
     QString refreshToken() const;
     QString deviceId() const;
+    QString loginAccountId() const;
     QDateTime expiresAt() const;
     bool hasAccessToken() const;
     bool hasRefreshToken() const;
 
     void setDevice(const QString& deviceId, const QString& deviceName = {});
+    void setLoginAccountId(const QString& accountId);
     QString deviceName() const;
 
 public slots:
@@ -42,5 +44,6 @@ private:
     QString m_refreshToken;
     QString m_deviceId;
     QString m_deviceName;
+    QString m_loginAccountId;
     QDateTime m_expiresAt;
 };

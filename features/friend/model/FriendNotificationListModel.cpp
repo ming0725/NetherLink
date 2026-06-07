@@ -1,8 +1,44 @@
 #include "FriendNotificationListModel.h"
 
 #include <QSize>
+#include <QUuid>
 
 #include "features/friend/data/UserRepository.h"
+
+namespace {
+
+QString notificationLookupId(const FriendNotification& notification)
+{
+    return notification.fromUserId.isEmpty() ? notification.fromUserUuid : notification.fromUserId;
+}
+
+QString readableUserId(const User& user, const FriendNotification& notification)
+{
+    if (!user.userId.isEmpty()) {
+        return user.userId;
+    }
+    if (!notification.fromUserId.isEmpty() && QUuid::fromString(notification.fromUserId).isNull()) {
+        return notification.fromUserId;
+    }
+    return {};
+}
+
+QString displayNameWithReadableId(const User& user, const FriendNotification& notification)
+{
+    const QString publicId = readableUserId(user, notification);
+    const QString name = user.remark.isEmpty()
+            ? (user.nick.isEmpty() ? publicId : user.nick)
+            : user.remark;
+    if (name.isEmpty()) {
+        return QStringLiteral("未知用户");
+    }
+    if (publicId.isEmpty() || name == publicId) {
+        return name;
+    }
+    return QStringLiteral("%1（%2）").arg(name, publicId);
+}
+
+} // namespace
 
 FriendNotificationListModel::FriendNotificationListModel(QObject* parent)
     : QAbstractListModel(parent)
@@ -37,14 +73,14 @@ QVariant FriendNotificationListModel::data(const QModelIndex& index, int role) c
     case FromUserIdRole:
         return n.fromUserId;
     case DisplayNameRole: {
-        const User user = UserRepository::instance().requestUserDetail({n.fromUserId});
+        const User user = UserRepository::instance().requestUserDetail({notificationLookupId(n)});
         if (!user.id.isEmpty()) {
-            return user.remark.isEmpty() ? user.nick : user.remark;
+            return displayNameWithReadableId(user, n);
         }
-        return n.fromUserId;
+        return n.fromUserId.isEmpty() ? QStringLiteral("未知用户") : n.fromUserId;
     }
     case AvatarPathRole:
-        return UserRepository::instance().requestUserAvatarPath(n.fromUserId);
+        return UserRepository::instance().requestUserAvatarPath(notificationLookupId(n));
     case MessageRole:
         return n.message;
     case RequestDateRole:

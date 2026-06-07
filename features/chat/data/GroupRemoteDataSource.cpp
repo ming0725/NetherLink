@@ -1,8 +1,10 @@
 #include "GroupRemoteDataSource.h"
 
+#include "shared/data/LocalDataStore.h"
 #include "shared/network/HttpClient.h"
 #include "shared/services/AvatarSource.h"
 
+#include <QDateTime>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QSet>
@@ -85,6 +87,144 @@ QMap<QString, QString> stringMapFromJson(const QJsonObject& object)
         map.insert(it.key(), it.value().toString());
     }
     return map;
+}
+
+QJsonArray arrayFromResponse(const QJsonObject& object, const QString& primaryKey)
+{
+    const QStringList keys = {primaryKey,
+                              QStringLiteral("items"),
+                              QStringLiteral("data"),
+                              QStringLiteral("results")};
+    for (const QString& key : keys) {
+        const QJsonArray array = object.value(key).toArray();
+        if (!array.isEmpty()) {
+            return array;
+        }
+    }
+    return {};
+}
+
+QString avatarSourceFromObject(const QJsonObject& object, const QString& pathKey)
+{
+    QString avatarPath = AvatarSource::fromAvatarFileId(avatarFileIdFrom(object));
+    if (avatarPath.isEmpty()) {
+        avatarPath = firstString(object, {pathKey, QStringLiteral("avatarUrl")});
+    }
+    return AvatarSource::versioned(avatarPath,
+                                   object.value(QStringLiteral("avatarVersion")).toInt(),
+                                   object.value(QStringLiteral("avatarEtag")).toString(),
+                                   object.value(QStringLiteral("avatarContentHash")).toString());
+}
+
+UserStatus userStatusFromString(const QString& value)
+{
+    const QString normalized = value.trimmed().toLower();
+    if (normalized == QStringLiteral("online") ||
+        normalized == QStringLiteral("active")) {
+        return Online;
+    }
+    if (normalized == QStringLiteral("mining") ||
+        normalized == QStringLiteral("busy") ||
+        normalized == QStringLiteral("dnd")) {
+        return Mining;
+    }
+    if (normalized == QStringLiteral("airplane") ||
+        normalized == QStringLiteral("flying") ||
+        normalized == QStringLiteral("away")) {
+        return Flying;
+    }
+    if (normalized == QStringLiteral("invisible")) {
+        return Invisible;
+    }
+    return Offline;
+}
+
+QJsonObject presenceObjectFrom(const QJsonObject& object)
+{
+    const QJsonObject presence = object.value(QStringLiteral("presence")).toObject();
+    if (!presence.isEmpty()) {
+        return presence;
+    }
+
+    QJsonObject legacyPresence;
+    if (object.contains(QStringLiteral("status"))) {
+        legacyPresence.insert(QStringLiteral("status"), object.value(QStringLiteral("status")));
+    }
+    if (object.contains(QStringLiteral("lastSeenAt"))) {
+        legacyPresence.insert(QStringLiteral("lastSeenAt"), object.value(QStringLiteral("lastSeenAt")));
+    }
+    return legacyPresence;
+}
+
+QDateTime dateTimeFromString(const QString& value)
+{
+    QDateTime dateTime = QDateTime::fromString(value, Qt::ISODateWithMs);
+    if (!dateTime.isValid()) {
+        dateTime = QDateTime::fromString(value, Qt::ISODate);
+    }
+    return dateTime;
+}
+
+QJsonObject memberUserObject(QJsonObject object)
+{
+    const QJsonObject wrapper = object;
+    const QJsonObject nestedUser = object.value(QStringLiteral("user")).toObject();
+    if (!nestedUser.isEmpty()) {
+        object = nestedUser;
+    }
+    const QString userUuid = firstString(object, {QStringLiteral("userUuid"),
+                                                  QStringLiteral("uuid"),
+                                                  QStringLiteral("id")});
+    const QString userId = firstString(object, {QStringLiteral("userId"),
+                                                QStringLiteral("publicId")});
+    const QString modelId = userId.isEmpty() ? userUuid : userId;
+    object.insert(QStringLiteral("id"), modelId);
+    if (!userUuid.isEmpty()) {
+        object.insert(QStringLiteral("userUuid"), userUuid);
+    }
+    if (!userId.isEmpty()) {
+        object.insert(QStringLiteral("userId"), userId);
+    }
+    if (!object.contains(QStringLiteral("nick"))) {
+        object.insert(QStringLiteral("nick"),
+                      firstString(object, {QStringLiteral("nickName"), QStringLiteral("displayName")}));
+    }
+    if (wrapper.contains(QStringLiteral("nickname")) && !object.contains(QStringLiteral("remark"))) {
+        object.insert(QStringLiteral("remark"), wrapper.value(QStringLiteral("nickname")));
+    }
+    for (const QString& key : {QStringLiteral("presence"),
+                               QStringLiteral("status"),
+                               QStringLiteral("lastSeenAt")}) {
+        if (wrapper.contains(key) && !object.contains(key)) {
+            object.insert(key, wrapper.value(key));
+        }
+    }
+    return object;
+}
+
+User userFromMemberObject(const QJsonObject& source)
+{
+    const QJsonObject object = memberUserObject(source);
+    User user;
+    user.id = object.value(QStringLiteral("id")).toString();
+    user.nick = object.value(QStringLiteral("nick")).toString();
+    user.remark = object.value(QStringLiteral("remark")).toString();
+    user.avatarPath = avatarSourceFromObject(object, QStringLiteral("avatarPath"));
+    const QJsonObject presence = presenceObjectFrom(object);
+    user.status = userStatusFromString(presence.value(QStringLiteral("status")).toString());
+    user.lastSeenAt = dateTimeFromString(presence.value(QStringLiteral("lastSeenAt")).toString());
+    user.signature = object.value(QStringLiteral("signature")).toString();
+    user.region = object.value(QStringLiteral("region")).toString();
+    return user;
+}
+
+void cacheMemberUserObject(const QJsonObject& source)
+{
+    const QJsonObject object = memberUserObject(source);
+    const QString key = object.value(QStringLiteral("id")).toString();
+    if (!key.isEmpty()) {
+        LocalDataStore::instance().upsertValue(QStringLiteral("users"), key, object);
+    }
 }
 
 Group groupFromResponseObject(QJsonObject object)
@@ -477,6 +617,31 @@ QString GroupRemoteDataSource::transferOwner(const Group& group, const QString& 
                          HttpMethod::Post);
 }
 
+QString GroupRemoteDataSource::fetchMembers(const QString& groupId, const QString& keyword, int offset, int limit)
+{
+    if (groupId.isEmpty() || offset < 0 || limit <= 0) {
+        return {};
+    }
+
+    PendingOperation pending;
+    pending.action = Action::FetchMembers;
+    pending.groupId = groupId;
+    pending.keyword = keyword.trimmed();
+    pending.offset = offset;
+    pending.limit = limit;
+
+    QVariantMap query;
+    query.insert(QStringLiteral("keyword"), pending.keyword);
+    query.insert(QStringLiteral("offset"), offset);
+    query.insert(QStringLiteral("limit"), limit);
+    return sendOperation(Action::FetchMembers,
+                         QStringLiteral("/groups/%1/members").arg(groupId),
+                         {},
+                         pending,
+                         HttpMethod::Get,
+                         query);
+}
+
 QString GroupRemoteDataSource::sendOperation(Action action,
                                              const QString& path,
                                              const QJsonObject& body,
@@ -500,6 +665,31 @@ void GroupRemoteDataSource::handleRequestSucceeded(const QString& requestId, con
 
     const PendingOperation pending = m_pendingOperations.take(requestId);
     switch (pending.action) {
+    case Action::FetchMembers: {
+        const QJsonObject root = response.object();
+        const QJsonArray items = arrayFromResponse(root, QStringLiteral("members"));
+        QVector<User> members;
+        members.reserve(items.size());
+        for (const QJsonValue& value : items) {
+            const QJsonObject object = value.toObject();
+            cacheMemberUserObject(object);
+            const User user = userFromMemberObject(object);
+            if (!user.id.isEmpty()) {
+                members.push_back(user);
+            }
+        }
+        const int total = root.value(QStringLiteral("total")).toInt(pending.offset + members.size());
+        const bool hasMore = root.value(QStringLiteral("hasMore")).toBool(pending.offset + members.size() < total);
+        emit groupMembersFetched(requestId,
+                                 pending.groupId,
+                                 pending.keyword,
+                                 pending.offset,
+                                 pending.limit,
+                                 members,
+                                 total,
+                                 hasMore);
+        break;
+    }
     case Action::CreateGroup: {
         Group group = groupFromResponseObject(response.object());
         if (group.groupId.isEmpty()) {
@@ -563,6 +753,14 @@ void GroupRemoteDataSource::handleRequestFailed(const QString& requestId, const 
 
     const PendingOperation pending = m_pendingOperations.take(requestId);
     switch (pending.action) {
+    case Action::FetchMembers:
+        emit groupMembersFetchFailed(requestId,
+                                     pending.groupId,
+                                     pending.keyword,
+                                     pending.offset,
+                                     pending.limit,
+                                     error);
+        break;
     case Action::CreateGroup:
         emit groupCreateFailed(requestId, error);
         break;

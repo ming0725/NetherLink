@@ -14,6 +14,7 @@
 #include "shared/data/RepositoryTemplate.h"
 #include "shared/data/UnreadStateRepository.h"
 #include "shared/network/AppEventBus.h"
+#include "shared/network/ReferenceDataResolver.h"
 
 namespace {
 
@@ -68,6 +69,10 @@ GroupMemberRole roleForUser(const Group& group, const QString& userId)
 
 QString groupJoinDisplayName(const QString& groupId, const QString& userId)
 {
+    const QString cachedNickname = GroupRepository::instance().requestGroupMemberNickname(groupId, userId).trimmed();
+    if (!cachedNickname.isEmpty()) {
+        return cachedNickname;
+    }
     const Group group = GroupRepository::instance().requestGroupDetail({groupId});
     const QString groupNickname = group.memberNicknames.value(userId).trimmed();
     if (!groupNickname.isEmpty()) {
@@ -233,6 +238,7 @@ GroupNotificationRepository::GroupNotificationRepository(QObject* parent)
                     !type.startsWith(QStringLiteral("group.join_request."))) {
                     return;
                 }
+                ReferenceDataResolver::instance().consumePayload(payload);
 
                 QJsonObject object = payload.value(QStringLiteral("notification")).toObject();
                 if (object.isEmpty()) {
@@ -241,6 +247,10 @@ GroupNotificationRepository::GroupNotificationRepository(QObject* parent)
                 if (object.isEmpty()) {
                     object = payload;
                 }
+                ReferenceDataResolver::instance().upsertUserObject(object.value(QStringLiteral("actorUser")).toObject());
+                ReferenceDataResolver::instance().upsertUserObject(object.value(QStringLiteral("operatorUser")).toObject());
+                ReferenceDataResolver::instance().upsertGroupMemberObject(object.value(QStringLiteral("actorMember")).toObject());
+                ReferenceDataResolver::instance().upsertGroupMemberObject(object.value(QStringLiteral("operatorMember")).toObject());
                 GroupNotification notification = groupNotificationFromJson(object);
                 if (notification.id.isEmpty()) {
                     return;
@@ -346,9 +356,8 @@ QVector<GroupNotification> GroupNotificationRepository::requestNotificationList(
 
 int GroupNotificationRepository::unreadCount() const
 {
-    return m_loaded
-            ? UnreadStateRepository::instance().unreadCount(kGroupNotificationUnreadScope)
-            : 0;
+    ensureLoaded();
+    return UnreadStateRepository::instance().unreadCount(kGroupNotificationUnreadScope);
 }
 
 int GroupNotificationRepository::notificationCount() const

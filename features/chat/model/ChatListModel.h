@@ -67,6 +67,7 @@ public:
     const ChatMessage* messageById(const QString& messageId) const;
     const ChatMessage* messageByClientMessageId(const QString& clientMessageId) const;
     QModelIndex indexForMessageId(const QString& messageId) const;
+    QModelIndex indexForClientMessageId(const QString& clientMessageId) const;
     void clearSelection();
     void clearRowHighlight();
     bool removeMessage(int index);

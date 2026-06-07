@@ -1,6 +1,7 @@
 #pragma once
 #include <QObject>
 #include <QImage>
+#include <QJsonObject>
 #include <QMap>
 #include <QVector>
 #include <QMutex>
@@ -25,8 +26,13 @@ public:
     bool isCurrentUserGroupOwner(const Group& group) const;
     bool isCurrentUserGroupAdmin(const Group& group) const;
     bool contains(const QString& groupId) const;
+    GroupMemberProfile requestGroupMember(const QString& groupId, const QString& userId) const;
+    QString requestGroupMemberNickname(const QString& groupId, const QString& userId) const;
+    int requestGroupMemberVersion(const QString& groupId, const QString& userId) const;
 
     void saveGroup(const Group& group);
+    bool upsertGroupMember(const QJsonObject& object);
+    bool needsGroupMemberRefresh(const QString& groupId, const QString& userId, int remoteVersion) const;
     void addMember(const QString& groupId, const QString& userId);
     void removeMember(const QString& groupId, const QString& userId);
     void setAdmin(const QString& groupId, const QString& userId, bool enabled);
@@ -44,5 +50,6 @@ private:
     void reloadFromStore();
 
     QMap<QString, Group> groupMap;
+    QMap<QString, GroupMemberProfile> groupMemberMap;
     mutable QMutex mutex; // 用于线程安全
 };

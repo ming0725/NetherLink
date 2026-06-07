@@ -4,11 +4,14 @@
 #include "features/aichat/ui/AiChatApplication.h"
 #include "features/post/ui/PostApplication.h"
 #include "SettingsWindow.h"
+#include "app/frame/login/LoginAccountRepository.h"
+#include "app/state/CurrentUser.h"
 #include "platform/windows/WindowsWindowControlButton.h"
 #include "shared/network/NetworkService.h"
 #include "shared/ui/IconLineEdit.h"
 #include "shared/ui/FloatingInputBar.h"
 #include "shared/ui/GlobalNotification.h"
+#include "shared/ui/popup/InWindowPopupDialogs.h"
 #include "shared/ui/popup/InWindowPopupOverlay.h"
 #include "shared/theme/ThemeManager.h"
 #include <QAbstractButton>
@@ -171,6 +174,8 @@ MainWindow::MainWindow(QWidget* parent)
             this, &MainWindow::showRealtimeFailureNotice);
     connect(&NetworkService::instance(), &NetworkService::realtimeStateChanged,
             this, &MainWindow::handleRealtimeStateChanged);
+    connect(&NetworkService::instance(), &NetworkService::sessionRevoked,
+            this, &MainWindow::handleSessionRevoked);
 
     QScreen* screen = QGuiApplication::primaryScreen();
     if (screen) {
@@ -234,6 +239,9 @@ void MainWindow::onBarItemClicked(ApplicationBarItem *item)
     if (idx >= 0 && idx < stack->count()) {
         ensureApplicationLoaded(idx);
         stack->setCurrentIndex(idx);
+        if (m_messageApp) {
+            m_messageApp->setAppBarActive(idx == 0);
+        }
     }
 }
 
@@ -421,6 +429,32 @@ void MainWindow::handleRealtimeStateChanged(RealtimeClient::State state)
         m_realtimeNoticeClock.invalidate();
         GlobalNotification::showSuccess(this, QStringLiteral("实时连接已恢复"));
     }
+}
+
+void MainWindow::handleSessionRevoked(const QString& accountId, const QString& message)
+{
+    if (m_sessionRevokedDialogVisible) {
+        return;
+    }
+
+    m_sessionRevokedDialogVisible = true;
+    const QString normalizedAccountId = accountId.trimmed();
+    if (!normalizedAccountId.isEmpty()) {
+        LoginAccountRepository::instance().clearAccountSessionAndPassword(normalizedAccountId);
+    }
+    CurrentUser::instance().clear();
+
+    const QString body = message.trimmed().isEmpty()
+            ? QStringLiteral("账号已在其他设备登录，当前登录已下线")
+            : message.trimmed();
+    InWindowPopup::question(this,
+                            QStringLiteral("登录已下线"),
+                            body,
+                            InWindowPopup::Button::Ok,
+                            false,
+                            false);
+    m_sessionRevokedDialogVisible = false;
+    emit logoutRequested();
 }
 
 void MainWindow::openConversationFromContacts(const QString& conversationId)

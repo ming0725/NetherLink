@@ -456,6 +456,10 @@ FriendApplication::FriendApplication(QWidget* parent)
             this, [this](const QString&, const NetworkError&) {
                 GlobalNotification::showFailure(this, QStringLiteral("退出群聊失败"));
             });
+    connect(m_friendController, &FriendSessionController::notificationMarkReadFailed,
+            this, [this](const QString&, const NetworkError&) {
+                GlobalNotification::showFailure(this, QStringLiteral("通知已读同步失败"));
+            });
 
     const int friendUnreadCount = m_friendController->friendUnreadCount();
     const int groupUnreadCount = m_friendController->groupUnreadCount();
@@ -471,8 +475,6 @@ void FriendApplication::showNotificationPage()
     m_leftPane->groupList()->setNoticeSelected(false);
     m_leftPane->friendList()->setNoticeSelected(true);
     m_friendController->markFriendNotificationsRead();
-    m_leftPane->friendList()->setNoticeUnreadCount(0);
-    m_leftPane->setFriendModeBadgeCount(0);
     populateNotificationData();
     m_rightStack->setCurrentWidget(notificationPage);
 }
@@ -496,8 +498,6 @@ void FriendApplication::showGroupNotificationPage()
     m_leftPane->friendList()->setNoticeSelected(false);
     m_leftPane->groupList()->setNoticeSelected(true);
     m_friendController->markGroupNotificationsRead();
-    m_leftPane->groupList()->setNoticeUnreadCount(0);
-    m_leftPane->setGroupModeBadgeCount(0);
     populateGroupNotificationData();
     m_rightStack->setCurrentWidget(notificationPage);
 }

@@ -1,16 +1,22 @@
 // MessageApplication.cpp
 #include "MessageApplication.h"
 #include "features/chat/ui/CreateGroupChatPopup.h"
+#include "features/chat/data/ConversationRemoteDataSource.h"
+#include "features/chat/data/GroupRepository.h"
 #include "features/chat/data/MessageRepository.h"
+#include "features/friend/data/UserRepository.h"
 #include "features/friend/ui/AddContactSearchWindow.h"
+#include "shared/ui/GlobalNotification.h"
 #include "shared/ui/StyledActionMenu.h"
 #include "shared/ui/TransparentSplitter.h"
 #include "shared/theme/ThemeManager.h"
 
 #include <QAction>
+#include <QHideEvent>
 #include <QPainter>
 #include <QPointer>
 #include <QResizeEvent>
+#include <QShowEvent>
 #include <QTimer>
 
 #include <utility>
@@ -135,6 +141,38 @@ MessageApplication::MessageApplication(QWidget* parent)
                 m_openConversationRequestId.clear();
                 applyLoadedConversation(token, conversation);
             });
+    connect(&ConversationRemoteDataSource::instance(),
+            &ConversationRemoteDataSource::directConversationOpened,
+            this,
+            [this](const QString& requestId, const QString&, const QString& conversationId) {
+                if (requestId != m_openDirectConversationRequestId) {
+                    return;
+                }
+
+                m_openDirectConversationRequestId.clear();
+                if (conversationId.isEmpty()) {
+                    GlobalNotification::showFailure(this, QStringLiteral("打开会话失败"));
+                    return;
+                }
+
+                QTimer::singleShot(0, this, [this, conversationId]() {
+                    MessageRepository::instance().touchConversation(conversationId, QDateTime::currentDateTime());
+                    m_leftPane->messageList()->setCurrentConversation(conversationId);
+                    onMessageClicked(conversationId);
+                });
+            });
+    connect(&ConversationRemoteDataSource::instance(),
+            &ConversationRemoteDataSource::operationFailed,
+            this,
+            [this](const QString& requestId, const QString&, const QString& operation, const NetworkError&) {
+                if (requestId != m_openDirectConversationRequestId ||
+                    operation != QStringLiteral("openDirectConversation")) {
+                    return;
+                }
+
+                m_openDirectConversationRequestId.clear();
+                GlobalNotification::showFailure(this, QStringLiteral("打开会话失败"));
+            });
 
     // 右侧堆栈：初始页 + 聊天页
     m_rightStack  = new QStackedWidget(this);
@@ -157,6 +195,7 @@ MessageApplication::MessageApplication(QWidget* parent)
     setWindowFlag(Qt::FramelessWindowHint);
     m_leftPane->messageList()->clearCurrentConversationSelection();
     m_rightStack->setCurrentWidget(m_defaultPage);
+    m_leftPane->messageList()->setReadReceiptsEnabled(isVisible());
 }
 
 void MessageApplication::handleGlobalMousePress(const QPoint& globalPos)
@@ -174,6 +213,16 @@ void MessageApplication::setSystemFloatingBarsSuppressed(bool suppressed)
     }
 }
 
+void MessageApplication::setAppBarActive(bool active)
+{
+    if (m_appBarActive == active) {
+        return;
+    }
+
+    m_appBarActive = active;
+    applyVisibleConversationState(isVisible());
+}
+
 void MessageApplication::resizeEvent(QResizeEvent*)
 {
     m_splitter->setGeometry(rect());
@@ -188,6 +237,18 @@ void MessageApplication::paintEvent(QPaintEvent*)
     p.drawRect(rect());
 }
 
+void MessageApplication::showEvent(QShowEvent* event)
+{
+    QWidget::showEvent(event);
+    applyVisibleConversationState(true);
+}
+
+void MessageApplication::hideEvent(QHideEvent* event)
+{
+    applyVisibleConversationState(false);
+    QWidget::hideEvent(event);
+}
+
 void MessageApplication::onMessageClicked(const QString& conversationId)
 {
     if (conversationId.isEmpty()) {
@@ -196,6 +257,7 @@ void MessageApplication::onMessageClicked(const QString& conversationId)
 
     ensureChatArea();
     m_rightStack->setCurrentWidget(m_chatArea);
+    applyVisibleConversationState(isVisible());
 
     ConversationMeta meta = MessageRepository::instance().requestConversationMeta({conversationId});
     if (meta.conversationId.isEmpty()) {
@@ -233,6 +295,7 @@ void MessageApplication::onCurrentConversationDeleted()
         m_chatArea->closeConversation();
     }
     m_rightStack->setCurrentWidget(m_defaultPage);
+    applyVisibleConversationState(isVisible());
 }
 
 void MessageApplication::applyLoadedConversation(int token, const ConversationThreadData& conversation)
@@ -243,11 +306,25 @@ void MessageApplication::applyLoadedConversation(int token, const ConversationTh
 
     m_openConversationLoadPending = false;
     m_chatArea->openConversation(conversation);
+    applyVisibleConversationState(isVisible());
 }
 
 void MessageApplication::openConversationFromContact(const QString& conversationId)
 {
     if (conversationId.isEmpty()) {
+        return;
+    }
+
+    if (!GroupRepository::instance().contains(conversationId)) {
+        const User user = UserRepository::instance().requestUserDetail({conversationId});
+        const QString peerUserUuid = user.userUuid.isEmpty() ? conversationId : user.userUuid;
+        const QString requestId =
+                ConversationRemoteDataSource::instance().openDirectConversation(peerUserUuid);
+        if (requestId.isEmpty()) {
+            GlobalNotification::showFailure(this, QStringLiteral("打开会话失败"));
+        } else {
+            m_openDirectConversationRequestId = requestId;
+        }
         return;
     }
 
@@ -269,4 +346,34 @@ void MessageApplication::ensureChatArea()
     connect(m_chatArea, &ChatArea::requestOpenConversation,
             this, &MessageApplication::openConversationFromContact);
     m_chatArea->setSystemFloatingBarsSuppressed(m_systemFloatingBarsSuppressed);
+}
+
+QString MessageApplication::activeConversationId() const
+{
+    if (!m_chatArea ||
+        !m_rightStack ||
+        m_rightStack->currentWidget() != m_chatArea ||
+        !m_leftPane ||
+        !m_leftPane->messageList()) {
+        return {};
+    }
+
+    return m_leftPane->messageList()->selectedConversationId();
+}
+
+void MessageApplication::applyVisibleConversationState(bool visible)
+{
+    if (!m_leftPane || !m_leftPane->messageList()) {
+        MessageRepository::instance().setActiveVisibleConversation({}, false);
+        return;
+    }
+
+    const bool active = visible && m_appBarActive;
+    m_leftPane->messageList()->setReadReceiptsEnabled(active);
+
+    const QString conversationId = active ? activeConversationId() : QString();
+    MessageRepository::instance().setActiveVisibleConversation(conversationId, active && !conversationId.isEmpty());
+    if (active && !conversationId.isEmpty()) {
+        ConversationRemoteDataSource::instance().markRead(conversationId);
+    }
 }

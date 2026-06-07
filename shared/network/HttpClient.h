@@ -25,12 +25,14 @@ public:
 
 public slots:
     void refreshAccessToken();
+    void blockAuthenticatedRequests(const NetworkError& error);
+    void clearAuthenticationBlock();
 
 signals:
     void requestStarted(const QString& requestId, const NetworkRequest& request);
     void requestSucceeded(const QString& requestId, const NetworkResponse& response);
     void requestFailed(const QString& requestId, const NetworkError& error);
-    void authRefreshSucceeded();
+    void authRefreshSucceeded(const QString& accessToken, const QString& refreshToken, int expiresInSeconds);
     void authRefreshFailed(const NetworkError& error);
 
 private:
@@ -54,4 +56,6 @@ private:
     QHash<QString, QSharedPointer<Operation>> m_operations;
     QVector<QSharedPointer<Operation>> m_refreshQueue;
     bool m_refreshing = false;
+    bool m_authRequestsBlocked = false;
+    NetworkError m_authBlockError;
 };

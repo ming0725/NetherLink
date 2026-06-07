@@ -3,10 +3,10 @@
 #include "AuthSession.h"
 #include "EventCursorStore.h"
 #include "HttpClient.h"
+#include "NetworkLog.h"
 #include "RealtimeEventDispatcher.h"
 
 #include <QAbstractSocket>
-#include <QDebug>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QNetworkRequest>
@@ -35,17 +35,6 @@ QString stateName(RealtimeClient::State state)
         return QStringLiteral("closed");
     }
     return QStringLiteral("unknown");
-}
-
-QString redactedUrl(QUrl url)
-{
-    QUrlQuery query(url);
-    if (query.hasQueryItem(QStringLiteral("accessToken"))) {
-        query.removeAllQueryItems(QStringLiteral("accessToken"));
-        query.addQueryItem(QStringLiteral("accessToken"), QStringLiteral("<redacted>"));
-        url.setQuery(query);
-    }
-    return url.toString(QUrl::FullyEncoded);
 }
 
 QString closeReasonOrPlaceholder(const QString& closeReason)
@@ -88,8 +77,7 @@ RealtimeClient::RealtimeClient(QObject* parent)
     m_staleTimer.setInterval(60000);
     m_staleTimer.setSingleShot(true);
     connect(&m_staleTimer, &QTimer::timeout, this, [this]() {
-        qWarning().noquote() << "Realtime WebSocket stale, closing for reconnect"
-                             << "url=" << redactedUrl(m_currentUrl);
+        NetworkLog::realtimeClosed(QStringLiteral("stale heartbeat"), m_currentUrl);
         setState(State::Stale);
         m_socket->close();
         scheduleReconnect();
@@ -99,8 +87,7 @@ RealtimeClient::RealtimeClient(QObject* parent)
     connect(&m_reconnectTimer, &QTimer::timeout, this, &RealtimeClient::connectToServer);
 
     connect(m_socket, &QWebSocket::connected, this, [this]() {
-        qInfo().noquote() << "Realtime WebSocket connected"
-                          << "url=" << redactedUrl(m_currentUrl);
+        NetworkLog::realtimeConnected(m_currentUrl);
         m_reconnectAttempt = 0;
         setState(State::Ready);
         resetHeartbeat();
@@ -112,29 +99,29 @@ RealtimeClient::RealtimeClient(QObject* parent)
         m_staleTimer.stop();
         emit disconnected();
         if (m_userClosed) {
-            qInfo().noquote() << "Realtime WebSocket closed by client"
-                              << "code=" << static_cast<int>(m_socket->closeCode())
-                              << "reason=" << closeReasonOrPlaceholder(m_socket->closeReason())
-                              << "url=" << redactedUrl(m_currentUrl);
+            NetworkLog::realtimeClosed(QStringLiteral("client closed"),
+                                       m_currentUrl,
+                                       static_cast<int>(m_socket->closeCode()),
+                                       closeReasonOrPlaceholder(m_socket->closeReason()));
             setState(State::Closed);
             return;
         }
         if (m_suppressNextReconnect) {
-            qWarning().noquote() << "Realtime WebSocket disconnected without reconnect"
-                                 << "httpStatus=" << m_lastHandshakeHttpStatus
-                                 << "code=" << static_cast<int>(m_socket->closeCode())
-                                 << "reason=" << closeReasonOrPlaceholder(m_socket->closeReason())
-                                 << "socketError=" << socketErrorOrPlaceholder(m_socket->errorString())
-                                 << "url=" << redactedUrl(m_currentUrl);
+            NetworkLog::realtimeClosed(QStringLiteral("reconnect suppressed"),
+                                       m_currentUrl,
+                                       static_cast<int>(m_socket->closeCode()),
+                                       closeReasonOrPlaceholder(m_socket->closeReason()),
+                                       socketErrorOrPlaceholder(m_socket->errorString()),
+                                       m_lastHandshakeHttpStatus);
             m_suppressNextReconnect = false;
             setState(State::Closed);
             return;
         }
-        qWarning().noquote() << "Realtime WebSocket disconnected, scheduling reconnect"
-                             << "code=" << static_cast<int>(m_socket->closeCode())
-                             << "reason=" << closeReasonOrPlaceholder(m_socket->closeReason())
-                             << "socketError=" << socketErrorOrPlaceholder(m_socket->errorString())
-                             << "url=" << redactedUrl(m_currentUrl);
+        NetworkLog::realtimeClosed(QStringLiteral("scheduling reconnect"),
+                                   m_currentUrl,
+                                   static_cast<int>(m_socket->closeCode()),
+                                   closeReasonOrPlaceholder(m_socket->closeReason()),
+                                   socketErrorOrPlaceholder(m_socket->errorString()));
         scheduleReconnect();
     });
     connect(m_socket, &QWebSocket::textMessageReceived, this, &RealtimeClient::handleTextMessage);
@@ -145,11 +132,10 @@ RealtimeClient::RealtimeClient(QObject* parent)
         if (m_lastHandshakeHttpStatus == 401 || m_lastHandshakeHttpStatus == 403) {
             m_suppressNextReconnect = true;
         }
-        qWarning().noquote() << "Realtime WebSocket error"
-                             << "error=" << static_cast<int>(error)
-                             << "httpStatus=" << m_lastHandshakeHttpStatus
-                             << "message=" << socketErrorOrPlaceholder(errorString)
-                             << "url=" << redactedUrl(m_currentUrl);
+        NetworkLog::realtimeError(static_cast<int>(error),
+                                  m_lastHandshakeHttpStatus,
+                                  socketErrorOrPlaceholder(errorString),
+                                  m_currentUrl);
         if (m_lastHandshakeHttpStatus == 401) {
             HttpClient::instance().refreshAccessToken();
         }
@@ -162,11 +148,10 @@ RealtimeClient::RealtimeClient(QObject* parent)
         if (m_lastHandshakeHttpStatus == 401 || m_lastHandshakeHttpStatus == 403) {
             m_suppressNextReconnect = true;
         }
-        qWarning().noquote() << "Realtime WebSocket error"
-                             << "error=" << static_cast<int>(error)
-                             << "httpStatus=" << m_lastHandshakeHttpStatus
-                             << "message=" << socketErrorOrPlaceholder(errorString)
-                             << "url=" << redactedUrl(m_currentUrl);
+        NetworkLog::realtimeError(static_cast<int>(error),
+                                  m_lastHandshakeHttpStatus,
+                                  socketErrorOrPlaceholder(errorString),
+                                  m_currentUrl);
         if (m_lastHandshakeHttpStatus == 401) {
             HttpClient::instance().refreshAccessToken();
         }
@@ -201,12 +186,18 @@ bool RealtimeClient::isConnected() const
     return m_state == State::Ready;
 }
 
+QString RealtimeClient::currentSessionId() const
+{
+    return m_currentSessionId;
+}
+
 void RealtimeClient::connectToServer()
 {
     if (m_state == State::Connecting || m_state == State::Ready) {
         return;
     }
     m_userClosed = false;
+    m_sessionRevoked = false;
     m_lastHandshakeHttpStatus = 0;
     setState(m_reconnectAttempt > 0 ? State::Reconnecting : State::Connecting);
 
@@ -215,12 +206,7 @@ void RealtimeClient::connectToServer()
     const QString accessToken = AuthSession::instance().accessToken();
 
     m_currentUrl = m_environment.realtimeUrl(accessToken, lastSeq, lastEventId);
-    qInfo().noquote() << "Realtime WebSocket opening"
-                      << "state=" << stateName(m_state)
-                      << "attempt=" << m_reconnectAttempt
-                      << "lastEventSeq=" << lastSeq
-                      << "lastEventId=" << (lastEventId.isEmpty() ? QStringLiteral("<empty>") : lastEventId)
-                      << "url=" << redactedUrl(m_currentUrl);
+    NetworkLog::realtimeOpening(m_currentUrl, stateName(m_state), m_reconnectAttempt, lastSeq, lastEventId);
 
     QNetworkRequest request(m_currentUrl);
     if (!accessToken.isEmpty()) {
@@ -235,6 +221,7 @@ void RealtimeClient::disconnectFromServer()
     m_reconnectTimer.stop();
     m_pingTimer.stop();
     m_staleTimer.stop();
+    m_currentSessionId.clear();
     m_socket->close(QWebSocketProtocol::CloseCodeNormal, QStringLiteral("client closed"));
     setState(State::Closed);
 }
@@ -255,15 +242,24 @@ void RealtimeClient::sendResume()
               {QStringLiteral("payload"), QJsonObject{{QStringLiteral("lastEventSeq"), static_cast<double>(lastSeq)}}}});
 }
 
+void RealtimeClient::sendPresenceUpdate(const QString& status)
+{
+    const QString normalized = status.trimmed().toLower();
+    if (normalized.isEmpty()) {
+        return;
+    }
+
+    sendJson({{QStringLiteral("type"), QStringLiteral("presence.update")},
+              {QStringLiteral("payload"), QJsonObject{{QStringLiteral("status"), normalized}}}});
+}
+
 void RealtimeClient::sendJson(const QJsonObject& message)
 {
     if (m_socket->state() != QAbstractSocket::ConnectedState) {
-        qWarning().noquote() << "Realtime WebSocket send skipped because socket is not connected"
-                             << "type=" << message.value(QStringLiteral("type")).toString(QStringLiteral("<empty>"))
-                             << "socketState=" << static_cast<int>(m_socket->state())
-                             << "url=" << redactedUrl(m_currentUrl);
+        NetworkLog::realtimeSendSkipped(message, static_cast<int>(m_socket->state()), m_currentUrl);
         return;
     }
+    NetworkLog::realtimeSend(message, m_currentUrl);
     m_socket->sendTextMessage(QString::fromUtf8(QJsonDocument(message).toJson(QJsonDocument::Compact)));
 }
 
@@ -273,22 +269,19 @@ void RealtimeClient::setState(State state)
         return;
     }
     m_state = state;
-    qInfo().noquote() << "Realtime WebSocket state changed"
-                      << "state=" << stateName(m_state);
+    NetworkLog::realtimeState(stateName(m_state));
     emit stateChanged(m_state);
 }
 
 void RealtimeClient::scheduleReconnect(bool immediate)
 {
-    if (m_userClosed) {
+    if (m_userClosed || m_sessionRevoked) {
         return;
     }
     ++m_reconnectAttempt;
     setState(State::Reconnecting);
     const int delayMs = immediate ? 0 : reconnectDelayMs();
-    qWarning().noquote() << "Realtime WebSocket reconnect scheduled"
-                         << "attempt=" << m_reconnectAttempt
-                         << "delayMs=" << delayMs;
+    NetworkLog::realtimeReconnect(m_reconnectAttempt, delayMs);
     m_reconnectTimer.start(delayMs);
 }
 
@@ -304,29 +297,25 @@ void RealtimeClient::handleTextMessage(const QString& message)
     QJsonParseError parseError;
     const QJsonDocument document = QJsonDocument::fromJson(message.toUtf8(), &parseError);
     if (parseError.error != QJsonParseError::NoError || !document.isObject()) {
-        qWarning().noquote() << "Realtime WebSocket received invalid JSON"
-                             << "error=" << parseError.errorString()
-                             << "messageSize=" << message.size();
+        NetworkLog::realtimeInvalidJson(parseError.errorString(), message.size());
         return;
     }
 
     const QJsonObject object = document.object();
     if (object.isEmpty()) {
-        qWarning().noquote() << "Realtime WebSocket received empty JSON object";
+        NetworkLog::realtimeInvalidJson(QStringLiteral("empty JSON object"), message.size());
         return;
     }
 
     const RealtimeEvent event = RealtimeEvent::fromJson(object);
-    if (event.type.isEmpty()) {
-        qWarning().noquote() << "Realtime WebSocket received event without type"
-                             << "raw=" << QString::fromUtf8(QJsonDocument(object).toJson(QJsonDocument::Compact));
-    } else if (event.isControlEvent() && event.type != QStringLiteral("realtime.pong")) {
-        qInfo().noquote() << "Realtime WebSocket received control event"
-                          << "type=" << event.type
-                          << "eventSeq=" << event.eventSeq
-                          << "eventId=" << (event.eventId.isEmpty() ? QStringLiteral("<empty>") : event.eventId);
-    }
+    NetworkLog::realtimeEvent(event);
 
+    if (event.type == QStringLiteral("realtime.ready")) {
+        handleRealtimeReady(event);
+    }
+    if (event.type == QStringLiteral("auth.session.revoked") && handleSessionRevoked(event)) {
+        return;
+    }
     if (event.type == QStringLiteral("client.error")) {
         handleClientError(event);
     }
@@ -335,13 +324,41 @@ void RealtimeClient::handleTextMessage(const QString& message)
     RealtimeEventDispatcher::instance().dispatch(event);
 }
 
+void RealtimeClient::handleRealtimeReady(const RealtimeEvent& event)
+{
+    const QString sessionId = event.payload.value(QStringLiteral("sessionId")).toString().trimmed();
+    if (!sessionId.isEmpty()) {
+        m_currentSessionId = sessionId;
+    }
+}
+
+bool RealtimeClient::handleSessionRevoked(const RealtimeEvent& event)
+{
+    const QString revokedSessionId = event.payload.value(QStringLiteral("sessionId")).toString().trimmed();
+    if (revokedSessionId.isEmpty() || revokedSessionId != m_currentSessionId) {
+        return false;
+    }
+
+    const QString message = event.payload.value(QStringLiteral("message")).toString(
+            QStringLiteral("账号已在其他设备登录，当前登录已下线"));
+    m_sessionRevoked = true;
+    m_userClosed = true;
+    m_suppressNextReconnect = true;
+    m_reconnectTimer.stop();
+    m_pingTimer.stop();
+    m_staleTimer.stop();
+    m_currentSessionId.clear();
+    m_socket->close(QWebSocketProtocol::CloseCodeNormal, QStringLiteral("session revoked"));
+    setState(State::Closed);
+    emit sessionRevoked(revokedSessionId, message);
+    return true;
+}
+
 void RealtimeClient::handleClientError(const RealtimeEvent& event)
 {
     const QString code = event.payload.value(QStringLiteral("code")).toString(event.raw.value(QStringLiteral("code")).toString());
     const QString message = event.payload.value(QStringLiteral("message")).toString(event.raw.value(QStringLiteral("message")).toString());
-    qWarning().noquote() << "Realtime WebSocket client.error received"
-                         << "code=" << (code.isEmpty() ? QStringLiteral("<empty>") : code)
-                         << "message=" << (message.isEmpty() ? QStringLiteral("<empty>") : message);
+    NetworkLog::realtimeClientError(code, message);
     if (code == QStringLiteral("TOKEN_EXPIRED")) {
         m_socket->close();
         HttpClient::instance().refreshAccessToken();

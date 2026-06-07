@@ -5,6 +5,7 @@
 #include <QHash>
 #include <QJsonObject>
 #include <QObject>
+#include <QSet>
 #include <QString>
 
 class ConversationRemoteDataSource final : public QObject
@@ -20,8 +21,12 @@ public:
     QString markRead(const QString& conversationId);
     QString markUnread(const QString& conversationId);
     QString clearMessages(const QString& conversationId);
+    QString openDirectConversation(const QString& peerUserUuid);
 
 signals:
+    void directConversationOpened(const QString& requestId,
+                                  const QString& peerUserUuid,
+                                  const QString& conversationId);
     void pinnedUpdated(const QString& requestId, const QString& conversationId, bool pinned);
     void doNotDisturbUpdated(const QString& requestId, const QString& conversationId, bool enabled);
     void conversationHidden(const QString& requestId, const QString& conversationId);
@@ -40,7 +45,8 @@ private:
         HideConversation,
         MarkRead,
         MarkUnread,
-        ClearMessages
+        ClearMessages,
+        OpenDirect
     };
 
     struct PendingOperation {
@@ -66,4 +72,6 @@ private:
     void handleRequestFailed(const QString& requestId, const NetworkError& error);
 
     QHash<QString, PendingOperation> m_pendingOperations;
+    QHash<QString, QString> m_markReadRequestByConversation;
+    QSet<QString> m_markReadAgainAfterPending;
 };

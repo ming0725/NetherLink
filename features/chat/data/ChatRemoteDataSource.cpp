@@ -1,6 +1,8 @@
 #include "ChatRemoteDataSource.h"
 
 #include "shared/network/HttpClient.h"
+#include "shared/network/AppEventBus.h"
+#include "shared/network/ReferenceDataResolver.h"
 #include "shared/network/UploadClient.h"
 
 #include <QDateTime>
@@ -81,6 +83,29 @@ ChatRemoteDataSource::ChatRemoteDataSource(QObject* parent)
             &HttpClient::requestFailed,
             this,
             &ChatRemoteDataSource::handleRequestFailed);
+    connect(&AppEventBus::instance(),
+            &AppEventBus::typedEventReceived,
+            this,
+            [this](const QString& type, const QJsonObject& payload, const RealtimeEvent&) {
+                if (type != QStringLiteral("client.error") ||
+                    payload.value(QStringLiteral("requestType")).toString() != QStringLiteral("chat.message.send")) {
+                    return;
+                }
+
+                NetworkError error;
+                error.code = payload.value(QStringLiteral("code")).toString();
+                error.message = payload.value(QStringLiteral("message")).toString();
+                error.requestId = payload.value(QStringLiteral("requestId")).toString();
+                error.details = payload;
+
+                const QString clientMessageId = payload.value(QStringLiteral("clientMessageId")).toString(
+                        payload.value(QStringLiteral("client_message_id")).toString());
+                if (!clientMessageId.isEmpty()) {
+                    emit messageSendFailed(clientMessageId, error);
+                    return;
+                }
+                emit messageSendBlocked(error);
+            });
 }
 
 QString ChatRemoteDataSource::sendTextMessage(const QString& conversationId,
@@ -136,7 +161,23 @@ QString ChatRemoteDataSource::sendImageMessage(const QString& conversationId,
     }
 
     const QString resolvedClientMessageId = clientMessageId.isEmpty() ? newClientMessageId() : clientMessageId;
+    const auto uploadedIt = m_uploadedImagesByClientMessageId.constFind(resolvedClientMessageId);
+    if (uploadedIt != m_uploadedImagesByClientMessageId.cend()) {
+        return sendUploadedImageMessage(conversationId,
+                                        uploadedIt.value(),
+                                        referencedMessageId,
+                                        resolvedClientMessageId,
+                                        utcNow());
+    }
+
     const QString uploadRequestId = UploadClient::instance().uploadFile(imagePath, QStringLiteral("chat_image"));
+    if (uploadRequestId.isEmpty()) {
+        NetworkError error;
+        error.code = QStringLiteral("UPLOAD_REQUEST_FAILED");
+        error.message = QStringLiteral("Unable to start image upload.");
+        emit imageUploadFailed(resolvedClientMessageId, error);
+        return {};
+    }
     PendingImage pending;
     pending.conversationId = conversationId;
     pending.imagePath = imagePath;
@@ -178,8 +219,42 @@ QString ChatRemoteDataSource::sendMessageRequest(const QString& conversationId,
                                                   body);
     request.maxRetries = 3;
     const QString requestId = HttpClient::instance().send(request);
-    m_clientMessageIdsByRequest.insert(requestId, clientMessageId);
+    if (!requestId.isEmpty()) {
+        m_clientMessageIdsByRequest.insert(requestId, clientMessageId);
+    }
     return clientMessageId;
+}
+
+QString ChatRemoteDataSource::sendUploadedImageMessage(const QString& conversationId,
+                                                       const UploadedImage& image,
+                                                       const QString& referencedMessageId,
+                                                       const QString& clientMessageId,
+                                                       const QString& clientSentAt)
+{
+    if (conversationId.isEmpty() || image.fileId.isEmpty() || clientMessageId.isEmpty()) {
+        return {};
+    }
+
+    QJsonObject attachment{
+            {QStringLiteral("fileId"), image.fileId},
+            {QStringLiteral("displayName"), image.displayName},
+            {QStringLiteral("width"), image.width},
+            {QStringLiteral("height"), image.height}
+    };
+    QJsonArray attachments;
+    attachments.append(attachment);
+
+    QJsonObject content{
+            {QStringLiteral("text"), QJsonValue(QJsonValue::Null)},
+            {QStringLiteral("json"), QJsonValue(QJsonValue::Null)}
+    };
+    QJsonObject body = baseMessageBody(clientMessageId,
+                                       clientSentAt,
+                                       QStringLiteral("image"),
+                                       referencedMessageId);
+    body.insert(QStringLiteral("content"), content);
+    body.insert(QStringLiteral("attachments"), attachments);
+    return sendMessageRequest(conversationId, body, clientMessageId);
 }
 
 void ChatRemoteDataSource::handleUploadSucceeded(const QString& requestId, const NetworkResponse& response)
@@ -199,26 +274,19 @@ void ChatRemoteDataSource::handleUploadSucceeded(const QString& requestId, const
         return;
     }
 
-    QJsonObject attachment{
-            {QStringLiteral("fileId"), fileId},
-            {QStringLiteral("displayName"), QFileInfo(pending.imagePath).fileName()},
-            {QStringLiteral("width"), pending.width},
-            {QStringLiteral("height"), pending.height}
-    };
-    QJsonArray attachments;
-    attachments.append(attachment);
+    UploadedImage uploaded;
+    uploaded.fileId = fileId;
+    uploaded.displayName = QFileInfo(pending.imagePath).fileName();
+    uploaded.width = pending.width;
+    uploaded.height = pending.height;
+    m_uploadedImagesByClientMessageId.insert(pending.clientMessageId, uploaded);
+    emit imageUploadSucceeded(pending.clientMessageId);
 
-    QJsonObject content{
-            {QStringLiteral("text"), QJsonValue(QJsonValue::Null)},
-            {QStringLiteral("json"), QJsonValue(QJsonValue::Null)}
-    };
-    QJsonObject body = baseMessageBody(pending.clientMessageId,
-                                       pending.clientSentAt,
-                                       QStringLiteral("image"),
-                                       pending.referencedMessageId);
-    body.insert(QStringLiteral("content"), content);
-    body.insert(QStringLiteral("attachments"), attachments);
-    sendMessageRequest(pending.conversationId, body, pending.clientMessageId);
+    sendUploadedImageMessage(pending.conversationId,
+                             uploaded,
+                             pending.referencedMessageId,
+                             pending.clientMessageId,
+                             pending.clientSentAt);
 }
 
 void ChatRemoteDataSource::handleUploadFailed(const QString& requestId, const NetworkError& error)
@@ -233,8 +301,11 @@ void ChatRemoteDataSource::handleUploadFailed(const QString& requestId, const Ne
 
 void ChatRemoteDataSource::handleRequestSucceeded(const QString& requestId, const NetworkResponse& response)
 {
+    ReferenceDataResolver::instance().consumePayload(response.object());
+
     if (m_clientMessageIdsByRequest.contains(requestId)) {
-        emit messageSendSucceeded(m_clientMessageIdsByRequest.take(requestId));
+        const QString clientMessageId = m_clientMessageIdsByRequest.take(requestId);
+        emit messageSendSucceeded(clientMessageId);
         return;
     }
 
@@ -262,7 +333,8 @@ void ChatRemoteDataSource::handleRequestSucceeded(const QString& requestId, cons
 void ChatRemoteDataSource::handleRequestFailed(const QString& requestId, const NetworkError& error)
 {
     if (m_clientMessageIdsByRequest.contains(requestId)) {
-        emit messageSendFailed(m_clientMessageIdsByRequest.take(requestId), error);
+        const QString clientMessageId = m_clientMessageIdsByRequest.take(requestId);
+        emit messageSendFailed(clientMessageId, error);
         return;
     }
 

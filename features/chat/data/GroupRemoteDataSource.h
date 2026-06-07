@@ -2,6 +2,7 @@
 
 #include "shared/network/NetworkTypes.h"
 #include "shared/types/Group.h"
+#include "shared/types/User.h"
 
 #include <QHash>
 #include <QJsonObject>
@@ -27,16 +28,31 @@ public:
     QString removeMember(const Group& group, const QString& userId);
     QStringList removeMembers(const Group& group, const QStringList& userIds);
     QString transferOwner(const Group& group, const QString& userId);
+    QString fetchMembers(const QString& groupId, const QString& keyword, int offset, int limit);
 
 signals:
     void groupCreated(const QString& requestId, const Group& group);
     void groupUpdated(const QString& requestId, const Group& group);
     void groupMySettingsUpdated(const QString& requestId, const Group& group);
     void groupLeft(const QString& requestId, const QString& groupId);
+    void groupMembersFetched(const QString& requestId,
+                             const QString& groupId,
+                             const QString& keyword,
+                             int offset,
+                             int limit,
+                             const QVector<User>& members,
+                             int totalCount,
+                             bool hasMore);
     void groupCreateFailed(const QString& requestId, const NetworkError& error);
     void groupUpdateFailed(const QString& requestId, const QString& groupId, const NetworkError& error);
     void groupMySettingsUpdateFailed(const QString& requestId, const QString& groupId, const NetworkError& error);
     void groupLeaveFailed(const QString& requestId, const QString& groupId, const NetworkError& error);
+    void groupMembersFetchFailed(const QString& requestId,
+                                 const QString& groupId,
+                                 const QString& keyword,
+                                 int offset,
+                                 int limit,
+                                 const NetworkError& error);
 
 private:
     enum class Action {
@@ -48,7 +64,8 @@ private:
         UpdateMember,
         RemoveMember,
         RemoveMembers,
-        TransferOwner
+        TransferOwner,
+        FetchMembers
     };
 
     struct PendingOperation {
@@ -56,6 +73,9 @@ private:
         QString groupId;
         Group group;
         QString batchId;
+        QString keyword;
+        int offset = 0;
+        int limit = 0;
     };
 
     struct PendingBatch {
