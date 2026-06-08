@@ -1,7 +1,6 @@
 #include "MessageRepository.h"
 
 #include <QMetaObject>
-#include <QEventLoop>
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QRunnable>
@@ -15,10 +14,10 @@
 #include "features/chat/data/GroupRepository.h"
 #include "features/chat/data/ChatRemoteDataSource.h"
 #include "features/chat/data/ConversationRemoteDataSource.h"
+#include "features/chat/data/MessageRemoteDataSource.h"
 #include "shared/data/LocalDataStore.h"
 #include "shared/data/RepositoryTemplate.h"
 #include "shared/network/AppEventBus.h"
-#include "shared/network/HttpClient.h"
 #include "shared/network/ReferenceDataResolver.h"
 #include "features/friend/data/UserRepository.h"
 #include "app/state/CurrentUser.h"
@@ -291,32 +290,6 @@ MessageSendState sendStateFromString(const QString& value)
     return MessageSendState::Sent;
 }
 
-QJsonArray messageArrayFromResponse(const QJsonObject& object)
-{
-    for (const QString& key : {QStringLiteral("messages"),
-                               QStringLiteral("items"),
-                               QStringLiteral("results"),
-                               QStringLiteral("data")}) {
-        if (object.value(key).isArray()) {
-            return object.value(key).toArray();
-        }
-    }
-    if (object.value(QStringLiteral("data")).isObject()) {
-        return messageArrayFromResponse(object.value(QStringLiteral("data")).toObject());
-    }
-    return {};
-}
-
-bool hasMoreAfterFromResponse(const QJsonObject& object)
-{
-    if (object.contains(QStringLiteral("hasMoreAfter"))) {
-        return object.value(QStringLiteral("hasMoreAfter")).toBool();
-    }
-    if (object.value(QStringLiteral("data")).isObject()) {
-        return hasMoreAfterFromResponse(object.value(QStringLiteral("data")).toObject());
-    }
-    return false;
-}
 
 bool hasPersistedChatMessagesForConversation(const QString& conversationId)
 {
@@ -1400,70 +1373,12 @@ bool MessageRepository::fetchOlderMessagesBlocking(const QString& conversationId
         return false;
     }
 
-    NetworkRequest request = NetworkRequest::json(
-            HttpMethod::Get,
-            QStringLiteral("/conversations/%1/messages").arg(conversationId),
-            {},
-            {{QStringLiteral("beforeMessageSeq"), beforeMessageSeq},
-             {QStringLiteral("limit"), limit}});
-    request.maxRetries = 3;
-
-    QEventLoop loop;
-    QTimer timeoutTimer;
-    timeoutTimer.setSingleShot(true);
-
-    bool completed = false;
-    bool fetchedAny = false;
-    QString requestId;
-    QMetaObject::Connection succeededConnection;
-    QMetaObject::Connection failedConnection;
-
-    succeededConnection = connect(&HttpClient::instance(),
-                                  &HttpClient::requestSucceeded,
-                                  &loop,
-                                  [&](const QString& completedRequestId, const NetworkResponse& response) {
-                                      if (completedRequestId != requestId) {
-                                          return;
-                                      }
-                                      ReferenceDataResolver::instance().consumePayload(response.object());
-                                      const QJsonArray messages = messageArrayFromResponse(response.object());
-                                      for (const QJsonValue& value : messages) {
-                                          QJsonObject object = value.toObject();
-                                          if (!object.contains(QStringLiteral("conversationId"))) {
-                                              object.insert(QStringLiteral("conversationId"), conversationId);
-                                          }
-                                          cacheRemoteMessageObject(object, conversationId);
-                                          fetchedAny = true;
-                                      }
-                                      completed = true;
-                                      loop.quit();
-                                  });
-    failedConnection = connect(&HttpClient::instance(),
-                               &HttpClient::requestFailed,
-                               &loop,
-                               [&](const QString& completedRequestId, const NetworkError&) {
-                                   if (completedRequestId != requestId) {
-                                       return;
-                                   }
-                                   completed = true;
-                                   loop.quit();
-                               });
-    connect(&timeoutTimer, &QTimer::timeout, &loop, [&]() {
-        loop.quit();
-    });
-
-    requestId = HttpClient::instance().send(request);
-    if (requestId.isEmpty()) {
-        disconnect(succeededConnection);
-        disconnect(failedConnection);
-        return false;
+    const MessageRemoteDataSource::FetchResult result =
+            MessageRemoteDataSource::instance().fetchOlderMessagesBlocking(conversationId, beforeMessageSeq, limit);
+    for (const QJsonObject& object : result.messages) {
+        cacheRemoteMessageObject(object, conversationId);
     }
-
-    timeoutTimer.start(request.timeoutMs + 1000);
-    loop.exec();
-    disconnect(succeededConnection);
-    disconnect(failedConnection);
-    return completed && fetchedAny;
+    return result.completed && !result.messages.isEmpty();
 }
 
 bool MessageRepository::fetchLatestMessagesBlocking(const QString& conversationId, int limit)
@@ -1472,69 +1387,12 @@ bool MessageRepository::fetchLatestMessagesBlocking(const QString& conversationI
         return false;
     }
 
-    NetworkRequest request = NetworkRequest::json(
-            HttpMethod::Get,
-            QStringLiteral("/conversations/%1/messages").arg(conversationId),
-            {},
-            {{QStringLiteral("limit"), limit}});
-    request.maxRetries = 3;
-
-    QEventLoop loop;
-    QTimer timeoutTimer;
-    timeoutTimer.setSingleShot(true);
-
-    bool completed = false;
-    bool fetchedAny = false;
-    QString requestId;
-    QMetaObject::Connection succeededConnection;
-    QMetaObject::Connection failedConnection;
-
-    succeededConnection = connect(&HttpClient::instance(),
-                                  &HttpClient::requestSucceeded,
-                                  &loop,
-                                  [&](const QString& completedRequestId, const NetworkResponse& response) {
-                                      if (completedRequestId != requestId) {
-                                          return;
-                                      }
-                                      ReferenceDataResolver::instance().consumePayload(response.object());
-                                      const QJsonArray messages = messageArrayFromResponse(response.object());
-                                      for (const QJsonValue& value : messages) {
-                                          QJsonObject object = value.toObject();
-                                          if (!object.contains(QStringLiteral("conversationId"))) {
-                                              object.insert(QStringLiteral("conversationId"), conversationId);
-                                          }
-                                          cacheRemoteMessageObject(object, conversationId);
-                                          fetchedAny = true;
-                                      }
-                                      completed = true;
-                                      loop.quit();
-                                  });
-    failedConnection = connect(&HttpClient::instance(),
-                               &HttpClient::requestFailed,
-                               &loop,
-                               [&](const QString& completedRequestId, const NetworkError&) {
-                                   if (completedRequestId != requestId) {
-                                       return;
-                                   }
-                                   completed = true;
-                                   loop.quit();
-                               });
-    connect(&timeoutTimer, &QTimer::timeout, &loop, [&]() {
-        loop.quit();
-    });
-
-    requestId = HttpClient::instance().send(request);
-    if (requestId.isEmpty()) {
-        disconnect(succeededConnection);
-        disconnect(failedConnection);
-        return false;
+    const MessageRemoteDataSource::FetchResult result =
+            MessageRemoteDataSource::instance().fetchLatestMessagesBlocking(conversationId, limit);
+    for (const QJsonObject& object : result.messages) {
+        cacheRemoteMessageObject(object, conversationId);
     }
-
-    timeoutTimer.start(request.timeoutMs + 1000);
-    loop.exec();
-    disconnect(succeededConnection);
-    disconnect(failedConnection);
-    return completed && fetchedAny;
+    return result.completed && !result.messages.isEmpty();
 }
 
 bool MessageRepository::fetchNewerMessagesBlocking(const QString& conversationId, int afterMessageSeq, int limit)
@@ -1549,78 +1407,19 @@ bool MessageRepository::fetchNewerMessagesBlocking(const QString& conversationId
     constexpr int kMaxFollowupPages = 10;
 
     for (int page = 0; page < kMaxFollowupPages && hasMoreAfter; ++page) {
-        NetworkRequest request = NetworkRequest::json(
-                HttpMethod::Get,
-                QStringLiteral("/conversations/%1/messages").arg(conversationId),
-                {},
-                {{QStringLiteral("afterMessageSeq"), cursor},
-                 {QStringLiteral("limit"), limit}});
-        request.maxRetries = 3;
-
-        QEventLoop loop;
-        QTimer timeoutTimer;
-        timeoutTimer.setSingleShot(true);
-
-        bool completed = false;
         bool pageFetchedAny = false;
         int nextCursor = cursor;
-        QString requestId;
-        QMetaObject::Connection succeededConnection;
-        QMetaObject::Connection failedConnection;
-
-        succeededConnection = connect(&HttpClient::instance(),
-                                      &HttpClient::requestSucceeded,
-                                      &loop,
-                                      [&](const QString& completedRequestId, const NetworkResponse& response) {
-                                          if (completedRequestId != requestId) {
-                                              return;
-                                          }
-                                          ReferenceDataResolver::instance().consumePayload(response.object());
-                                          const QJsonObject responseObject = response.object();
-                                          const QJsonArray messages = messageArrayFromResponse(responseObject);
-                                          for (const QJsonValue& value : messages) {
-                                              QJsonObject object = value.toObject();
-                                              if (!object.contains(QStringLiteral("conversationId"))) {
-                                                  object.insert(QStringLiteral("conversationId"), conversationId);
-                                              }
-                                              nextCursor = qMax(nextCursor, messageSeqFromObject(object));
-                                              cacheRemoteMessageObject(object, conversationId);
-                                              pageFetchedAny = true;
-                                          }
-                                          hasMoreAfter = hasMoreAfterFromResponse(responseObject);
-                                          completed = true;
-                                          loop.quit();
-                                      });
-        failedConnection = connect(&HttpClient::instance(),
-                                   &HttpClient::requestFailed,
-                                   &loop,
-                                   [&](const QString& completedRequestId, const NetworkError&) {
-                                       if (completedRequestId != requestId) {
-                                           return;
-                                       }
-                                       hasMoreAfter = false;
-                                       completed = true;
-                                       loop.quit();
-                                   });
-        connect(&timeoutTimer, &QTimer::timeout, &loop, [&]() {
-            hasMoreAfter = false;
-            loop.quit();
-        });
-
-        requestId = HttpClient::instance().send(request);
-        if (requestId.isEmpty()) {
-            disconnect(succeededConnection);
-            disconnect(failedConnection);
-            break;
+        const MessageRemoteDataSource::FetchResult result =
+                MessageRemoteDataSource::instance().fetchNewerMessagesBlocking(conversationId, cursor, limit);
+        hasMoreAfter = result.hasMoreAfter;
+        for (const QJsonObject& object : result.messages) {
+            nextCursor = qMax(nextCursor, messageSeqFromObject(object));
+            cacheRemoteMessageObject(object, conversationId);
+            pageFetchedAny = true;
         }
 
-        timeoutTimer.start(request.timeoutMs + 1000);
-        loop.exec();
-        disconnect(succeededConnection);
-        disconnect(failedConnection);
-
-        fetchedAny = fetchedAny || (completed && pageFetchedAny);
-        if (!completed || !pageFetchedAny || nextCursor <= cursor) {
+        fetchedAny = fetchedAny || (result.completed && pageFetchedAny);
+        if (!result.completed || !pageFetchedAny || nextCursor <= cursor) {
             break;
         }
         cursor = nextCursor;
