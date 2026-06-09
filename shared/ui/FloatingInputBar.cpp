@@ -418,11 +418,6 @@ bool FloatingInputBar::submitNativeText(const QString& text)
     return true;
 }
 
-void FloatingInputBar::triggerNativeHelloShortcut()
-{
-    sendHelloWorld();
-}
-
 void FloatingInputBar::triggerNativeImageShortcut()
 {
     chooseAndSendImage();
@@ -591,20 +586,6 @@ bool FloatingInputBar::eventFilter(QObject *watched, QEvent *event)
             emit inputFocused();
         } else if (event->type() == QEvent::KeyPress) {
             QKeyEvent *keyEvent = static_cast<QKeyEvent*>(event);
-            if (keyEvent->key() == Qt::Key_BracketLeft && keyEvent->modifiers() == Qt::NoModifier) {
-                sendCurrentMessage(SendMode::Peer);
-                return true;
-            }
-            if (keyEvent->key() == Qt::Key_BracketRight && keyEvent->modifiers() == Qt::NoModifier) {
-                sendHelloWorld();
-                return true;
-            }
-            if ((keyEvent->key() == Qt::Key_Apostrophe ||
-                 keyEvent->text() == QStringLiteral("‘")) &&
-                    keyEvent->modifiers() == Qt::NoModifier) {
-                emit recallLatestPeerMessageRequested();
-                return true;
-            }
             if (keyEvent->key() == Qt::Key_Backslash && keyEvent->modifiers() == Qt::NoModifier) {
                 chooseAndSendImage();
                 return true;
@@ -665,7 +646,7 @@ void FloatingInputBar::mousePressEvent(QMouseEvent *event)
 }
 
 
-void FloatingInputBar::sendCurrentMessage(SendMode mode)
+void FloatingInputBar::sendCurrentMessage()
 {
     if (!m_inputEdit) {
         return;
@@ -673,11 +654,7 @@ void FloatingInputBar::sendCurrentMessage(SendMode mode)
 
     QString text = m_inputEdit->toPlainText().trimmed();
     if (!text.isEmpty()) {
-        if (mode == SendMode::Peer) {
-            emit sendTextAsPeer(text);
-        } else {
-            emit sendText(text);
-        }
+        emit sendText(text);
         m_inputEdit->clear();
     }
 }
@@ -692,11 +669,6 @@ void FloatingInputBar::chooseAndSendImage()
     if (!filePath.isEmpty()) {
         emit sendImage(filePath);
     }
-}
-
-void FloatingInputBar::sendHelloWorld()
-{
-    emit sendText(QStringLiteral("Hello World"));
 }
 
 void FloatingInputBar::syncPlatformInput()

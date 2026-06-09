@@ -20,7 +20,6 @@ public:
     void focusInput();
     void appendText(const QString& text);
     bool submitNativeText(const QString& text);
-    void triggerNativeHelloShortcut();
     void triggerNativeImageShortcut();
     void refreshPlatformAppearance();
     bool usesNativeGlass() const { return m_usesNativeGlass; }
@@ -31,8 +30,6 @@ public:
 signals:
     void sendImage(const QString &path);
     void sendText(const QString &text);
-    void sendTextAsPeer(const QString &text);
-    void recallLatestPeerMessageRequested();
     void inputFocused();
 protected:
     bool event(QEvent *event) override;
@@ -41,11 +38,6 @@ protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
     void mousePressEvent(QMouseEvent *event) override;
 private:
-    enum class SendMode {
-        Self,
-        Peer
-    };
-
     void initQtFallbackUi();
     void updateLabelIcon(QLabel *label,
                          const QString &normalIcon,
@@ -53,8 +45,7 @@ private:
                          const QSize &size);
     void showTooltip(QLabel *label, const QString &text);
     void hideTooltip();
-    void sendCurrentMessage(SendMode mode = SendMode::Self);
-    void sendHelloWorld();
+    void sendCurrentMessage();
     void chooseAndSendImage();
     void clearQtFallbackUi();
     void syncPlatformInput();

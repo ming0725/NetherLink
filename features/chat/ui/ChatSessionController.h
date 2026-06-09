@@ -57,7 +57,7 @@ signals:
                                const User& directUser);
     void groupPanelDataLoaded(const ConversationMeta& meta,
                               const Group& group,
-                              const QVector<User>& previewMembers,
+                              const QVector<GroupMemberProfile>& previewMembers,
                               int totalMembers,
                               bool canEditGroupInfo,
                               bool canExitGroup);
@@ -74,6 +74,7 @@ signals:
 private:
     void refreshSessionData(bool emitChange);
     bool hasCurrentConversation(const QString& changedConversationId) const;
+    QString groupId() const;
     bool canEditGroupInfo(const Group& group) const;
     bool canEditMemberNickname(const Group& group, const QString& userId) const;
     bool canPromoteMemberToAdmin(const Group& group, const QString& userId) const;
@@ -87,5 +88,9 @@ private:
     Group m_group;
     int m_panelLoadToken = 0;
     int m_memberPageLoadToken = 0;
+    QVector<GroupMemberProfile> m_panelPreviewMembers;
     QString m_memberPageRequestId;
+    QString m_panelConversationRequestId;
+    QString m_panelGroupRequestId;
+    QString m_panelPreviewMembersRequestId;
 };

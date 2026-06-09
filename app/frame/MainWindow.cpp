@@ -7,6 +7,8 @@
 #include "app/frame/login/LoginAccountRepository.h"
 #include "app/state/CurrentUser.h"
 #include "platform/windows/WindowsWindowControlButton.h"
+#include "shared/data/LocalDataStore.h"
+#include "shared/network/AuthSession.h"
 #include "shared/network/NetworkService.h"
 #include "shared/ui/IconLineEdit.h"
 #include "shared/ui/FloatingInputBar.h"
@@ -17,15 +19,20 @@
 #include <QAbstractButton>
 #include <QCloseEvent>
 #include <QLineEdit>
+#include <QJsonObject>
 #include <QTextEdit>
 #include <QScreen>
 #include <QGuiApplication>
 #include <QShowEvent>
 #include <QApplication>
+#include <QTimer>
 namespace {
 
 constexpr int kMainWindowMinimumWidth = 820;
+constexpr int kMainWindowMinimumHeight = 525;
 constexpr qint64 kRealtimeNoticeThrottleMs = 15000;
+constexpr auto kWindowPlacementDomain = "window_placement";
+constexpr auto kMainWindowPlacementKey = "main_window";
 
 IconLineEdit* iconLineEditForWidget(QWidget* widget)
 {
@@ -95,6 +102,156 @@ bool shouldClearLineEditFocus(QWidget* watched, const QPoint& globalPos)
     return true;
 }
 
+QRect rectFromJson(const QJsonObject& object)
+{
+    const int width = object.value(QStringLiteral("width")).toInt();
+    const int height = object.value(QStringLiteral("height")).toInt();
+    if (width <= 0 || height <= 0) {
+        return {};
+    }
+
+    return {
+            object.value(QStringLiteral("x")).toInt(),
+            object.value(QStringLiteral("y")).toInt(),
+            width,
+            height
+    };
+}
+
+QScreen* screenByName(const QString& name)
+{
+    const QString normalized = name.trimmed();
+    if (normalized.isEmpty()) {
+        return nullptr;
+    }
+
+    for (QScreen* screen : QGuiApplication::screens()) {
+        if (screen && screen->name() == normalized) {
+            return screen;
+        }
+    }
+    return nullptr;
+}
+
+qint64 intersectionArea(const QRect& lhs, const QRect& rhs)
+{
+    const QRect intersection = lhs.intersected(rhs);
+    if (intersection.isEmpty()) {
+        return 0;
+    }
+    return static_cast<qint64>(intersection.width()) * intersection.height();
+}
+
+QScreen* bestScreenForRect(const QRect& rect)
+{
+    QScreen* bestScreen = nullptr;
+    qint64 bestArea = 0;
+    for (QScreen* screen : QGuiApplication::screens()) {
+        if (!screen) {
+            continue;
+        }
+
+        const qint64 area = intersectionArea(rect, screen->availableGeometry());
+        if (area > bestArea) {
+            bestArea = area;
+            bestScreen = screen;
+        }
+    }
+
+    if (bestScreen) {
+        return bestScreen;
+    }
+    if (QScreen* screenAtCenter = QGuiApplication::screenAt(rect.center())) {
+        return screenAtCenter;
+    }
+    return QGuiApplication::primaryScreen();
+}
+
+QScreen* screenForRect(const QRect& rect)
+{
+    if (QScreen* screenAtCenter = QGuiApplication::screenAt(rect.center())) {
+        return screenAtCenter;
+    }
+    if (QScreen* screenAtTopLeft = QGuiApplication::screenAt(rect.topLeft())) {
+        return screenAtTopLeft;
+    }
+    return bestScreenForRect(rect);
+}
+
+QRect fitRectToScreen(const QRect& rect, QScreen* screen)
+{
+    if (!screen) {
+        return rect;
+    }
+
+    const QRect available = screen->availableGeometry();
+    if (available.isEmpty()) {
+        return rect;
+    }
+
+    const int minWidth = qMin(kMainWindowMinimumWidth, available.width());
+    const int minHeight = qMin(kMainWindowMinimumHeight, available.height());
+    const int width = qBound(minWidth, rect.width(), available.width());
+    const int height = qBound(minHeight, rect.height(), available.height());
+    const int maxX = available.left() + available.width() - width;
+    const int maxY = available.top() + available.height() - height;
+    const int x = qBound(available.left(), rect.x(), maxX);
+    const int y = qBound(available.top(), rect.y(), maxY);
+    return {x, y, width, height};
+}
+
+QRect fitRectToAvailableScreens(const QRect& savedRect)
+{
+    return fitRectToScreen(savedRect, bestScreenForRect(savedRect));
+}
+
+QJsonObject rectToJson(const QRect& rect, bool maximized)
+{
+    QJsonObject object{
+            {QStringLiteral("x"), rect.x()},
+            {QStringLiteral("y"), rect.y()},
+            {QStringLiteral("width"), rect.width()},
+            {QStringLiteral("height"), rect.height()},
+            {QStringLiteral("maximized"), maximized}
+    };
+
+    if (QScreen* screen = screenForRect(rect)) {
+        const QRect available = screen->availableGeometry();
+        object.insert(QStringLiteral("screenName"), screen->name());
+        object.insert(QStringLiteral("screenX"), available.x());
+        object.insert(QStringLiteral("screenY"), available.y());
+        object.insert(QStringLiteral("screenWidth"), available.width());
+        object.insert(QStringLiteral("screenHeight"), available.height());
+        object.insert(QStringLiteral("offsetX"), rect.x() - available.x());
+        object.insert(QStringLiteral("offsetY"), rect.y() - available.y());
+    }
+    return object;
+}
+
+QRect placementRectFromJson(const QJsonObject& object, const QRect& savedRect)
+{
+    QScreen* namedScreen = screenByName(object.value(QStringLiteral("screenName")).toString());
+    if (namedScreen && object.contains(QStringLiteral("offsetX")) && object.contains(QStringLiteral("offsetY"))) {
+        const QRect available = namedScreen->availableGeometry();
+        const QRect relativeRect(available.x() + object.value(QStringLiteral("offsetX")).toInt(),
+                                 available.y() + object.value(QStringLiteral("offsetY")).toInt(),
+                                 savedRect.width(),
+                                 savedRect.height());
+        return fitRectToScreen(relativeRect, namedScreen);
+    }
+
+    return fitRectToAvailableScreens(savedRect);
+}
+
+QString currentWindowPlacementAccountKey()
+{
+    QString accountKey = LocalDataStore::instance().activeAccountKey().trimmed();
+    if (accountKey.isEmpty()) {
+        accountKey = AuthSession::instance().loginAccountId().trimmed();
+    }
+    return accountKey;
+}
+
 } // namespace
 
 MainWindow::MainWindow(QWidget* parent)
@@ -107,7 +264,7 @@ MainWindow::MainWindow(QWidget* parent)
     // 窗口基础设置
     setCompactTrafficLightsEnabled(true);
     resize(950, 650);
-    setMinimumHeight(525);
+    setMinimumHeight(kMainWindowMinimumHeight);
     setMinimumWidth(kMainWindowMinimumWidth);
     setAttribute(Qt::WA_TranslucentBackground);
 
@@ -168,8 +325,10 @@ MainWindow::MainWindow(QWidget* parent)
             this, &MainWindow::openSettingsWindow);
     connect(appBar, &ApplicationBar::appearanceSettingsRequested,
             this, &MainWindow::openAppearanceSettingsWindow);
-    connect(appBar, &ApplicationBar::logoutRequested,
-            this, &MainWindow::logoutRequested);
+    connect(appBar, &ApplicationBar::logoutRequested, this, [this]() {
+        saveWindowPlacement();
+        emit logoutRequested();
+    });
     connect(&NetworkService::instance(), &NetworkService::realtimeConnectionError,
             this, &MainWindow::showRealtimeFailureNotice);
     connect(&NetworkService::instance(), &NetworkService::realtimeStateChanged,
@@ -177,8 +336,11 @@ MainWindow::MainWindow(QWidget* parent)
     connect(&NetworkService::instance(), &NetworkService::sessionRevoked,
             this, &MainWindow::handleSessionRevoked);
 
-    QScreen* screen = QGuiApplication::primaryScreen();
-    if (screen) {
+    if (!restoreWindowPlacement()) {
+        QScreen* screen = QGuiApplication::primaryScreen();
+        if (!screen) {
+            return;
+        }
         const QRect available = screen->availableGeometry();
         move(available.center() - rect().center());
     }
@@ -186,12 +348,14 @@ MainWindow::MainWindow(QWidget* parent)
 
 MainWindow::~MainWindow()
 {
+    saveWindowPlacement();
     delete m_settingsWindow;
     qApp->removeEventFilter(this);
 }
 
 void MainWindow::closeEvent(QCloseEvent* event)
 {
+    saveWindowPlacement();
     delete m_settingsWindow;
     SystemWindow::closeEvent(event);
 }
@@ -200,6 +364,18 @@ void MainWindow::showEvent(QShowEvent* event)
 {
     SystemWindow::showEvent(event);
     layoutWindow();
+    if (!m_restoredNormalGeometry.isEmpty() && !m_restoredNormalGeometryApplied) {
+        m_restoredNormalGeometryApplied = true;
+        setGeometry(m_restoredNormalGeometry);
+    }
+    if (m_restoreMaximized && !m_restoreMaximizedApplied) {
+        m_restoreMaximizedApplied = true;
+        QTimer::singleShot(0, this, [this]() {
+            if (!isMaximized() && !isFullScreen()) {
+                showMaximized();
+            }
+        });
+    }
 }
 
 
@@ -398,6 +574,54 @@ void MainWindow::setSystemFloatingBarsSuppressed(bool suppressed)
 #endif
 }
 
+bool MainWindow::restoreWindowPlacement()
+{
+    m_windowPlacementAccountKey = currentWindowPlacementAccountKey();
+    if (m_windowPlacementAccountKey.isEmpty()) {
+        return false;
+    }
+
+    const QJsonObject object = LocalDataStore::instance().valueForAccount(
+            m_windowPlacementAccountKey,
+            QString::fromLatin1(kWindowPlacementDomain),
+            QString::fromLatin1(kMainWindowPlacementKey));
+    const QRect savedRect = rectFromJson(object);
+    if (savedRect.isEmpty()) {
+        return false;
+    }
+
+    m_restoredNormalGeometry = placementRectFromJson(object, savedRect);
+    setGeometry(m_restoredNormalGeometry);
+    m_restoreMaximized = object.value(QStringLiteral("maximized")).toBool(false);
+    return true;
+}
+
+void MainWindow::saveWindowPlacement()
+{
+    QString accountKey = m_windowPlacementAccountKey.trimmed();
+    if (accountKey.isEmpty()) {
+        accountKey = currentWindowPlacementAccountKey();
+    }
+    if (accountKey.isEmpty()) {
+        return;
+    }
+    m_windowPlacementAccountKey = accountKey;
+
+    QRect rectToSave = isMaximized() || isFullScreen() ? normalGeometry() : geometry();
+    if (rectToSave.isEmpty()) {
+        rectToSave = geometry();
+    }
+    if (rectToSave.isEmpty()) {
+        return;
+    }
+
+    LocalDataStore::instance().upsertValueForAccount(
+            accountKey,
+            QString::fromLatin1(kWindowPlacementDomain),
+            QString::fromLatin1(kMainWindowPlacementKey),
+            rectToJson(rectToSave, isMaximized()));
+}
+
 void MainWindow::showRealtimeFailureNotice(const QString& message)
 {
     m_realtimeHadFailure = true;
@@ -454,6 +678,7 @@ void MainWindow::handleSessionRevoked(const QString& accountId, const QString& m
                             false,
                             false);
     m_sessionRevokedDialogVisible = false;
+    saveWindowPlacement();
     emit logoutRequested();
 }
 

@@ -68,6 +68,11 @@ QString normalizedFriendGroupName(const User& user)
     return user.friendGroupName.isEmpty() ? kDefaultFriendGroupName : user.friendGroupName;
 }
 
+QString normalizedFriendGroupId(const QString& groupId)
+{
+    return groupId.isEmpty() ? kDefaultFriendGroupId : groupId;
+}
+
 QString normalizedUserKey(const User& user)
 {
     if (!user.userUuid.isEmpty()) {
@@ -219,16 +224,100 @@ bool hasPresencePayload(const QJsonObject& object)
            object.contains(QStringLiteral("lastSeenAt"));
 }
 
+struct FriendGroupRecord {
+    QString groupId = kDefaultFriendGroupId;
+    QString friendGroupId = kDefaultFriendGroupId;
+    QString name = kDefaultFriendGroupName;
+    int sortOrder = 0;
+    QDateTime createdAt;
+    QDateTime updatedAt;
+};
+
+FriendGroupRecord friendGroupFromJson(const QJsonObject& object)
+{
+    FriendGroupRecord group;
+    group.friendGroupId = firstString(object, {QStringLiteral("friendGroupId"),
+                                               QStringLiteral("groupId"),
+                                               QStringLiteral("id")});
+    group.friendGroupId = normalizedFriendGroupId(group.friendGroupId);
+    group.groupId = firstString(object, {QStringLiteral("groupId"),
+                                         QStringLiteral("friendGroupId"),
+                                         QStringLiteral("id")});
+    group.groupId = normalizedFriendGroupId(group.groupId);
+    group.name = object.value(QStringLiteral("name")).toString(
+            object.value(QStringLiteral("groupName")).toString(kDefaultFriendGroupName));
+    group.sortOrder = object.value(QStringLiteral("sortOrder")).toInt();
+    group.createdAt = dateTimeFromString(object.value(QStringLiteral("createdAt")).toString());
+    group.updatedAt = dateTimeFromString(object.value(QStringLiteral("updatedAt")).toString());
+    return group;
+}
+
+QJsonObject friendGroupToJson(const FriendGroupRecord& group)
+{
+    return {
+            {QStringLiteral("groupId"), group.groupId},
+            {QStringLiteral("friendGroupId"), group.friendGroupId},
+            {QStringLiteral("name"), group.name},
+            {QStringLiteral("sortOrder"), group.sortOrder},
+            {QStringLiteral("createdAt"), group.createdAt.isValid()
+                                            ? group.createdAt.toUTC().toString(Qt::ISODateWithMs)
+                                            : QString()},
+            {QStringLiteral("updatedAt"), group.updatedAt.isValid()
+                                            ? group.updatedAt.toUTC().toString(Qt::ISODateWithMs)
+                                            : QString()}
+    };
+}
+
+FriendGroupSummary makeFriendGroupSummary(const FriendGroupRecord& group, int friendCount)
+{
+    return FriendGroupSummary{
+            group.friendGroupId,
+            group.friendGroupId,
+            group.name,
+            friendCount,
+            group.sortOrder,
+            group.createdAt,
+            group.updatedAt
+    };
+}
+
+QJsonObject mergedFriendshipObject(QJsonObject object)
+{
+    const QJsonObject friendship = object.value(QStringLiteral("friendship")).toObject();
+    if (!friendship.isEmpty()) {
+        object = friendship;
+    }
+
+    const QJsonObject user = object.value(QStringLiteral("user")).toObject();
+    if (user.isEmpty()) {
+        return object;
+    }
+
+    QJsonObject relation = object;
+    relation.remove(QStringLiteral("user"));
+    object = user;
+    for (auto it = relation.constBegin(); it != relation.constEnd(); ++it) {
+        if (!object.contains(it.key())) {
+            object.insert(it.key(), it.value());
+        }
+    }
+    if (!object.contains(QStringLiteral("isFriend"))) {
+        object.insert(QStringLiteral("isFriend"), true);
+    }
+    return object;
+}
+
 User userFromJson(const QJsonObject& object)
 {
+    const QJsonObject mergedObject = mergedFriendshipObject(object);
     User user;
-    user.userUuid = firstString(object, {QStringLiteral("userUuid"),
-                                         QStringLiteral("uuid"),
-                                         QStringLiteral("friendUserUuid")});
-    user.userId = firstString(object, {QStringLiteral("userId"),
-                                       QStringLiteral("publicId"),
-                                       QStringLiteral("public_id")});
-    const QString legacyId = object.value(QStringLiteral("id")).toString();
+    user.userUuid = firstString(mergedObject, {QStringLiteral("userUuid"),
+                                               QStringLiteral("uuid"),
+                                               QStringLiteral("friendUserUuid")});
+    user.userId = firstString(mergedObject, {QStringLiteral("userId"),
+                                             QStringLiteral("publicId"),
+                                             QStringLiteral("public_id")});
+    const QString legacyId = mergedObject.value(QStringLiteral("id")).toString();
     if (user.userUuid.isEmpty()) {
         user.userUuid = legacyId;
     }
@@ -236,33 +325,33 @@ User userFromJson(const QJsonObject& object)
         user.userId = legacyId;
     }
     user.id = user.userUuid.isEmpty() ? user.userId : user.userUuid;
-    user.nick = object.value(QStringLiteral("nick")).toString(
-            object.value(QStringLiteral("nickName")).toString(object.value(QStringLiteral("displayName")).toString()));
-    user.remark = object.value(QStringLiteral("remark")).toString();
-    user.avatarVersion = object.value(QStringLiteral("avatarVersion")).toInt();
-    user.avatarEtag = object.value(QStringLiteral("avatarEtag")).toString();
-    user.avatarContentHash = object.value(QStringLiteral("avatarContentHash")).toString();
-    user.version = object.value(QStringLiteral("version")).toInt();
-    user.etag = object.value(QStringLiteral("etag")).toString();
-    QString avatarPath = AvatarSource::fromAvatarFileId(avatarFileIdFrom(object));
+    user.nick = mergedObject.value(QStringLiteral("nick")).toString(
+            mergedObject.value(QStringLiteral("nickName")).toString(mergedObject.value(QStringLiteral("displayName")).toString()));
+    user.remark = mergedObject.value(QStringLiteral("remark")).toString();
+    user.avatarVersion = mergedObject.value(QStringLiteral("avatarVersion")).toInt();
+    user.avatarEtag = mergedObject.value(QStringLiteral("avatarEtag")).toString();
+    user.avatarContentHash = mergedObject.value(QStringLiteral("avatarContentHash")).toString();
+    user.version = mergedObject.value(QStringLiteral("version")).toInt();
+    user.etag = mergedObject.value(QStringLiteral("etag")).toString();
+    QString avatarPath = AvatarSource::fromAvatarFileId(avatarFileIdFrom(mergedObject));
     if (avatarPath.isEmpty()) {
-        avatarPath = object.value(QStringLiteral("avatarPath")).toString(
-                object.value(QStringLiteral("avatarUrl")).toString());
+        avatarPath = mergedObject.value(QStringLiteral("avatarPath")).toString(
+                mergedObject.value(QStringLiteral("avatarUrl")).toString());
     }
     user.avatarPath = AvatarSource::versioned(
             avatarPath,
             user.avatarVersion,
             user.avatarEtag,
             user.avatarContentHash);
-    const QJsonObject presence = presenceObjectFrom(object);
+    const QJsonObject presence = presenceObjectFrom(mergedObject);
     user.status = userStatusFromString(presence.value(QStringLiteral("status")).toString());
     user.lastSeenAt = dateTimeFromString(presence.value(QStringLiteral("lastSeenAt")).toString());
-    user.signature = object.value(QStringLiteral("signature")).toString();
-    user.isDnd = object.value(QStringLiteral("isDnd")).toBool(false);
-    user.isFriend = object.value(QStringLiteral("isFriend")).toBool(false);
-    user.friendGroupId = object.value(QStringLiteral("friendGroupId")).toString(kDefaultFriendGroupId);
-    user.friendGroupName = object.value(QStringLiteral("friendGroupName")).toString(kDefaultFriendGroupName);
-    user.region = object.value(QStringLiteral("region")).toString();
+    user.signature = mergedObject.value(QStringLiteral("signature")).toString();
+    user.isDnd = mergedObject.value(QStringLiteral("isDnd")).toBool(false);
+    user.isFriend = mergedObject.value(QStringLiteral("isFriend")).toBool(false);
+    user.friendGroupId = mergedObject.value(QStringLiteral("friendGroupId")).toString(kDefaultFriendGroupId);
+    user.friendGroupName = mergedObject.value(QStringLiteral("friendGroupName")).toString(kDefaultFriendGroupName);
+    user.region = mergedObject.value(QStringLiteral("region")).toString();
     return user;
 }
 
@@ -378,29 +467,62 @@ private:
 class FriendGroupListRequestOperation final
     : public RepositoryTemplate<FriendGroupListRequest, QVector<FriendGroupSummary>> {
 public:
-    explicit FriendGroupListRequestOperation(QVector<User> users)
+    FriendGroupListRequestOperation(QVector<User> users, QVector<FriendGroupRecord> cachedGroups)
         : m_users(std::move(users))
+        , m_cachedGroups(std::move(cachedGroups))
     {
     }
 
 private:
     QVector<FriendGroupSummary> doRequest(const FriendGroupListRequest& query) const override
     {
-        QMap<QString, FriendGroupSummary> groups;
-        if (query.keyword.isEmpty() || kDefaultFriendGroupName.contains(query.keyword, Qt::CaseInsensitive)) {
-            groups.insert(kDefaultFriendGroupId,
-                          FriendGroupSummary{kDefaultFriendGroupId, kDefaultFriendGroupName, 0});
-        }
+        QMap<QString, int> friendCounts;
+        QMap<QString, QString> groupNamesFromFriends;
         for (const User& user : m_users) {
             if (!user.isFriend || !matchesFriendKeyword(user, query.keyword)) {
                 continue;
             }
 
             const QString groupId = normalizedFriendGroupId(user);
-            FriendGroupSummary summary = groups.value(groupId);
-            summary.groupId = groupId;
-            summary.groupName = normalizedFriendGroupName(user);
-            ++summary.friendCount;
+            friendCounts[groupId] = friendCounts.value(groupId) + 1;
+            groupNamesFromFriends.insert(groupId, normalizedFriendGroupName(user));
+        }
+
+        QMap<QString, FriendGroupSummary> groups;
+        if (query.keyword.isEmpty() || kDefaultFriendGroupName.contains(query.keyword, Qt::CaseInsensitive)) {
+          groups.insert(kDefaultFriendGroupId,
+                          makeFriendGroupSummary(FriendGroupRecord{}, friendCounts.value(kDefaultFriendGroupId)));
+        }
+
+        for (const FriendGroupRecord& record : m_cachedGroups) {
+            const QString groupId = normalizedFriendGroupId(record.friendGroupId);
+            if (groupId == kDefaultFriendGroupId) {
+                continue;
+            }
+            if (!query.keyword.isEmpty() &&
+                !record.name.contains(query.keyword, Qt::CaseInsensitive) &&
+                friendCounts.value(groupId) <= 0) {
+                continue;
+            }
+
+            groups.insert(groupId, makeFriendGroupSummary(record, friendCounts.value(groupId)));
+        }
+
+        for (const User& user : m_users) {
+            if (!user.isFriend || !matchesFriendKeyword(user, query.keyword)) {
+                continue;
+            }
+
+            const QString groupId = normalizedFriendGroupId(user);
+            if (groups.contains(groupId)) {
+                continue;
+            }
+
+            FriendGroupRecord fallback;
+            fallback.groupId = groupId;
+            fallback.friendGroupId = groupId;
+            fallback.name = groupNamesFromFriends.value(groupId, normalizedFriendGroupName(user));
+            FriendGroupSummary summary = makeFriendGroupSummary(fallback, friendCounts.value(groupId));
             groups.insert(groupId, summary);
         }
         return QVector<FriendGroupSummary>::fromList(groups.values());
@@ -409,6 +531,12 @@ private:
     void onAfterRequest(const FriendGroupListRequest&, QVector<FriendGroupSummary>& result) const override
     {
         std::sort(result.begin(), result.end(), [](const FriendGroupSummary& lhs, const FriendGroupSummary& rhs) {
+            if (lhs.groupId == kDefaultFriendGroupId || rhs.groupId == kDefaultFriendGroupId) {
+                return lhs.groupId == kDefaultFriendGroupId && rhs.groupId != kDefaultFriendGroupId;
+            }
+            if (lhs.sortOrder != rhs.sortOrder) {
+                return lhs.sortOrder < rhs.sortOrder;
+            }
             static QCollator collator(QLocale::Chinese);
             collator.setNumericMode(true);
             const int order = collator.compare(lhs.groupName, rhs.groupName);
@@ -417,6 +545,7 @@ private:
     }
 
     QVector<User> m_users;
+    QVector<FriendGroupRecord> m_cachedGroups;
 };
 
 class FriendGroupItemsRequestOperation final
@@ -481,13 +610,19 @@ UserRepository::UserRepository(QObject* parent)
             &LocalDataStore::activeAccountChanged,
             this,
             [this](const QString&) {
+                m_pendingPresenceBatchRequestIds.clear();
+                m_pendingPresenceSnapshotRequestIds.clear();
+                {
+                    QMutexLocker locker(&mutex);
+                    m_presenceSnapshotRequestedUserIds.clear();
+                }
                 reloadFromStore();
             });
     connect(&LocalDataStore::instance(),
             &LocalDataStore::domainChanged,
             this,
             [this](const QString& domain) {
-                if (domain == QStringLiteral("users")) {
+                if (domain == QStringLiteral("users") || domain == QStringLiteral("friend_groups")) {
                     reloadFromStore();
                 }
             },
@@ -501,9 +636,10 @@ UserRepository::UserRepository(QObject* parent)
             const QString userUuid = firstString(payload, {QStringLiteral("userUuid"),
                                                            QStringLiteral("uuid"),
                                                            QStringLiteral("userId")});
+            const QJsonObject presence = presenceObjectFrom(payload);
             upsertPresence(userUuid,
-                           payload.value(QStringLiteral("status")).toString(),
-                           payload.value(QStringLiteral("lastSeenAt")).toString());
+                           presence.value(QStringLiteral("status")).toString(),
+                           presence.value(QStringLiteral("lastSeenAt")).toString());
             return;
         }
 
@@ -522,6 +658,33 @@ UserRepository::UserRepository(QObject* parent)
             if (!removedFriendUuid.isEmpty()) {
                 removeUser(removedFriendUuid);
             }
+            return;
+        }
+
+        if (type == QStringLiteral("friend.updated")) {
+            QJsonObject object = payload.value(QStringLiteral("friendship")).toObject();
+            if (object.isEmpty()) {
+                object = payload;
+            }
+            upsertUserProfile(object, false);
+            return;
+        }
+
+        if (type == QStringLiteral("friend.group.created") ||
+            type == QStringLiteral("friend.group.updated")) {
+            QJsonObject object = payload.value(QStringLiteral("group")).toObject();
+            if (object.isEmpty()) {
+                object = payload;
+            }
+            upsertFriendGroup(object);
+            return;
+        }
+
+        if (type == QStringLiteral("friend.group.deleted")) {
+            const QString friendGroupId = firstString(payload, {QStringLiteral("friendGroupId"),
+                                                                QStringLiteral("groupId"),
+                                                                QStringLiteral("id")});
+            removeFriendGroup(friendGroupId);
             return;
         }
 
@@ -568,6 +731,15 @@ UserRepository::UserRepository(QObject* parent)
                     return;
                 }
 
+                const QStringList snapshotUserUuids =
+                        m_pendingPresenceSnapshotRequestIds.take(requestId);
+                if (!snapshotUserUuids.isEmpty()) {
+                    QMutexLocker locker(&mutex);
+                    for (const QString& userUuid : snapshotUserUuids) {
+                        m_presenceSnapshotRequestedUserIds.insert(userUuid);
+                    }
+                }
+
                 QJsonArray presences;
                 if (response.body.isArray()) {
                     presences = response.body.array();
@@ -598,6 +770,7 @@ UserRepository::UserRepository(QObject* parent)
             this,
             [this](const QString& requestId, const NetworkError&) {
                 m_pendingPresenceBatchRequestIds.remove(requestId);
+                m_pendingPresenceSnapshotRequestIds.remove(requestId);
             });
 }
 
@@ -633,7 +806,17 @@ QVector<FriendSummary> UserRepository::requestFriendList(const FriendListRequest
 QVector<FriendGroupSummary> UserRepository::requestFriendGroupSummaries(const FriendGroupListRequest& query) const
 {
     QMutexLocker locker(&mutex);
-    return FriendGroupListRequestOperation(QVector<User>::fromList(userMap.values())).request(query);
+    const QVector<User> users = QVector<User>::fromList(userMap.values());
+    locker.unlock();
+
+    QVector<FriendGroupRecord> groups;
+    for (const QJsonObject& object : LocalDataStore::instance().values(QStringLiteral("friend_groups"))) {
+        FriendGroupRecord group = friendGroupFromJson(object);
+        if (!group.friendGroupId.isEmpty() && group.friendGroupId != kDefaultFriendGroupId) {
+            groups.push_back(group);
+        }
+    }
+    return FriendGroupListRequestOperation(users, groups).request(query);
 }
 
 QVector<FriendSummary> UserRepository::requestFriendsInGroup(const FriendGroupItemsRequest& query) const
@@ -778,9 +961,16 @@ QString UserRepository::requestUserAvatarImageAsync(const QString& userId, int d
 
 QMap<QString, QString> UserRepository::requestFriendGroups() const
 {
-    QMutexLocker locker(&mutex);
     QMap<QString, QString> groups;
     groups.insert(kDefaultFriendGroupId, kDefaultFriendGroupName);
+    for (const QJsonObject& object : LocalDataStore::instance().values(QStringLiteral("friend_groups"))) {
+        const FriendGroupRecord group = friendGroupFromJson(object);
+        if (!group.friendGroupId.isEmpty() && group.friendGroupId != kDefaultFriendGroupId) {
+            groups.insert(group.friendGroupId, group.name);
+        }
+    }
+
+    QMutexLocker locker(&mutex);
     for (const User& user : userMap) {
         if (!user.isFriend) {
             continue;
@@ -788,6 +978,15 @@ QMap<QString, QString> UserRepository::requestFriendGroups() const
         groups.insert(normalizedFriendGroupId(user), normalizedFriendGroupName(user));
     }
     return groups;
+}
+
+int UserRepository::nextFriendGroupSortOrder() const
+{
+    int maxSortOrder = 0;
+    for (const QJsonObject& object : LocalDataStore::instance().values(QStringLiteral("friend_groups"))) {
+        maxSortOrder = qMax(maxSortOrder, object.value(QStringLiteral("sortOrder")).toInt());
+    }
+    return maxSortOrder + 10;
 }
 
 void UserRepository::saveUser(const User& user)
@@ -879,6 +1078,50 @@ bool UserRepository::upsertUserProfile(const QJsonObject& object, bool preserveF
     return true;
 }
 
+bool UserRepository::upsertFriendGroup(const QJsonObject& object)
+{
+    const FriendGroupRecord group = friendGroupFromJson(object);
+    if (group.friendGroupId.isEmpty() || group.friendGroupId == kDefaultFriendGroupId) {
+        return false;
+    }
+
+    return LocalDataStore::instance().upsertValue(QStringLiteral("friend_groups"),
+                                                  group.friendGroupId,
+                                                  friendGroupToJson(group));
+}
+
+bool UserRepository::removeFriendGroup(const QString& friendGroupId)
+{
+    const QString normalizedGroupId = normalizedFriendGroupId(friendGroupId);
+    if (normalizedGroupId.isEmpty() || normalizedGroupId == kDefaultFriendGroupId) {
+        return false;
+    }
+
+    bool changed = false;
+    QVector<User> changedUsers;
+    {
+        QMutexLocker locker(&mutex);
+        for (auto it = userMap.begin(); it != userMap.end(); ++it) {
+            if (!it->isFriend || normalizedFriendGroupId(*it) != normalizedGroupId) {
+                continue;
+            }
+            it->friendGroupId = kDefaultFriendGroupId;
+            it->friendGroupName = kDefaultFriendGroupName;
+            changedUsers.push_back(*it);
+            changed = true;
+        }
+    }
+
+    for (const User& user : changedUsers) {
+        LocalDataStore::instance().upsertValue(QStringLiteral("users"), user.id, userToJson(user));
+    }
+    const bool removed = LocalDataStore::instance().removeValue(QStringLiteral("friend_groups"), normalizedGroupId);
+    if (changed && !removed) {
+        emit friendListChanged();
+    }
+    return removed || changed;
+}
+
 bool UserRepository::upsertPresence(const QString& userUuid, const QString& status, const QString& lastSeenAt)
 {
     if (userUuid.isEmpty()) {
@@ -949,6 +1192,33 @@ QString UserRepository::refreshPresenceBatch(const QStringList& userUuids)
     request.maxRetries = 3;
     const QString requestId = HttpClient::instance().send(request);
     m_pendingPresenceBatchRequestIds.insert(requestId);
+    return requestId;
+}
+
+QString UserRepository::refreshFriendPresenceSnapshot()
+{
+    QStringList userUuids;
+    {
+        QMutexLocker locker(&mutex);
+        for (const User& user : userMap) {
+            if (!user.isFriend) {
+                continue;
+            }
+
+            const QString userUuid = (user.userUuid.isEmpty() ? user.id : user.userUuid).trimmed();
+            if (userUuid.isEmpty() || m_presenceSnapshotRequestedUserIds.contains(userUuid)) {
+                continue;
+            }
+            userUuids.push_back(userUuid);
+        }
+    }
+
+    const QString requestId = refreshPresenceBatch(userUuids);
+    if (requestId.isEmpty()) {
+        return {};
+    }
+
+    m_pendingPresenceSnapshotRequestIds.insert(requestId, userUuids);
     return requestId;
 }
 

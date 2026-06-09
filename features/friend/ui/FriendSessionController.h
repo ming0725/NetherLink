@@ -31,9 +31,13 @@ public:
     QString userAvatarPath(const QString& userId) const;
     QString requestUserAvatarImage(const QString& userId);
     QMap<QString, QString> loadFriendGroups() const;
+    QString refreshFriendPresenceSnapshot() const;
     bool saveFriend(const User& user);
     bool changeFriendGroup(const QString& userId, const QString& groupId, const QString& groupName);
     bool deleteFriend(const QString& userId);
+    bool createFriendGroup(const QString& name);
+    bool renameFriendGroup(const QString& friendGroupId, const QString& name);
+    bool deleteFriendGroup(const QString& friendGroupId);
 
     QVector<GroupCategorySummary> loadGroupCategorySummaries(const QString& keyword) const;
     QVector<Group> loadGroupsInCategory(const QString& categoryId,
@@ -49,6 +53,9 @@ public:
     QMap<QString, QString> loadGroupCategories() const;
     bool canExitGroup(const Group& group) const;
     bool saveGroup(const Group& group);
+    bool createGroupCategory(const QString& categoryName);
+    bool renameGroupCategory(const QString& categoryId, const QString& categoryName);
+    bool deleteGroupCategory(const QString& categoryId);
     bool changeGroupCategory(const QString& groupId,
                              const QString& categoryId,
                              const QString& categoryName);
@@ -87,6 +94,7 @@ signals:
     void groupJoinRequestActionFailed(const QString& notificationId, const NetworkError& error);
     void friendUpdateFailed(const QString& userId, const NetworkError& error);
     void friendDeleteFailed(const QString& userId, const NetworkError& error);
+    void friendGroupActionFailed(const QString& friendGroupId, const NetworkError& error);
     void groupUpdateFailed(const QString& groupId, const NetworkError& error);
     void groupMySettingsUpdateFailed(const QString& groupId, const NetworkError& error);
     void groupLeaveSucceeded(const QString& groupId);

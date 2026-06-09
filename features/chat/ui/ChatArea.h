@@ -60,7 +60,6 @@ private slots:
     void onNewMessageNotifierClicked();
     void onSendImage(const QString &path);
     void onSendText(const QString &text);
-    void onSendTextAsPeer(const QString &text);
     void onDeleteMessageRequested(int row);
     void onRecallMessageRequested(int row);
     void onReferenceMessageRequested(int row);
@@ -68,7 +67,6 @@ private slots:
     void onReferencedMessageClicked(const QString& messageId);
     void onReeditMessageRequested(int row);
     void onRetryMessageRequested(int row);
-    void onRecallLatestPeerMessageRequested();
     void onInfoButtonClicked();
     void confirmClearChatHistory();
     void confirmDeleteFriend();
@@ -182,6 +180,8 @@ private:
     void loadOlderMessages();
     bool loadHistoryUnreadMessages(int requestedMessageCount);
     QString conversationId() const;
+    QString groupId() const;
+    QString directPeerUserId() const;
     bool isGroupMode() const;
     bool ensureMessageLoaded(const QString& messageId);
     void scrollToMessageAndHighlight(const QString& messageId);
@@ -222,7 +222,7 @@ private:
     void onDirectPanelDataLoaded(const ConversationMeta& meta, const User& directUser);
     void onGroupPanelDataLoaded(const ConversationMeta& meta,
                                 const Group& group,
-                                const QVector<User>& previewMembers,
+                                const QVector<GroupMemberProfile>& previewMembers,
                                 int totalMembers,
                                 bool canEditGroupInfo,
                                 bool canExitGroup);

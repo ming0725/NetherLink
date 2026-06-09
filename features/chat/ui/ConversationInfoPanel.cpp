@@ -2,6 +2,7 @@
 #include "shared/services/AppFonts.h"
 
 #include "app/state/CurrentUser.h"
+#include "features/chat/data/GroupRepository.h"
 #include "features/chat/ui/CreateGroupChatPopup.h"
 #include "features/friend/data/UserRepository.h"
 #include "shared/services/ImageService.h"
@@ -51,7 +52,7 @@ constexpr int kMemberRowHeight = 42;
 constexpr int kMemberActionHeight = 40;
 constexpr int kMemberAvatarSize = 28;
 constexpr int kMemberPreviewLimit = 5;
-constexpr int kMemberFullPageSize = 40;
+constexpr int kMemberFullPageSize = 20;
 constexpr int kMemberFetchBottomThreshold = 80;
 const QString kPanelBackgroundSource(QStringLiteral(":/resources/icon/options_background.png"));
 
@@ -255,7 +256,7 @@ QString memberNickname(const Group& group, const QString& userId)
     if (!storedNickname.isEmpty()) {
         return storedNickname;
     }
-    if (userId == CurrentUser::instance().getUserId() && !group.currentUserNickname.trimmed().isEmpty()) {
+    if (CurrentUser::instance().isCurrentUserId(userId) && !group.currentUserNickname.trimmed().isEmpty()) {
         return group.currentUserNickname.trimmed();
     }
     return {};
@@ -279,6 +280,15 @@ QString memberDisplayName(const Group& group, const User& user)
 
 GroupRole memberRole(const Group& group, const QString& userId)
 {
+    if (CurrentUser::instance().isCurrentUserId(userId)) {
+        const QString currentRole = group.role.trimmed().toLower();
+        if (currentRole == QStringLiteral("owner")) {
+            return GroupRole::Owner;
+        }
+        if (currentRole == QStringLiteral("admin")) {
+            return GroupRole::Admin;
+        }
+    }
     if (!group.ownerId.isEmpty() && group.ownerId == userId) {
         return GroupRole::Owner;
     }
@@ -291,6 +301,65 @@ GroupRole memberRole(const Group& group, const QString& userId)
 GroupRole memberRole(const Group& group, const User& user)
 {
     return memberRole(group, user.id);
+}
+
+GroupRole memberRole(GroupMemberRoleValue role)
+{
+    switch (role) {
+    case GroupMemberRoleValue::Owner:
+        return GroupRole::Owner;
+    case GroupMemberRoleValue::Admin:
+        return GroupRole::Admin;
+    case GroupMemberRoleValue::Member:
+    default:
+        return GroupRole::Member;
+    }
+}
+
+GroupRole memberRole(const Group& group, const GroupMemberProfile& member)
+{
+    const GroupRole explicitRole = memberRole(member.role);
+    if (explicitRole != GroupRole::Member) {
+        return explicitRole;
+    }
+    if (!member.userUuid.isEmpty()) {
+        return memberRole(group, member.userUuid);
+    }
+    return memberRole(group, member.user);
+}
+
+QString memberDisplayName(const Group& group, const GroupMemberProfile& member)
+{
+    const QString nickname = member.nickname.trimmed();
+    if (!nickname.isEmpty()) {
+        return nickname;
+    }
+    return memberDisplayName(group, member.user);
+}
+
+void mergeMemberProfileIntoGroup(Group& group, const GroupMemberProfile& member)
+{
+    const QString userId = member.userUuid.isEmpty() ? member.user.id : member.userUuid;
+    if (group.groupId.isEmpty() || userId.isEmpty()) {
+        return;
+    }
+
+    if (!group.membersID.contains(userId)) {
+        group.membersID.push_back(userId);
+    }
+    if (!member.nickname.trimmed().isEmpty()) {
+        group.memberNicknames.insert(userId, member.nickname.trimmed());
+    }
+    if (member.role == GroupMemberRoleValue::Owner) {
+        group.ownerId = userId;
+        group.adminsID.removeAll(userId);
+    } else if (member.role == GroupMemberRoleValue::Admin) {
+        if (!group.adminsID.contains(userId)) {
+            group.adminsID.push_back(userId);
+        }
+    } else {
+        group.adminsID.removeAll(userId);
+    }
 }
 
 QString roleText(GroupRole role)
@@ -363,11 +432,16 @@ QVector<User> sortedGroupMembers(const Group& group,
 class GroupMemberRow : public QWidget
 {
 public:
-    GroupMemberRow(const Group& group, const User& user, QWidget* parent = nullptr)
+    GroupMemberRow(const Group& group, const GroupMemberProfile& member, QWidget* parent = nullptr)
         : QWidget(parent)
         , m_group(group)
-        , m_user(user)
+        , m_member(member)
+        , m_user(member.user)
     {
+        if (m_user.id.isEmpty()) {
+            m_user.id = member.userUuid;
+            m_user.userUuid = member.userUuid;
+        }
         setFixedHeight(kMemberRowHeight);
         setAutoFillBackground(false);
         setMouseTracking(true);
@@ -429,7 +503,7 @@ protected:
         }
         painter.restore();
 
-        const GroupRole role = memberRole(m_group, m_user);
+        const GroupRole role = memberRole(m_group, m_member);
         int nameRight = width() - 16;
         if (role != GroupRole::Member) {
             const QString badgeText = roleText(role);
@@ -456,7 +530,7 @@ protected:
         painter.setPen(ThemeManager::instance().color(ThemeColor::ChatInfoMemberListPrimaryText));
         const QFontMetrics nameMetrics(nameFont);
         const int nameLeft = avatarRect.right() + 10;
-        const QString name = nameMetrics.elidedText(memberDisplayName(m_group, m_user),
+        const QString name = nameMetrics.elidedText(memberDisplayName(m_group, m_member),
                                                     Qt::ElideRight,
                                                     qMax(0, nameRight - nameLeft));
         painter.drawText(QRect(nameLeft, 0, qMax(0, nameRight - nameLeft), height()),
@@ -491,6 +565,7 @@ protected:
 
 private:
     Group m_group;
+    GroupMemberProfile m_member;
     User m_user;
     std::function<void(const User&, const QPoint&)> m_contextMenuCallback;
     std::function<void(const User&, const QPoint&)> m_profileRequestedCallback;
@@ -880,7 +955,7 @@ GroupConversationInfoPanel::GroupConversationInfoPanel(QWidget* parent)
 
 void GroupConversationInfoPanel::setGroupSummary(const Group& group,
                                                  const ConversationMeta& meta,
-                                                 const QVector<User>& previewMembers,
+                                                 const QVector<GroupMemberProfile>& previewMembers,
                                                  int totalMembers,
                                                  bool canEditGroupInfo,
                                                  bool canExitGroup)
@@ -888,6 +963,9 @@ void GroupConversationInfoPanel::setGroupSummary(const Group& group,
     const bool validGroup = !group.groupId.isEmpty();
     m_group = group;
     m_members = previewMembers;
+    for (const GroupMemberProfile& member : m_members) {
+        mergeMemberProfileIntoGroup(m_group, member);
+    }
     m_memberTotalCount = qMax(0, totalMembers);
     m_canEditGroupInfo = validGroup && canEditGroupInfo;
     m_canExitGroup = validGroup && canExitGroup;
@@ -916,6 +994,83 @@ void GroupConversationInfoPanel::setGroupSummary(const Group& group,
     m_mainScrollArea->relayoutContent();
 }
 
+void GroupConversationInfoPanel::setGroupState(const Group& group,
+                                               bool canEditGroupInfo,
+                                               bool canExitGroup)
+{
+    if (group.groupId.isEmpty()) {
+        return;
+    }
+
+    const bool roleStateChanged = group.ownerId != m_group.ownerId ||
+                                  group.adminsID != m_group.adminsID ||
+                                  group.role != m_group.role;
+    const bool profileStateChanged = roleStateChanged ||
+                                     group.groupName != m_group.groupName ||
+                                     group.introduction != m_group.introduction ||
+                                     group.announcement != m_group.announcement ||
+                                     group.currentUserNickname != m_group.currentUserNickname ||
+                                     group.memberNicknames != m_group.memberNicknames ||
+                                     group.remark != m_group.remark ||
+                                     group.membersID != m_group.membersID ||
+                                     group.memberNum != m_group.memberNum;
+
+    m_group = group;
+    for (GroupMemberProfile& member : m_members) {
+        const QString userId = member.userUuid.isEmpty() ? member.user.id : member.userUuid;
+        GroupMemberProfile cached = GroupRepository::instance().requestGroupMember(group.groupId, userId);
+        if (cached.userUuid.isEmpty()) {
+            mergeMemberProfileIntoGroup(m_group, member);
+            continue;
+        }
+        if (cached.user.id.isEmpty()) {
+            cached.user = member.user;
+        }
+        member = cached;
+        mergeMemberProfileIntoGroup(m_group, member);
+    }
+
+    m_canEditGroupInfo = canEditGroupInfo;
+    m_canExitGroup = canExitGroup;
+    m_memberTotalCount = qMax(m_memberTotalCount, group.memberNum);
+
+    m_groupInfoCard->setVisible(m_canEditGroupInfo);
+    m_groupNameText->setText(m_canEditGroupInfo ? group.groupName : QString());
+    m_groupIntroductionText->setText(m_canEditGroupInfo ? group.introduction : QString());
+    m_groupAnnouncementText->setText(m_canEditGroupInfo ? group.announcement : QString());
+    m_currentUserNicknameText->setText(memberNickname(group, CurrentUser::instance().getUserId()));
+    m_groupRemarkText->setText(group.remark);
+    m_transferOwnerButton->setEnabled(canTransferOwner());
+    m_exitGroupButton->setEnabled(m_canExitGroup);
+    m_memberSummaryCard->setVisible(true);
+
+    if (profileStateChanged) {
+        rebuildMemberPreview();
+    }
+    if (roleStateChanged && m_stack && m_stack->currentWidget() == m_memberListPage) {
+        clearMemberFullList();
+        requestNextMemberPage();
+    }
+    m_mainScrollArea->relayoutContent();
+}
+
+void GroupConversationInfoPanel::setConversationMeta(const ConversationMeta& meta, bool animated)
+{
+    const bool validGroup = !m_group.groupId.isEmpty() && !meta.conversationId.isEmpty() && meta.isGroup;
+    m_pinSwitch->setLampChecked(validGroup && meta.isPinned, animated);
+    m_doNotDisturbSwitch->setLampChecked(validGroup && meta.isDoNotDisturb, animated);
+
+    if (validGroup && meta.memberCount > 0 && meta.memberCount != m_memberTotalCount) {
+        m_memberTotalCount = meta.memberCount;
+        if (m_memberSummaryHeader) {
+            static_cast<MemberSummaryHeader*>(m_memberSummaryHeader)->setMemberCount(m_memberTotalCount);
+        }
+        if (m_memberListHeader) {
+            static_cast<MemberListHeader*>(m_memberListHeader)->setMemberCount(m_memberTotalCount);
+        }
+    }
+}
+
 void GroupConversationInfoPanel::rebuildMemberPreview()
 {
     if (!m_memberPreviewLayout || !m_memberSummaryHeader) {
@@ -932,10 +1087,9 @@ void GroupConversationInfoPanel::rebuildMemberPreview()
         delete item;
     }
 
-    const QVector<User> members = sortedGroupMembers(m_group, m_members);
-    const int visibleCount = qMin(kMemberPreviewLimit, members.size());
+    const int visibleCount = qMin(kMemberPreviewLimit, m_members.size());
     for (int index = 0; index < visibleCount; ++index) {
-        auto* row = new GroupMemberRow(m_group, members.at(index), m_memberSummaryCard);
+        auto* row = new GroupMemberRow(m_group, m_members.at(index), m_memberSummaryCard);
         row->setProfileRequestedCallback([this](const User& user, const QPoint& globalPos) {
             emit memberProfileRequested(user.id, globalPos);
         });
@@ -1011,6 +1165,9 @@ void GroupConversationInfoPanel::appendGroupMembersPage(const GroupMembersPage& 
     m_memberTotalCount = page.totalCount;
     m_memberHasMore = page.hasMore;
     m_memberLoadedCount = page.offset + page.members.size();
+    for (const GroupMemberProfile& member : page.members) {
+        mergeMemberProfileIntoGroup(m_group, member);
+    }
     static_cast<MemberSummaryHeader*>(m_memberSummaryHeader)->setMemberCount(m_memberTotalCount);
     static_cast<MemberListHeader*>(m_memberListHeader)->setMemberCount(m_memberTotalCount);
 
@@ -1023,7 +1180,7 @@ void GroupConversationInfoPanel::appendGroupMembersPage(const GroupMembersPage& 
         }
     }
 
-    for (const User& member : page.members) {
+    for (const GroupMemberProfile& member : page.members) {
         auto* row = new GroupMemberRow(m_group, member, m_memberListPage);
         row->setProfileRequestedCallback([this](const User& user, const QPoint& globalPos) {
             emit memberProfileRequested(user.id, globalPos);
@@ -1157,7 +1314,7 @@ bool GroupConversationInfoPanel::canEditMemberNickname(const User& user) const
     }
 
     const QString currentUserId = CurrentUser::instance().getUserId();
-    if (user.id == currentUserId) {
+    if (CurrentUser::instance().isCurrentUserId(user.id)) {
         return true;
     }
 
@@ -1176,7 +1333,7 @@ bool GroupConversationInfoPanel::canPromoteMemberToAdmin(const User& user) const
     }
 
     const QString currentUserId = CurrentUser::instance().getUserId();
-    if (user.id == currentUserId) {
+    if (CurrentUser::instance().isCurrentUserId(user.id)) {
         return false;
     }
 
@@ -1192,7 +1349,7 @@ bool GroupConversationInfoPanel::canCancelMemberAdmin(const User& user) const
     }
 
     const QString currentUserId = CurrentUser::instance().getUserId();
-    if (user.id == currentUserId) {
+    if (CurrentUser::instance().isCurrentUserId(user.id)) {
         return false;
     }
 
@@ -1208,7 +1365,7 @@ bool GroupConversationInfoPanel::canRemoveMember(const User& user) const
     }
 
     const QString currentUserId = CurrentUser::instance().getUserId();
-    if (user.id == currentUserId) {
+    if (CurrentUser::instance().isCurrentUserId(user.id)) {
         return false;
     }
 
@@ -1227,7 +1384,7 @@ bool GroupConversationInfoPanel::canTransferOwner() const
     }
 
     const QString currentUserId = CurrentUser::instance().getUserId();
-    return !currentUserId.isEmpty() && m_group.ownerId == currentUserId;
+    return !currentUserId.isEmpty() && CurrentUser::instance().isCurrentUserId(m_group.ownerId);
 }
 
 void GroupConversationInfoPanel::requestNextMemberPage()
@@ -1350,6 +1507,7 @@ void DirectConversationInfoPanel::setConversationMeta(const ConversationMeta& me
     m_remarkText->setText(showDirectState ? remark : QString());
     m_pinSwitch->setLampChecked(showDirectState && meta.isPinned, animated);
     m_doNotDisturbSwitch->setLampChecked(showDirectState && meta.isDoNotDisturb, animated);
+    const QString peerUserId = meta.peerUserId.isEmpty() ? meta.conversationId : meta.peerUserId;
     m_deleteFriendButton->setEnabled(showDirectState &&
-                                     UserRepository::instance().isFriend(meta.conversationId));
+                                     UserRepository::instance().isFriend(peerUserId));
 }

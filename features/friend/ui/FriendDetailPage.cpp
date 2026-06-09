@@ -452,9 +452,6 @@ void FriendDetailPage::setUser(const User& user)
     updateGroupButtonText();
     updateSignatureText();
     QTimer::singleShot(0, this, &FriendDetailPage::updateSignatureText);
-
-    const QString userUuid = m_user.userUuid.isEmpty() ? m_user.id : m_user.userUuid;
-    UserRepository::instance().refreshPresenceBatch({userUuid});
 }
 
 void FriendDetailPage::openAvatarViewer()

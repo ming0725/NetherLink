@@ -112,6 +112,9 @@ void ReferenceDataResolver::consumeIncluded(const QJsonObject& included)
     for (const QJsonValue& value : arrayValue(included, {QStringLiteral("users")})) {
         upsertUserObject(value.toObject());
     }
+    for (const QJsonValue& value : arrayValue(included, {QStringLiteral("groups")})) {
+        GroupRepository::instance().upsertGroup(value.toObject());
+    }
     for (const QJsonValue& value : arrayValue(included, {QStringLiteral("groupMembers"),
                                                          QStringLiteral("members")})) {
         upsertGroupMemberObject(value.toObject());

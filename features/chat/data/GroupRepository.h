@@ -21,6 +21,8 @@ public:
     QString requestGroupAvatarPath(const QString& groupId) const;
     QString requestGroupAvatarImageAsync(const QString& groupId, int delayMs = 120);
     QMap<QString, QString> requestGroupCategories() const;
+    bool upsertGroupCategory(const QString& categoryId, const QString& categoryName);
+    bool removeGroupCategory(const QString& categoryId);
     QString effectiveGroupCategoryId(const Group& group) const;
     QString effectiveGroupCategoryName(const Group& group) const;
     bool isCurrentUserGroupOwner(const Group& group) const;
@@ -30,6 +32,7 @@ public:
     QString requestGroupMemberNickname(const QString& groupId, const QString& userId) const;
     int requestGroupMemberVersion(const QString& groupId, const QString& userId) const;
 
+    bool upsertGroup(const QJsonObject& object);
     void saveGroup(const Group& group);
     bool upsertGroupMember(const QJsonObject& object);
     bool needsGroupMemberRefresh(const QString& groupId, const QString& userId, int remoteVersion) const;

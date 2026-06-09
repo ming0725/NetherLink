@@ -294,11 +294,75 @@ QJsonObject senderUserObject(const QJsonObject& object)
     return {};
 }
 
-void cacheApplicantUser(const QJsonObject& object, const FriendNotification& notification)
+bool sameApplicant(const FriendNotification& lhs, const FriendNotification& rhs)
+{
+    if (!lhs.fromUserUuid.isEmpty() &&
+        !rhs.fromUserUuid.isEmpty() &&
+        lhs.fromUserUuid == rhs.fromUserUuid) {
+        return true;
+    }
+    if (!lhs.fromUserId.isEmpty() &&
+        !rhs.fromUserId.isEmpty() &&
+        lhs.fromUserId == rhs.fromUserId) {
+        return true;
+    }
+    return false;
+}
+
+QString applicantLookupId(const FriendNotification& notification)
+{
+    return notification.fromUserUuid.isEmpty()
+            ? notification.fromUserId
+            : notification.fromUserUuid;
+}
+
+int notificationStatusRank(NotificationStatus status)
+{
+    return status == NotificationStatus::Pending ? 0 : 1;
+}
+
+bool shouldReplaceNotification(const FriendNotification& existing,
+                               const FriendNotification& incoming)
+{
+    const int existingRank = notificationStatusRank(existing.status);
+    const int incomingRank = notificationStatusRank(incoming.status);
+    if (incomingRank != existingRank) {
+        return incomingRank > existingRank;
+    }
+    return incoming.requestDate.isValid() && incoming.requestDate > existing.requestDate;
+}
+
+void mergeMissingNotificationFields(const FriendNotification& previous,
+                                    FriendNotification& notification)
+{
+    if (notification.fromUserId.isEmpty()) {
+        notification.fromUserId = previous.fromUserId;
+    }
+    if (notification.fromUserUuid.isEmpty()) {
+        notification.fromUserUuid = previous.fromUserUuid;
+    }
+    if (notification.message.isEmpty()) {
+        notification.message = previous.message;
+    }
+    if (!notification.requestDate.isValid()) {
+        notification.requestDate = previous.requestDate;
+    }
+    if (notification.sourceGroupId.isEmpty()) {
+        notification.sourceGroupId = previous.sourceGroupId;
+        notification.sourceGroupName = previous.sourceGroupName;
+        notification.sourceGroupMemberName = previous.sourceGroupMemberName;
+    }
+    if (notification.sourceFriendId.isEmpty()) {
+        notification.sourceFriendId = previous.sourceFriendId;
+        notification.sourceFriendName = previous.sourceFriendName;
+    }
+}
+
+QString cacheApplicantUser(const QJsonObject& object, const FriendNotification& notification)
 {
     QJsonObject userObject = senderUserObject(object);
     if (userObject.isEmpty() && notification.fromUserId.isEmpty() && notification.fromUserUuid.isEmpty()) {
-        return;
+        return {};
     }
     if (!notification.fromUserId.isEmpty() && !userObject.contains(QStringLiteral("userId"))) {
         userObject.insert(QStringLiteral("userId"), notification.fromUserId);
@@ -308,7 +372,13 @@ void cacheApplicantUser(const QJsonObject& object, const FriendNotification& not
     }
     if (!userObject.isEmpty()) {
         UserRepository::instance().upsertUserProfile(userObject);
-        return;
+        const QString userUuid = firstString(userObject, {QStringLiteral("userUuid"), QStringLiteral("uuid")});
+        return userUuid.isEmpty()
+                ? firstString(userObject, {QStringLiteral("userId"),
+                                           QStringLiteral("publicId"),
+                                           QStringLiteral("public_id"),
+                                           QStringLiteral("id")})
+                : userUuid;
     }
 
     const QString publicId = notification.fromUserId.isEmpty()
@@ -321,7 +391,7 @@ void cacheApplicantUser(const QJsonObject& object, const FriendNotification& not
             : notification.fromUserUuid;
     const QString lookupId = publicId.isEmpty() ? userUuid : publicId;
     if (lookupId.isEmpty()) {
-        return;
+        return {};
     }
 
     User user = UserRepository::instance().requestUserDetail({lookupId});
@@ -358,6 +428,7 @@ void cacheApplicantUser(const QJsonObject& object, const FriendNotification& not
         user.friendGroupName = QStringLiteral("默认分组");
     }
     UserRepository::instance().saveUser(user);
+    return user.id.isEmpty() ? lookupId : user.id;
 }
 
 } // namespace
@@ -411,34 +482,19 @@ FriendNotificationRepository::FriendNotificationRepository(QObject* parent)
                 if (notification.id.isEmpty()) {
                     return;
                 }
-                cacheApplicantUser(object, notification);
+                const QString originalNotificationId = notification.id;
 
                 ensureLoaded();
                 for (const FriendNotification& previous : m_notifications) {
-                    if (previous.id != notification.id) {
+                    const bool sameRequest = previous.id == notification.id ||
+                            ((type.endsWith(QStringLiteral(".accepted")) ||
+                              type.endsWith(QStringLiteral(".rejected"))) &&
+                             sameApplicant(previous, notification));
+                    if (!sameRequest) {
                         continue;
                     }
-                    if (notification.fromUserId.isEmpty()) {
-                        notification.fromUserId = previous.fromUserId;
-                    }
-                    if (notification.fromUserUuid.isEmpty()) {
-                        notification.fromUserUuid = previous.fromUserUuid;
-                    }
-                    if (notification.message.isEmpty()) {
-                        notification.message = previous.message;
-                    }
-                    if (!notification.requestDate.isValid()) {
-                        notification.requestDate = previous.requestDate;
-                    }
-                    if (notification.sourceGroupId.isEmpty()) {
-                        notification.sourceGroupId = previous.sourceGroupId;
-                        notification.sourceGroupName = previous.sourceGroupName;
-                        notification.sourceGroupMemberName = previous.sourceGroupMemberName;
-                    }
-                    if (notification.sourceFriendId.isEmpty()) {
-                        notification.sourceFriendId = previous.sourceFriendId;
-                        notification.sourceFriendName = previous.sourceFriendName;
-                    }
+                    notification.id = previous.id;
+                    mergeMissingNotificationFields(previous, notification);
                     break;
                 }
                 if (!notification.requestDate.isValid()) {
@@ -455,6 +511,29 @@ FriendNotificationRepository::FriendNotificationRepository(QObject* parent)
                     notification.unread = true;
                 }
 
+                const QString applicantId = cacheApplicantUser(object, notification);
+                if (type.endsWith(QStringLiteral(".accepted"))) {
+                    const QString friendId = applicantId.isEmpty()
+                            ? applicantLookupId(notification)
+                            : applicantId;
+                    if (!friendId.isEmpty()) {
+                        const User existingFriend = UserRepository::instance().requestUserDetail({friendId});
+                        const QString groupId = existingFriend.isFriend && !existingFriend.friendGroupId.isEmpty()
+                                ? existingFriend.friendGroupId
+                                : QStringLiteral("default");
+                        const QString groupName = existingFriend.isFriend && !existingFriend.friendGroupName.isEmpty()
+                                ? existingFriend.friendGroupName
+                                : QStringLiteral("默认分组");
+                        UserRepository::instance().addFriend(friendId,
+                                                             groupId,
+                                                             groupName);
+                    }
+                }
+
+                if (originalNotificationId != notification.id) {
+                    LocalDataStore::instance().removeValue(QStringLiteral("friend_notifications"),
+                                                           originalNotificationId);
+                }
                 LocalDataStore::instance().upsertValue(QStringLiteral("friend_notifications"),
                                                        notification.id,
                                                        notificationToJson(notification));
@@ -474,9 +553,34 @@ void FriendNotificationRepository::ensureLoaded() const
     auto* self = const_cast<FriendNotificationRepository*>(this);
     LocalDataStore& store = LocalDataStore::instance();
     for (const QJsonObject& object : store.values(QStringLiteral("friend_notifications"))) {
-        const FriendNotification notification = notificationFromJson(object);
+        FriendNotification notification = notificationFromJson(object);
         if (!notification.id.isEmpty()) {
             cacheApplicantUser(object, notification);
+            bool merged = false;
+            for (FriendNotification& existing : self->m_notifications) {
+                if (existing.id != notification.id && !sameApplicant(existing, notification)) {
+                    continue;
+                }
+
+                if (shouldReplaceNotification(existing, notification)) {
+                    const QString previousId = existing.id;
+                    notification.id = previousId;
+                    mergeMissingNotificationFields(existing, notification);
+                    existing = notification;
+                    const QString incomingId = firstString(object, {QStringLiteral("id"),
+                                                                    QStringLiteral("requestId"),
+                                                                    QStringLiteral("notificationId"),
+                                                                    QStringLiteral("sourceId")});
+                    if (!incomingId.isEmpty() && incomingId != previousId) {
+                        store.removeValue(QStringLiteral("friend_notifications"), incomingId);
+                    }
+                }
+                merged = true;
+                break;
+            }
+            if (merged) {
+                continue;
+            }
             self->m_notifications.push_back(notification);
         }
     }

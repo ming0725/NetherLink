@@ -188,7 +188,6 @@ void updateInactiveGlassChrome(NSView* hostView);
 @property(nonatomic, assign) NSView* hostView;
 - (instancetype)initWithOwner:(FloatingInputBar*)owner hostView:(NSView*)hostView;
 - (void)handleTextSubmit:(NSString*)text;
-- (void)handleHelloShortcut;
 - (void)handleImageShortcut;
 - (void)handleImageButtonClick:(id)sender;
 - (void)handleSendButtonClick:(id)sender;
@@ -234,15 +233,6 @@ void updateInactiveGlassChrome(NSView* hostView);
     NSString* value = text ?: @"";
     const char* utf8 = value.UTF8String;
     self.owner->submitNativeText(utf8 ? QString::fromUtf8(utf8) : QString());
-}
-
-- (void)handleHelloShortcut
-{
-    if (!self.owner) {
-        return;
-    }
-
-    self.owner->triggerNativeHelloShortcut();
 }
 
 - (void)handleImageShortcut
@@ -317,10 +307,6 @@ void updateInactiveGlassChrome(NSView* hostView);
     }
     if (modifiers == 0 && characters.length == 1) {
         unichar key = [characters characterAtIndex:0];
-        if (key == ']') {
-            [self.shortcutTarget handleHelloShortcut];
-            return;
-        }
         if (key == '\\') {
             [self.shortcutTarget handleImageShortcut];
             return;

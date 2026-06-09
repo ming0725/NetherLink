@@ -76,9 +76,12 @@ PostCommentReply replyFromJson(const QString& postId,
     if (reply.postId.isEmpty()) {
         reply.postId = postId;
     }
-    reply.authorId = firstString(object, {QStringLiteral("authorId"),
-                                          QStringLiteral("authorUserId"),
+    reply.authorId = firstString(object, {QStringLiteral("authorUuid"),
+                                          QStringLiteral("authorUserUuid"),
                                           QStringLiteral("senderUuid"),
+                                          QStringLiteral("userUuid"),
+                                          QStringLiteral("authorId"),
+                                          QStringLiteral("authorUserId"),
                                           QStringLiteral("userId")});
     reply.authorName = firstString(object, {QStringLiteral("authorName"), QStringLiteral("nickName")});
     if (reply.authorName.isEmpty()) {
@@ -89,7 +92,10 @@ PostCommentReply replyFromJson(const QString& postId,
     if (reply.authorAvatarPath.isEmpty()) {
         reply.authorAvatarPath = avatarPath(reply.authorId);
     }
-    reply.targetUserId = firstString(object, {QStringLiteral("targetUserId"), QStringLiteral("replyToUserId")});
+    reply.targetUserId = firstString(object, {QStringLiteral("targetUserUuid"),
+                                              QStringLiteral("replyToUserUuid"),
+                                              QStringLiteral("targetUserId"),
+                                              QStringLiteral("replyToUserId")});
     reply.targetUserName = firstString(object, {QStringLiteral("targetUserName"), QStringLiteral("replyToUserName")});
     if (reply.targetUserName.isEmpty() && !reply.targetUserId.isEmpty()) {
         reply.targetUserName = visibleName(reply.targetUserId);
@@ -107,9 +113,12 @@ PostComment commentFromJson(const QJsonObject& object)
     PostComment comment;
     comment.commentId = firstString(object, {QStringLiteral("commentId"), QStringLiteral("id")});
     comment.postId = firstString(object, {QStringLiteral("postId")});
-    comment.authorId = firstString(object, {QStringLiteral("authorId"),
-                                            QStringLiteral("authorUserId"),
+    comment.authorId = firstString(object, {QStringLiteral("authorUuid"),
+                                            QStringLiteral("authorUserUuid"),
                                             QStringLiteral("senderUuid"),
+                                            QStringLiteral("userUuid"),
+                                            QStringLiteral("authorId"),
+                                            QStringLiteral("authorUserId"),
                                             QStringLiteral("userId")});
     comment.authorName = firstString(object, {QStringLiteral("authorName"), QStringLiteral("nickName")});
     if (comment.authorName.isEmpty()) {

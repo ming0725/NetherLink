@@ -14,6 +14,7 @@
 #include "features/chat/data/GroupRepository.h"
 #include "features/chat/data/ChatRemoteDataSource.h"
 #include "features/chat/data/ConversationRemoteDataSource.h"
+#include "features/chat/data/MessageLocalDataSource.h"
 #include "features/chat/data/MessageRemoteDataSource.h"
 #include "shared/data/LocalDataStore.h"
 #include "shared/data/RepositoryTemplate.h"
@@ -23,6 +24,10 @@
 #include "app/state/CurrentUser.h"
 
 namespace {
+
+constexpr auto kLocalMessageListTimeKey = "localMessageListTime";
+
+QString groupIdForConversationId(const QString& conversationId);
 
 QString userNameForIdentity(const QString& userId)
 {
@@ -38,15 +43,16 @@ QString groupMemberDisplayNameForMessage(const QString& conversationId, const QS
         return {};
     }
 
+    const QString groupId = groupIdForConversationId(conversationId);
     const CurrentUser& currentUser = CurrentUser::instance();
     const QString cachedNickname = GroupRepository::instance()
-            .requestGroupMemberNickname(conversationId, userId)
+            .requestGroupMemberNickname(groupId, userId)
             .trimmed();
     if (!cachedNickname.isEmpty()) {
         return cachedNickname;
     }
 
-    const Group group = GroupRepository::instance().requestGroupDetail({conversationId});
+    const Group group = GroupRepository::instance().requestGroupDetail({groupId});
     const QString groupNickname = group.memberNicknames.value(userId).trimmed();
     if (!groupNickname.isEmpty()) {
         return groupNickname;
@@ -213,10 +219,113 @@ QString chatMessageCacheKey(const QString& conversationId, const QString& messag
     return conversationId + QLatin1Char(':') + messageId;
 }
 
-QString chatMessageCacheKeyFromObject(const QJsonObject& object)
+QDateTime localConversationClearTime(const QString& conversationId)
 {
-    return chatMessageCacheKey(conversationIdFromMessageObject(object),
-                               messageIdFromObject(object));
+    if (conversationId.isEmpty()) {
+        return {};
+    }
+
+    return MessageLocalDataSource::instance().conversationClearTime(conversationId);
+}
+
+QDateTime deletionBarrierForConversation(const QString& conversationId,
+                                         const QDateTime& remoteHiddenAt = {})
+{
+    QDateTime barrier = remoteHiddenAt;
+    const QDateTime localClearedAt = localConversationClearTime(conversationId);
+    if (localClearedAt.isValid() && (!barrier.isValid() || localClearedAt > barrier)) {
+        barrier = localClearedAt;
+    }
+    return barrier;
+}
+
+bool isLocallyDeletedMessage(const QJsonObject& object)
+{
+    const QString conversationId = conversationIdFromMessageObject(object);
+    if (conversationId.isEmpty()) {
+        return false;
+    }
+
+    QStringList candidateIds;
+    const QString messageId = messageIdFromObject(object);
+    const QString clientMessageId = clientMessageIdFromObject(object);
+    if (!messageId.isEmpty()) {
+        candidateIds.push_back(messageId);
+    }
+    if (!clientMessageId.isEmpty() && clientMessageId != messageId) {
+        candidateIds.push_back(clientMessageId);
+    }
+
+    return MessageLocalDataSource::instance().hasMessageDeletionMarker(conversationId, candidateIds);
+}
+
+bool isHiddenByDeletionBarrier(const QJsonObject& object,
+                               const QString& conversationId,
+                               const QDateTime& barrier)
+{
+    if (conversationId.isEmpty() || !barrier.isValid()) {
+        return false;
+    }
+
+    QJsonObject messageObject = object;
+    if (!messageObject.contains(QStringLiteral("conversationId"))) {
+        messageObject.insert(QStringLiteral("conversationId"), conversationId);
+    }
+    const QDateTime messageTime = firstDateTime(messageObject,
+                                                {QStringLiteral("createdAt"),
+                                                 QStringLiteral("serverReceivedAt"),
+                                                 QStringLiteral("clientSentAt"),
+                                                 QStringLiteral("timestamp")});
+    return messageTime.isValid() && messageTime <= barrier;
+}
+
+bool isLocallyVisibleMessageObject(const QJsonObject& object,
+                                   const QString& conversationId,
+                                   const QDateTime& remoteHiddenAt = {})
+{
+    QJsonObject messageObject = object;
+    if (!conversationId.isEmpty() && !messageObject.contains(QStringLiteral("conversationId"))) {
+        messageObject.insert(QStringLiteral("conversationId"), conversationId);
+    }
+    if (isLocallyDeletedMessage(messageObject)) {
+        return false;
+    }
+    return !isHiddenByDeletionBarrier(messageObject,
+                                      conversationIdFromMessageObject(messageObject),
+                                      deletionBarrierForConversation(
+                                              conversationIdFromMessageObject(messageObject),
+                                              remoteHiddenAt));
+}
+
+void persistConversationClearMarker(const QString& conversationId, const QDateTime& clearedAt)
+{
+    if (conversationId.isEmpty() || !clearedAt.isValid()) {
+        return;
+    }
+
+    MessageLocalDataSource::instance().persistConversationClearMarker(conversationId, clearedAt);
+}
+
+void persistMessageDeletionMarker(const QString& conversationId,
+                                  const QSharedPointer<ChatMessage>& message)
+{
+    if (conversationId.isEmpty() || message.isNull()) {
+        return;
+    }
+
+    QStringList messageIds;
+    if (!message->getMessageId().isEmpty()) {
+        messageIds.push_back(message->getMessageId());
+    }
+    if (!message->getClientMessageId().isEmpty() &&
+        message->getClientMessageId() != message->getMessageId()) {
+        messageIds.push_back(message->getClientMessageId());
+    }
+    if (messageIds.isEmpty()) {
+        return;
+    }
+
+    MessageLocalDataSource::instance().persistMessageDeletionMarkers(conversationId, messageIds);
 }
 
 void removePersistedMessagesForConversation(const QString& conversationId)
@@ -225,18 +334,7 @@ void removePersistedMessagesForConversation(const QString& conversationId)
         return;
     }
 
-    const QVector<QJsonObject> messages =
-            LocalDataStore::instance().values(QStringLiteral("chat_messages"));
-    for (const QJsonObject& object : messages) {
-        if (conversationIdFromMessageObject(object) != conversationId) {
-            continue;
-        }
-
-        const QString key = chatMessageCacheKeyFromObject(object);
-        if (!key.isEmpty()) {
-            LocalDataStore::instance().removeValue(QStringLiteral("chat_messages"), key);
-        }
-    }
+    MessageLocalDataSource::instance().removeMessagesForConversation(conversationId);
 }
 
 QString messageTypeToString(MessageType type)
@@ -290,19 +388,12 @@ MessageSendState sendStateFromString(const QString& value)
     return MessageSendState::Sent;
 }
 
-
 bool hasPersistedChatMessagesForConversation(const QString& conversationId)
 {
     if (conversationId.isEmpty()) {
         return false;
     }
-    const QVector<QJsonObject> messages = LocalDataStore::instance().values(QStringLiteral("chat_messages"));
-    for (const QJsonObject& object : messages) {
-        if (conversationIdFromMessageObject(object) == conversationId) {
-            return true;
-        }
-    }
-    return false;
+    return MessageLocalDataSource::instance().hasMessagesForConversation(conversationId);
 }
 
 QString textContentFromMessageObject(const QJsonObject& object)
@@ -362,7 +453,7 @@ GroupRole groupRoleForSender(const QString& conversationId, const QString& sende
     if (conversationId.isEmpty() || senderId.isEmpty()) {
         return GroupRole::Member;
     }
-    const Group group = GroupRepository::instance().requestGroupDetail({conversationId});
+    const Group group = GroupRepository::instance().requestGroupDetail({groupIdForConversationId(conversationId)});
     return group.groupId.isEmpty() ? GroupRole::Member : groupRoleForUser(group, senderId);
 }
 
@@ -383,7 +474,9 @@ QSharedPointer<ChatMessage> chatMessageFromJson(const QJsonObject& object)
             (currentUser.isCurrentUserId(senderId) ||
              (!currentUserDetail.userUuid.isEmpty() && senderId == currentUserDetail.userUuid) ||
              (!currentUserDetail.userId.isEmpty() && senderId == currentUserDetail.userId));
-    const bool isGroupChat = object.value(QStringLiteral("isGroupChat")).toBool(GroupRepository::instance().contains(conversationId));
+    const QString messageGroupId = firstString(object, {QStringLiteral("groupId")});
+    const bool isGroupChat = object.value(QStringLiteral("isGroupChat")).toBool(
+            !messageGroupId.isEmpty() || !groupIdForConversationId(conversationId).isEmpty());
     QString senderName = firstString(object, {QStringLiteral("senderName"),
                                               QStringLiteral("senderNickName"),
                                               QStringLiteral("senderNickname"),
@@ -480,6 +573,12 @@ QJsonObject chatMessageToJson(const QString& conversationId, const QSharedPointe
             {QStringLiteral("createdAt"), message->getTimestamp().toUTC().toString(Qt::ISODateWithMs)},
             {QStringLiteral("isGroupChat"), message->isInGroupChat()}
     };
+    if (message->isInGroupChat()) {
+        const QString groupId = groupIdForConversationId(conversationId);
+        if (!groupId.isEmpty()) {
+            object.insert(QStringLiteral("groupId"), groupId);
+        }
+    }
     if (!message->getClientMessageId().isEmpty()) {
         object.insert(QStringLiteral("clientMessageId"), message->getClientMessageId());
     }
@@ -509,10 +608,19 @@ ConversationSyncState conversationSyncStateFromJson(const QJsonObject& object)
     state.isDoNotDisturb = syncState.value(QStringLiteral("isDnd")).toBool(
             syncState.value(QStringLiteral("isDoNotDisturb")).toBool());
     state.isPinned = syncState.value(QStringLiteral("isPinned")).toBool();
-    state.messageListTime = firstDateTime(object, {QStringLiteral("lastMessageAt"),
-                                                   QStringLiteral("updatedAt"),
-                                                   QStringLiteral("createdAt")});
+    const QDateTime localMessageListTime =
+            firstDateTime(object, {QString::fromLatin1(kLocalMessageListTimeKey)}).toLocalTime();
+    const QDateTime remoteMessageListTime = firstDateTime(object, {QStringLiteral("lastMessageAt"),
+                                                                   QStringLiteral("updatedAt"),
+                                                                   QStringLiteral("createdAt")}).toLocalTime();
+    state.messageListTime = localMessageListTime > remoteMessageListTime
+            ? localMessageListTime
+            : remoteMessageListTime;
     state.lastReadAt = firstDateTime(syncState, {QStringLiteral("lastReadAt")});
+    state.hiddenAt = firstDateTime(syncState, {QStringLiteral("hiddenAt"),
+                                               QStringLiteral("clearedAt"),
+                                               QStringLiteral("messagesClearedAt"),
+                                               QStringLiteral("deletedAt")});
     return state;
 }
 
@@ -537,15 +645,28 @@ QJsonObject mergedConversationObject(QJsonObject existing, const QJsonObject& in
 
     QJsonObject merged = existing;
     for (auto it = incoming.constBegin(); it != incoming.constEnd(); ++it) {
-        if (it.key() == QStringLiteral("syncState") &&
+        if ((it.key() == QStringLiteral("syncState") ||
+             it.key() == QStringLiteral("summary")) &&
             it.value().isObject() &&
             merged.value(it.key()).isObject()) {
-            QJsonObject syncState = merged.value(it.key()).toObject();
-            const QJsonObject incomingSyncState = it.value().toObject();
-            for (auto syncIt = incomingSyncState.constBegin(); syncIt != incomingSyncState.constEnd(); ++syncIt) {
-                syncState.insert(syncIt.key(), syncIt.value());
+            QJsonObject nested = merged.value(it.key()).toObject();
+            const QJsonObject incomingNested = it.value().toObject();
+            for (auto nestedIt = incomingNested.constBegin(); nestedIt != incomingNested.constEnd(); ++nestedIt) {
+                if ((nestedIt.key() == QStringLiteral("group") ||
+                     nestedIt.key() == QStringLiteral("peerUser")) &&
+                    nestedIt.value().isObject() &&
+                    nested.value(nestedIt.key()).isObject()) {
+                    QJsonObject child = nested.value(nestedIt.key()).toObject();
+                    const QJsonObject incomingChild = nestedIt.value().toObject();
+                    for (auto childIt = incomingChild.constBegin(); childIt != incomingChild.constEnd(); ++childIt) {
+                        child.insert(childIt.key(), childIt.value());
+                    }
+                    nested.insert(nestedIt.key(), child);
+                    continue;
+                }
+                nested.insert(nestedIt.key(), nestedIt.value());
             }
-            merged.insert(it.key(), syncState);
+            merged.insert(it.key(), nested);
             continue;
         }
         merged.insert(it.key(), it.value());
@@ -596,6 +717,151 @@ QString directPeerIdFromConversation(const QJsonObject& conversation)
                               QStringLiteral("userId")});
 }
 
+QJsonObject directConversationObjectForPeer(QJsonObject conversation,
+                                            const QString& conversationId,
+                                            const QString& peerUserId)
+{
+    if (conversationId.isEmpty()) {
+        return conversation;
+    }
+
+    if (!conversation.contains(QStringLiteral("conversationId")) &&
+        !conversation.contains(QStringLiteral("id"))) {
+        conversation.insert(QStringLiteral("conversationId"), conversationId);
+    }
+    if (!conversation.contains(QStringLiteral("type"))) {
+        conversation.insert(QStringLiteral("type"), QStringLiteral("direct"));
+    }
+
+    QJsonObject summary = conversation.value(QStringLiteral("summary")).toObject();
+    QJsonObject peer = summary.value(QStringLiteral("peerUser")).toObject();
+    if (peer.isEmpty()) {
+        peer = conversation.value(QStringLiteral("peerUser")).toObject();
+    }
+    if (!peer.isEmpty()) {
+        summary.insert(QStringLiteral("peerUser"), peer);
+        conversation.insert(QStringLiteral("summary"), summary);
+        return conversation;
+    }
+
+    const User user = UserRepository::instance().requestUserDetail({peerUserId});
+    const QString userUuid = user.userUuid.isEmpty()
+            ? (user.id.isEmpty() ? peerUserId : user.id)
+            : user.userUuid;
+    if (!userUuid.isEmpty()) {
+        peer.insert(QStringLiteral("userUuid"), userUuid);
+    }
+    if (!user.userId.isEmpty()) {
+        peer.insert(QStringLiteral("userId"), user.userId);
+    }
+    if (!user.nick.isEmpty()) {
+        peer.insert(QStringLiteral("nickName"), user.nick);
+    }
+    if (!user.avatarPath.isEmpty()) {
+        peer.insert(QStringLiteral("avatarPath"), user.avatarPath);
+    }
+    if (user.version > 0) {
+        peer.insert(QStringLiteral("version"), user.version);
+    }
+    if (peer.isEmpty() && !peerUserId.isEmpty()) {
+        peer.insert(QStringLiteral("userUuid"), peerUserId);
+    }
+    if (!peer.isEmpty()) {
+        summary.insert(QStringLiteral("peerUser"), peer);
+        conversation.insert(QStringLiteral("summary"), summary);
+    }
+
+    return conversation;
+}
+
+QJsonObject groupObjectFromConversation(const QJsonObject& conversation)
+{
+    QJsonObject summary = conversation.value(QStringLiteral("summary")).toObject();
+    QJsonObject group = summary.value(QStringLiteral("group")).toObject();
+    if (!group.isEmpty()) {
+        return group;
+    }
+    group = conversation.value(QStringLiteral("group")).toObject();
+    if (!group.isEmpty()) {
+        return group;
+    }
+    return {};
+}
+
+QString groupIdFromConversation(const QJsonObject& conversation)
+{
+    const QString type = conversation.value(QStringLiteral("type")).toString().trimmed().toLower();
+    const QJsonObject group = groupObjectFromConversation(conversation);
+    if (type != QStringLiteral("group") && group.isEmpty()) {
+        return {};
+    }
+
+    const QString nestedGroupId = firstString(group, {QStringLiteral("groupId"),
+                                                      QStringLiteral("id")});
+    if (!nestedGroupId.isEmpty()) {
+        return nestedGroupId;
+    }
+    return firstString(conversation, {QStringLiteral("groupId")});
+}
+
+QJsonObject groupUpdateObjectFromConversation(const QJsonObject& conversation,
+                                              const QString& fallbackGroupId = {})
+{
+    const QString type = conversation.value(QStringLiteral("type")).toString().trimmed().toLower();
+    QJsonObject summary = conversation.value(QStringLiteral("summary")).toObject();
+    QJsonObject group = groupObjectFromConversation(conversation);
+    QString groupId = groupIdFromConversation(conversation);
+    if (groupId.isEmpty()) {
+        groupId = fallbackGroupId;
+    }
+    if (groupId.isEmpty() ||
+        (type != QStringLiteral("group") && group.isEmpty() && fallbackGroupId.isEmpty())) {
+        return {};
+    }
+
+    QJsonObject object = group;
+    object.insert(QStringLiteral("groupId"), groupId);
+
+    const QString title = firstString(summary, {QStringLiteral("title"),
+                                                QStringLiteral("name"),
+                                                QStringLiteral("groupName")});
+    if (!title.isEmpty() &&
+        !object.contains(QStringLiteral("groupName")) &&
+        !object.contains(QStringLiteral("name"))) {
+        object.insert(QStringLiteral("groupName"), title);
+    }
+
+    const QString avatarUrl = firstString(summary, {QStringLiteral("avatarUrl"),
+                                                    QStringLiteral("groupAvatarPath")});
+    if (!avatarUrl.isEmpty()) {
+        object.insert(QStringLiteral("avatarUrl"), avatarUrl);
+    }
+    for (const QString& key : {QStringLiteral("avatarVersion"),
+                               QStringLiteral("avatarEtag"),
+                               QStringLiteral("avatarContentHash")}) {
+        if (summary.contains(key)) {
+            object.insert(key, summary.value(key));
+        }
+    }
+
+    const int memberCount = summary.value(QStringLiteral("memberCount")).toInt();
+    if (memberCount > 0 && !object.contains(QStringLiteral("memberCount"))) {
+        object.insert(QStringLiteral("memberCount"), memberCount);
+    }
+    return object;
+}
+
+QString groupIdForConversationId(const QString& conversationId)
+{
+    if (conversationId.isEmpty()) {
+        return {};
+    }
+    if (GroupRepository::instance().contains(conversationId)) {
+        return conversationId;
+    }
+    return groupIdFromConversation(MessageLocalDataSource::instance().conversation(conversationId));
+}
+
 class ConversationMessagesRequestOperation final
     : public RepositoryTemplate<ConversationMessagesRequest, ChatMessageList> {
 public:
@@ -633,9 +899,11 @@ class ConversationMetaRequestOperation final
     : public RepositoryTemplate<ConversationMetaRequest, ConversationMeta> {
 public:
     ConversationMetaRequestOperation(const QMap<QString, ConversationSyncState>& conversationStates,
-                                     const QMap<QString, QString>& directConversationPeers)
+                                     const QMap<QString, QString>& directConversationPeers,
+                                     const QMap<QString, QString>& groupConversationGroups)
         : m_conversationStates(conversationStates)
         , m_directConversationPeers(directConversationPeers)
+        , m_groupConversationGroups(groupConversationGroups)
     {
     }
 
@@ -654,18 +922,29 @@ private:
 
     ConversationMeta doRequest(const ConversationMetaRequest& query) const override
     {
-        if (GroupRepository::instance().contains(query.conversationId)) {
-            const Group group = GroupRepository::instance().requestGroupDetail({query.conversationId});
-            const ConversationSyncState state = stateFor(group.groupId);
+        QString mappedGroupId = m_groupConversationGroups.value(query.conversationId);
+        if (mappedGroupId.isEmpty()) {
+            mappedGroupId = groupIdFromConversation(
+                    MessageLocalDataSource::instance().conversation(query.conversationId));
+        }
+        const QString groupId = !mappedGroupId.isEmpty()
+                ? mappedGroupId
+                : (GroupRepository::instance().contains(query.conversationId) ? query.conversationId : QString());
+        if (!groupId.isEmpty()) {
+            const Group group = GroupRepository::instance().requestGroupDetail({groupId});
+            const QString conversationId = query.conversationId;
+            const ConversationSyncState state = stateFor(conversationId);
             return ConversationMeta{
-                    group.groupId,
-                    groupDisplayName(group),
+                    conversationId,
+                    group.groupId.isEmpty() ? groupId : groupDisplayName(group),
                     group.groupAvatarPath,
                     true,
                     group.memberNum,
                     Offline,
-                    hasState(group.groupId) ? state.isDoNotDisturb : group.isDnd,
-                    state.isPinned
+                    hasState(conversationId) ? state.isDoNotDisturb : group.isDnd,
+                    state.isPinned,
+                    {},
+                    group.groupId.isEmpty() ? groupId : group.groupId
             };
         }
 
@@ -684,12 +963,15 @@ private:
                 0,
                 user.status,
                 hasState(conversationId) ? state.isDoNotDisturb : user.isDnd,
-                state.isPinned
+                state.isPinned,
+                user.id.isEmpty() ? peerId : user.id,
+                {}
         };
     }
 
     const QMap<QString, ConversationSyncState>& m_conversationStates;
     const QMap<QString, QString>& m_directConversationPeers;
+    const QMap<QString, QString>& m_groupConversationGroups;
 };
 
 class ConversationListRequestOperation final
@@ -697,10 +979,12 @@ class ConversationListRequestOperation final
 public:
     ConversationListRequestOperation(const QMap<QString, ChatMessageList>& store,
                                      const QMap<QString, ConversationSyncState>& conversationStates,
-                                     const QMap<QString, QString>& directConversationPeers)
+                                     const QMap<QString, QString>& directConversationPeers,
+                                     const QMap<QString, QString>& groupConversationGroups)
         : m_store(store)
         , m_conversationStates(conversationStates)
         , m_directConversationPeers(directConversationPeers)
+        , m_groupConversationGroups(groupConversationGroups)
     {
     }
 
@@ -736,34 +1020,48 @@ private:
             if (!matchesConversationKeyword(group, query.keyword)) {
                 continue;
             }
-            if (!m_store.contains(group.groupId) &&
-                !m_conversationStates.contains(group.groupId)) {
+
+            QString conversationId;
+            for (auto it = m_groupConversationGroups.cbegin(); it != m_groupConversationGroups.cend(); ++it) {
+                if (it.value() == group.groupId &&
+                    (m_store.contains(it.key()) || m_conversationStates.contains(it.key()))) {
+                    conversationId = it.key();
+                    break;
+                }
+            }
+            if (conversationId.isEmpty() &&
+                (m_store.contains(group.groupId) || m_conversationStates.contains(group.groupId))) {
+                conversationId = group.groupId;
+            }
+            if (conversationId.isEmpty()) {
                 continue;
             }
 
-            if (seenConversationIds.contains(group.groupId)) {
+            if (seenConversationIds.contains(conversationId)) {
                 continue;
             }
 
-            seenConversationIds.insert(group.groupId);
-            const auto messagesIt = m_store.constFind(group.groupId);
+            seenConversationIds.insert(conversationId);
+            const auto messagesIt = m_store.constFind(conversationId);
             const ChatMessageList* messages = messagesIt == m_store.constEnd() ? nullptr : &messagesIt.value();
             const QSharedPointer<ChatMessage> lastMessage = (!messages || messages->isEmpty())
                     ? QSharedPointer<ChatMessage>()
                     : messages->last();
-            const ConversationSyncState state = stateFor(group.groupId);
+            const ConversationSyncState state = stateFor(conversationId);
             result.push_back(ConversationSummary{
-                    group.groupId,
+                    conversationId,
                     groupDisplayName(group),
                     group.groupAvatarPath,
-                    buildPreviewText(group.groupId, lastMessage, true),
+                    buildPreviewText(conversationId, lastMessage, true),
                     lastMessage ? lastMessage->getTimestamp() : QDateTime(),
-                    effectiveMessageListTime(group.groupId, lastMessage),
+                    effectiveMessageListTime(conversationId, lastMessage),
                     state.unreadCount,
                     state.isDoNotDisturb,
                     state.isPinned,
                     true,
-                    group.memberNum
+                    group.memberNum,
+                    {},
+                    group.groupId
             });
         }
 
@@ -802,7 +1100,9 @@ private:
                     state.isDoNotDisturb,
                     state.isPinned,
                     false,
-                    0
+                    0,
+                    friendSummary.userId,
+                    {}
             });
         }
 
@@ -811,7 +1111,8 @@ private:
             const QString& peerId = it.value();
             if (conversationId.isEmpty() ||
                 seenConversationIds.contains(conversationId) ||
-                GroupRepository::instance().contains(conversationId)) {
+                GroupRepository::instance().contains(conversationId) ||
+                m_groupConversationGroups.contains(conversationId)) {
                 continue;
             }
             const User user = UserRepository::instance().requestUserDetail({peerId});
@@ -841,14 +1142,17 @@ private:
                     state.isDoNotDisturb,
                     state.isPinned,
                     false,
-                    0
+                    0,
+                    user.id.isEmpty() ? peerId : user.id,
+                    {}
             });
             seenConversationIds.insert(conversationId);
         }
 
         for (const QString& conversationId : m_conversationStates.keys()) {
             if (seenConversationIds.contains(conversationId) ||
-                GroupRepository::instance().contains(conversationId)) {
+                GroupRepository::instance().contains(conversationId) ||
+                m_groupConversationGroups.contains(conversationId)) {
                 continue;
             }
             const User user = UserRepository::instance().requestUserDetail({conversationId});
@@ -878,7 +1182,9 @@ private:
                     state.isDoNotDisturb,
                     state.isPinned,
                     false,
-                    0
+                    0,
+                    user.id.isEmpty() ? conversationId : user.id,
+                    {}
             });
             seenConversationIds.insert(conversationId);
         }
@@ -899,6 +1205,7 @@ private:
     const QMap<QString, ChatMessageList>& m_store;
     const QMap<QString, ConversationSyncState>& m_conversationStates;
     const QMap<QString, QString>& m_directConversationPeers;
+    const QMap<QString, QString>& m_groupConversationGroups;
 };
 
 } // namespace
@@ -918,8 +1225,8 @@ MessageRepository::MessageRepository(QObject* parent)
             &LocalDataStore::domainChanged,
             this,
             [this](const QString& domain) {
-                if (domain == QStringLiteral("chat_messages") ||
-                    domain == QStringLiteral("conversations")) {
+                if (domain == MessageLocalDataSource::messagesDomain() ||
+                    domain == MessageLocalDataSource::conversationsDomain()) {
                     if (shouldIgnoreStoreChange(domain)) {
                         return;
                     }
@@ -939,14 +1246,20 @@ MessageRepository::MessageRepository(QObject* parent)
                     if (object.isEmpty()) {
                         object = payload;
                     }
+                    QJsonObject conversation = conversationObjectFromPayload(payload);
+                    const QString payloadGroupId = groupIdFromConversation(conversation);
+                    if (!payloadGroupId.isEmpty()) {
+                        object.insert(QStringLiteral("groupId"), payloadGroupId);
+                        object.insert(QStringLiteral("isGroupChat"), true);
+                    }
+                    const QString messageConversationId = conversationIdFromMessageObject(object);
                     cacheRemoteMessageObject(object);
 
-                    QJsonObject conversation = conversationObjectFromPayload(payload);
                     const QString stateConversationId = firstString(conversation, {QStringLiteral("conversationId"), QStringLiteral("id")});
+                    bool markReadRequested = false;
                     if (!stateConversationId.isEmpty()) {
                         const bool activeVisible = isActiveVisibleConversation(stateConversationId);
-                        const QJsonObject existing = LocalDataStore::instance().value(QStringLiteral("conversations"),
-                                                                                      stateConversationId);
+                        const QJsonObject existing = MessageLocalDataSource::instance().conversation(stateConversationId);
                         QJsonObject merged = mergedConversationObject(existing, conversation);
                         if (activeVisible) {
                             setConversationUnreadCount(merged, 0);
@@ -956,13 +1269,17 @@ MessageRepository::MessageRepository(QObject* parent)
                             setConversationUnreadCount(merged, overrideUnread);
                         }
                         applyConversationStateObject(merged, false);
-                        ignoreNextStoreChange(QStringLiteral("conversations"));
-                        LocalDataStore::instance().upsertValue(QStringLiteral("conversations"),
-                                                               stateConversationId,
-                                                               merged);
+                        ignoreNextStoreChange(MessageLocalDataSource::conversationsDomain());
+                        MessageLocalDataSource::instance().upsertConversation(stateConversationId, merged);
                         if (activeVisible) {
                             ConversationRemoteDataSource::instance().markRead(stateConversationId);
+                            markReadRequested = true;
                         }
+                    }
+                    if (!markReadRequested &&
+                        !messageConversationId.isEmpty() &&
+                        isActiveVisibleConversation(messageConversationId)) {
+                        ConversationRemoteDataSource::instance().markRead(messageConversationId);
                     }
                     return;
                 }
@@ -990,8 +1307,8 @@ MessageRepository::MessageRepository(QObject* parent)
                     const QString conversationId = firstString(conversation, {QStringLiteral("conversationId"), QStringLiteral("id")});
                     if (!conversationId.isEmpty()) {
                         const bool activeVisible = isActiveVisibleConversation(conversationId);
-                        const QJsonObject existing = LocalDataStore::instance().value(QStringLiteral("conversations"),
-                                                                                      conversationId);
+                        const bool remoteHasUnread = conversationSyncStateFromJson(conversation).unreadCount > 0;
+                        const QJsonObject existing = MessageLocalDataSource::instance().conversation(conversationId);
                         QJsonObject merged = mergedConversationObject(existing, conversation);
                         if (activeVisible) {
                             setConversationUnreadCount(merged, 0);
@@ -1009,10 +1326,13 @@ MessageRepository::MessageRepository(QObject* parent)
                             }
                             cacheRemoteMessageObject(messageObject, conversationId, false);
                         }
-                        ignoreNextStoreChange(QStringLiteral("conversations"));
-                        LocalDataStore::instance().upsertValue(QStringLiteral("conversations"),
-                                                               conversationId,
-                                                               merged);
+                        ignoreNextStoreChange(MessageLocalDataSource::conversationsDomain());
+                        MessageLocalDataSource::instance().upsertConversation(conversationId, merged);
+                        if (activeVisible &&
+                            remoteHasUnread &&
+                            type != QStringLiteral("chat.read.updated")) {
+                            ConversationRemoteDataSource::instance().markRead(conversationId);
+                        }
                     }
                 }
             });
@@ -1077,8 +1397,9 @@ void MessageRepository::reloadFromStore()
     QMap<QString, QVector<QSharedPointer<ChatMessage>>> nextStore;
     QMap<QString, ConversationSyncState> nextStates;
     QMap<QString, QString> nextDirectPeers;
+    QMap<QString, QString> nextGroupConversations;
 
-    for (const QJsonObject& object : LocalDataStore::instance().values(QStringLiteral("conversations"))) {
+    for (const QJsonObject& object : MessageLocalDataSource::instance().conversations()) {
         ConversationSyncState state = conversationSyncStateFromJson(object);
         if (state.conversationId.isEmpty()) {
             continue;
@@ -1096,22 +1417,37 @@ void MessageRepository::reloadFromStore()
                                    peerUser.id.isEmpty() ? peerId : peerUser.id);
         }
 
+        const QString groupId = groupIdFromConversation(object);
+        if (!groupId.isEmpty()) {
+            nextGroupConversations.insert(state.conversationId, groupId);
+            GroupRepository::instance().upsertGroup(groupUpdateObjectFromConversation(object));
+        }
+
         const QJsonObject lastMessage = object.value(QStringLiteral("lastMessage")).toObject();
         if (!lastMessage.isEmpty()) {
             QJsonObject messageObject = lastMessage;
             if (!messageObject.contains(QStringLiteral("conversationId"))) {
                 messageObject.insert(QStringLiteral("conversationId"), state.conversationId);
             }
-            const QSharedPointer<ChatMessage> message = chatMessageFromJson(messageObject);
+            const QSharedPointer<ChatMessage> message = isLocallyVisibleMessageObject(messageObject,
+                                                                                      state.conversationId,
+                                                                                      state.hiddenAt)
+                    ? chatMessageFromJson(messageObject)
+                    : QSharedPointer<ChatMessage>();
             if (!message.isNull()) {
                 nextStore[state.conversationId].push_back(message);
             }
         }
     }
 
-    for (const QJsonObject& object : LocalDataStore::instance().values(QStringLiteral("chat_messages"))) {
+    for (const QJsonObject& object : MessageLocalDataSource::instance().messages()) {
         const QString conversationId = conversationIdFromMessageObject(object);
-        const QSharedPointer<ChatMessage> message = chatMessageFromJson(object);
+        const QDateTime hiddenAt = nextStates.value(conversationId).hiddenAt;
+        const QSharedPointer<ChatMessage> message = isLocallyVisibleMessageObject(object,
+                                                                                  conversationId,
+                                                                                  hiddenAt)
+                ? chatMessageFromJson(object)
+                : QSharedPointer<ChatMessage>();
         if (conversationId.isEmpty() || message.isNull()) {
             continue;
         }
@@ -1150,6 +1486,7 @@ void MessageRepository::reloadFromStore()
         m_store = nextStore;
         m_conversationStates = nextStates;
         m_directConversationPeers = nextDirectPeers;
+        m_groupConversationGroups = nextGroupConversations;
     }
 
     emit lastMessageChanged({}, {});
@@ -1222,6 +1559,11 @@ void MessageRepository::applyConversationStateObject(const QJsonObject& conversa
 
     const QJsonObject peer = directPeerUserObject(conversation);
     const QString peerId = directPeerIdFromConversation(conversation);
+    QString groupId = groupIdFromConversation(conversation);
+    if (groupId.isEmpty() && !incoming.conversationId.isEmpty()) {
+        QMutexLocker locker(&m_mutex);
+        groupId = m_groupConversationGroups.value(incoming.conversationId);
+    }
 
     {
         QMutexLocker locker(&m_mutex);
@@ -1239,10 +1581,17 @@ void MessageRepository::applyConversationStateObject(const QJsonObject& conversa
         if (incoming.lastReadAt.isValid()) {
             state.lastReadAt = incoming.lastReadAt;
         }
+        if (incoming.hiddenAt.isValid() &&
+            (!state.hiddenAt.isValid() || incoming.hiddenAt > state.hiddenAt)) {
+            state.hiddenAt = incoming.hiddenAt;
+        }
     }
 
     if (!peer.isEmpty()) {
         UserRepository::instance().upsertUserProfile(peer);
+    }
+    if (!groupId.isEmpty()) {
+        GroupRepository::instance().upsertGroup(groupUpdateObjectFromConversation(conversation, groupId));
     }
     if (!peerId.isEmpty()) {
         const User peerUser = UserRepository::instance().requestUserDetail({peerId});
@@ -1251,6 +1600,10 @@ void MessageRepository::applyConversationStateObject(const QJsonObject& conversa
             m_directConversationPeers.insert(incoming.conversationId,
                                             peerUser.id.isEmpty() ? peerId : peerUser.id);
         }
+    }
+    if (!groupId.isEmpty()) {
+        QMutexLocker locker(&m_mutex);
+        m_groupConversationGroups.insert(incoming.conversationId, groupId);
     }
 
     if (emitChange) {
@@ -1271,6 +1624,21 @@ void MessageRepository::cacheRemoteMessageObject(QJsonObject object,
     }
     if (conversationId.isEmpty()) {
         return;
+    }
+
+    QDateTime hiddenAt;
+    {
+        QMutexLocker locker(&m_mutex);
+        hiddenAt = m_conversationStates.value(conversationId).hiddenAt;
+    }
+    if (!isLocallyVisibleMessageObject(object, conversationId, hiddenAt)) {
+        return;
+    }
+
+    const QString cachedGroupId = groupIdForConversationId(conversationId);
+    if (!cachedGroupId.isEmpty()) {
+        object.insert(QStringLiteral("groupId"), cachedGroupId);
+        object.insert(QStringLiteral("isGroupChat"), true);
     }
 
     if (!object.contains(QStringLiteral("type")) && object.contains(QStringLiteral("recalledAt"))) {
@@ -1352,8 +1720,8 @@ void MessageRepository::cacheRemoteMessageObject(QJsonObject object,
     const QJsonObject cachedObject = chatMessageToJson(conversationId, message);
     const QString key = chatMessageCacheKey(conversationId, message->getMessageId());
     if (!cachedObject.isEmpty() && !key.isEmpty()) {
-        ignoreNextStoreChange(QStringLiteral("chat_messages"));
-        LocalDataStore::instance().upsertValue(QStringLiteral("chat_messages"), key, cachedObject);
+        ignoreNextStoreChange(MessageLocalDataSource::messagesDomain());
+        MessageLocalDataSource::instance().upsertMessage(key, cachedObject);
     }
 
     if (replaced) {
@@ -1433,7 +1801,8 @@ QVector<ConversationSummary> MessageRepository::requestConversationList(const Co
     QMutexLocker locker(&m_mutex);
     return ConversationListRequestOperation(m_store,
                                             m_conversationStates,
-                                            m_directConversationPeers).request(query);
+                                            m_directConversationPeers,
+                                            m_groupConversationGroups).request(query);
 }
 
 ChatMessageList MessageRepository::requestConversationMessages(const ConversationMessagesRequest& query) const
@@ -1467,7 +1836,8 @@ ConversationMeta MessageRepository::requestConversationMeta(const ConversationMe
 {
     QMutexLocker locker(&m_mutex);
     return ConversationMetaRequestOperation(m_conversationStates,
-                                            m_directConversationPeers).request(query);
+                                            m_directConversationPeers,
+                                            m_groupConversationGroups).request(query);
 }
 
 ConversationThreadData MessageRepository::requestConversationThread(const ConversationThreadRequest& query) const
@@ -1661,12 +2031,63 @@ void MessageRepository::touchConversation(const QString& conversationId,
         return;
     }
 
+    QJsonObject conversation = MessageLocalDataSource::instance().conversation(conversationId);
+    touchConversationObject(conversationId, conversation, timestamp);
+}
+
+void MessageRepository::touchDirectConversation(const QString& conversationId,
+                                                const QString& peerUserId,
+                                                const QDateTime& timestamp)
+{
+    if (conversationId.isEmpty() || !timestamp.isValid()) {
+        return;
+    }
+
+    QJsonObject conversation = MessageLocalDataSource::instance().conversation(conversationId);
+    conversation = directConversationObjectForPeer(conversation, conversationId, peerUserId);
+    touchConversationObject(conversationId, conversation, timestamp);
+}
+
+void MessageRepository::touchConversationObject(const QString& conversationId,
+                                                QJsonObject conversation,
+                                                const QDateTime& timestamp)
+{
+    if (conversationId.isEmpty() || !timestamp.isValid()) {
+        return;
+    }
+
     {
         QMutexLocker locker(&m_mutex);
         ConversationSyncState& state = m_conversationStates[conversationId];
         state.conversationId = conversationId;
         state.messageListTime = timestamp;
     }
+
+    if (conversation.isEmpty()) {
+        conversation.insert(QStringLiteral("conversationId"), conversationId);
+    } else if (!conversation.contains(QStringLiteral("conversationId")) &&
+               !conversation.contains(QStringLiteral("id"))) {
+        conversation.insert(QStringLiteral("conversationId"), conversationId);
+    }
+    conversation.insert(QString::fromLatin1(kLocalMessageListTimeKey),
+                        timestamp.toUTC().toString(Qt::ISODateWithMs));
+    ignoreNextStoreChange(MessageLocalDataSource::conversationsDomain());
+    MessageLocalDataSource::instance().upsertConversation(conversationId, conversation);
+
+    const QString peerId = directPeerIdFromConversation(conversation);
+    if (!peerId.isEmpty()) {
+        const User peerUser = UserRepository::instance().requestUserDetail({peerId});
+        QMutexLocker locker(&m_mutex);
+        m_directConversationPeers.insert(conversationId,
+                                        peerUser.id.isEmpty() ? peerId : peerUser.id);
+    }
+
+    const QString mappedGroupId = groupIdFromConversation(conversation);
+    if (!mappedGroupId.isEmpty()) {
+        QMutexLocker locker(&m_mutex);
+        m_groupConversationGroups.insert(conversationId, mappedGroupId);
+    }
+
     emit conversationListChanged(conversationId);
 }
 
@@ -1692,14 +2113,11 @@ void MessageRepository::markConversationRead(const QString& conversationId)
         state.lastReadAt = QDateTime::currentDateTime();
     }
 
-    QJsonObject conversation = LocalDataStore::instance().value(QStringLiteral("conversations"),
-                                                                conversationId);
+    QJsonObject conversation = MessageLocalDataSource::instance().conversation(conversationId);
     if (!conversation.isEmpty()) {
         setConversationUnreadCount(conversation, 0);
-        ignoreNextStoreChange(QStringLiteral("conversations"));
-        LocalDataStore::instance().upsertValue(QStringLiteral("conversations"),
-                                               conversationId,
-                                               conversation);
+        ignoreNextStoreChange(MessageLocalDataSource::conversationsDomain());
+        MessageLocalDataSource::instance().upsertConversation(conversationId, conversation);
     }
 
     if (changed) {
@@ -1722,14 +2140,11 @@ void MessageRepository::markConversationUnread(const QString& conversationId, in
         state.unreadCount = normalizedUnreadCount;
     }
 
-    QJsonObject conversation = LocalDataStore::instance().value(QStringLiteral("conversations"),
-                                                                conversationId);
+    QJsonObject conversation = MessageLocalDataSource::instance().conversation(conversationId);
     if (!conversation.isEmpty()) {
         setConversationUnreadCount(conversation, normalizedUnreadCount);
-        ignoreNextStoreChange(QStringLiteral("conversations"));
-        LocalDataStore::instance().upsertValue(QStringLiteral("conversations"),
-                                               conversationId,
-                                               conversation);
+        ignoreNextStoreChange(MessageLocalDataSource::conversationsDomain());
+        MessageLocalDataSource::instance().upsertConversation(conversationId, conversation);
     }
 
     emit conversationListChanged(conversationId);
@@ -1774,6 +2189,8 @@ void MessageRepository::clearConversationMessages(const QString& conversationId)
         return;
     }
 
+    const QDateTime clearedAt = QDateTime::currentDateTime();
+    persistConversationClearMarker(conversationId, clearedAt);
     removePersistedMessagesForConversation(conversationId);
 
     bool changed = false;
@@ -1787,6 +2204,19 @@ void MessageRepository::clearConversationMessages(const QString& conversationId)
         }
         state.unreadCount = 0;
         state.lastReadAt = QDateTime::currentDateTime();
+        state.hiddenAt = clearedAt;
+    }
+
+    QJsonObject conversation = MessageLocalDataSource::instance().conversation(conversationId);
+    if (!conversation.isEmpty()) {
+        conversation.remove(QStringLiteral("lastMessage"));
+        QJsonObject syncState = conversation.value(QStringLiteral("syncState")).toObject();
+        syncState.insert(QStringLiteral("hiddenAt"), clearedAt.toUTC().toString(Qt::ISODateWithMs));
+        syncState.insert(QStringLiteral("unreadCount"), 0);
+        conversation.insert(QStringLiteral("syncState"), syncState);
+        conversation.insert(QStringLiteral("unreadCount"), 0);
+        ignoreNextStoreChange(MessageLocalDataSource::conversationsDomain());
+        MessageLocalDataSource::instance().upsertConversation(conversationId, conversation);
     }
 
     if (!changed) {
@@ -1803,21 +2233,21 @@ void MessageRepository::removeConversation(const QString& conversationId)
         return;
     }
 
-    LocalDataStore::instance().removeValue(QStringLiteral("conversations"), conversationId);
-    removePersistedMessagesForConversation(conversationId);
+    MessageLocalDataSource::instance().removeConversation(conversationId);
 
     bool changed = false;
     {
         QMutexLocker locker(&m_mutex);
-        changed = m_store.remove(conversationId) > 0;
-        changed = m_conversationStates.remove(conversationId) > 0 || changed;
+        changed = m_conversationStates.remove(conversationId) > 0;
+        changed = m_directConversationPeers.remove(conversationId) > 0 || changed;
+        changed = m_groupConversationGroups.remove(conversationId) > 0 || changed;
+        m_localUnreadOverrides.remove(conversationId);
     }
 
     if (!changed) {
         return;
     }
 
-    emit lastMessageChanged(conversationId, {});
     emit conversationListChanged(conversationId);
 }
 
@@ -1878,8 +2308,8 @@ void MessageRepository::persistMessage(const QString& conversationId,
         return;
     }
 
-    ignoreNextStoreChange(QStringLiteral("chat_messages"));
-    LocalDataStore::instance().upsertValue(QStringLiteral("chat_messages"), key, object);
+    ignoreNextStoreChange(MessageLocalDataSource::messagesDomain());
+    MessageLocalDataSource::instance().upsertMessage(key, object);
 }
 
 void MessageRepository::refreshGroupMemberDisplayName(const QString& groupId,
@@ -2012,10 +2442,12 @@ bool MessageRepository::replaceMessage(const QString& conversationId,
 void MessageRepository::removeMessage(const QString& conversationId, int index)
 {
     QSharedPointer<ChatMessage> lastMsg;
+    QSharedPointer<ChatMessage> removedMessage;
     {
         QMutexLocker locker(&m_mutex);
         auto& vec = m_store[conversationId];
         if (index >= 0 && index < vec.size()) {
+            removedMessage = vec.at(index);
             vec.removeAt(index);
         }
         if (!vec.isEmpty()) {
@@ -2027,6 +2459,18 @@ void MessageRepository::removeMessage(const QString& conversationId, int index)
             m_store.remove(conversationId);
         }
     }
+
+    if (!removedMessage.isNull()) {
+        persistMessageDeletionMarker(conversationId, removedMessage);
+        const QString messageId = removedMessage->getMessageId().isEmpty()
+                ? removedMessage->getClientMessageId()
+                : removedMessage->getMessageId();
+        const QString key = chatMessageCacheKey(conversationId, messageId);
+        if (!key.isEmpty()) {
+            MessageLocalDataSource::instance().removeMessage(key);
+        }
+    }
+
     emit lastMessageChanged(conversationId, lastMsg);
     emit conversationListChanged(conversationId);
 }

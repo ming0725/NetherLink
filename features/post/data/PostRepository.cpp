@@ -115,14 +115,18 @@ Post postFromJson(const QJsonObject& object)
             object.value(QStringLiteral("commentsCount")).toInt());
 
     const QJsonObject author = object.value(QStringLiteral("author")).toObject();
-    post.authorID = firstString(object, {QStringLiteral("authorID"),
+    post.authorID = firstString(object, {QStringLiteral("authorUuid"),
+                                         QStringLiteral("authorUserUuid"),
+                                         QStringLiteral("senderUuid"),
+                                         QStringLiteral("userUuid"),
+                                         QStringLiteral("authorID"),
                                          QStringLiteral("authorId"),
-                                         QStringLiteral("authorUserId"),
-                                         QStringLiteral("authorUuid")});
+                                         QStringLiteral("authorUserId")});
     if (post.authorID.isEmpty()) {
-        post.authorID = firstString(author, {QStringLiteral("userId"),
+        post.authorID = firstString(author, {QStringLiteral("userUuid"),
+                                             QStringLiteral("uuid"),
                                              QStringLiteral("id"),
-                                             QStringLiteral("userUuid")});
+                                             QStringLiteral("userId")});
     }
     post.authorName = firstString(object, {QStringLiteral("authorName")});
     if (post.authorName.isEmpty()) {

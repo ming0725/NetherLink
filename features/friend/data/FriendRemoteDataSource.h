@@ -4,6 +4,7 @@
 #include "shared/types/User.h"
 
 #include <QHash>
+#include <QJsonObject>
 #include <QObject>
 #include <QString>
 
@@ -28,6 +29,11 @@ public:
     QString createGroupJoinRequest(const QString& groupId, const QString& message);
     QString updateFriend(const User& user);
     QString deleteFriend(const QString& userId);
+    QString createFriendGroup(const QString& name, int sortOrder);
+    QString updateFriendGroup(const QString& friendGroupId,
+                              const QString& name = {},
+                              int sortOrder = -1);
+    QString deleteFriendGroup(const QString& friendGroupId);
 
 signals:
     void friendRequestAccepted(const QString& requestId,
@@ -46,6 +52,9 @@ signals:
     void groupJoinRequestCreated(const QString& requestId, const QString& groupId);
     void friendUpdated(const QString& requestId, const User& user);
     void friendDeleted(const QString& requestId, const QString& userId);
+    void friendGroupCreated(const QString& requestId, const QJsonObject& group);
+    void friendGroupUpdated(const QString& requestId, const QJsonObject& group);
+    void friendGroupDeleted(const QString& requestId, const QString& friendGroupId);
     void friendRequestCreateFailed(const QString& requestId,
                                    const QString& userId,
                                    const NetworkError& error);
@@ -60,6 +69,9 @@ signals:
                                       const NetworkError& error);
     void friendUpdateFailed(const QString& requestId, const QString& userId, const NetworkError& error);
     void friendDeleteFailed(const QString& requestId, const QString& userId, const NetworkError& error);
+    void friendGroupActionFailed(const QString& requestId,
+                                 const QString& friendGroupId,
+                                 const NetworkError& error);
 
 private:
     enum class Action {
@@ -70,7 +82,10 @@ private:
         CreateFriendRequest,
         CreateGroupJoinRequest,
         UpdateFriend,
-        DeleteFriend
+        DeleteFriend,
+        CreateFriendGroup,
+        UpdateFriendGroup,
+        DeleteFriendGroup
     };
 
     struct PendingOperation {
@@ -92,7 +107,8 @@ private:
                           const QString& path,
                           const QJsonObject& body,
                           PendingOperation pending,
-                          HttpMethod method = HttpMethod::Post);
+                          HttpMethod method = HttpMethod::Post,
+                          const QString& idempotencyKey = {});
     void handleRequestSucceeded(const QString& requestId, const NetworkResponse& response);
     void handleRequestFailed(const QString& requestId, const NetworkError& error);
 

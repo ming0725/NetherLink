@@ -2,6 +2,7 @@
 
 #include "CurrentUserProfileRepository.h"
 #include "CurrentUserRemoteDataSource.h"
+#include "shared/network/RealtimeClient.h"
 
 #include <QFileInfo>
 
@@ -58,6 +59,14 @@ CurrentUser::CurrentUser(QObject* parent)
             [this](const QString& requestId, const NetworkError& error) {
                 if (m_pendingProfileSaveRequests.remove(requestId)) {
                     emit profileSaveFailed(requestId, error);
+                }
+            });
+    connect(&RealtimeClient::instance(),
+            &RealtimeClient::eventReceived,
+            this,
+            [this](const RealtimeEvent& event) {
+                if (event.type == QStringLiteral("realtime.ready") && !m_userId.isEmpty()) {
+                    CurrentUserRemoteDataSource::instance().fetchProfile();
                 }
             });
 }
@@ -156,6 +165,35 @@ bool CurrentUser::isCurrentUserId(const QString& userId) const
     ensureProfileLoaded(ProfileLoadLevel::Identity);
     return (!m_profile.userUuid.isEmpty() && userId == m_profile.userUuid) ||
            (!m_profile.userId.isEmpty() && userId == m_profile.userId);
+}
+
+void CurrentUser::setPresence(UserStatus status, const QDateTime& lastSeenAt)
+{
+    if (m_userId.isEmpty()) {
+        return;
+    }
+
+    ensureProfileLoaded(ProfileLoadLevel::Identity);
+    CurrentUserProfile profile = m_profile;
+    if (profile.userId.isEmpty()) {
+        profile.userId = m_userId;
+    }
+
+    const bool lastSeenChanged = lastSeenAt.isValid() && profile.lastSeenAt != lastSeenAt;
+    if (profile.status == status && !lastSeenChanged) {
+        return;
+    }
+
+    profile.status = status;
+    if (lastSeenAt.isValid()) {
+        profile.lastSeenAt = lastSeenAt;
+    }
+
+    const ProfileLoadLevel level = m_profileLoadLevel == ProfileLoadLevel::None
+            ? ProfileLoadLevel::Identity
+            : m_profileLoadLevel;
+    applyProfile(profile, level);
+    CurrentUserProfileRepository::instance().saveCurrentUserProfile(profile);
 }
 
 void CurrentUser::refreshIdentity()

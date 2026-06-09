@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QObject>
+#include <QHash>
 #include <QImage>
 #include <QJsonObject>
 #include <QMap>
@@ -24,6 +25,7 @@ public:
     User requestUserDetail(const UserDetailRequest& query) const;
     QVector<User> requestUserDetails(const QStringList& userIds) const;
     QMap<QString, QString> requestFriendGroups() const;
+    int nextFriendGroupSortOrder() const;
     QString requestUserName(const QString& userId) const;
     QString requestUserAvatarPath(const QString& userId) const;
     QString requestUserAvatarImageAsync(const QString& userId, int delayMs = 120);
@@ -32,8 +34,11 @@ public:
 
     void saveUser(const User& user);
     bool upsertUserProfile(const QJsonObject& object, bool preserveFriendFields = true);
+    bool upsertFriendGroup(const QJsonObject& object);
+    bool removeFriendGroup(const QString& friendGroupId);
     bool upsertPresence(const QString& userUuid, const QString& status, const QString& lastSeenAt = {});
     QString refreshPresenceBatch(const QStringList& userUuids);
+    QString refreshFriendPresenceSnapshot();
     bool needsUserRefresh(const QString& userUuid, int remoteVersion) const;
     void addFriend(const QString& userId,
                    const QString& groupId = QStringLiteral("default"),
@@ -52,5 +57,7 @@ private:
 
     QMap<QString, User> userMap;
     QSet<QString> m_pendingPresenceBatchRequestIds;
+    QHash<QString, QStringList> m_pendingPresenceSnapshotRequestIds;
+    QSet<QString> m_presenceSnapshotRequestedUserIds;
     mutable QMutex mutex; // 用于线程安全
 };

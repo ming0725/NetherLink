@@ -10,6 +10,8 @@
 #include "app/state/CurrentUser.h"
 #include "shared/network/NotificationRemoteDataSource.h"
 
+#include <QUuid>
+
 namespace {
 
 QString currentUserUuid()
@@ -74,7 +76,8 @@ FriendSessionController::FriendSessionController(QObject* parent)
                 }
                 ensureUserRepositoryConnections();
                 UserRepository::instance().saveUser(user);
-            });
+            },
+            Qt::QueuedConnection);
     connect(&FriendRemoteDataSource::instance(),
             &FriendRemoteDataSource::friendDeleted,
             this,
@@ -84,6 +87,27 @@ FriendSessionController::FriendSessionController(QObject* parent)
                 }
                 ensureUserRepositoryConnections();
                 UserRepository::instance().removeUser(userId);
+            });
+    connect(&FriendRemoteDataSource::instance(),
+            &FriendRemoteDataSource::friendGroupCreated,
+            this,
+            [this](const QString&, const QJsonObject& group) {
+                ensureUserRepositoryConnections();
+                UserRepository::instance().upsertFriendGroup(group);
+            });
+    connect(&FriendRemoteDataSource::instance(),
+            &FriendRemoteDataSource::friendGroupUpdated,
+            this,
+            [this](const QString&, const QJsonObject& group) {
+                ensureUserRepositoryConnections();
+                UserRepository::instance().upsertFriendGroup(group);
+            });
+    connect(&FriendRemoteDataSource::instance(),
+            &FriendRemoteDataSource::friendGroupDeleted,
+            this,
+            [this](const QString&, const QString& friendGroupId) {
+                ensureUserRepositoryConnections();
+                UserRepository::instance().removeFriendGroup(friendGroupId);
             });
     connect(&FriendRemoteDataSource::instance(),
             &FriendRemoteDataSource::friendRequestActionFailed,
@@ -108,6 +132,12 @@ FriendSessionController::FriendSessionController(QObject* parent)
             this,
             [this](const QString&, const QString& userId, const NetworkError& error) {
                 emit friendDeleteFailed(userId, error);
+            });
+    connect(&FriendRemoteDataSource::instance(),
+            &FriendRemoteDataSource::friendGroupActionFailed,
+            this,
+            [this](const QString&, const QString& friendGroupId, const NetworkError& error) {
+                emit friendGroupActionFailed(friendGroupId, error);
             });
     connect(&GroupRemoteDataSource::instance(),
             &GroupRemoteDataSource::groupUpdated,
@@ -303,6 +333,12 @@ QMap<QString, QString> FriendSessionController::loadFriendGroups() const
     return UserRepository::instance().requestFriendGroups();
 }
 
+QString FriendSessionController::refreshFriendPresenceSnapshot() const
+{
+    ensureUserRepositoryConnections();
+    return UserRepository::instance().refreshFriendPresenceSnapshot();
+}
+
 bool FriendSessionController::saveFriend(const User& user)
 {
     if (user.id.isEmpty()) {
@@ -339,6 +375,42 @@ bool FriendSessionController::deleteFriend(const QString& userId)
 
     ensureUserRepositoryConnections();
     return !FriendRemoteDataSource::instance().deleteFriend(userId).isEmpty();
+}
+
+bool FriendSessionController::createFriendGroup(const QString& name)
+{
+    const QString trimmedName = name.trimmed();
+    if (trimmedName.isEmpty()) {
+        return false;
+    }
+
+    ensureUserRepositoryConnections();
+    return !FriendRemoteDataSource::instance()
+                    .createFriendGroup(trimmedName, UserRepository::instance().nextFriendGroupSortOrder())
+                    .isEmpty();
+}
+
+bool FriendSessionController::renameFriendGroup(const QString& friendGroupId, const QString& name)
+{
+    const QString trimmedName = name.trimmed();
+    if (friendGroupId.isEmpty() || friendGroupId == QStringLiteral("default") || trimmedName.isEmpty()) {
+        return false;
+    }
+
+    ensureUserRepositoryConnections();
+    return !FriendRemoteDataSource::instance()
+                    .updateFriendGroup(friendGroupId, trimmedName)
+                    .isEmpty();
+}
+
+bool FriendSessionController::deleteFriendGroup(const QString& friendGroupId)
+{
+    if (friendGroupId.isEmpty() || friendGroupId == QStringLiteral("default")) {
+        return false;
+    }
+
+    ensureUserRepositoryConnections();
+    return !FriendRemoteDataSource::instance().deleteFriendGroup(friendGroupId).isEmpty();
 }
 
 QVector<GroupCategorySummary> FriendSessionController::loadGroupCategorySummaries(const QString& keyword) const
@@ -448,6 +520,60 @@ bool FriendSessionController::saveGroup(const Group& group)
     return sent;
 }
 
+bool FriendSessionController::createGroupCategory(const QString& categoryName)
+{
+    const QString normalizedName = categoryName.trimmed();
+    if (normalizedName.isEmpty()) {
+        return false;
+    }
+
+    ensureGroupRepositoryConnections();
+    const QString categoryId = QStringLiteral("gc_%1").arg(QUuid::createUuid().toString(QUuid::WithoutBraces));
+    return GroupRepository::instance().upsertGroupCategory(categoryId, normalizedName);
+}
+
+bool FriendSessionController::renameGroupCategory(const QString& categoryId, const QString& categoryName)
+{
+    const QString normalizedName = categoryName.trimmed();
+    if (categoryId.isEmpty() ||
+        categoryId == QStringLiteral("gg_joined") ||
+        categoryId == QStringLiteral("gg_created") ||
+        categoryId == QStringLiteral("gg_managed") ||
+        normalizedName.isEmpty()) {
+        return false;
+    }
+
+    ensureGroupRepositoryConnections();
+    bool sent = GroupRepository::instance().upsertGroupCategory(categoryId, normalizedName);
+    const QVector<Group> groups = GroupRepository::instance().requestGroupsInCategory({categoryId, {}, 0, -1});
+    for (Group group : groups) {
+        group.listGroupId = categoryId;
+        group.listGroupName = normalizedName;
+        sent = !GroupRemoteDataSource::instance().updateMySettings(group).isEmpty() || sent;
+    }
+    return sent;
+}
+
+bool FriendSessionController::deleteGroupCategory(const QString& categoryId)
+{
+    if (categoryId.isEmpty() ||
+        categoryId == QStringLiteral("gg_joined") ||
+        categoryId == QStringLiteral("gg_created") ||
+        categoryId == QStringLiteral("gg_managed")) {
+        return false;
+    }
+
+    ensureGroupRepositoryConnections();
+    bool sent = GroupRepository::instance().removeGroupCategory(categoryId);
+    const QVector<Group> groups = GroupRepository::instance().requestGroupsInCategory({categoryId, {}, 0, -1});
+    for (Group group : groups) {
+        group.listGroupId.clear();
+        group.listGroupName.clear();
+        sent = !GroupRemoteDataSource::instance().updateMySettings(group).isEmpty() || sent;
+    }
+    return sent;
+}
+
 bool FriendSessionController::changeGroupCategory(const QString& groupId,
                                                   const QString& categoryId,
                                                   const QString& categoryName)
@@ -465,8 +591,13 @@ bool FriendSessionController::changeGroupCategory(const QString& groupId,
         return false;
     }
 
-    group.listGroupId = categoryId;
-    group.listGroupName = categoryName;
+    if (categoryId == QStringLiteral("gg_joined")) {
+        group.listGroupId.clear();
+        group.listGroupName.clear();
+    } else {
+        group.listGroupId = categoryId;
+        group.listGroupName = categoryName;
+    }
     return !GroupRemoteDataSource::instance().updateMySettings(group).isEmpty();
 }
 

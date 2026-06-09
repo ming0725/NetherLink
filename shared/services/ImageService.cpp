@@ -215,6 +215,48 @@ QString remoteDiskCachePath(const QString& source)
     return QDir(dirPath).filePath(QString::fromLatin1(digest) + QStringLiteral(".img"));
 }
 
+QString remoteDiskCacheEtagPath(const QString& source)
+{
+    const QString imagePath = remoteDiskCachePath(source);
+    return imagePath.isEmpty() ? QString() : imagePath + QStringLiteral(".etag");
+}
+
+QString readRemoteDiskCacheEtag(const QString& source)
+{
+    const QString path = remoteDiskCacheEtagPath(source);
+    if (path.isEmpty() || !QFileInfo::exists(path)) {
+        return {};
+    }
+
+    QFile file(path);
+    if (!file.open(QIODevice::ReadOnly)) {
+        return {};
+    }
+    return QString::fromUtf8(file.readAll()).trimmed();
+}
+
+void writeRemoteDiskCacheEtag(const QString& source, const QString& etag)
+{
+    if (source.isEmpty()) {
+        return;
+    }
+
+    const QString path = remoteDiskCacheEtagPath(source);
+    if (path.isEmpty()) {
+        return;
+    }
+    if (etag.isEmpty()) {
+        QFile::remove(path);
+        return;
+    }
+
+    QFile file(path);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        return;
+    }
+    file.write(etag.toUtf8());
+}
+
 QImage readRemoteDiskCache(const QString& source)
 {
     const QString path = remoteDiskCachePath(source);
@@ -615,6 +657,10 @@ void ImageService::startRemoteOriginalRequest(const QString& source,
     request.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
                          QNetworkRequest::ManualRedirectPolicy);
     request.setRawHeader("Accept", "image/*,*/*;q=0.8");
+    const QString etag = readRemoteDiskCacheEtag(source);
+    if (!etag.isEmpty() && QFileInfo::exists(remoteDiskCachePath(source))) {
+        request.setRawHeader("If-None-Match", etag.toUtf8());
+    }
     if (attachAuthorization) {
         request.setRawHeader("Authorization",
                              "Bearer " + AuthSession::instance().accessToken().toUtf8());
@@ -651,12 +697,34 @@ void ImageService::startRemoteOriginalRequest(const QString& source,
             return;
         }
 
+        if (status == 304) {
+            const QImage image = readRemoteDiskCache(source);
+            {
+                QMutexLocker locker(&m_mutex);
+                m_pendingOriginalLoads.remove(source);
+                if (!image.isNull()) {
+                    m_originalCache.insert(source, new QImage(image), imageCostKb(image));
+                    m_sourceSizes.insert(source, image.size());
+                    m_loadStates.insert(source, LoadState::Ready);
+                    m_failedRetryAfterMs.remove(source);
+                } else {
+                    m_loadStates.insert(source, LoadState::Failed);
+                    m_failedRetryAfterMs.insert(source, QDateTime::currentMSecsSinceEpoch() + 30000);
+                }
+            }
+            reply->deleteLater();
+            emit previewReady();
+            emit resourceChanged(source);
+            return;
+        }
+
         const QImage image = networkOk ? imageFromBytes(body) : QImage();
         {
             QMutexLocker locker(&m_mutex);
             m_pendingOriginalLoads.remove(source);
             if (!image.isNull()) {
                 writeRemoteDiskCache(source, body);
+                writeRemoteDiskCacheEtag(source, QString::fromUtf8(reply->rawHeader("ETag")));
                 m_originalCache.insert(source, new QImage(image), imageCostKb(image));
                 m_sourceSizes.insert(source, image.size());
                 m_loadStates.insert(source, LoadState::Ready);
@@ -768,6 +836,7 @@ void ImageService::invalidateSource(const QString& source)
     }
 
     QFile::remove(remoteDiskCachePath(source));
+    QFile::remove(remoteDiskCacheEtagPath(source));
     emit previewReady();
     emit resourceChanged(source);
 }

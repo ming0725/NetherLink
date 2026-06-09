@@ -7,6 +7,7 @@
 #include <QVector>
 
 #include "ChatMessage.h"
+#include "Group.h"
 #include "User.h"
 
 struct EmptyRequest {
@@ -112,8 +113,12 @@ struct FriendSummary {
 
 struct FriendGroupSummary {
     QString groupId = "default";
+    QString friendGroupId = "default";
     QString groupName = "默认分组";
     int friendCount = 0;
+    int sortOrder = 0;
+    QDateTime createdAt;
+    QDateTime updatedAt;
 };
 
 struct GroupCategorySummary {
@@ -134,6 +139,8 @@ struct ConversationSummary {
     bool isPinned = false;
     bool isGroup = false;
     int memberCount = 0;
+    QString peerUserId;
+    QString groupId;
 };
 
 struct ConversationSyncState {
@@ -143,6 +150,7 @@ struct ConversationSyncState {
     bool isPinned = false;
     QDateTime messageListTime;
     QDateTime lastReadAt;
+    QDateTime hiddenAt;
 };
 
 struct ConversationMeta {
@@ -154,6 +162,8 @@ struct ConversationMeta {
     UserStatus status = Offline;
     bool isDoNotDisturb = false;
     bool isPinned = false;
+    QString peerUserId;
+    QString groupId;
 };
 
 using ChatMessageList = QVector<QSharedPointer<ChatMessage>>;
@@ -169,7 +179,7 @@ struct ConversationThreadData {
 struct GroupMembersPage {
     QString groupId;
     QString keyword;
-    QVector<User> members;
+    QVector<GroupMemberProfile> members;
     int offset = 0;
     int totalCount = 0;
     bool hasMore = false;

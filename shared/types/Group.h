@@ -1,5 +1,8 @@
 #pragma once
 
+#include "User.h"
+
+#include <QDateTime>
 #include <QMap>
 #include <QString>
 #include <QVector>
@@ -13,13 +16,18 @@ enum class GroupMemberRoleValue {
 struct GroupMemberProfile {
     QString groupId;
     QString userUuid;
+    User user;
     QString nickname;
     GroupMemberRoleValue role = GroupMemberRoleValue::Member;
+    bool isDnd = false;
+    QDateTime joinedAt;
     int version = 0;
 };
 
 struct Group {
     QString groupId;
+    int version = 0;
+    QString etag;
     QString groupName;
     int memberNum;
     QString ownerId;
@@ -35,6 +43,7 @@ struct Group {
     QString currentUserNickname;
     QMap<QString, QString> memberNicknames;
     QVector<QString> membersID;
-    QString listGroupId = "gg_joined";
-    QString listGroupName = "我加入的群聊";
+    QString listGroupId;
+    QString listGroupName;
+    QString role;
 };

@@ -8,6 +8,7 @@
 #include <QPointer>
 #include <QMouseEvent>
 #include <QMoveEvent>
+#include <QRect>
 #include <QStackedWidget>
 
 class QAbstractButton;
@@ -47,6 +48,8 @@ private:
     void closeSettingsWindow();
     void setSystemFloatingBarsSuppressed(bool suppressed);
     void layoutWindow();
+    bool restoreWindowPlacement();
+    void saveWindowPlacement();
     void showRealtimeFailureNotice(const QString& message);
     void handleRealtimeStateChanged(RealtimeClient::State state);
     void handleSessionRevoked(const QString& accountId, const QString& message);
@@ -65,7 +68,12 @@ private:
     QPointer<SettingsWindow> m_settingsWindow;
     QPointer<QWidget> m_pendingFocusClear;
     QElapsedTimer m_realtimeNoticeClock;
+    QString m_windowPlacementAccountKey;
+    QRect m_restoredNormalGeometry;
     bool m_realtimeHadFailure = false;
     bool m_systemFloatingBarsSuppressed = false;
     bool m_sessionRevokedDialogVisible = false;
+    bool m_restoredNormalGeometryApplied = false;
+    bool m_restoreMaximized = false;
+    bool m_restoreMaximizedApplied = false;
 };

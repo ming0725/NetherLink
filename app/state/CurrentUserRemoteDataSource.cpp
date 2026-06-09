@@ -57,7 +57,7 @@ CurrentUserProfile profileFromResponseObject(QJsonObject object, const QString& 
         object.insert(QStringLiteral("etag"), responseEtag);
     }
 
-    CurrentUserProfileRepository::instance().saveCurrentUserProfileObject(object);
+    CurrentUserProfileRepository::instance().saveCurrentUserProfileObject(object, responseEtag);
     return CurrentUserProfileRepository::instance().requestCurrentUserProfile({
             object.value(QStringLiteral("userId")).toString(
                     object.value(QStringLiteral("userUuid")).toString())});

@@ -18,6 +18,7 @@ class QAbstractButton;
 class QCloseEvent;
 class StatefulPushButton;
 class QTimer;
+class QVariantAnimation;
 struct LoginAccount;
 template <typename T>
 class QFutureWatcher;
@@ -67,6 +68,7 @@ private:
     void attemptSessionRestore(const LoginAccount& account);
     void updateAvatarForAccount(const QString& accountId);
     void attemptLogin();
+    void applyThemeForAccount(const LoginAccount& account, bool animated);
     void cacheAuthenticatedAvatar(LoginAccount account, CurrentUserProfile authenticatedProfile);
     void finishLogin(const LoginAccount& account, const CurrentUserProfile& authenticatedProfile = {});
     void resetLoginPending(const QString& buttonText = QString());
@@ -100,6 +102,7 @@ private:
     QString m_pendingLoginAccountId;
     QString m_pendingLoginPassword;
     QFutureWatcher<QImage>* m_backgroundLayerWatcher = nullptr;
+    QPointer<QVariantAnimation> m_themeColorAnimation;
     qint64 m_lastBackgroundLayerRequest = -1000;
     int m_backgroundLayerGeneration = 0;
     bool m_backgroundLayerInFlight = false;

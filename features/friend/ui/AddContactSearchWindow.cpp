@@ -270,7 +270,7 @@ Group groupFromRemoteObject(const QJsonObject& source)
     group.groupId = object.value(QStringLiteral("groupId")).toString();
     group.groupName = object.value(QStringLiteral("groupName")).toString();
     group.memberNum = object.value(QStringLiteral("memberNum")).toInt();
-    group.ownerId = object.value(QStringLiteral("ownerId")).toString(object.value(QStringLiteral("ownerUuid")).toString());
+    group.ownerId = object.value(QStringLiteral("ownerUuid")).toString(object.value(QStringLiteral("ownerId")).toString());
     group.groupAvatarPath = versionedAvatarSource(object, QStringLiteral("groupAvatarPath"));
     group.remark = object.value(QStringLiteral("remark")).toString();
     group.introduction = object.value(QStringLiteral("introduction")).toString();

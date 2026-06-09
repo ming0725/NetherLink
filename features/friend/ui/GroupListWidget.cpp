@@ -6,6 +6,7 @@
 #include <QApplication>
 #include <QCursor>
 #include <QItemSelectionModel>
+#include <QLineEdit>
 #include <QMap>
 #include <QMouseEvent>
 #include <QPainter>
@@ -42,6 +43,18 @@ const QStringList& editableCategoryOrder()
             QStringLiteral("gg_performance")
     };
     return ids;
+}
+
+bool isDefaultGroupCategoryId(const QString& categoryId)
+{
+    return categoryId.isEmpty() || categoryId == QStringLiteral("gg_joined");
+}
+
+bool isSystemGroupCategoryId(const QString& categoryId)
+{
+    return isDefaultGroupCategoryId(categoryId) ||
+           categoryId == QStringLiteral("gg_created") ||
+           categoryId == QStringLiteral("gg_managed");
 }
 
 QFont stickyCategoryFont()
@@ -206,9 +219,24 @@ void GroupListWidget::leaveEvent(QEvent* event)
 void GroupListWidget::mousePressEvent(QMouseEvent* event)
 {
     if (event->button() == Qt::RightButton) {
+        const QRect stickyRect(0, m_stickyOffsetY, viewport()->width(), kStickyHeaderHeight);
+        if (m_stickyVisible && !m_stickyCategory.categoryId.isEmpty() && stickyRect.contains(event->pos())) {
+            showGroupCategoryMenu(event->globalPosition().toPoint(),
+                                  m_stickyCategory.categoryId,
+                                  m_stickyCategory.title);
+            event->accept();
+            return;
+        }
+
         const QModelIndex pressedIndex = indexAt(event->pos());
-        if (m_model->isGroupRow(pressedIndex)) {
+        if (m_model->isCategoryRow(pressedIndex)) {
+            showGroupCategoryMenu(event->globalPosition().toPoint(),
+                                  pressedIndex.data(GroupListModel::CategoryIdRole).toString(),
+                                  pressedIndex.data(GroupListModel::CategoryNameRole).toString());
+        } else if (m_model->isGroupRow(pressedIndex)) {
             showGroupMenu(event->globalPosition().toPoint(), pressedIndex);
+        } else if (!pressedIndex.isValid()) {
+            showGroupCategoryMenu(event->globalPosition().toPoint());
         }
         event->accept();
         return;
@@ -553,8 +581,8 @@ void GroupListWidget::showGroupMenu(const QPoint& globalPos, const QModelIndex& 
         });
     };
 
-    for (const QString& categoryId : editableCategoryOrder()) {
-        addCategoryAction(categoryId, categories.value(categoryId));
+    for (auto it = categories.constBegin(); it != categories.constEnd(); ++it) {
+        addCategoryAction(it.key(), it.value());
     }
 
     menu->addSeparator();
@@ -578,6 +606,97 @@ void GroupListWidget::showGroupMenu(const QPoint& globalPos, const QModelIndex& 
         menu->deleteLater();
     });
     menu->popupWhenMouseReleased(globalPos);
+}
+
+void GroupListWidget::showGroupCategoryMenu(const QPoint& globalPos,
+                                            const QString& categoryId,
+                                            const QString& categoryName)
+{
+    auto* menu = new StyledActionMenu(this);
+    menu->setItemHoverColor(ThemeManager::instance().color(ThemeColor::ContextMenuHover));
+
+    QAction* addAction = menu->addAction(QStringLiteral("添加分组"));
+    connect(addAction, &QAction::triggered, this, [this]() {
+        promptCreateGroupCategory();
+    });
+
+    if (!isSystemGroupCategoryId(categoryId)) {
+        QAction* renameAction = menu->addAction(QStringLiteral("重命名该分组"));
+        connect(renameAction, &QAction::triggered, this, [this, categoryId, categoryName]() {
+            promptRenameGroupCategory(categoryId, categoryName);
+        });
+
+        QAction* deleteAction = menu->addAction(QStringLiteral("删除分组"));
+        StyledActionMenu::setActionColors(deleteAction,
+                                          ThemeManager::instance().color(ThemeColor::DestructiveActionText),
+                                          ThemeManager::instance().color(ThemeColor::DestructiveActionBackground),
+                                          ThemeManager::instance().color(ThemeColor::DestructiveActionText));
+        connect(deleteAction, &QAction::triggered, this, [this, categoryId, categoryName]() {
+            deleteGroupCategoryFromMenu(categoryId, categoryName);
+        });
+    }
+
+    connect(menu, &StyledActionMenu::aboutToHide, this, [menu]() {
+        menu->deleteLater();
+    });
+    menu->popupWhenMouseReleased(globalPos);
+}
+
+void GroupListWidget::promptCreateGroupCategory()
+{
+    if (!m_controller) {
+        return;
+    }
+
+    bool accepted = false;
+    const QString name = InWindowPopup::getText(this,
+                                                QStringLiteral("添加分组"),
+                                                QStringLiteral("请输入群聊分组名称"),
+                                                QLineEdit::Normal,
+                                                QString(),
+                                                &accepted).trimmed();
+    if (!accepted || name.isEmpty()) {
+        return;
+    }
+
+    m_controller->createGroupCategory(name);
+}
+
+void GroupListWidget::promptRenameGroupCategory(const QString& categoryId, const QString& currentName)
+{
+    if (!m_controller || isSystemGroupCategoryId(categoryId)) {
+        return;
+    }
+
+    bool accepted = false;
+    const QString name = InWindowPopup::getText(this,
+                                                QStringLiteral("重命名分组"),
+                                                QStringLiteral("请输入新的群聊分组名称"),
+                                                QLineEdit::Normal,
+                                                currentName,
+                                                &accepted).trimmed();
+    if (!accepted || name.isEmpty() || name == currentName) {
+        return;
+    }
+
+    m_controller->renameGroupCategory(categoryId, name);
+}
+
+void GroupListWidget::deleteGroupCategoryFromMenu(const QString& categoryId, const QString& categoryName)
+{
+    if (!m_controller || isSystemGroupCategoryId(categoryId)) {
+        return;
+    }
+
+    const InWindowPopup::Button result = InWindowPopup::question(
+            this,
+            QStringLiteral("删除分组"),
+            QStringLiteral("确认删除群聊分组“%1”吗？该分组下的群聊会回到默认分组。").arg(categoryName));
+    if (result != InWindowPopup::Button::Yes) {
+        return;
+    }
+
+    m_controller->deleteGroupCategory(categoryId);
 }
 
 void GroupListWidget::changeGroupCategory(const QString& groupId,

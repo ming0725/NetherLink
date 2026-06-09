@@ -1750,13 +1750,16 @@ void CreateGroupChatPopup::ensureContactCache()
     QStringList missingUserIds;
     QSet<QString> missingSeen;
     for (const ConversationSummary& conversation : conversations) {
-        if (conversation.isGroup || conversation.conversationId.isEmpty() ||
-            friendById.contains(conversation.conversationId) ||
-            missingSeen.contains(conversation.conversationId)) {
+        const QString userId = conversation.peerUserId.isEmpty()
+                ? conversation.conversationId
+                : conversation.peerUserId;
+        if (conversation.isGroup || userId.isEmpty() ||
+            friendById.contains(userId) ||
+            missingSeen.contains(userId)) {
             continue;
         }
-        missingSeen.insert(conversation.conversationId);
-        missingUserIds.push_back(conversation.conversationId);
+        missingSeen.insert(userId);
+        missingUserIds.push_back(userId);
     }
 
     QHash<QString, FriendSummary> userContactById;
@@ -1769,14 +1772,17 @@ void CreateGroupChatPopup::ensureContactCache()
 
     QSet<QString> recentSeen;
     for (const ConversationSummary& conversation : conversations) {
-        if (conversation.isGroup || conversation.conversationId.isEmpty() ||
-            recentSeen.contains(conversation.conversationId)) {
+        const QString userId = conversation.peerUserId.isEmpty()
+                ? conversation.conversationId
+                : conversation.peerUserId;
+        if (conversation.isGroup || userId.isEmpty() ||
+            recentSeen.contains(userId)) {
             continue;
         }
 
-        FriendSummary contact = friendById.value(conversation.conversationId);
+        FriendSummary contact = friendById.value(userId);
         if (contact.userId.isEmpty()) {
-            contact = userContactById.value(conversation.conversationId);
+            contact = userContactById.value(userId);
         }
         if (contact.userId.isEmpty()) {
             continue;

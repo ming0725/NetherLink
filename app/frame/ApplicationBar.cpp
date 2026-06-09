@@ -7,7 +7,6 @@
 #include "features/friend/data/FriendNotificationRepository.h"
 #include "features/friend/data/GroupNotificationRepository.h"
 #include "features/friend/ui/FriendProfilePopup.h"
-#include "app/state/CurrentUserProfileRepository.h"
 #include "shared/data/UnreadStateRepository.h"
 #include "shared/network/NetworkService.h"
 #include "shared/network/NetworkTypes.h"
@@ -557,14 +556,10 @@ void ApplicationBar::setAvatarStatusChoiceIndex(int index)
             : (index == 2
                ? QStringLiteral("airplane")
                : (index == 3 ? QStringLiteral("invisible") : QStringLiteral("online")));
-    NetworkService::instance().updatePresence(presenceStatus);
 
-    CurrentUserProfile profile = CurrentUser::instance().profile();
-    if (profile.isValid() && profile.status != status) {
-        profile.status = status;
-        CurrentUserProfileRepository::instance().saveCurrentUserProfile(profile);
-    }
-    update();
+    CurrentUser::instance().setPresence(status);
+    NetworkService::instance().updatePresence(presenceStatus);
+    update(avatarStatusRect());
 }
 
 void ApplicationBar::setHoveredItem(ApplicationBarItem* item)

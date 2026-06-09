@@ -63,4 +63,5 @@ private:
     bool m_openConversationLoadPending = false;
     QString m_openConversationRequestId;
     QString m_openDirectConversationRequestId;
+    QString m_openGroupConversationRequestId;
 };

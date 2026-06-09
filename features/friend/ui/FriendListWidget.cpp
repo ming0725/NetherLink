@@ -7,6 +7,7 @@
 #include <QApplication>
 #include <QCursor>
 #include <QItemSelectionModel>
+#include <QLineEdit>
 #include <QMap>
 #include <QMouseEvent>
 #include <QPainter>
@@ -32,6 +33,11 @@ constexpr int kGroupLeftPadding = 12;
 constexpr int kGroupCountRightPadding = 18;
 constexpr int kGroupArrowSize = 12;
 constexpr int kFriendPageSize = 80;
+
+bool isDefaultFriendGroupId(const QString& groupId)
+{
+    return groupId.isEmpty() || groupId == QStringLiteral("default");
+}
 
 QFont stickyGroupFont()
 {
@@ -207,9 +213,24 @@ void FriendListWidget::leaveEvent(QEvent* event)
 void FriendListWidget::mousePressEvent(QMouseEvent* event)
 {
     if (event->button() == Qt::RightButton) {
+        const QRect stickyRect(0, m_stickyOffsetY, viewport()->width(), kStickyHeaderHeight);
+        if (m_stickyVisible && !m_stickyGroup.groupId.isEmpty() && stickyRect.contains(event->pos())) {
+            showFriendGroupMenu(event->globalPosition().toPoint(),
+                                m_stickyGroup.groupId,
+                                m_stickyGroup.title);
+            event->accept();
+            return;
+        }
+
         const QModelIndex pressedIndex = indexAt(event->pos());
-        if (m_model->isFriendRow(pressedIndex)) {
+        if (m_model->isGroupRow(pressedIndex)) {
+            showFriendGroupMenu(event->globalPosition().toPoint(),
+                                pressedIndex.data(FriendListModel::GroupIdRole).toString(),
+                                pressedIndex.data(FriendListModel::GroupNameRole).toString());
+        } else if (m_model->isFriendRow(pressedIndex)) {
             showFriendMenu(event->globalPosition().toPoint(), pressedIndex);
+        } else if (!pressedIndex.isValid()) {
+            showFriendGroupMenu(event->globalPosition().toPoint());
         }
         event->accept();
         return;
@@ -290,6 +311,7 @@ void FriendListWidget::reloadFriends()
     const bool preserveLoadedItems = m_state.loadedKeyword == m_state.keyword;
     m_preservingSelection = true;
     m_model->setGroups(m_controller->loadFriendGroupSummaries(m_state.keyword), preserveLoadedItems);
+    m_controller->refreshFriendPresenceSnapshot();
     m_state.loadedKeyword = m_state.keyword;
     if (preserveLoadedItems) {
         refreshLoadedGroups();
@@ -594,6 +616,97 @@ void FriendListWidget::showFriendMenu(const QPoint& globalPos, const QModelIndex
         menu->deleteLater();
     });
     menu->popupWhenMouseReleased(globalPos);
+}
+
+void FriendListWidget::showFriendGroupMenu(const QPoint& globalPos,
+                                           const QString& groupId,
+                                           const QString& groupName)
+{
+    auto* menu = new StyledActionMenu(this);
+    menu->setItemHoverColor(ThemeManager::instance().color(ThemeColor::ContextMenuHover));
+
+    QAction* addAction = menu->addAction(QStringLiteral("添加分组"));
+    connect(addAction, &QAction::triggered, this, [this]() {
+        promptCreateFriendGroup();
+    });
+
+    if (!isDefaultFriendGroupId(groupId)) {
+        QAction* renameAction = menu->addAction(QStringLiteral("重命名该分组"));
+        connect(renameAction, &QAction::triggered, this, [this, groupId, groupName]() {
+            promptRenameFriendGroup(groupId, groupName);
+        });
+
+        QAction* deleteAction = menu->addAction(QStringLiteral("删除分组"));
+        StyledActionMenu::setActionColors(deleteAction,
+                                          ThemeManager::instance().color(ThemeColor::DestructiveActionText),
+                                          ThemeManager::instance().color(ThemeColor::DestructiveActionBackground),
+                                          ThemeManager::instance().color(ThemeColor::DestructiveActionText));
+        connect(deleteAction, &QAction::triggered, this, [this, groupId, groupName]() {
+            deleteFriendGroupFromMenu(groupId, groupName);
+        });
+    }
+
+    connect(menu, &StyledActionMenu::aboutToHide, this, [menu]() {
+        menu->deleteLater();
+    });
+    menu->popupWhenMouseReleased(globalPos);
+}
+
+void FriendListWidget::promptCreateFriendGroup()
+{
+    if (!m_controller) {
+        return;
+    }
+
+    bool accepted = false;
+    const QString name = InWindowPopup::getText(this,
+                                                QStringLiteral("添加分组"),
+                                                QStringLiteral("请输入分组名称"),
+                                                QLineEdit::Normal,
+                                                QString(),
+                                                &accepted).trimmed();
+    if (!accepted || name.isEmpty()) {
+        return;
+    }
+
+    m_controller->createFriendGroup(name);
+}
+
+void FriendListWidget::promptRenameFriendGroup(const QString& groupId, const QString& currentName)
+{
+    if (!m_controller || isDefaultFriendGroupId(groupId)) {
+        return;
+    }
+
+    bool accepted = false;
+    const QString name = InWindowPopup::getText(this,
+                                                QStringLiteral("重命名分组"),
+                                                QStringLiteral("请输入新的分组名称"),
+                                                QLineEdit::Normal,
+                                                currentName,
+                                                &accepted).trimmed();
+    if (!accepted || name.isEmpty() || name == currentName) {
+        return;
+    }
+
+    m_controller->renameFriendGroup(groupId, name);
+}
+
+void FriendListWidget::deleteFriendGroupFromMenu(const QString& groupId, const QString& groupName)
+{
+    if (!m_controller || isDefaultFriendGroupId(groupId)) {
+        return;
+    }
+
+    const InWindowPopup::Button result = InWindowPopup::question(
+            this,
+            QStringLiteral("删除分组"),
+            QStringLiteral("确认删除分组“%1”吗？该分组下的好友会变为未分组。").arg(groupName));
+    if (result != InWindowPopup::Button::Yes) {
+        return;
+    }
+
+    m_controller->deleteFriendGroup(groupId);
 }
 
 void FriendListWidget::changeFriendGroup(const QString& userId,

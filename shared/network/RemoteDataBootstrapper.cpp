@@ -9,6 +9,7 @@
 
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QSet>
 
 namespace {
 
@@ -87,25 +88,60 @@ QJsonArray arrayFromResponse(const QJsonObject& root, const QString& arrayKey)
 
 QJsonObject mergedUserObject(QJsonObject object)
 {
+    const QJsonObject friendObject = object.value(QStringLiteral("friend")).toObject();
+    if (!friendObject.isEmpty()) {
+        object = friendObject;
+    }
+
     const QJsonObject user = object.value(QStringLiteral("user")).toObject();
     if (!user.isEmpty()) {
-        const QJsonObject relation = object.value(QStringLiteral("relation")).toObject();
+        QJsonObject relation = object;
+        relation.remove(QStringLiteral("user"));
+        const QJsonObject nestedRelation = object.value(QStringLiteral("relation")).toObject();
+        relation.remove(QStringLiteral("relation"));
+        for (auto it = nestedRelation.constBegin(); it != nestedRelation.constEnd(); ++it) {
+            relation.insert(it.key(), it.value());
+        }
+
         object = user;
         for (auto it = relation.constBegin(); it != relation.constEnd(); ++it) {
+            const bool userHasPrivateId = object.contains(QStringLiteral("userUuid")) ||
+                                          object.contains(QStringLiteral("uuid")) ||
+                                          object.contains(QStringLiteral("id"));
+            const bool userHasPublicId = object.contains(QStringLiteral("userId")) ||
+                                         object.contains(QStringLiteral("publicId")) ||
+                                         object.contains(QStringLiteral("public_id"));
+            if ((it.key() == QStringLiteral("id") ||
+                 it.key() == QStringLiteral("userUuid") ||
+                 it.key() == QStringLiteral("uuid")) && userHasPrivateId) {
+                continue;
+            }
+            if ((it.key() == QStringLiteral("userId") ||
+                 it.key() == QStringLiteral("publicId") ||
+                 it.key() == QStringLiteral("public_id")) && userHasPublicId) {
+                continue;
+            }
             object.insert(it.key(), it.value());
         }
     }
 
-    const QString id = firstString(object, {QStringLiteral("userId"),
+    const QString id = firstString(object, {QStringLiteral("userUuid"),
+                                            QStringLiteral("friendUserUuid"),
+                                            QStringLiteral("uuid"),
                                             QStringLiteral("id"),
-                                            QStringLiteral("userUuid"),
-                                            QStringLiteral("friendUserUuid")});
+                                            QStringLiteral("userId")});
+    const QString publicId = firstString(object, {QStringLiteral("userId"),
+                                                  QStringLiteral("publicId"),
+                                                  QStringLiteral("public_id")});
     const QString nick = firstString(object, {QStringLiteral("nick"),
                                               QStringLiteral("nickName"),
                                               QStringLiteral("displayName"),
                                               QStringLiteral("name")});
     if (!id.isEmpty()) {
         object.insert(QStringLiteral("id"), id);
+    }
+    if (!publicId.isEmpty()) {
+        object.insert(QStringLiteral("userId"), publicId);
     }
     if (!nick.isEmpty()) {
         object.insert(QStringLiteral("nick"), nick);
@@ -134,14 +170,21 @@ QJsonObject profileObject(QJsonObject object)
     if (object.value(QStringLiteral("user")).isObject()) {
         object = object.value(QStringLiteral("user")).toObject();
     }
-    const QString userId = firstString(object, {QStringLiteral("userId"),
-                                                QStringLiteral("id"),
-                                                QStringLiteral("userUuid")});
+    const QString userUuid = firstString(object, {QStringLiteral("userUuid"),
+                                                  QStringLiteral("uuid"),
+                                                  QStringLiteral("id")});
+    QString userId = firstString(object, {QStringLiteral("userId"),
+                                          QStringLiteral("publicId"),
+                                          QStringLiteral("public_id")});
+    if (userId.isEmpty()) {
+        userId = userUuid;
+    }
     const QString nickName = firstString(object, {QStringLiteral("nickName"),
                                                   QStringLiteral("nick"),
                                                   QStringLiteral("displayName"),
                                                   QStringLiteral("name")});
     return {
+            {QStringLiteral("userUuid"), userUuid},
             {QStringLiteral("userId"), userId},
             {QStringLiteral("nickName"), nickName.isEmpty() ? userId : nickName},
             {QStringLiteral("avatarPath"), avatarSourceFrom(object, {QStringLiteral("avatarPath"),
@@ -190,6 +233,26 @@ QJsonObject groupObject(QJsonObject object)
         object.insert(QStringLiteral("groupAvatarPath"),
                       avatarSourceFrom(object, {QStringLiteral("groupAvatarPath"),
                                                 QStringLiteral("avatarUrl")}));
+    }
+    return object;
+}
+
+QJsonObject friendGroupObject(QJsonObject object)
+{
+    if (object.value(QStringLiteral("group")).isObject()) {
+        object = object.value(QStringLiteral("group")).toObject();
+    }
+    const QString friendGroupId = firstString(object, {QStringLiteral("friendGroupId"),
+                                                       QStringLiteral("groupId"),
+                                                       QStringLiteral("id")});
+    const QString name = firstString(object, {QStringLiteral("name"),
+                                              QStringLiteral("groupName")});
+    if (!friendGroupId.isEmpty()) {
+        object.insert(QStringLiteral("friendGroupId"), friendGroupId);
+        object.insert(QStringLiteral("groupId"), friendGroupId);
+    }
+    if (!name.isEmpty()) {
+        object.insert(QStringLiteral("name"), name);
     }
     return object;
 }
@@ -322,6 +385,9 @@ QJsonObject normalizeForDomain(const QString& domain, const QJsonObject& object)
     if (domain == QStringLiteral("groups")) {
         return groupObject(object);
     }
+    if (domain == QStringLiteral("friend_groups")) {
+        return friendGroupObject(object);
+    }
     if (domain == QStringLiteral("friend_notifications") ||
         domain == QStringLiteral("group_notifications") ||
         domain == QStringLiteral("notifications")) {
@@ -336,9 +402,10 @@ QJsonObject normalizeForDomain(const QString& domain, const QJsonObject& object)
 QVector<RemoteDataBootstrapper::FetchSpec> defaultFetchSpecs()
 {
     return {
-            {QStringLiteral("current_profiles"), QStringLiteral("/me"), {}, {QStringLiteral("userId"), QStringLiteral("id"), QStringLiteral("userUuid")}, {}, true, false},
+            {QStringLiteral("current_profiles"), QStringLiteral("/me"), {}, {QStringLiteral("userUuid"), QStringLiteral("id"), QStringLiteral("userId")}, {}, true, false},
             {QStringLiteral("current_preferences"), QStringLiteral("/me/preferences"), {}, {QStringLiteral("id")}, {}, true, false},
-            {QStringLiteral("users"), QStringLiteral("/friends"), QStringLiteral("friends"), {QStringLiteral("id"), QStringLiteral("userId"), QStringLiteral("userUuid"), QStringLiteral("friendUserUuid")}, {{QStringLiteral("limit"), kPageLimit}, {QStringLiteral("offset"), 0}}, true, true},
+            {QStringLiteral("friend_groups"), QStringLiteral("/friend-groups"), QStringLiteral("groups"), {QStringLiteral("friendGroupId"), QStringLiteral("groupId"), QStringLiteral("id")}, {}, true, false},
+            {QStringLiteral("users"), QStringLiteral("/friends"), QStringLiteral("friends"), {QStringLiteral("userUuid"), QStringLiteral("friendUserUuid"), QStringLiteral("uuid"), QStringLiteral("id"), QStringLiteral("userId")}, {{QStringLiteral("limit"), kPageLimit}, {QStringLiteral("offset"), 0}}, true, true},
             {QStringLiteral("groups"), QStringLiteral("/groups"), QStringLiteral("groups"), {QStringLiteral("groupId"), QStringLiteral("id")}, {{QStringLiteral("limit"), kPageLimit}, {QStringLiteral("offset"), 0}}, true, true},
             {QStringLiteral("friend_notifications"), QStringLiteral("/friend-requests"), QStringLiteral("requests"), {QStringLiteral("id"), QStringLiteral("requestId"), QStringLiteral("notificationId")}, {{QStringLiteral("status"), QStringLiteral("pending")}, {QStringLiteral("limit"), kPageLimit}, {QStringLiteral("offset"), 0}}, true, true},
             {QStringLiteral("group_notifications"), QStringLiteral("/group-notifications"), QStringLiteral("notifications"), {QStringLiteral("id"), QStringLiteral("requestId"), QStringLiteral("notificationId")}, {{QStringLiteral("limit"), kPageLimit}, {QStringLiteral("offset"), 0}}, true, true},
@@ -454,6 +521,17 @@ void RemoteDataBootstrapper::cacheResponse(const FetchSpec& spec,
     }
 
     LocalDataStore& store = LocalDataStore::instance();
+    QVector<QJsonObject> preservedLocalConversations;
+    QSet<QString> incomingKeys;
+    const bool preservesLocalConversationShells = spec.domain == QStringLiteral("conversations");
+    if (preservesLocalConversationShells && spec.clearBeforeStore) {
+        for (const QJsonObject& object : store.values(spec.domain)) {
+            if (object.contains(QStringLiteral("localMessageListTime"))) {
+                preservedLocalConversations.push_back(object);
+            }
+        }
+    }
+
     if (spec.clearBeforeStore) {
         store.clearDomain(spec.domain);
     }
@@ -463,12 +541,20 @@ void RemoteDataBootstrapper::cacheResponse(const FetchSpec& spec,
         QJsonObject object = normalizeForDomain(spec.domain, value.toObject());
         const QString key = cacheKeyFor(object, spec.keyFields, index);
         if (!key.isEmpty()) {
+            incomingKeys.insert(key);
             store.upsertValue(spec.domain, key, object);
         }
         if (spec.domain == QStringLiteral("notifications")) {
             updateUnreadStateFromNotification(object);
         }
         ++index;
+    }
+
+    for (const QJsonObject& object : preservedLocalConversations) {
+        const QString key = cacheKeyFor(object, spec.keyFields, 0);
+        if (!key.isEmpty() && !incomingKeys.contains(key)) {
+            store.upsertValue(spec.domain, key, object);
+        }
     }
 
     if (itemCount) {

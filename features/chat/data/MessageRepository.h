@@ -30,6 +30,9 @@ public:
 public slots:
     void touchConversation(const QString& conversationId,
                            const QDateTime& timestamp = QDateTime::currentDateTime());
+    void touchDirectConversation(const QString& conversationId,
+                                 const QString& peerUserId,
+                                 const QDateTime& timestamp = QDateTime::currentDateTime());
     void markConversationRead(const QString& conversationId);
     void markConversationUnread(const QString& conversationId, int unreadCount = 1);
     void setConversationDoNotDisturb(const QString& conversationId, bool enabled);
@@ -66,6 +69,9 @@ private:
     Q_DISABLE_COPY(MessageRepository)
     void reloadFromStore();
     void scheduleReloadFromStore();
+    void touchConversationObject(const QString& conversationId,
+                                 QJsonObject conversation,
+                                 const QDateTime& timestamp);
     bool shouldIgnoreStoreChange(const QString& domain);
     void ignoreNextStoreChange(const QString& domain);
     bool localUnreadOverride(const QString& conversationId, int* unreadCount = nullptr) const;
@@ -80,6 +86,7 @@ private:
     QMap<QString, QVector<QSharedPointer<ChatMessage>>> m_store;
     QMap<QString, ConversationSyncState> m_conversationStates;
     QMap<QString, QString> m_directConversationPeers;
+    QMap<QString, QString> m_groupConversationGroups;
     QString m_activeVisibleConversationId;
     bool m_hasActiveVisibleConversation = false;
     QHash<QString, int> m_ignoredStoreChangeCounts;

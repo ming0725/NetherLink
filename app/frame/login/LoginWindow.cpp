@@ -28,6 +28,7 @@
 #include <QCryptographicHash>
 #include <QDateTime>
 #include <QDir>
+#include <QEasingCurve>
 #include <QFutureWatcher>
 #include <QGuiApplication>
 #include <QFile>
@@ -47,6 +48,7 @@
 #include <QTimer>
 #include <QUrl>
 #include <QVBoxLayout>
+#include <QVariantAnimation>
 #include <QtConcurrent/QtConcurrentRun>
 
 #include <functional>
@@ -76,6 +78,7 @@ constexpr int kAccountPopupMaxRows = 4;
 constexpr int kAccountPopupDeleteSize = 22;
 constexpr qreal kBackgroundBlurRenderScale = 0.46;
 constexpr qreal kBackgroundBlurRadius = 38.0;
+constexpr int kLoginThemeTransitionMs = 2000;
 
 struct BackgroundLightFrame {
     QColor color;
@@ -126,6 +129,16 @@ LoginAccount firstAvailableLoginAccount()
         }
     }
     return {};
+}
+
+QString accountKeyForLoginAccount(const LoginAccount& account)
+{
+    return account.userUuid.isEmpty() ? account.accountId : account.userUuid;
+}
+
+QColor defaultLoginThemeColor()
+{
+    return QColor(0x00, 0x99, 0xff);
 }
 
 UserStatus statusFromAuthStatus(const QString& value)
@@ -995,6 +1008,7 @@ LoginWindow::LoginWindow(QWidget* parent)
     setFocusPolicy(Qt::StrongFocus);
     setAttribute(Qt::WA_TranslucentBackground);
     setCompactTrafficLightsEnabled(true);
+    applyThemeForAccount(firstAvailableLoginAccount(), false);
     updateBackdropTheme();
     setupBackgroundLights();
     setupUi();
@@ -1003,6 +1017,9 @@ LoginWindow::LoginWindow(QWidget* parent)
     connect(&ThemeManager::instance(), &ThemeManager::themeChanged, this, [this]() {
         updateBackdropTheme();
         updateBackgroundLightColors();
+        if (m_loginButton) {
+            m_loginButton->setPrimaryStyle();
+        }
         requestBackgroundLayerUpdate(true);
         update();
     });
@@ -1070,6 +1087,7 @@ void LoginWindow::setupUi()
     if (!initialAccount.avatarPath.isEmpty()) {
         static_cast<AvatarView*>(m_avatarView)->setAvatarPath(initialAccount.avatarPath);
     }
+    applyThemeForAccount(initialAccount, false);
     contentLayout->addWidget(m_accountField, 0, Qt::AlignHCenter);
     contentLayout->addSpacing(14);
 
@@ -1319,6 +1337,7 @@ void LoginWindow::applyAccountToForm(const LoginAccount& account)
         m_autoLoginButton->setChecked(account.autoLogin);
     }
     updateAvatarForAccount(account.accountId);
+    applyThemeForAccount(account, true);
 }
 
 void LoginWindow::scheduleAutoLoginIfNeeded()
@@ -1428,6 +1447,56 @@ void LoginWindow::attemptSessionRestore(const LoginAccount& account)
     m_sessionRestoreRequestId = NetworkService::instance().restoreSession(account.accountId,
                                                                           accountKey,
                                                                           account.refreshToken);
+}
+
+void LoginWindow::applyThemeForAccount(const LoginAccount& account, bool animated)
+{
+    QColor targetColor = defaultLoginThemeColor();
+    const QString accountKey = accountKeyForLoginAccount(account).trimmed();
+    if (!accountKey.isEmpty()) {
+        const CurrentUserPreferences preferences =
+                CurrentUserPreferencesRepository::instance().preferencesForAccount(accountKey);
+        const QColor accountColor(preferences.themeColor);
+        if (accountColor.isValid()) {
+            targetColor = accountColor.toRgb();
+            targetColor.setAlpha(255);
+        }
+    }
+
+    if (m_themeColorAnimation) {
+        m_themeColorAnimation->stop();
+        m_themeColorAnimation->deleteLater();
+        m_themeColorAnimation = nullptr;
+    }
+
+    QColor startColor = ThemeManager::instance().themeColor().toRgb();
+    startColor.setAlpha(255);
+    if (!animated || startColor == targetColor) {
+        ThemeManager::instance().setThemeColor(targetColor);
+        updateBackdropTheme();
+        updateBackgroundLightColors();
+        if (m_loginButton) {
+            m_loginButton->setPrimaryStyle();
+        }
+        requestBackgroundLayerUpdate(true);
+        update();
+        return;
+    }
+
+    auto* animation = new QVariantAnimation(this);
+    m_themeColorAnimation = animation;
+    animation->setDuration(kLoginThemeTransitionMs);
+    animation->setStartValue(startColor);
+    animation->setEndValue(targetColor);
+    animation->setEasingCurve(QEasingCurve::InOutCubic);
+    connect(animation, &QVariantAnimation::valueChanged, this, [](const QVariant& value) {
+        const QColor color = value.value<QColor>();
+        if (color.isValid()) {
+            ThemeManager::instance().setThemeColor(color);
+        }
+    });
+    connect(animation, &QVariantAnimation::finished, animation, &QObject::deleteLater);
+    animation->start();
 }
 
 void LoginWindow::cacheAuthenticatedAvatar(LoginAccount account, CurrentUserProfile authenticatedProfile)

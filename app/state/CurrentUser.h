@@ -24,6 +24,7 @@ public:
     CurrentUserProfile profile() const;
     bool isUserSet() const { return !m_userId.isEmpty(); }
     bool isCurrentUserId(const QString& userId) const;
+    void setPresence(UserStatus status, const QDateTime& lastSeenAt = {});
     void refreshIdentity();
     void refreshProfile();
     QString saveProfile(const CurrentUserProfile& profile);

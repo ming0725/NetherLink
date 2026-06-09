@@ -4,6 +4,59 @@
 
 #include <algorithm>
 
+namespace {
+
+QVector<int> changedRolesFor(const ConversationSummary& previous,
+                             const ConversationSummary& next)
+{
+    QVector<int> roles;
+    if (previous.title != next.title) {
+        roles.push_back(MessageListModel::TitleRole);
+        roles.push_back(Qt::DisplayRole);
+    }
+    if (previous.avatarPath != next.avatarPath) {
+        roles.push_back(MessageListModel::AvatarPathRole);
+    }
+    if (previous.previewText != next.previewText) {
+        roles.push_back(MessageListModel::PreviewTextRole);
+    }
+    if (previous.messageListTime != next.messageListTime) {
+        roles.push_back(MessageListModel::LastTimeRole);
+    }
+    if (previous.unreadCount != next.unreadCount) {
+        roles.push_back(MessageListModel::UnreadCountRole);
+    }
+    if (previous.isDoNotDisturb != next.isDoNotDisturb) {
+        roles.push_back(MessageListModel::DoNotDisturbRole);
+    }
+    if (previous.isPinned != next.isPinned) {
+        roles.push_back(MessageListModel::IsPinnedRole);
+    }
+    if (previous.isGroup != next.isGroup) {
+        roles.push_back(MessageListModel::IsGroupRole);
+    }
+    if (previous.memberCount != next.memberCount) {
+        roles.push_back(MessageListModel::MemberCountRole);
+    }
+    return roles;
+}
+
+bool hasSameConversationOrder(const QVector<ConversationSummary>& previous,
+                              const QVector<ConversationSummary>& next)
+{
+    if (previous.size() != next.size()) {
+        return false;
+    }
+    for (int row = 0; row < previous.size(); ++row) {
+        if (previous.at(row).conversationId != next.at(row).conversationId) {
+            return false;
+        }
+    }
+    return true;
+}
+
+} // namespace
+
 MessageListModel::MessageListModel(QObject* parent)
     : QAbstractListModel(parent)
 {
@@ -63,9 +116,22 @@ Qt::ItemFlags MessageListModel::flags(const QModelIndex& index) const
 
 void MessageListModel::setConversations(QVector<ConversationSummary> conversations)
 {
+    sortConversationVector(conversations);
+    if (hasSameConversationOrder(m_conversations, conversations)) {
+        for (int row = 0; row < conversations.size(); ++row) {
+            const QVector<int> roles = changedRolesFor(m_conversations.at(row), conversations.at(row));
+            if (roles.isEmpty()) {
+                continue;
+            }
+            m_conversations[row] = conversations.at(row);
+            const QModelIndex modelIndex = index(row, 0);
+            emit dataChanged(modelIndex, modelIndex, roles);
+        }
+        return;
+    }
+
     beginResetModel();
     m_conversations = std::move(conversations);
-    sortConversations();
     endResetModel();
 }
 
@@ -225,7 +291,12 @@ int MessageListModel::indexOfConversation(const QString& conversationId) const
 
 void MessageListModel::sortConversations()
 {
-    std::sort(m_conversations.begin(), m_conversations.end(),
+    sortConversationVector(m_conversations);
+}
+
+void MessageListModel::sortConversationVector(QVector<ConversationSummary>& conversations)
+{
+    std::sort(conversations.begin(), conversations.end(),
               [](const ConversationSummary& lhs, const ConversationSummary& rhs) {
                   if (lhs.isPinned != rhs.isPinned) {
                       return lhs.isPinned;

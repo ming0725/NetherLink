@@ -144,12 +144,34 @@ MessageApplication::MessageApplication(QWidget* parent)
     connect(&ConversationRemoteDataSource::instance(),
             &ConversationRemoteDataSource::directConversationOpened,
             this,
-            [this](const QString& requestId, const QString&, const QString& conversationId) {
+            [this](const QString& requestId, const QString& peerUserUuid, const QString& conversationId) {
                 if (requestId != m_openDirectConversationRequestId) {
                     return;
                 }
 
                 m_openDirectConversationRequestId.clear();
+                if (conversationId.isEmpty()) {
+                    GlobalNotification::showFailure(this, QStringLiteral("打开会话失败"));
+                    return;
+                }
+
+                QTimer::singleShot(0, this, [this, conversationId, peerUserUuid]() {
+                    MessageRepository::instance().touchDirectConversation(conversationId,
+                                                                          peerUserUuid,
+                                                                          QDateTime::currentDateTime());
+                    m_leftPane->messageList()->setCurrentConversation(conversationId);
+                    onMessageClicked(conversationId);
+                });
+            });
+    connect(&ConversationRemoteDataSource::instance(),
+            &ConversationRemoteDataSource::groupConversationOpened,
+            this,
+            [this](const QString& requestId, const QString&, const QString& conversationId) {
+                if (requestId != m_openGroupConversationRequestId) {
+                    return;
+                }
+
+                m_openGroupConversationRequestId.clear();
                 if (conversationId.isEmpty()) {
                     GlobalNotification::showFailure(this, QStringLiteral("打开会话失败"));
                     return;
@@ -165,13 +187,17 @@ MessageApplication::MessageApplication(QWidget* parent)
             &ConversationRemoteDataSource::operationFailed,
             this,
             [this](const QString& requestId, const QString&, const QString& operation, const NetworkError&) {
-                if (requestId != m_openDirectConversationRequestId ||
-                    operation != QStringLiteral("openDirectConversation")) {
+                if (requestId == m_openDirectConversationRequestId &&
+                    operation == QStringLiteral("openDirectConversation")) {
+                    m_openDirectConversationRequestId.clear();
+                    GlobalNotification::showFailure(this, QStringLiteral("打开会话失败"));
                     return;
                 }
-
-                m_openDirectConversationRequestId.clear();
-                GlobalNotification::showFailure(this, QStringLiteral("打开会话失败"));
+                if (requestId == m_openGroupConversationRequestId &&
+                    operation == QStringLiteral("openGroupConversation")) {
+                    m_openGroupConversationRequestId.clear();
+                    GlobalNotification::showFailure(this, QStringLiteral("打开会话失败"));
+                }
             });
 
     // 右侧堆栈：初始页 + 聊天页
@@ -328,9 +354,13 @@ void MessageApplication::openConversationFromContact(const QString& conversation
         return;
     }
 
-    MessageRepository::instance().touchConversation(conversationId, QDateTime::currentDateTime());
-    m_leftPane->messageList()->setCurrentConversation(conversationId);
-    onMessageClicked(conversationId);
+    const QString requestId =
+            ConversationRemoteDataSource::instance().openGroupConversation(conversationId);
+    if (requestId.isEmpty()) {
+        GlobalNotification::showFailure(this, QStringLiteral("打开会话失败"));
+    } else {
+        m_openGroupConversationRequestId = requestId;
+    }
 }
 
 void MessageApplication::ensureChatArea()

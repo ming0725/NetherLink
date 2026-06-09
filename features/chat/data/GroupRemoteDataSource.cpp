@@ -1,5 +1,6 @@
 #include "GroupRemoteDataSource.h"
 
+#include "features/chat/data/GroupRepository.h"
 #include "shared/data/LocalDataStore.h"
 #include "shared/network/HttpClient.h"
 #include "shared/services/AvatarSource.h"
@@ -26,12 +27,12 @@ QJsonObject bodyWithClientOperationId(const QString& clientOperationId)
 
 QString normalizedListGroupId(const Group& group)
 {
-    return group.listGroupId.isEmpty() ? QStringLiteral("gg_joined") : group.listGroupId;
+    return group.listGroupId;
 }
 
 QString normalizedListGroupName(const Group& group)
 {
-    return group.listGroupName.isEmpty() ? QStringLiteral("我加入的群聊") : group.listGroupName;
+    return group.listGroupName;
 }
 
 QString firstString(const QJsonObject& object, const QStringList& keys)
@@ -58,6 +59,19 @@ QString avatarFileIdFrom(const QJsonObject& object)
                                 QStringLiteral("fileId")});
 }
 
+QString userUuidFromObject(QJsonObject object)
+{
+    const QJsonObject nestedUser = object.value(QStringLiteral("user")).toObject();
+    if (!nestedUser.isEmpty()) {
+        object = nestedUser;
+    }
+    return firstString(object, {QStringLiteral("userUuid"),
+                                QStringLiteral("memberUserUuid"),
+                                QStringLiteral("uuid"),
+                                QStringLiteral("id"),
+                                QStringLiteral("userId")});
+}
+
 QVector<QString> stringVectorFromJson(const QJsonArray& array)
 {
     QVector<QString> values;
@@ -69,10 +83,7 @@ QVector<QString> stringVectorFromJson(const QJsonArray& array)
             continue;
         }
 
-        const QJsonObject object = value.toObject();
-        const QString id = firstString(object, {QStringLiteral("userId"),
-                                                QStringLiteral("userUuid"),
-                                                QStringLiteral("id")});
+        const QString id = userUuidFromObject(value.toObject());
         if (!id.isEmpty()) {
             values.push_back(id);
         }
@@ -165,6 +176,18 @@ QDateTime dateTimeFromString(const QString& value)
     return dateTime;
 }
 
+GroupMemberRoleValue groupMemberRoleFromString(const QString& value)
+{
+    const QString normalized = value.trimmed().toLower();
+    if (normalized == QStringLiteral("owner")) {
+        return GroupMemberRoleValue::Owner;
+    }
+    if (normalized == QStringLiteral("admin")) {
+        return GroupMemberRoleValue::Admin;
+    }
+    return GroupMemberRoleValue::Member;
+}
+
 QJsonObject memberUserObject(QJsonObject object)
 {
     const QJsonObject wrapper = object;
@@ -177,7 +200,7 @@ QJsonObject memberUserObject(QJsonObject object)
                                                   QStringLiteral("id")});
     const QString userId = firstString(object, {QStringLiteral("userId"),
                                                 QStringLiteral("publicId")});
-    const QString modelId = userId.isEmpty() ? userUuid : userId;
+    const QString modelId = userUuid.isEmpty() ? userId : userUuid;
     object.insert(QStringLiteral("id"), modelId);
     if (!userUuid.isEmpty()) {
         object.insert(QStringLiteral("userUuid"), userUuid);
@@ -188,9 +211,6 @@ QJsonObject memberUserObject(QJsonObject object)
     if (!object.contains(QStringLiteral("nick"))) {
         object.insert(QStringLiteral("nick"),
                       firstString(object, {QStringLiteral("nickName"), QStringLiteral("displayName")}));
-    }
-    if (wrapper.contains(QStringLiteral("nickname")) && !object.contains(QStringLiteral("remark"))) {
-        object.insert(QStringLiteral("remark"), wrapper.value(QStringLiteral("nickname")));
     }
     for (const QString& key : {QStringLiteral("presence"),
                                QStringLiteral("status"),
@@ -218,6 +238,31 @@ User userFromMemberObject(const QJsonObject& source)
     return user;
 }
 
+GroupMemberProfile groupMemberFromObject(const QString& groupId, const QJsonObject& source)
+{
+    GroupMemberProfile member;
+    member.groupId = firstString(source, {QStringLiteral("groupId"),
+                                          QStringLiteral("groupID")});
+    if (member.groupId.isEmpty()) {
+        member.groupId = groupId;
+    }
+    member.userUuid = userUuidFromObject(source);
+    member.user = userFromMemberObject(source);
+    if (member.userUuid.isEmpty()) {
+        member.userUuid = member.user.id;
+    }
+    if (member.user.id.isEmpty()) {
+        member.user.id = member.userUuid;
+        member.user.userUuid = member.userUuid;
+    }
+    member.nickname = source.value(QStringLiteral("nickname")).toString();
+    member.role = groupMemberRoleFromString(source.value(QStringLiteral("role")).toString());
+    member.isDnd = source.value(QStringLiteral("isDnd")).toBool(false);
+    member.joinedAt = dateTimeFromString(source.value(QStringLiteral("joinedAt")).toString());
+    member.version = source.value(QStringLiteral("version")).toInt();
+    return member;
+}
+
 void cacheMemberUserObject(const QJsonObject& source)
 {
     const QJsonObject object = memberUserObject(source);
@@ -235,10 +280,12 @@ Group groupFromResponseObject(QJsonObject object)
 
     Group group;
     group.groupId = firstString(object, {QStringLiteral("groupId"), QStringLiteral("id")});
+    group.version = object.value(QStringLiteral("version")).toInt();
+    group.etag = object.value(QStringLiteral("etag")).toString();
     group.groupName = firstString(object, {QStringLiteral("groupName"), QStringLiteral("name")});
     group.memberNum = object.value(QStringLiteral("memberNum")).toInt(
             object.value(QStringLiteral("memberCount")).toInt());
-    group.ownerId = firstString(object, {QStringLiteral("ownerId"), QStringLiteral("ownerUuid")});
+    group.ownerId = firstString(object, {QStringLiteral("ownerUuid"), QStringLiteral("ownerId")});
     group.avatarVersion = object.value(QStringLiteral("avatarVersion")).toInt();
     group.avatarEtag = object.value(QStringLiteral("avatarEtag")).toString();
     group.avatarContentHash = object.value(QStringLiteral("avatarContentHash")).toString();
@@ -256,14 +303,16 @@ Group groupFromResponseObject(QJsonObject object)
     group.remark = object.value(QStringLiteral("remark")).toString();
     group.introduction = object.value(QStringLiteral("introduction")).toString();
     group.announcement = object.value(QStringLiteral("announcement")).toString();
-    group.currentUserNickname = object.value(QStringLiteral("currentUserNickname")).toString();
+    group.currentUserNickname = object.value(QStringLiteral("currentUserNickname")).toString(
+            object.value(QStringLiteral("nickname")).toString());
     group.memberNicknames = stringMapFromJson(object.value(QStringLiteral("memberNicknames")).toObject());
     group.membersID = stringVectorFromJson(object.value(QStringLiteral("membersID")).toArray());
     if (group.membersID.isEmpty()) {
         group.membersID = stringVectorFromJson(object.value(QStringLiteral("members")).toArray());
     }
-    group.listGroupId = object.value(QStringLiteral("listGroupId")).toString(QStringLiteral("gg_joined"));
-    group.listGroupName = object.value(QStringLiteral("listGroupName")).toString(QStringLiteral("我加入的群聊"));
+    group.listGroupId = object.value(QStringLiteral("listGroupId")).toString();
+    group.listGroupName = object.value(QStringLiteral("listGroupName")).toString();
+    group.role = object.value(QStringLiteral("role")).toString();
     if (group.memberNum <= 0 && !group.membersID.isEmpty()) {
         group.memberNum = group.membersID.size();
     }
@@ -341,6 +390,9 @@ QString GroupRemoteDataSource::updateGroup(const Group& group)
     body.insert(QStringLiteral("name"), group.groupName);
     body.insert(QStringLiteral("introduction"), group.introduction);
     body.insert(QStringLiteral("announcement"), group.announcement);
+    if (group.version > 0) {
+        body.insert(QStringLiteral("expectedVersion"), group.version);
+    }
 
     PendingOperation pending;
     pending.action = Action::UpdateGroup;
@@ -363,6 +415,9 @@ QString GroupRemoteDataSource::updateMySettings(const Group& group)
     body.insert(QStringLiteral("listGroupId"), normalizedListGroupId(group));
     body.insert(QStringLiteral("listGroupName"), normalizedListGroupName(group));
     body.insert(QStringLiteral("isDnd"), group.isDnd);
+    if (group.version > 0) {
+        body.insert(QStringLiteral("expectedVersion"), group.version);
+    }
 
     PendingOperation pending;
     pending.action = Action::UpdateMySettings;
@@ -617,6 +672,22 @@ QString GroupRemoteDataSource::transferOwner(const Group& group, const QString& 
                          HttpMethod::Post);
 }
 
+QString GroupRemoteDataSource::fetchGroup(const QString& groupId)
+{
+    if (groupId.isEmpty()) {
+        return {};
+    }
+
+    PendingOperation pending;
+    pending.action = Action::FetchGroup;
+    pending.groupId = groupId;
+    return sendOperation(Action::FetchGroup,
+                         QStringLiteral("/groups/%1").arg(groupId),
+                         {},
+                         pending,
+                         HttpMethod::Get);
+}
+
 QString GroupRemoteDataSource::fetchMembers(const QString& groupId, const QString& keyword, int offset, int limit)
 {
     if (groupId.isEmpty() || offset < 0 || limit <= 0) {
@@ -665,20 +736,29 @@ void GroupRemoteDataSource::handleRequestSucceeded(const QString& requestId, con
 
     const PendingOperation pending = m_pendingOperations.take(requestId);
     switch (pending.action) {
+    case Action::FetchGroup: {
+        Group group = groupFromResponseObject(response.object());
+        if (group.groupId.isEmpty()) {
+            group.groupId = pending.groupId;
+        }
+        emit groupFetched(requestId, group);
+        break;
+    }
     case Action::FetchMembers: {
         const QJsonObject root = response.object();
         const QJsonArray items = arrayFromResponse(root, QStringLiteral("members"));
-        QVector<User> members;
+        QVector<GroupMemberProfile> members;
         members.reserve(items.size());
         for (const QJsonValue& value : items) {
             const QJsonObject object = value.toObject();
             cacheMemberUserObject(object);
-            const User user = userFromMemberObject(object);
-            if (!user.id.isEmpty()) {
-                members.push_back(user);
+            const GroupMemberProfile member = groupMemberFromObject(pending.groupId, object);
+            if (!member.userUuid.isEmpty()) {
+                members.push_back(member);
             }
         }
-        const int total = root.value(QStringLiteral("total")).toInt(pending.offset + members.size());
+        const int total = root.value(QStringLiteral("total")).toInt(
+                root.value(QStringLiteral("totalCount")).toInt(pending.offset + members.size()));
         const bool hasMore = root.value(QStringLiteral("hasMore")).toBool(pending.offset + members.size() < total);
         emit groupMembersFetched(requestId,
                                  pending.groupId,
@@ -712,14 +792,39 @@ void GroupRemoteDataSource::handleRequestSucceeded(const QString& requestId, con
         break;
     }
     case Action::UpdateGroup:
-        emit groupUpdated(requestId, pending.group);
+    {
+        Group group = groupFromResponseObject(response.object());
+        if (group.groupId.isEmpty()) {
+            group = pending.group;
+        }
+        emit groupUpdated(requestId, group);
         break;
+    }
     case Action::AddMembers:
     case Action::UpdateMember:
     case Action::RemoveMember:
     case Action::TransferOwner:
-        emit groupUpdated(requestId, pending.group);
+    {
+        if (pending.action == Action::UpdateMember) {
+            QJsonObject member = response.object().value(QStringLiteral("member")).toObject();
+            if (member.isEmpty()) {
+                member = response.object();
+            }
+            if (!member.isEmpty() && !pending.groupId.isEmpty()) {
+                if (!member.contains(QStringLiteral("groupId"))) {
+                    member.insert(QStringLiteral("groupId"), pending.groupId);
+                }
+                GroupRepository::instance().upsertGroupMember(member);
+            }
+        }
+
+        Group group = GroupRepository::instance().requestGroupDetail({pending.groupId});
+        if (group.groupId.isEmpty()) {
+            group = pending.group;
+        }
+        emit groupUpdated(requestId, group);
         break;
+    }
     case Action::RemoveMembers: {
         auto it = m_pendingBatches.find(pending.batchId);
         if (it == m_pendingBatches.end()) {
@@ -737,8 +842,14 @@ void GroupRemoteDataSource::handleRequestSucceeded(const QString& requestId, con
         break;
     }
     case Action::UpdateMySettings:
-        emit groupMySettingsUpdated(requestId, pending.group);
+    {
+        Group group = groupFromResponseObject(response.object());
+        if (group.groupId.isEmpty()) {
+            group = pending.group;
+        }
+        emit groupMySettingsUpdated(requestId, group);
         break;
+    }
     case Action::LeaveGroup:
         emit groupLeft(requestId, pending.groupId);
         break;
@@ -753,6 +864,9 @@ void GroupRemoteDataSource::handleRequestFailed(const QString& requestId, const 
 
     const PendingOperation pending = m_pendingOperations.take(requestId);
     switch (pending.action) {
+    case Action::FetchGroup:
+        emit groupFetchFailed(requestId, pending.groupId, error);
+        break;
     case Action::FetchMembers:
         emit groupMembersFetchFailed(requestId,
                                      pending.groupId,

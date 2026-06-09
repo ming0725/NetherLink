@@ -25,8 +25,10 @@ public:
     void clearActiveAccount();
     QVector<QJsonObject> values(const QString& domain);
     QJsonObject value(const QString& domain, const QString& key);
+    QJsonObject valueForAccount(const QString& accountKey, const QString& domain, const QString& key);
     bool hasDomain(const QString& domain);
     bool upsertValue(const QString& domain, const QString& key, const QJsonObject& value);
+    bool upsertValueForAccount(const QString& accountKey, const QString& domain, const QString& key, const QJsonObject& value);
     bool removeValue(const QString& domain, const QString& key);
     bool clearDomain(const QString& domain);
 
@@ -43,8 +45,11 @@ private:
     QString accountDatabasePath() const;
     QString pathForDomain(const QString& domain) const;
     QString connectionNameForPath(const QString& path) const;
+    QString connectionNameForPath(const QString& path, const QString& accountHash) const;
     QSqlDatabase databaseForPath(const QString& path);
+    QSqlDatabase databaseForPath(const QString& path, const QString& accountHash);
     bool ensureOpen(const QString& path);
+    bool ensureOpen(const QString& path, const QString& accountHash, bool& schemaReady);
     bool ensureSchema(QSqlDatabase& db, bool& schemaReady);
     void setLastError(const QString& error) const;
 

@@ -176,25 +176,6 @@ QString groupMemberDisplayName(const Group& group, const QString& userId)
     return userId;
 }
 
-QString simulatedPeerIdForGroup(const Group& group)
-{
-    const CurrentUser& currentUser = CurrentUser::instance();
-    if (!currentUser.isCurrentUserId(group.ownerId)) {
-        return group.ownerId;
-    }
-    for (const QString& adminId : group.adminsID) {
-        if (!currentUser.isCurrentUserId(adminId)) {
-            return adminId;
-        }
-    }
-    for (const QString& memberId : group.membersID) {
-        if (!currentUser.isCurrentUserId(memberId)) {
-            return memberId;
-        }
-    }
-    return {};
-}
-
 QString currentUserSenderId()
 {
     const CurrentUserProfile profile = CurrentUser::instance().identity();
@@ -435,18 +416,15 @@ ChatArea::ChatArea(QWidget *parent)
             this, &ChatArea::onSendImage);
     connect(inputBar, &FloatingInputBar::sendText,
             this, &ChatArea::onSendText);
-    connect(inputBar, &FloatingInputBar::sendTextAsPeer,
-            this, &ChatArea::onSendTextAsPeer);
-    connect(inputBar, &FloatingInputBar::recallLatestPeerMessageRequested,
-            this, &ChatArea::onRecallLatestPeerMessageRequested);
     connect(&ChatRemoteDataSource::instance(),
             &ChatRemoteDataSource::messageSendFailed,
             this,
             [this](const QString& clientMessageId, const NetworkError& error) {
                 markLocalSendFailed(clientMessageId);
                 if (error.code == QStringLiteral("NOT_FRIEND")) {
-                    if (!conversationId().isEmpty() && !isGroupMode()) {
-                        UserRepository::instance().removeUser(conversationId());
+                    const QString peerUserId = directPeerUserId();
+                    if (!peerUserId.isEmpty()) {
+                        UserRepository::instance().removeUser(peerUserId);
                     }
                     updateDirectRelationshipState(true);
                     GlobalNotification::showFailure(this, QStringLiteral("你们已不是好友，无法发送消息"));
@@ -461,8 +439,9 @@ ChatArea::ChatArea(QWidget *parent)
                 if (error.code != QStringLiteral("NOT_FRIEND")) {
                     return;
                 }
-                if (!conversationId().isEmpty() && !isGroupMode()) {
-                    UserRepository::instance().removeUser(conversationId());
+                const QString peerUserId = directPeerUserId();
+                if (!peerUserId.isEmpty()) {
+                    UserRepository::instance().removeUser(peerUserId);
                 }
                 failPendingLocalSendsForCurrentConversation();
                 updateDirectRelationshipState(true);
@@ -715,7 +694,7 @@ void ChatArea::refreshCurrentGroupMessageDisplayNames()
         return;
     }
 
-    const Group group = GroupRepository::instance().requestGroupDetail({conversationId()});
+    const Group group = GroupRepository::instance().requestGroupDetail({groupId()});
     if (group.groupId.isEmpty()) {
         return;
     }
@@ -1630,9 +1609,10 @@ void ChatArea::failPendingLocalSendsForCurrentConversation()
 
 bool ChatArea::isDirectRelationshipUnavailable() const
 {
-    return !conversationId().isEmpty() &&
+    const QString peerUserId = directPeerUserId();
+    return !peerUserId.isEmpty() &&
            !isGroupMode() &&
-           !UserRepository::instance().isFriend(conversationId());
+           !UserRepository::instance().isFriend(peerUserId);
 }
 
 QString ChatArea::directRelationshipDeletedNoticeMessageId() const
@@ -1731,12 +1711,10 @@ void ChatArea::updateMessageAnimationTimer()
 
 void ChatArea::applyConversationMeta()
 {
-    if (infoPanelOpen) {
-        requestInfoPanelData(false);
-    }
     if (m_state.meta.isGroup) {
         statusIcon->hide();
         nameLabel->setText(QString("%1（%2）").arg(m_state.meta.title, QString::number(m_state.meta.memberCount)));
+        updateGroupInfoPanelState();
         return;
     }
 
@@ -1744,6 +1722,7 @@ void ChatArea::applyConversationMeta()
     statusIcon->setPixmap(ImageService::instance().scaled(statusIconPath(m_state.meta.status),
                                                           QSize(12, 12)));
     nameLabel->setText(m_state.meta.title);
+    updateDirectInfoPanelState(false);
 }
 
 void ChatArea::onSessionChanged(const ConversationMeta& meta)
@@ -1881,7 +1860,7 @@ void ChatArea::showFriendProfilePopup(const QString& userId, const QPoint& globa
     }
 
     if (isGroupMode() && !conversationId().isEmpty()) {
-        const Group group = GroupRepository::instance().requestGroupDetail({conversationId()});
+        const Group group = GroupRepository::instance().requestGroupDetail({groupId()});
         friendProfilePopup->setGroupContext(group, canEditGroupMemberNickname(group, userId));
     } else {
         friendProfilePopup->clearGroupContext();
@@ -2129,7 +2108,14 @@ void ChatArea::updateGroupInfoPanelState()
         return;
     }
 
-    requestInfoPanelData(false);
+    const Group group = GroupRepository::instance().requestGroupDetail({groupId()});
+    if (!group.groupId.isEmpty()) {
+        const bool canEditGroupInfo =
+                GroupRepository::instance().isCurrentUserGroupOwner(group) ||
+                GroupRepository::instance().isCurrentUserGroupAdmin(group);
+        groupInfoPanel->setGroupState(group, canEditGroupInfo, !groupId().isEmpty());
+    }
+    groupInfoPanel->setConversationMeta(m_state.meta);
 }
 
 void ChatArea::updateDirectInfoPanelState(bool animated)
@@ -2152,7 +2138,7 @@ void ChatArea::onDirectPanelDataLoaded(const ConversationMeta& meta, const User&
 
 void ChatArea::onGroupPanelDataLoaded(const ConversationMeta& meta,
                                       const Group& group,
-                                      const QVector<User>& previewMembers,
+                                      const QVector<GroupMemberProfile>& previewMembers,
                                       int totalMembers,
                                       bool canEditGroupInfo,
                                       bool canExitGroup)
@@ -2399,7 +2385,7 @@ void ChatArea::onSendImage(const QString &path)
         QString senderName = CurrentUser::instance().getUserName();
         const QString senderId = currentUserSenderId();
         if (isGroupMode()) {
-            const Group group = GroupRepository::instance().requestGroupDetail({conversationId()});
+            const Group group = GroupRepository::instance().requestGroupDetail({groupId()});
             role = groupRoleForUser(group, senderId);
             senderName = groupMemberDisplayName(group, senderId);
         }
@@ -2469,7 +2455,7 @@ void ChatArea::onSendText(const QString &text)
         QString senderName = CurrentUser::instance().getUserName();
         const QString senderId = currentUserSenderId();
         if (isGroupMode()) {
-            const Group group = GroupRepository::instance().requestGroupDetail({conversationId()});
+            const Group group = GroupRepository::instance().requestGroupDetail({groupId()});
             role = groupRoleForUser(group, senderId);
             senderName = groupMemberDisplayName(group, senderId);
         }
@@ -2494,37 +2480,6 @@ void ChatArea::onSendText(const QString &text)
                                  },
                                  ptr);
     }
-}
-
-void ChatArea::onSendTextAsPeer(const QString& text)
-{
-    const QString trimmedText = text.trimmed();
-    if (trimmedText.isEmpty()) {
-        return;
-    }
-
-    QString senderId = m_state.meta.conversationId;
-    QString senderName = m_state.meta.title;
-    GroupRole role = GroupRole::Member;
-
-    if (isGroupMode()) {
-        const Group group = GroupRepository::instance().requestGroupDetail({conversationId()});
-        senderId = simulatedPeerIdForGroup(group);
-        if (senderId.isEmpty()) {
-            return;
-        }
-        senderName = groupMemberDisplayName(group, senderId);
-        role = groupRoleForUser(group, senderId);
-    }
-
-    auto ptr = QSharedPointer<TextMessage>::create(trimmedText,
-                                                   false,
-                                                   senderId,
-                                                   isGroupMode(),
-                                                   senderName,
-                                                   role);
-    applyPendingReference(ptr);
-    addMessage(ptr);
 }
 
 void ChatArea::onRetryMessageRequested(int row)
@@ -2608,7 +2563,7 @@ bool ChatArea::canRecallMessage(const ChatMessage* message) const
         return message->isFromMe() && withinOwnRecallWindow;
     }
 
-    const Group group = GroupRepository::instance().requestGroupDetail({conversationId()});
+    const Group group = GroupRepository::instance().requestGroupDetail({groupId()});
     const GroupRole currentRole = groupRoleForUser(group, CurrentUser::instance().getUserId());
     if (currentRole == GroupRole::Owner) {
         return true;
@@ -2739,7 +2694,7 @@ void ChatArea::recallMessageAtRow(int row,
         effectiveActorId = CurrentUser::instance().getUserId();
         effectiveActorName = CurrentUser::instance().getUserName();
         if (isGroupMode()) {
-            const Group group = GroupRepository::instance().requestGroupDetail({conversationId()});
+            const Group group = GroupRepository::instance().requestGroupDetail({groupId()});
             effectiveActorName = groupMemberDisplayName(group, effectiveActorId);
             effectiveActorRole = groupRoleForUser(group, effectiveActorId);
         }
@@ -2849,29 +2804,6 @@ void ChatArea::onReeditMessageRequested(int row)
 
     inputBar->appendText(recallMessage->getOriginalText());
     inputBar->focusInput();
-}
-
-void ChatArea::onRecallLatestPeerMessageRequested()
-{
-    if (conversationId().isEmpty() || !chatModel) {
-        return;
-    }
-
-    for (int row = chatModel->rowCount() - 1; row >= 0; --row) {
-        const QSharedPointer<ChatMessage> message = chatModel->sharedMessageAt(row);
-        if (message.isNull() ||
-                message->isFromMe() ||
-                message->getType() == MessageType::Recall) {
-            continue;
-        }
-
-        recallMessageAtRow(row,
-                           message->getSenderId(),
-                           message->getSenderName(),
-                           message->getRole(),
-                           true);
-        return;
-    }
 }
 
 void ChatArea::onDeleteMessageRequested(int row)
@@ -3084,6 +3016,26 @@ bool ChatArea::loadHistoryUnreadMessages(int requestedMessageCount)
 QString ChatArea::conversationId() const
 {
     return m_state.meta.conversationId;
+}
+
+QString ChatArea::groupId() const
+{
+    if (!m_state.meta.isGroup) {
+        return {};
+    }
+    return m_state.meta.groupId.isEmpty()
+            ? m_state.meta.conversationId
+            : m_state.meta.groupId;
+}
+
+QString ChatArea::directPeerUserId() const
+{
+    if (m_state.meta.isGroup) {
+        return {};
+    }
+    return m_state.meta.peerUserId.isEmpty()
+            ? m_state.meta.conversationId
+            : m_state.meta.peerUserId;
 }
 
 bool ChatArea::isGroupMode() const

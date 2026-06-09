@@ -28,9 +28,11 @@ public:
     QString removeMember(const Group& group, const QString& userId);
     QStringList removeMembers(const Group& group, const QStringList& userIds);
     QString transferOwner(const Group& group, const QString& userId);
+    QString fetchGroup(const QString& groupId);
     QString fetchMembers(const QString& groupId, const QString& keyword, int offset, int limit);
 
 signals:
+    void groupFetched(const QString& requestId, const Group& group);
     void groupCreated(const QString& requestId, const Group& group);
     void groupUpdated(const QString& requestId, const Group& group);
     void groupMySettingsUpdated(const QString& requestId, const Group& group);
@@ -40,9 +42,10 @@ signals:
                              const QString& keyword,
                              int offset,
                              int limit,
-                             const QVector<User>& members,
+                             const QVector<GroupMemberProfile>& members,
                              int totalCount,
                              bool hasMore);
+    void groupFetchFailed(const QString& requestId, const QString& groupId, const NetworkError& error);
     void groupCreateFailed(const QString& requestId, const NetworkError& error);
     void groupUpdateFailed(const QString& requestId, const QString& groupId, const NetworkError& error);
     void groupMySettingsUpdateFailed(const QString& requestId, const QString& groupId, const NetworkError& error);
@@ -65,6 +68,7 @@ private:
         RemoveMember,
         RemoveMembers,
         TransferOwner,
+        FetchGroup,
         FetchMembers
     };
 

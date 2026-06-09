@@ -48,6 +48,7 @@ public:
 
 private:
     void sortConversations();
+    static void sortConversationVector(QVector<ConversationSummary>& conversations);
 
     QVector<ConversationSummary> m_conversations;
     QString m_contextMenuConversationId;

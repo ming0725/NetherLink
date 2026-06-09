@@ -14,6 +14,7 @@ public:
     static CurrentUserPreferencesRepository& instance();
 
     CurrentUserPreferences currentPreferences() const;
+    CurrentUserPreferences preferencesForAccount(const QString& accountKey) const;
     void saveCurrentUserPreferences(const CurrentUserPreferences& preferences);
     void saveCurrentUserPreferencesObject(const QJsonObject& object, const QString& responseEtag = {});
 

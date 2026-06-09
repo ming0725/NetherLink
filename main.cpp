@@ -4,6 +4,7 @@
 #include "app/frame/login/LoginAccountRepository.h"
 #include "app/frame/MainWindow.h"
 #include "app/state/CurrentUser.h"
+#include "app/state/CurrentUserRemoteDataSource.h"
 #include "shared/network/AuthSession.h"
 #include "shared/network/HttpClient.h"
 #include "shared/network/NetworkLog.h"
@@ -157,6 +158,7 @@ int main(int argc, char *argv[])
                                                                  accessToken,
                                                                  refreshToken,
                                                                  expiresInSeconds);
+            CurrentUserRemoteDataSource::instance().fetchPreferences();
         }
     });
 

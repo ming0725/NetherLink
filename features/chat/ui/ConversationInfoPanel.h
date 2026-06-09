@@ -34,10 +34,12 @@ public:
 
     void setGroupSummary(const Group& group,
                          const ConversationMeta& meta,
-                         const QVector<User>& previewMembers,
+                         const QVector<GroupMemberProfile>& previewMembers,
                          int totalMembers,
                          bool canEditGroupInfo,
                          bool canExitGroup);
+    void setGroupState(const Group& group, bool canEditGroupInfo, bool canExitGroup);
+    void setConversationMeta(const ConversationMeta& meta, bool animated = false);
     void appendGroupMembersPage(const GroupMembersPage& page);
     void resetTransientState();
     void releaseTransientResources();
@@ -89,7 +91,7 @@ private:
     class QVBoxLayout* m_memberFullListLayout = nullptr;
     class IconLineEdit* m_memberSearchInput = nullptr;
     Group m_group;
-    QVector<User> m_members;
+    QVector<GroupMemberProfile> m_members;
     QString m_memberKeyword;
     int m_memberTotalCount = 0;
     int m_memberLoadedCount = 0;

@@ -36,6 +36,30 @@ QJsonObject conversationObjectFromResponse(QJsonObject object)
     return object;
 }
 
+QJsonObject directConversationObjectWithPeer(QJsonObject conversation, const QString& peerUserUuid)
+{
+    if (conversation.isEmpty() || peerUserUuid.isEmpty()) {
+        return conversation;
+    }
+
+    if (!conversation.contains(QStringLiteral("type"))) {
+        conversation.insert(QStringLiteral("type"), QStringLiteral("direct"));
+    }
+
+    QJsonObject summary = conversation.value(QStringLiteral("summary")).toObject();
+    QJsonObject peer = summary.value(QStringLiteral("peerUser")).toObject();
+    if (peer.isEmpty()) {
+        peer = conversation.value(QStringLiteral("peerUser")).toObject();
+    }
+    if (peer.isEmpty()) {
+        peer.insert(QStringLiteral("userUuid"), peerUserUuid);
+        summary.insert(QStringLiteral("peerUser"), peer);
+        conversation.insert(QStringLiteral("summary"), summary);
+    }
+
+    return conversation;
+}
+
 QString conversationIdFromObject(const QJsonObject& object)
 {
     return firstString(object, {QStringLiteral("conversationId"), QStringLiteral("id")});
@@ -175,6 +199,42 @@ QString ConversationRemoteDataSource::openDirectConversation(const QString& peer
     return requestId;
 }
 
+QString ConversationRemoteDataSource::openGroupConversation(const QString& groupId)
+{
+    if (groupId.isEmpty()) {
+        return {};
+    }
+
+    PendingOperation pending;
+    pending.action = Action::OpenGroup;
+    pending.conversationId = groupId;
+
+    NetworkRequest request = NetworkRequest::json(
+            HttpMethod::Post,
+            QStringLiteral("/conversations/group"),
+            {{QStringLiteral("groupId"), groupId}});
+    request.maxRetries = 3;
+    const QString requestId = HttpClient::instance().send(request);
+    if (requestId.isEmpty()) {
+        return {};
+    }
+
+    m_pendingOperations.insert(requestId, pending);
+    return requestId;
+}
+
+QString ConversationRemoteDataSource::fetchConversation(const QString& conversationId)
+{
+    if (conversationId.isEmpty() || !isBackendConversationId(conversationId)) {
+        return {};
+    }
+
+    return sendSimpleOperation(Action::FetchConversation,
+                               HttpMethod::Get,
+                               QStringLiteral("/conversations/%1").arg(conversationId),
+                               conversationId);
+}
+
 QString ConversationRemoteDataSource::sendSettingsOperation(Action action,
                                                            const QString& conversationId,
                                                            const QJsonObject& body,
@@ -237,6 +297,10 @@ QString ConversationRemoteDataSource::operationName(Action action) const
         return QStringLiteral("clearMessages");
     case Action::OpenDirect:
         return QStringLiteral("openDirectConversation");
+    case Action::OpenGroup:
+        return QStringLiteral("openGroupConversation");
+    case Action::FetchConversation:
+        return QStringLiteral("fetchConversation");
     }
     return {};
 }
@@ -257,7 +321,7 @@ void ConversationRemoteDataSource::handleRequestSucceeded(const QString& request
         }
     }
     switch (pending.action) {
-    case Action::OpenDirect: {
+    case Action::FetchConversation: {
         ReferenceDataResolver::instance().consumePayload(response.object());
         const QJsonObject conversation = conversationObjectFromResponse(response.object());
         const QString conversationId = conversationIdFromObject(conversation);
@@ -266,7 +330,44 @@ void ConversationRemoteDataSource::handleRequestSucceeded(const QString& request
                                                    conversationId,
                                                    conversation);
         }
+        emit conversationFetched(requestId,
+                                 conversationId.isEmpty() ? pending.conversationId : conversationId);
+        break;
+    }
+    case Action::OpenDirect: {
+        ReferenceDataResolver::instance().consumePayload(response.object());
+        const QJsonObject conversation = directConversationObjectWithPeer(
+                conversationObjectFromResponse(response.object()),
+                pending.conversationId);
+        const QString conversationId = conversationIdFromObject(conversation);
+        if (!conversationId.isEmpty()) {
+            LocalDataStore::instance().upsertValue(QStringLiteral("conversations"),
+                                                   conversationId,
+                                                   conversation);
+        }
         emit directConversationOpened(requestId, pending.conversationId, conversationId);
+        break;
+    }
+    case Action::OpenGroup: {
+        ReferenceDataResolver::instance().consumePayload(response.object());
+        QJsonObject conversation = conversationObjectFromResponse(response.object());
+        const QString conversationId = conversationIdFromObject(conversation);
+        if (!conversationId.isEmpty()) {
+            if (!conversation.contains(QStringLiteral("type"))) {
+                conversation.insert(QStringLiteral("type"), QStringLiteral("group"));
+            }
+            QJsonObject summary = conversation.value(QStringLiteral("summary")).toObject();
+            QJsonObject group = summary.value(QStringLiteral("group")).toObject();
+            if (group.value(QStringLiteral("groupId")).toString().isEmpty()) {
+                group.insert(QStringLiteral("groupId"), pending.conversationId);
+                summary.insert(QStringLiteral("group"), group);
+                conversation.insert(QStringLiteral("summary"), summary);
+            }
+            LocalDataStore::instance().upsertValue(QStringLiteral("conversations"),
+                                                   conversationId,
+                                                   conversation);
+        }
+        emit groupConversationOpened(requestId, pending.conversationId, conversationId);
         break;
     }
     case Action::SetPinned:

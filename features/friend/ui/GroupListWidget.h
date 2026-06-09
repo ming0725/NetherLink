@@ -84,6 +84,12 @@ private:
     void scrollCategoryToTop(const QString& categoryId);
     void clearCurrentSelection();
     void showGroupMenu(const QPoint& globalPos, const QModelIndex& index);
+    void showGroupCategoryMenu(const QPoint& globalPos,
+                               const QString& categoryId = {},
+                               const QString& categoryName = {});
+    void promptCreateGroupCategory();
+    void promptRenameGroupCategory(const QString& categoryId, const QString& currentName);
+    void deleteGroupCategoryFromMenu(const QString& categoryId, const QString& categoryName);
     void changeGroupCategory(const QString& groupId,
                              const QString& categoryId,
                              const QString& categoryName);

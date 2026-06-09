@@ -615,8 +615,8 @@ void GroupDetailPage::rebuildCategoryMenu()
         });
     };
 
-    for (const QString& categoryId : editableCategoryOrder()) {
-        addCategoryAction(categoryId, categories.value(categoryId));
+    for (auto it = categories.constBegin(); it != categories.constEnd(); ++it) {
+        addCategoryAction(it.key(), it.value());
     }
 
 }
@@ -630,8 +630,13 @@ void GroupDetailPage::changeCategory(const QString& categoryId, const QString& c
         return;
     }
 
-    m_group.listGroupId = categoryId;
-    m_group.listGroupName = categoryName;
+    if (categoryId == QStringLiteral("gg_joined")) {
+        m_group.listGroupId.clear();
+        m_group.listGroupName.clear();
+    } else {
+        m_group.listGroupId = categoryId;
+        m_group.listGroupName = categoryName;
+    }
     if (!m_controller || !m_controller->saveGroup(m_group)) {
         return;
     }

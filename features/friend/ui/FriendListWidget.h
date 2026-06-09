@@ -83,6 +83,12 @@ private:
     void scrollGroupToTop(const QString& groupId);
     void clearCurrentSelection();
     void showFriendMenu(const QPoint& globalPos, const QModelIndex& index);
+    void showFriendGroupMenu(const QPoint& globalPos,
+                             const QString& groupId = {},
+                             const QString& groupName = {});
+    void promptCreateFriendGroup();
+    void promptRenameFriendGroup(const QString& groupId, const QString& currentName);
+    void deleteFriendGroupFromMenu(const QString& groupId, const QString& groupName);
     void changeFriendGroup(const QString& userId, const QString& groupId, const QString& groupName);
     void deleteFriendFromMenu(const QString& userId);
     void updateStickyHeader();

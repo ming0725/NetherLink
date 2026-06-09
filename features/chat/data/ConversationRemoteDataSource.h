@@ -22,11 +22,17 @@ public:
     QString markUnread(const QString& conversationId);
     QString clearMessages(const QString& conversationId);
     QString openDirectConversation(const QString& peerUserUuid);
+    QString openGroupConversation(const QString& groupId);
+    QString fetchConversation(const QString& conversationId);
 
 signals:
+    void conversationFetched(const QString& requestId, const QString& conversationId);
     void directConversationOpened(const QString& requestId,
                                   const QString& peerUserUuid,
                                   const QString& conversationId);
+    void groupConversationOpened(const QString& requestId,
+                                 const QString& groupId,
+                                 const QString& conversationId);
     void pinnedUpdated(const QString& requestId, const QString& conversationId, bool pinned);
     void doNotDisturbUpdated(const QString& requestId, const QString& conversationId, bool enabled);
     void conversationHidden(const QString& requestId, const QString& conversationId);
@@ -46,7 +52,9 @@ private:
         MarkRead,
         MarkUnread,
         ClearMessages,
-        OpenDirect
+        OpenDirect,
+        OpenGroup,
+        FetchConversation
     };
 
     struct PendingOperation {
