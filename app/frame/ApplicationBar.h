@@ -6,6 +6,8 @@
 #include <QRect>
 #include <QString>
 
+#include "shared/types/User.h"
+
 class ApplicationBarItem;
 class FriendProfilePopup;
 class InWindowPopupOverlay;
@@ -76,5 +78,6 @@ private:
     int avatarSize          = 35;
     int highlightPosY       = 0;
     int topInset            = 0;
+    UserStatus avatarStatus = Offline;
     QVariantAnimation* highlightAnim = nullptr;
 };

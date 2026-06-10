@@ -47,8 +47,16 @@ QJsonObject preferencesPatchBody(const CurrentUserPreferences& preferences)
 
 CurrentUserProfile profileFromResponseObject(QJsonObject object, const QString& responseEtag)
 {
+    const QJsonObject root = object;
     if (object.value(QStringLiteral("user")).isObject()) {
         object = object.value(QStringLiteral("user")).toObject();
+        for (const QString& key : {QStringLiteral("presence"),
+                                   QStringLiteral("status"),
+                                   QStringLiteral("lastSeenAt")}) {
+            if (root.contains(key) && !object.contains(key)) {
+                object.insert(key, root.value(key));
+            }
+        }
     }
     object.insert(QStringLiteral("avatarPath"),
                   object.value(QStringLiteral("avatarPath")).toString(

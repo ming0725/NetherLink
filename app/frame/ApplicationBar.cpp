@@ -45,8 +45,10 @@ ApplicationBar::ApplicationBar(QWidget* parent)
 #endif
 
     setAvatarSource(CurrentUser::instance().getAvatarPath());
+    avatarStatus = CurrentUser::instance().getStatus();
     connect(&CurrentUser::instance(), &CurrentUser::identityChanged, this, [this]() {
         setAvatarSource(CurrentUser::instance().getAvatarPath());
+        avatarStatus = CurrentUser::instance().getStatus();
         update();
     });
     connect(&ImageService::instance(), &ImageService::previewReady, this, [this]() {
@@ -526,12 +528,12 @@ void ApplicationBar::showCurrentUserStatusPopup()
 
 QString ApplicationBar::avatarStatusIconSource() const
 {
-    return statusIconPath(CurrentUser::instance().getStatus());
+    return statusIconPath(avatarStatus);
 }
 
 int ApplicationBar::avatarStatusChoiceIndex() const
 {
-    const UserStatus status = CurrentUser::instance().getStatus();
+    const UserStatus status = avatarStatus;
     if (status == Mining) {
         return 1;
     }
@@ -558,6 +560,7 @@ void ApplicationBar::setAvatarStatusChoiceIndex(int index)
                : (index == 3 ? QStringLiteral("invisible") : QStringLiteral("online")));
 
     CurrentUser::instance().setPresence(status);
+    avatarStatus = status;
     NetworkService::instance().updatePresence(presenceStatus);
     update(avatarStatusRect());
 }

@@ -163,7 +163,7 @@ QVector<QJsonObject> LocalDataStore::values(const QString& domain)
 
     QSqlDatabase db = databaseForPath(path);
     QSqlQuery query(db);
-    query.prepare(QStringLiteral("SELECT value_json FROM local_records WHERE domain = ? ORDER BY key"));
+    query.prepare(QStringLiteral("SELECT value_json FROM local_records WHERE domain = ? ORDER BY updated_at, key"));
     query.addBindValue(domain);
     if (!query.exec()) {
         setLastError(query.lastError().text());

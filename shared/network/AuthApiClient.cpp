@@ -227,7 +227,15 @@ void AuthApiClient::handleRequestFailed(const QString& requestId, const NetworkE
 AuthResult AuthApiClient::authResultFromObject(const QJsonObject& object) const
 {
     AuthResult result;
-    result.user = authUserFromObject(object.value(QStringLiteral("user")).toObject());
+    QJsonObject userObject = object.value(QStringLiteral("user")).toObject();
+    for (const QString& key : {QStringLiteral("presence"),
+                               QStringLiteral("status"),
+                               QStringLiteral("lastSeenAt")}) {
+        if (object.contains(key) && !userObject.contains(key)) {
+            userObject.insert(key, object.value(key));
+        }
+    }
+    result.user = authUserFromObject(userObject);
     result.preferences = object.value(QStringLiteral("preferences")).toObject();
     result.accessToken = object.value(QStringLiteral("accessToken")).toString();
     result.refreshToken = object.value(QStringLiteral("refreshToken")).toString();

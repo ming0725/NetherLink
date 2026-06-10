@@ -139,8 +139,16 @@ bool hasPresencePayload(const QJsonObject& object)
 
 CurrentUserProfile profileFromJson(QJsonObject object, const QString& responseEtag = {})
 {
+    const QJsonObject root = object;
     if (object.value(QStringLiteral("user")).isObject()) {
         object = object.value(QStringLiteral("user")).toObject();
+        for (const QString& key : {QStringLiteral("presence"),
+                                   QStringLiteral("status"),
+                                   QStringLiteral("lastSeenAt")}) {
+            if (root.contains(key) && !object.contains(key)) {
+                object.insert(key, root.value(key));
+            }
+        }
     }
 
     CurrentUserProfile profile;
@@ -205,6 +213,11 @@ QJsonObject profileToJson(const CurrentUserProfile& profile)
         object.insert(QStringLiteral("etag"), profile.etag);
     }
     return object;
+}
+
+QString profileStorageKey(const CurrentUserProfile& profile)
+{
+    return profile.userUuid.isEmpty() ? profile.userId : profile.userUuid;
 }
 
 class CurrentUserIdentityRequestOperation final
@@ -390,9 +403,13 @@ void CurrentUserProfileRepository::saveCurrentUserProfile(const CurrentUserProfi
         m_profiles.insert(next.userId, next);
     }
 
+    const QString storageKey = profileStorageKey(next);
     LocalDataStore::instance().upsertValue(QStringLiteral("current_profiles"),
-                                           next.userId,
+                                           storageKey,
                                            profileToJson(next));
+    if (!next.userUuid.isEmpty() && next.userUuid != next.userId) {
+        LocalDataStore::instance().removeValue(QStringLiteral("current_profiles"), next.userId);
+    }
 
     if (!oldAvatarPath.isEmpty() && oldAvatarPath != next.avatarPath) {
         ImageService::instance().invalidateSource(oldAvatarPath);
@@ -472,8 +489,11 @@ bool CurrentUserProfileRepository::updatePresence(const QString& userUuid,
 
     if (!profileKey.isEmpty()) {
         LocalDataStore::instance().upsertValue(QStringLiteral("current_profiles"),
-                                               profileKey,
+                                               profileStorageKey(profile),
                                                profileToJson(profile));
+        if (!profile.userUuid.isEmpty() && profile.userUuid != profile.userId) {
+            LocalDataStore::instance().removeValue(QStringLiteral("current_profiles"), profile.userId);
+        }
     }
     if (updated) {
         emit currentUserProfileChanged(profile.userId);
