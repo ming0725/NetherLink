@@ -50,6 +50,7 @@
 #include <QScrollBar>
 #include <QScreen>
 #include <QSet>
+#include <QRegularExpression>
 #include <QTextEdit>
 #include <QTimer>
 #include <QToolButton>
@@ -248,6 +249,12 @@ QJsonObject normalizedRemoteGroupObject(QJsonObject object)
             : object.value(QStringLiteral("relation")).toObject();
     object.insert(QStringLiteral("groupId"),
                   firstString(object, {QStringLiteral("groupId"), QStringLiteral("id")}));
+    const QString groupPublicId = firstString(object, {QStringLiteral("groupPublicId"),
+                                                       QStringLiteral("publicId"),
+                                                       QStringLiteral("public_id")});
+    if (!groupPublicId.isEmpty()) {
+        object.insert(QStringLiteral("groupPublicId"), groupPublicId);
+    }
     if (!object.contains(QStringLiteral("groupName"))) {
         object.insert(QStringLiteral("groupName"),
                       firstString(object, {QStringLiteral("name"), QStringLiteral("title")}));
@@ -268,6 +275,7 @@ Group groupFromRemoteObject(const QJsonObject& source)
     const QJsonObject object = normalizedRemoteGroupObject(source);
     Group group;
     group.groupId = object.value(QStringLiteral("groupId")).toString();
+    group.groupPublicId = object.value(QStringLiteral("groupPublicId")).toString();
     group.groupName = object.value(QStringLiteral("groupName")).toString();
     group.memberNum = object.value(QStringLiteral("memberNum")).toInt();
     group.ownerId = object.value(QStringLiteral("ownerUuid")).toString(object.value(QStringLiteral("ownerId")).toString());
@@ -331,6 +339,12 @@ bool looksLikeUuid(const QString& value)
     return !value.isEmpty() && !QUuid::fromString(value).isNull();
 }
 
+bool isTenDigitGroupPublicId(const QString& value)
+{
+    static const QRegularExpression tenDigitId(QStringLiteral("^\\d{10}$"));
+    return tenDigitId.match(value.trimmed()).hasMatch();
+}
+
 QString readableUserId(const User& user, const QString& fallback = {})
 {
     if (!user.userId.isEmpty()) {
@@ -341,6 +355,15 @@ QString readableUserId(const User& user, const QString& fallback = {})
     }
     if (!user.id.isEmpty() && !looksLikeUuid(user.id)) {
         return user.id;
+    }
+    return {};
+}
+
+QString readableGroupPublicId(const Group& group)
+{
+    const QString publicId = group.groupPublicId.trimmed();
+    if (isTenDigitGroupPublicId(publicId)) {
+        return publicId;
     }
     return {};
 }
@@ -1642,6 +1665,40 @@ AddContactSearchWindow::AddContactSearchWindow(InitialMode mode, QWidget* parent
     connect(&ThemeManager::instance(), &ThemeManager::themeChanged, this, [this]() {
         applyTheme();
     });
+    connect(&ImageService::instance(),
+            &ImageService::resourceChanged,
+            this,
+            [this](const QString& source) {
+                if (source.isEmpty() || !m_resultView || !m_model) {
+                    return;
+                }
+
+                bool updatedVisibleRow = false;
+                for (int row = 0; row < m_model->rowCount(); ++row) {
+                    const QModelIndex modelIndex = m_model->index(row, 0);
+                    const QString avatarSource = modelIndex.data(AddContactSearchModel::TypeRole).toInt() == 0
+                            ? modelIndex.data(AddContactSearchModel::UserAvatarRole).toString()
+                            : modelIndex.data(AddContactSearchModel::GroupAvatarRole).toString();
+                    if (avatarSource != source) {
+                        continue;
+                    }
+
+                    const QRect rowRect = m_resultView->visualRect(modelIndex);
+                    if (!rowRect.isEmpty() && rowRect.intersects(m_resultView->viewport()->rect())) {
+                        m_resultView->viewport()->update(rowRect);
+                        updatedVisibleRow = true;
+                    }
+                }
+
+                if (!updatedVisibleRow) {
+                    m_resultView->viewport()->update();
+                }
+            });
+    connect(&ImageService::instance(), &ImageService::previewReady, this, [this]() {
+        if (m_resultView) {
+            m_resultView->viewport()->update();
+        }
+    });
 
     applyTheme();
     setMode(mode == InitialMode::Users
@@ -1741,11 +1798,14 @@ bool AddContactSearchWindow::openGroupRequest(const QString& groupId, QWidget* a
             : orderedCategories.firstKey();
     const QString defaultCategoryName = orderedCategories.value(defaultCategoryId,
                                                                QStringLiteral("我加入的群聊"));
+    const QString publicGroupId = readableGroupPublicId(group);
     const ContactRequestData request = showRequestPopup(anchor,
                                                         QStringLiteral("申请加入群聊"),
                                                         group.groupAvatarPath,
                                                         group.groupName,
-                                                        QStringLiteral("ID %1").arg(group.groupId),
+                                                        QStringLiteral("群号 %1").arg(publicGroupId.isEmpty()
+                                                                                         ? QStringLiteral("暂无")
+                                                                                         : publicGroupId),
                                                         QStringLiteral("输入入群申请信息"),
                                                         group.remark,
                                                         orderedCategories,
@@ -1760,7 +1820,7 @@ bool AddContactSearchWindow::openGroupRequest(const QString& groupId, QWidget* a
     }
 
     const QString requestId = FriendRemoteDataSource::instance().createGroupJoinRequest(
-            group.groupId,
+            publicGroupId.isEmpty() ? group.groupId : publicGroupId,
             request.requestMessage);
     return waitForGroupJoinRequestCreated(requestId, group.groupId, anchor);
 }
@@ -1857,7 +1917,9 @@ bool AddContactSearchWindow::openGroupApproval(const QString& groupId,
                                                         QStringLiteral("同意入群申请"),
                                                         group.groupAvatarPath,
                                                         group.groupName,
-                                                        QStringLiteral("ID %1").arg(group.groupId),
+                                                        QStringLiteral("群号 %1").arg(readableGroupPublicId(group).isEmpty()
+                                                                                         ? QStringLiteral("暂无")
+                                                                                         : readableGroupPublicId(group)),
                                                         QString(),
                                                         group.remark,
                                                         orderedCategories,
@@ -2026,15 +2088,21 @@ void AddContactSearchWindow::performSearch()
     m_activeSearchKeyword = keyword;
     m_activeSearchMode = m_mode;
 
+    const bool exactGroupPublicIdSearch =
+            m_mode == AddContactModeBar::Mode::Groups && isTenDigitGroupPublicId(keyword);
     const QString path = m_mode == AddContactModeBar::Mode::Users
             ? QStringLiteral("/users")
-            : QStringLiteral("/groups");
-    NetworkRequest request = NetworkRequest::json(HttpMethod::Get,
-                                                  path,
-                                                  {},
-                                                  {{QStringLiteral("keyword"), keyword},
-                                                   {QStringLiteral("limit"), kSearchResultLimit},
-                                                   {QStringLiteral("offset"), 0}});
+            : (exactGroupPublicIdSearch ? QStringLiteral("/groups/by-id")
+                                        : QStringLiteral("/groups"));
+    QVariantMap query;
+    if (exactGroupPublicIdSearch) {
+        query.insert(QStringLiteral("groupPublicId"), keyword);
+    } else {
+        query.insert(QStringLiteral("keyword"), keyword);
+        query.insert(QStringLiteral("limit"), kSearchResultLimit);
+        query.insert(QStringLiteral("offset"), 0);
+    }
+    NetworkRequest request = NetworkRequest::json(HttpMethod::Get, path, {}, query);
     request.maxRetries = 3;
     m_activeSearchRequestId = HttpClient::instance().send(request);
 }
@@ -2102,7 +2170,12 @@ QVector<AddContactSearchItem> AddContactSearchWindow::searchUsers(const QJsonObj
 QVector<AddContactSearchItem> AddContactSearchWindow::searchGroups(const QJsonObject& response) const
 {
     QVector<AddContactSearchItem> items;
-    const QJsonArray groups = arrayFromResponse(response, QStringLiteral("groups"));
+    QJsonArray groups = arrayFromResponse(response, QStringLiteral("groups"));
+    if (groups.isEmpty() && response.value(QStringLiteral("group")).isObject()) {
+        groups.append(response.value(QStringLiteral("group")));
+    } else if (groups.isEmpty() && !firstString(response, {QStringLiteral("groupId"), QStringLiteral("id")}).isEmpty()) {
+        groups.append(response);
+    }
     items.reserve(qMin(groups.size(), kSearchResultLimit));
     int visibleGroupIndex = 0;
     for (const QJsonValue& value : groups) {

@@ -170,6 +170,7 @@ QJsonObject groupNotificationToJson(const GroupNotification& notification)
             {QStringLiteral("type"), groupNotificationTypeToString(notification.type)},
             {QStringLiteral("status"), groupNotificationStatusToString(notification.status)},
             {QStringLiteral("groupId"), notification.groupId},
+            {QStringLiteral("groupPublicId"), notification.groupPublicId},
             {QStringLiteral("actorUserId"), notification.actorUserId},
             {QStringLiteral("operatorUserId"), notification.operatorUserId},
             {QStringLiteral("message"), notification.message},
@@ -180,6 +181,11 @@ QJsonObject groupNotificationToJson(const GroupNotification& notification)
 
 GroupNotification groupNotificationFromJson(const QJsonObject& object)
 {
+    const QJsonObject groupObject = object.value(QStringLiteral("group")).toObject();
+    if (!groupObject.isEmpty()) {
+        GroupRepository::instance().upsertGroup(groupObject);
+    }
+
     GroupNotification notification;
     notification.id = firstString(object, {QStringLiteral("id"),
                                            QStringLiteral("requestId"),
@@ -188,6 +194,24 @@ GroupNotification groupNotificationFromJson(const QJsonObject& object)
     notification.type = groupNotificationTypeFromString(object.value(QStringLiteral("type")).toString());
     notification.status = groupNotificationStatusFromString(object.value(QStringLiteral("status")).toString());
     notification.groupId = object.value(QStringLiteral("groupId")).toString();
+    if (notification.groupId.isEmpty()) {
+        notification.groupId = firstString(groupObject, {QStringLiteral("groupId"),
+                                                         QStringLiteral("id")});
+    }
+    notification.groupPublicId = firstString(object, {QStringLiteral("groupPublicId"),
+                                                      QStringLiteral("publicId"),
+                                                      QStringLiteral("public_id")});
+    if (notification.groupPublicId.isEmpty()) {
+        notification.groupPublicId = firstString(groupObject, {QStringLiteral("groupPublicId"),
+                                                               QStringLiteral("publicId"),
+                                                               QStringLiteral("public_id")});
+    }
+    if (!notification.groupId.isEmpty() && !notification.groupPublicId.isEmpty()) {
+        QJsonObject group;
+        group.insert(QStringLiteral("groupId"), notification.groupId);
+        group.insert(QStringLiteral("groupPublicId"), notification.groupPublicId);
+        GroupRepository::instance().upsertGroup(group);
+    }
     notification.actorUserId = firstString(object, {QStringLiteral("actorUserId"),
                                                     QStringLiteral("actorUuid"),
                                                     QStringLiteral("fromUserId"),
@@ -263,6 +287,9 @@ GroupNotificationRepository::GroupNotificationRepository(QObject* parent)
                     }
                     if (notification.groupId.isEmpty()) {
                         notification.groupId = previous.groupId;
+                    }
+                    if (notification.groupPublicId.isEmpty()) {
+                        notification.groupPublicId = previous.groupPublicId;
                     }
                     if (notification.actorUserId.isEmpty()) {
                         notification.actorUserId = previous.actorUserId;

@@ -4,6 +4,15 @@
 #include <QtGlobal>
 #include <utility>
 
+namespace {
+
+bool isThinkingMessageId(const QString& messageId)
+{
+    return messageId.startsWith(QStringLiteral("__ai_thinking_"));
+}
+
+} // namespace
+
 AiChatMessageListModel::AiChatMessageListModel(QObject* parent)
     : QAbstractListModel(parent)
 {
@@ -52,6 +61,8 @@ QVariant AiChatMessageListModel::data(const QModelIndex& index, int role) const
         return message.isFromUser;
     case TimeRole:
         return message.time;
+    case IsThinkingRole:
+        return isThinkingMessageId(message.messageId);
     default:
         return {};
     }

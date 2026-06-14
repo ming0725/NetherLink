@@ -130,8 +130,7 @@ QString avatarSourceFromObject(const QJsonObject& object, const QString& pathKey
 UserStatus userStatusFromString(const QString& value)
 {
     const QString normalized = value.trimmed().toLower();
-    if (normalized == QStringLiteral("online") ||
-        normalized == QStringLiteral("active")) {
+    if (normalized == QStringLiteral("online")) {
         return Online;
     }
     if (normalized == QStringLiteral("mining") ||
@@ -150,6 +149,20 @@ UserStatus userStatusFromString(const QString& value)
     return Offline;
 }
 
+bool isPresenceStatusValue(const QString& value)
+{
+    const QString normalized = value.trimmed().toLower();
+    return normalized == QStringLiteral("online") ||
+           normalized == QStringLiteral("offline") ||
+           normalized == QStringLiteral("mining") ||
+           normalized == QStringLiteral("busy") ||
+           normalized == QStringLiteral("dnd") ||
+           normalized == QStringLiteral("airplane") ||
+           normalized == QStringLiteral("flying") ||
+           normalized == QStringLiteral("away") ||
+           normalized == QStringLiteral("invisible");
+}
+
 QJsonObject presenceObjectFrom(const QJsonObject& object)
 {
     const QJsonObject presence = object.value(QStringLiteral("presence")).toObject();
@@ -158,10 +171,10 @@ QJsonObject presenceObjectFrom(const QJsonObject& object)
     }
 
     QJsonObject legacyPresence;
-    if (object.contains(QStringLiteral("status"))) {
+    if (isPresenceStatusValue(object.value(QStringLiteral("status")).toString())) {
         legacyPresence.insert(QStringLiteral("status"), object.value(QStringLiteral("status")));
     }
-    if (object.contains(QStringLiteral("lastSeenAt"))) {
+    if (!legacyPresence.isEmpty() && object.contains(QStringLiteral("lastSeenAt"))) {
         legacyPresence.insert(QStringLiteral("lastSeenAt"), object.value(QStringLiteral("lastSeenAt")));
     }
     return legacyPresence;
@@ -280,6 +293,9 @@ Group groupFromResponseObject(QJsonObject object)
 
     Group group;
     group.groupId = firstString(object, {QStringLiteral("groupId"), QStringLiteral("id")});
+    group.groupPublicId = firstString(object, {QStringLiteral("groupPublicId"),
+                                               QStringLiteral("publicId"),
+                                               QStringLiteral("public_id")});
     group.version = object.value(QStringLiteral("version")).toInt();
     group.etag = object.value(QStringLiteral("etag")).toString();
     group.groupName = firstString(object, {QStringLiteral("groupName"), QStringLiteral("name")});

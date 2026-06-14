@@ -22,8 +22,12 @@ public:
     int loadMessagesAsync(const QString& conversationId);
     int loadContextUsageAsync(const AiChatContextUsageRequest& request);
     AiChatListEntry createConversationFromFirstMessage(const QString& firstUserMessage);
-    AiChatMessage submitUserMessage(const QString& conversationId, const QString& text);
-    bool regenerateAiReply(const QString& conversationId, const QString& messageId);
+    AiChatMessage submitUserMessage(const QString& conversationId,
+                                    const QString& text,
+                                    const AiChatRequestOptions& options = {});
+    bool regenerateAiReply(const QString& conversationId,
+                           const QString& messageId,
+                           const AiChatRequestOptions& options = {});
     bool renameConversation(const QString& conversationId, const QString& title);
     bool deleteConversation(const QString& conversationId);
     bool clearConversationUnreadDot(const QString& conversationId);
@@ -56,6 +60,7 @@ signals:
                                 const QString& messageId,
                                 const AiChatMessage& replacement);
     void aiReplyMessageRemoved(const QString& conversationId, const QString& messageId);
+    void aiReplyThinkingChanged(const QString& conversationId, bool active);
     void aiReplyFinished(const QString& conversationId, const QString& messageId);
     void aiReplyCanceled(const QString& conversationId, const QString& messageId);
     void aiReplyFailed(const QString& conversationId,
@@ -70,6 +75,7 @@ signals:
 
 private slots:
     void onAiReplyChunkReceived(const QString& chunk);
+    void onAiReplyThinkingChanged(bool active);
     void onGeneratedTitleReceived(const QString& title);
     void onAssistantMessageReceived(const QString& messageId,
                                     const QString& text,
@@ -87,7 +93,9 @@ private slots:
                                        const NetworkError& error);
 
 private:
-    void startAiReplyStream(const QString& conversationId, const QString& prompt);
+    void startAiReplyStream(const QString& conversationId,
+                            const QString& prompt,
+                            const AiChatRequestOptions& options = {});
     void resetActiveAiReplyStream();
     void discardMessageHistoryRequestsForConversation(const QString& conversationId);
 

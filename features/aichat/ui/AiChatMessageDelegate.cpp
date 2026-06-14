@@ -5,6 +5,7 @@
 #include <QAbstractTextDocumentLayout>
 #include <QApplication>
 #include <QColor>
+#include <QDateTime>
 #include <QFontMetricsF>
 #include <QImage>
 #include <QPainter>
@@ -424,6 +425,49 @@ void drawActionIcon(QPainter* painter,
     painter->restore();
 }
 
+void paintThinkingMessage(QPainter* painter, const QStyleOptionViewItem& option, const QModelIndex& index)
+{
+    const QString text = index.data(AiChatMessageListModel::TextRole).toString();
+    if (text.isEmpty()) {
+        return;
+    }
+
+    QFont font = QApplication::font();
+    font.setPixelSize(14);
+    const QFontMetrics fontMetrics(font);
+    const QRect textRect(option.rect.left() + 24,
+                         option.rect.top() + 8,
+                         qMin(fontMetrics.horizontalAdvance(text) + 24,
+                              qMax(1, option.rect.width() - 48)),
+                         qMax(fontMetrics.height() + 8, 28));
+
+    QColor baseColor = ThemeManager::instance().color(ThemeColor::SecondaryText);
+    QColor highlightColor = ThemeManager::instance().color(ThemeColor::PrimaryText);
+    baseColor.setAlpha(145);
+    highlightColor.setAlpha(235);
+
+    const qreal cycle = 2400.0;
+    const QDateTime messageTime = index.data(AiChatMessageListModel::TimeRole).toDateTime();
+    const qint64 startedAtMs = messageTime.isValid()
+            ? messageTime.toMSecsSinceEpoch()
+            : QDateTime::currentMSecsSinceEpoch();
+    const qreal elapsed = qMax<qreal>(0.0, QDateTime::currentMSecsSinceEpoch() - startedAtMs);
+    const qreal progress = std::fmod(elapsed, cycle) / cycle;
+    const qreal center = -0.35 + progress * 1.7;
+
+    QLinearGradient gradient(textRect.topLeft(), textRect.topRight());
+    gradient.setColorAt(qBound(0.0, center - 0.28, 1.0), baseColor);
+    gradient.setColorAt(qBound(0.0, center, 1.0), highlightColor);
+    gradient.setColorAt(qBound(0.0, center + 0.28, 1.0), baseColor);
+
+    painter->save();
+    painter->setFont(font);
+    painter->setPen(QPen(QBrush(gradient), 1));
+    AppFonts::configurePainterForText(*painter);
+    painter->drawText(textRect, Qt::AlignLeft | Qt::AlignVCenter, text);
+    painter->restore();
+}
+
 } // namespace
 
 AiChatMessageDelegate::AiChatMessageDelegate(QObject* parent)
@@ -446,6 +490,11 @@ void AiChatMessageDelegate::paint(QPainter* painter,
 
     const QString text = index.data(AiChatMessageListModel::TextRole).toString();
     if (text.isEmpty()) {
+        return;
+    }
+
+    if (index.data(AiChatMessageListModel::IsThinkingRole).toBool()) {
+        paintThinkingMessage(painter, option, index);
         return;
     }
 

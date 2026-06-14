@@ -121,7 +121,13 @@ QString buildPreviewText(const QString& conversationId,
 
 QString groupDisplayName(const Group& group)
 {
-    return group.remark.isEmpty() ? group.groupName : group.remark;
+    if (!group.remark.isEmpty()) {
+        return group.remark;
+    }
+    if (!group.groupName.isEmpty()) {
+        return group.groupName;
+    }
+    return group.groupPublicId.isEmpty() ? QStringLiteral("群聊") : group.groupPublicId;
 }
 
 QString userDisplayName(const User& user)
@@ -138,6 +144,7 @@ QString userDisplayName(const User& user)
 bool matchesConversationKeyword(const Group& group, const QString& keyword)
 {
     return keyword.isEmpty() ||
+           group.groupPublicId.contains(keyword, Qt::CaseInsensitive) ||
            group.groupName.contains(keyword, Qt::CaseInsensitive) ||
            group.remark.contains(keyword, Qt::CaseInsensitive);
 }
@@ -217,6 +224,42 @@ QString chatMessageCacheKey(const QString& conversationId, const QString& messag
         return {};
     }
     return conversationId + QLatin1Char(':') + messageId;
+}
+
+bool isSameChatMessageIdentity(const QSharedPointer<ChatMessage>& lhs,
+                               const QSharedPointer<ChatMessage>& rhs)
+{
+    if (!lhs || !rhs) {
+        return false;
+    }
+
+    const bool sameMessageId = !lhs->getMessageId().isEmpty() &&
+            !rhs->getMessageId().isEmpty() &&
+            lhs->getMessageId() == rhs->getMessageId();
+    const bool sameClientMessageId = !lhs->getClientMessageId().isEmpty() &&
+            !rhs->getClientMessageId().isEmpty() &&
+            lhs->getClientMessageId() == rhs->getClientMessageId();
+    const bool sameMessageSeq = lhs->getMessageSeq() > 0 &&
+            rhs->getMessageSeq() > 0 &&
+            lhs->getMessageSeq() == rhs->getMessageSeq();
+    return sameMessageId || sameClientMessageId || sameMessageSeq;
+}
+
+bool chatMessageLessThan(const QSharedPointer<ChatMessage>& lhs,
+                         const QSharedPointer<ChatMessage>& rhs)
+{
+    if (!lhs || !rhs) {
+        return !rhs.isNull();
+    }
+    if (lhs->getMessageSeq() > 0 &&
+        rhs->getMessageSeq() > 0 &&
+        lhs->getMessageSeq() != rhs->getMessageSeq()) {
+        return lhs->getMessageSeq() < rhs->getMessageSeq();
+    }
+    if (lhs->getTimestamp() != rhs->getTimestamp()) {
+        return lhs->getTimestamp() < rhs->getTimestamp();
+    }
+    return lhs->getMessageId() < rhs->getMessageId();
 }
 
 QDateTime localConversationClearTime(const QString& conversationId)
@@ -386,14 +429,6 @@ MessageSendState sendStateFromString(const QString& value)
         return MessageSendState::Failed;
     }
     return MessageSendState::Sent;
-}
-
-bool hasPersistedChatMessagesForConversation(const QString& conversationId)
-{
-    if (conversationId.isEmpty()) {
-        return false;
-    }
-    return MessageLocalDataSource::instance().hasMessagesForConversation(conversationId);
 }
 
 QString textContentFromMessageObject(const QJsonObject& object)
@@ -637,6 +672,13 @@ QJsonObject conversationObjectFromPayload(QJsonObject payload)
     return object;
 }
 
+bool conversationObjectHasUnreadCount(const QJsonObject& object)
+{
+    const QJsonObject syncState = object.value(QStringLiteral("syncState")).toObject();
+    return object.contains(QStringLiteral("unreadCount")) ||
+           syncState.contains(QStringLiteral("unreadCount"));
+}
+
 QJsonObject mergedConversationObject(QJsonObject existing, const QJsonObject& incoming)
 {
     if (existing.isEmpty()) {
@@ -822,6 +864,13 @@ QJsonObject groupUpdateObjectFromConversation(const QJsonObject& conversation,
     QJsonObject object = group;
     object.insert(QStringLiteral("groupId"), groupId);
 
+    const QString groupPublicId = firstString(group, {QStringLiteral("groupPublicId"),
+                                                      QStringLiteral("publicId"),
+                                                      QStringLiteral("public_id")});
+    if (!groupPublicId.isEmpty()) {
+        object.insert(QStringLiteral("groupPublicId"), groupPublicId);
+    }
+
     const QString title = firstString(summary, {QStringLiteral("title"),
                                                 QStringLiteral("name"),
                                                 QStringLiteral("groupName")});
@@ -936,7 +985,7 @@ private:
             const ConversationSyncState state = stateFor(conversationId);
             return ConversationMeta{
                     conversationId,
-                    group.groupId.isEmpty() ? groupId : groupDisplayName(group),
+                    group.groupId.isEmpty() ? QStringLiteral("群聊") : groupDisplayName(group),
                     group.groupAvatarPath,
                     true,
                     group.memberNum,
@@ -1310,6 +1359,11 @@ MessageRepository::MessageRepository(QObject* parent)
                         const bool remoteHasUnread = conversationSyncStateFromJson(conversation).unreadCount > 0;
                         const QJsonObject existing = MessageLocalDataSource::instance().conversation(conversationId);
                         QJsonObject merged = mergedConversationObject(existing, conversation);
+                        if ((type == QStringLiteral("chat.conversation.sync.updated") ||
+                             type == QStringLiteral("chat.read.updated")) &&
+                            conversationObjectHasUnreadCount(conversation)) {
+                            clearLocalUnreadOverride(conversationId);
+                        }
                         if (activeVisible) {
                             setConversationUnreadCount(merged, 0);
                         }
@@ -1454,10 +1508,7 @@ void MessageRepository::reloadFromStore()
 
         QVector<QSharedPointer<ChatMessage>>& messages = nextStore[conversationId];
         const auto duplicate = std::find_if(messages.cbegin(), messages.cend(), [&message](const QSharedPointer<ChatMessage>& existing) {
-            return existing &&
-                   (existing->getMessageId() == message->getMessageId() ||
-                    (!existing->getClientMessageId().isEmpty() &&
-                     existing->getClientMessageId() == message->getClientMessageId()));
+            return isSameChatMessageIdentity(existing, message);
         });
         if (duplicate == messages.cend()) {
             messages.push_back(message);
@@ -1465,13 +1516,7 @@ void MessageRepository::reloadFromStore()
     }
 
     for (auto it = nextStore.begin(); it != nextStore.end(); ++it) {
-        std::sort(it.value().begin(), it.value().end(), [](const QSharedPointer<ChatMessage>& lhs,
-                                                           const QSharedPointer<ChatMessage>& rhs) {
-            if (!lhs || !rhs) {
-                return !rhs.isNull();
-            }
-            return lhs->getTimestamp() < rhs->getTimestamp();
-        });
+        std::sort(it.value().begin(), it.value().end(), chatMessageLessThan);
         if (!it.value().isEmpty()) {
             ConversationSyncState& state = nextStates[it.key()];
             state.conversationId = it.key();
@@ -1548,6 +1593,16 @@ bool MessageRepository::localUnreadOverride(const QString& conversationId, int* 
         *unreadCount = m_localUnreadOverrides.value(conversationId);
     }
     return true;
+}
+
+void MessageRepository::clearLocalUnreadOverride(const QString& conversationId)
+{
+    if (conversationId.isEmpty()) {
+        return;
+    }
+
+    QMutexLocker locker(&m_mutex);
+    m_localUnreadOverrides.remove(conversationId);
 }
 
 void MessageRepository::applyConversationStateObject(const QJsonObject& conversation, bool emitChange)
@@ -1659,18 +1714,14 @@ void MessageRepository::cacheRemoteMessageObject(QJsonObject object,
         QVector<QSharedPointer<ChatMessage>>& messages = m_store[conversationId];
         for (int index = 0; index < messages.size(); ++index) {
             const QSharedPointer<ChatMessage>& existing = messages.at(index);
-            if (!existing) {
-                continue;
-            }
-            const bool sameMessageId = !message->getMessageId().isEmpty() &&
-                                       existing->getMessageId() == message->getMessageId();
-            const bool sameClientMessageId = !message->getClientMessageId().isEmpty() &&
-                                             existing->getClientMessageId() == message->getClientMessageId();
-            if (!sameMessageId && !sameClientMessageId) {
+            if (!isSameChatMessageIdentity(existing, message)) {
                 continue;
             }
 
-            if (sameClientMessageId && existing->isFromMe() != message->isFromMe()) {
+            if (!message->getClientMessageId().isEmpty() &&
+                existing &&
+                existing->getClientMessageId() == message->getClientMessageId() &&
+                existing->isFromMe() != message->isFromMe()) {
                 message->setFromMe(existing->isFromMe());
             }
             messages[index] = message;
@@ -1684,13 +1735,7 @@ void MessageRepository::cacheRemoteMessageObject(QJsonObject object,
             added = true;
         }
 
-        std::sort(messages.begin(), messages.end(), [](const QSharedPointer<ChatMessage>& lhs,
-                                                       const QSharedPointer<ChatMessage>& rhs) {
-            if (!lhs || !rhs) {
-                return !rhs.isNull();
-            }
-            return lhs->getTimestamp() < rhs->getTimestamp();
-        });
+        std::sort(messages.begin(), messages.end(), chatMessageLessThan);
 
         if (!messages.isEmpty()) {
             lastMsg = messages.last();
@@ -1850,7 +1895,6 @@ ConversationThreadData MessageRepository::requestConversationThread(const Conver
 
     int cachedCount = 0;
     int oldestMessageSeq = 0;
-    int newestMessageSeq = 0;
     {
         QMutexLocker locker(&m_mutex);
         const ChatMessageList allMessages = m_store.value(query.conversationId);
@@ -1858,23 +1902,11 @@ ConversationThreadData MessageRepository::requestConversationThread(const Conver
         if (!allMessages.isEmpty() && allMessages.first()) {
             oldestMessageSeq = allMessages.first()->getMessageSeq();
         }
-        for (const QSharedPointer<ChatMessage>& message : allMessages) {
-            if (message) {
-                newestMessageSeq = qMax(newestMessageSeq, message->getMessageSeq());
-            }
-        }
     }
 
     if (query.offsetFromLatest == 0 && query.limit > 0) {
-        const bool hasPersistedMessages = hasPersistedChatMessagesForConversation(query.conversationId);
-        if (hasPersistedMessages && newestMessageSeq > 0) {
-            const_cast<MessageRepository*>(this)->fetchNewerMessagesBlocking(query.conversationId,
-                                                                             newestMessageSeq,
-                                                                             100);
-        } else {
-            const_cast<MessageRepository*>(this)->fetchLatestMessagesBlocking(query.conversationId,
-                                                                              qMax(query.limit, 50));
-        }
+        const_cast<MessageRepository*>(this)->fetchLatestMessagesBlocking(query.conversationId,
+                                                                          qMax(query.limit, 50));
 
         QMutexLocker locker(&m_mutex);
         const ChatMessageList allMessages = m_store.value(query.conversationId);
@@ -1994,6 +2026,12 @@ void MessageRepository::setActiveVisibleConversation(const QString& conversation
     bool shouldMarkRead = false;
     {
         QMutexLocker locker(&m_mutex);
+        const QString previousActiveConversationId = m_activeVisibleConversationId;
+        if (!previousActiveConversationId.isEmpty() &&
+            previousActiveConversationId != conversationId &&
+            m_localUnreadOverrides.value(previousActiveConversationId) == 0) {
+            m_localUnreadOverrides.remove(previousActiveConversationId);
+        }
         m_activeVisibleConversationId = conversationId;
         m_hasActiveVisibleConversation = visible && !conversationId.isEmpty();
         if (m_hasActiveVisibleConversation) {
@@ -2003,6 +2041,9 @@ void MessageRepository::setActiveVisibleConversation(const QString& conversation
             shouldMarkRead = state.unreadCount > 0;
             state.unreadCount = 0;
             state.lastReadAt = QDateTime::currentDateTime();
+        } else if (!previousActiveConversationId.isEmpty() &&
+                   m_localUnreadOverrides.value(previousActiveConversationId) == 0) {
+            m_localUnreadOverrides.remove(previousActiveConversationId);
         }
     }
 
@@ -2102,10 +2143,11 @@ void MessageRepository::markConversationRead(const QString& conversationId)
         QMutexLocker locker(&m_mutex);
         const bool activeVisible = m_hasActiveVisibleConversation &&
                 m_activeVisibleConversationId == conversationId;
-        if (!activeVisible && m_localUnreadOverrides.value(conversationId) > 0) {
-            return;
+        if (activeVisible) {
+            m_localUnreadOverrides.insert(conversationId, 0);
+        } else {
+            m_localUnreadOverrides.remove(conversationId);
         }
-        m_localUnreadOverrides.insert(conversationId, 0);
         ConversationSyncState& state = m_conversationStates[conversationId];
         state.conversationId = conversationId;
         changed = state.unreadCount != 0;

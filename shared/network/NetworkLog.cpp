@@ -491,6 +491,55 @@ void authRefreshQueued(int queuedCount)
                {QStringLiteral("  queuedRequests: %1").arg(queuedCount)});
 }
 
+void uploadRequest(const QString& requestId,
+                   const QUrl& url,
+                   const QString& fileName,
+                   const QString& mimeType,
+                   qint64 fileSize,
+                   const QVariantMap& query)
+{
+    QStringList lines;
+    lines.append(QStringLiteral("  method: POST"));
+    lines.append(QStringLiteral("  url: %1").arg(redactedUrl(url)));
+    lines.append(QStringLiteral("  fileName: %1").arg(placeholder(fileName)));
+    lines.append(QStringLiteral("  mimeType: %1").arg(placeholder(mimeType)));
+    lines.append(QStringLiteral("  fileSize: %1").arg(fileSize));
+    appendQuery(lines, query);
+    writeBlock(QtInfoMsg, QStringLiteral("[Upload] -> request %1").arg(shortId(requestId)), lines);
+}
+
+void uploadResponse(const QString& requestId,
+                    const NetworkResponse& response,
+                    qint64 elapsedMs)
+{
+    QStringList lines;
+    lines.append(QStringLiteral("  status: %1").arg(response.httpStatus));
+    lines.append(QStringLiteral("  replyTo: %1").arg(shortId(requestId)));
+    lines.append(QStringLiteral("  serverRequestId: %1").arg(placeholder(response.requestId)));
+    lines.append(QStringLiteral("  etag: %1").arg(placeholder(response.etag)));
+    lines.append(QStringLiteral("  elapsedMs: %1").arg(elapsedMs));
+    appendJsonDocument(lines, QStringLiteral("payload"), response.body, response.rawBody);
+    writeBlock(QtInfoMsg, QStringLiteral("[Upload] <- response %1").arg(shortId(requestId)), lines);
+}
+
+void uploadError(const QString& requestId,
+                 const NetworkError& error,
+                 qint64 elapsedMs)
+{
+    QStringList lines;
+    lines.append(QStringLiteral("  status: %1").arg(error.httpStatus));
+    lines.append(QStringLiteral("  replyTo: %1").arg(shortId(requestId)));
+    lines.append(QStringLiteral("  serverRequestId: %1").arg(placeholder(error.requestId)));
+    lines.append(QStringLiteral("  code: %1").arg(placeholder(error.code)));
+    lines.append(QStringLiteral("  message: %1").arg(placeholder(error.message)));
+    lines.append(QStringLiteral("  elapsedMs: %1").arg(elapsedMs));
+    appendJsonObjectSection(lines, QStringLiteral("details"), error.details);
+    if (!error.rawBody.trimmed().isEmpty() && error.details.isEmpty()) {
+        appendJsonDocument(lines, QStringLiteral("payload"), QJsonDocument::fromJson(error.rawBody), error.rawBody);
+    }
+    writeBlock(QtWarningMsg, QStringLiteral("[Upload] <- error %1").arg(shortId(requestId)), lines);
+}
+
 void sseRequest(const QString& requestId, const NetworkRequest& request, const QUrl& url)
 {
     QStringList lines;

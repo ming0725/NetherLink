@@ -283,7 +283,6 @@ void MessageApplication::onMessageClicked(const QString& conversationId)
 
     ensureChatArea();
     m_rightStack->setCurrentWidget(m_chatArea);
-    applyVisibleConversationState(isVisible());
 
     ConversationMeta meta = MessageRepository::instance().requestConversationMeta({conversationId});
     if (meta.conversationId.isEmpty()) {
@@ -310,6 +309,7 @@ void MessageApplication::onMessageClicked(const QString& conversationId)
             0,
             kInitialMessagePageSize
     });
+    applyVisibleConversationState(isVisible());
 }
 
 void MessageApplication::onCurrentConversationDeleted()
@@ -403,7 +403,7 @@ void MessageApplication::applyVisibleConversationState(bool visible)
 
     const QString conversationId = active ? activeConversationId() : QString();
     MessageRepository::instance().setActiveVisibleConversation(conversationId, active && !conversationId.isEmpty());
-    if (active && !conversationId.isEmpty()) {
+    if (active && !conversationId.isEmpty() && !m_openConversationLoadPending) {
         ConversationRemoteDataSource::instance().markRead(conversationId);
     }
 }

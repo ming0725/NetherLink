@@ -48,6 +48,97 @@ bool isEscaped(const QString &source, int position)
     return slashCount % 2 == 1;
 }
 
+int backtickRunLength(const QString &source, int position)
+{
+    int length = 0;
+    while (position + length < source.size() &&
+           source.at(position + length) == QLatin1Char('`')) {
+        ++length;
+    }
+    return length;
+}
+
+int findUnescapedDoubleDollarOutsideCode(const QString &source, int start = 0)
+{
+    int inlineCodeTicks = 0;
+    for (int i = qMax(0, start); i + 1 < source.size();) {
+        if (source.at(i) == QLatin1Char('`') && !isEscaped(source, i)) {
+            const int ticks = backtickRunLength(source, i);
+            if (inlineCodeTicks == 0) {
+                inlineCodeTicks = ticks;
+            } else if (ticks == inlineCodeTicks) {
+                inlineCodeTicks = 0;
+            }
+            i += ticks;
+            continue;
+        }
+
+        if (inlineCodeTicks > 0) {
+            ++i;
+            continue;
+        }
+
+        if (source.at(i) == QLatin1Char('$') &&
+            source.at(i + 1) == QLatin1Char('$') &&
+            !isEscaped(source, i)) {
+            return i;
+        }
+        ++i;
+    }
+    return -1;
+}
+
+QStringList splitDisplayMathDelimiterLines(const QString &markdown)
+{
+    QStringList result;
+    bool inCodeBlock = false;
+
+    const QStringList lines = markdown.split(QLatin1Char('\n'));
+    for (QString line : lines) {
+        line.remove(QLatin1Char('\r'));
+        const QString trimmed = line.trimmed();
+        if (trimmed.startsWith(QStringLiteral("```"))) {
+            result.append(line);
+            inCodeBlock = !inCodeBlock;
+            continue;
+        }
+
+        if (inCodeBlock) {
+            result.append(line);
+            continue;
+        }
+
+        int cursor = 0;
+        bool splitLine = false;
+        while (true) {
+            const int delimiter = findUnescapedDoubleDollarOutsideCode(line, cursor);
+            if (delimiter < 0) {
+                break;
+            }
+
+            const QString before = line.mid(cursor, delimiter - cursor);
+            if (!before.isEmpty()) {
+                result.append(before);
+            }
+            result.append(QStringLiteral("$$"));
+            cursor = delimiter + 2;
+            splitLine = true;
+        }
+
+        if (!splitLine) {
+            result.append(line);
+            continue;
+        }
+
+        const QString after = line.mid(cursor);
+        if (!after.isEmpty()) {
+            result.append(after);
+        }
+    }
+
+    return result;
+}
+
 int findInlineMathEnd(const QString &source, int start)
 {
     for (int i = start + 1; i < source.size(); ++i) {
@@ -425,7 +516,7 @@ QList<MarkdownRenderer::Block> MarkdownRenderer::parseBlocks(const QString &mark
     QString mathBlockEndMarker;
     QString codeLanguage;
 
-    const QStringList lines = markdown.split(QLatin1Char('\n'));
+    const QStringList lines = splitDisplayMathDelimiterLines(markdown);
     for (int lineIndex = 0; lineIndex < lines.size(); ++lineIndex) {
         QString line = lines.at(lineIndex);
         line.remove(QLatin1Char('\r'));

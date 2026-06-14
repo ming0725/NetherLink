@@ -27,6 +27,19 @@ void httpError(const QString& requestId,
 void httpRetry(const QString& requestId, int nextAttempt, int delayMs);
 void authRefreshQueued(int queuedCount);
 
+void uploadRequest(const QString& requestId,
+                   const QUrl& url,
+                   const QString& fileName,
+                   const QString& mimeType,
+                   qint64 fileSize,
+                   const QVariantMap& query);
+void uploadResponse(const QString& requestId,
+                    const NetworkResponse& response,
+                    qint64 elapsedMs);
+void uploadError(const QString& requestId,
+                 const NetworkError& error,
+                 qint64 elapsedMs);
+
 void sseRequest(const QString& requestId, const NetworkRequest& request, const QUrl& url);
 void sseEvent(const QString& requestId, const QString& eventName, const QJsonObject& payload);
 void sseFinished(const QString& requestId, int httpStatus);

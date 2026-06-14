@@ -31,6 +31,7 @@ public:
     QString userAvatarPath(const QString& userId) const;
     QString requestUserAvatarImage(const QString& userId);
     QMap<QString, QString> loadFriendGroups() const;
+    QString refreshFriendProfile(const QString& userId) const;
     QString refreshFriendPresenceSnapshot() const;
     bool saveFriend(const User& user);
     bool changeFriendGroup(const QString& userId, const QString& groupId, const QString& groupName);

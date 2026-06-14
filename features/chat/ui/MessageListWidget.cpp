@@ -228,14 +228,27 @@ void MessageListWidget::onCurrentChanged(const QModelIndex& current, const QMode
         return;
     }
 
-    if (!m_restoringSelection && conversationId != m_model->conversationIdAt(previous)) {
+    const bool conversationChanged = conversationId != m_model->conversationIdAt(previous);
+    const bool shouldMarkRead = m_readReceiptsEnabled &&
+            m_model->conversationById(conversationId).unreadCount > 0;
+
+    if (!m_restoringSelection && conversationChanged) {
         m_selectedConversationId = conversationId;
+        if (shouldMarkRead) {
+            m_model->markConversationRead(conversationId);
+            update(current);
+        }
         emit conversationActivated(conversationId);
+        if (shouldMarkRead) {
+            MessageRepository::instance().markConversationRead(conversationId);
+        }
     } else if (m_restoringSelection) {
         m_selectedConversationId = conversationId;
+        requestMarkReadIfNeeded(conversationId);
+    } else {
+        requestMarkReadIfNeeded(conversationId);
     }
 
-    requestMarkReadIfNeeded(conversationId);
     update(current);
 }
 
@@ -279,6 +292,8 @@ void MessageListWidget::showConversationMenu(const QPoint& globalPos, const QMod
     connect(unreadAction, &QAction::triggered, this,
             [this, conversationId = conversation.conversationId, hasUnread]() {
         if (hasUnread) {
+            m_model->markConversationRead(conversationId);
+            MessageRepository::instance().markConversationRead(conversationId);
             ConversationRemoteDataSource::instance().markRead(conversationId);
             return;
         }
@@ -364,7 +379,8 @@ void MessageListWidget::requestMarkReadIfNeeded(const QString& conversationId)
         return;
     }
 
-    ConversationRemoteDataSource::instance().markRead(conversationId);
+    m_model->markConversationRead(conversationId);
+    MessageRepository::instance().markConversationRead(conversationId);
 }
 
 QString MessageListWidget::previewTextForMessage(const QString& conversationId,

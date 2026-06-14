@@ -333,6 +333,12 @@ QMap<QString, QString> FriendSessionController::loadFriendGroups() const
     return UserRepository::instance().requestFriendGroups();
 }
 
+QString FriendSessionController::refreshFriendProfile(const QString& userId) const
+{
+    ensureUserRepositoryConnections();
+    return UserRepository::instance().refreshUserProfile(userId);
+}
+
 QString FriendSessionController::refreshFriendPresenceSnapshot() const
 {
     ensureUserRepositoryConnections();
@@ -441,9 +447,15 @@ QString FriendSessionController::groupDisplayName(const QString& groupId) const
 {
     const Group group = loadGroup(groupId);
     if (group.groupId.isEmpty()) {
-        return groupId;
+        return QStringLiteral("群聊");
     }
-    return group.remark.isEmpty() ? group.groupName : group.remark;
+    if (!group.remark.isEmpty()) {
+        return group.remark;
+    }
+    if (!group.groupName.isEmpty()) {
+        return group.groupName;
+    }
+    return group.groupPublicId.isEmpty() ? QStringLiteral("群聊") : group.groupPublicId;
 }
 
 QString FriendSessionController::groupNicknameFor(const QString& groupId, const QString& userId) const

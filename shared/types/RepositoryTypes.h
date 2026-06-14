@@ -215,6 +215,12 @@ struct AiChatContextUsage {
     bool available = false;
 };
 
+struct AiChatRequestOptions {
+    QString model = "deepseek-v4-pro";
+    QString thinkingType = "enabled";
+    QString reasoningEffort = "high";
+};
+
 struct PostSummary {
     QString postId;
     QString title;

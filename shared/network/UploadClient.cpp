@@ -1,17 +1,52 @@
 #include "UploadClient.h"
 
 #include "AuthSession.h"
+#include "NetworkLog.h"
 
+#include <QElapsedTimer>
 #include <QFile>
 #include <QFileInfo>
 #include <QHttpMultiPart>
 #include <QJsonDocument>
+#include <QMimeDatabase>
+#include <QMimeType>
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
+#include <QSharedPointer>
 #include <QUuid>
 
 namespace {
+
+QString mimeTypeForFile(const QString& path)
+{
+    QMimeDatabase database;
+    QString mimeType = database.mimeTypeForFile(path, QMimeDatabase::MatchContent).name();
+    if (mimeType.isEmpty() || mimeType == QStringLiteral("application/octet-stream")) {
+        mimeType = database.mimeTypeForFile(path, QMimeDatabase::MatchExtension).name();
+    }
+    if (!mimeType.isEmpty() && mimeType != QStringLiteral("application/octet-stream")) {
+        return mimeType;
+    }
+
+    const QString suffix = QFileInfo(path).suffix().toLower();
+    if (suffix == QStringLiteral("png")) {
+        return QStringLiteral("image/png");
+    }
+    if (suffix == QStringLiteral("jpg") || suffix == QStringLiteral("jpeg")) {
+        return QStringLiteral("image/jpeg");
+    }
+    if (suffix == QStringLiteral("gif")) {
+        return QStringLiteral("image/gif");
+    }
+    if (suffix == QStringLiteral("webp")) {
+        return QStringLiteral("image/webp");
+    }
+    if (suffix == QStringLiteral("bmp")) {
+        return QStringLiteral("image/bmp");
+    }
+    return QStringLiteral("application/octet-stream");
+}
 
 QString uploadMultipart(QNetworkAccessManager* manager,
                         const BackendEnvironment& environment,
@@ -36,10 +71,14 @@ QString uploadMultipart(QNetworkAccessManager* manager,
         return requestId;
     }
 
+    const QFileInfo fileInfo(path);
+    const QString fileName = fileInfo.fileName();
+    const QString mimeType = mimeTypeForFile(path);
     auto* multiPart = new QHttpMultiPart(QHttpMultiPart::FormDataType);
     QHttpPart filePart;
     filePart.setHeader(QNetworkRequest::ContentDispositionHeader,
-                       QStringLiteral("form-data; name=\"file\"; filename=\"%1\"").arg(QFileInfo(path).fileName()));
+                       QStringLiteral("form-data; name=\"file\"; filename=\"%1\"").arg(fileName));
+    filePart.setHeader(QNetworkRequest::ContentTypeHeader, mimeType);
     filePart.setBodyDevice(file);
     file->setParent(multiPart);
     multiPart->append(filePart);
@@ -64,6 +103,10 @@ QString uploadMultipart(QNetworkAccessManager* manager,
         request.setRawHeader("Authorization", "Bearer " + AuthSession::instance().accessToken().toUtf8());
     }
 
+    auto timer = QSharedPointer<QElapsedTimer>::create();
+    timer->start();
+    NetworkLog::uploadRequest(requestId, request.url(), fileName, mimeType, fileInfo.size(), query);
+
     QNetworkReply* reply = manager->post(request, multiPart);
     multiPart->setParent(reply);
     QObject::connect(reply, &QNetworkReply::uploadProgress, owner, [client, requestId](qint64 sent, qint64 total) {
@@ -71,7 +114,7 @@ QString uploadMultipart(QNetworkAccessManager* manager,
             emit client->uploadProgress(requestId, sent, total);
         }
     });
-    QObject::connect(reply, &QNetworkReply::finished, owner, [client, requestId, reply]() {
+    QObject::connect(reply, &QNetworkReply::finished, owner, [client, requestId, reply, timer]() {
         const QByteArray body = reply->readAll();
         const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
         if (status >= 200 && status < 300) {
@@ -84,6 +127,7 @@ QString uploadMultipart(QNetworkAccessManager* manager,
             }
             response.etag = QString::fromUtf8(reply->rawHeader("ETag"));
             response.requestId = QString::fromUtf8(reply->rawHeader("X-Request-Id"));
+            NetworkLog::uploadResponse(requestId, response, timer->elapsed());
             if (client) {
                 emit client->uploadSucceeded(requestId, response);
             }
@@ -94,8 +138,10 @@ QString uploadMultipart(QNetworkAccessManager* manager,
             const QJsonObject object = QJsonDocument::fromJson(body).object();
             error.code = object.value(QStringLiteral("code")).toString();
             error.message = object.value(QStringLiteral("message")).toString(reply->errorString());
-            error.requestId = object.value(QStringLiteral("requestId")).toString();
+            error.requestId = object.value(QStringLiteral("requestId")).toString(
+                    QString::fromUtf8(reply->rawHeader("X-Request-Id")));
             error.details = object.value(QStringLiteral("details")).toObject();
+            NetworkLog::uploadError(requestId, error, timer->elapsed());
             if (client) {
                 emit client->uploadFailed(requestId, error);
             }

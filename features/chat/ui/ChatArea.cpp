@@ -390,6 +390,16 @@ ChatArea::ChatArea(QWidget *parent)
             chatView->viewport()->update();
         }
     });
+    connect(&ImageService::instance(), &ImageService::previewReady, this, [this]() {
+        if (chatView && chatView->viewport()) {
+            chatView->viewport()->update();
+        }
+    });
+    connect(&ImageService::instance(), &ImageService::resourceChanged, this, [this](const QString&) {
+        if (chatView && chatView->viewport()) {
+            chatView->viewport()->update();
+        }
+    });
     connect(newMessageNotifier, &NewMessageNotifier::clicked,
             this, &ChatArea::onNewMessageNotifierClicked);
     connect(referenceMessageNotifier, &ReferenceMessageNotifier::closeRequested,

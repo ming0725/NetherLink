@@ -144,7 +144,7 @@ QColor defaultLoginThemeColor()
 UserStatus statusFromAuthStatus(const QString& value)
 {
     const QString normalized = value.trimmed().toLower();
-    if (normalized == QStringLiteral("active") || normalized == QStringLiteral("online")) {
+    if (normalized == QStringLiteral("online")) {
         return Online;
     }
     if (normalized == QStringLiteral("mining") ||

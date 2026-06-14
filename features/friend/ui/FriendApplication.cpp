@@ -392,6 +392,9 @@ FriendApplication::FriendApplication(QWidget* parent)
                 }
                 FriendDetailPage* detailPage = ensureFriendDetailPage();
                 detailPage->setUserId(userId);
+                if (m_friendController) {
+                    m_friendController->refreshFriendProfile(userId);
+                }
                 m_rightStack->setCurrentWidget(detailPage);
             });
     connect(m_leftPane->groupList(), &GroupListWidget::selectedGroupChanged,
@@ -417,6 +420,7 @@ FriendApplication::FriendApplication(QWidget* parent)
                 m_leftPane->setFriendModeBadgeCount(unreadCount);
                 if (m_notificationPage && m_rightStack->currentWidget() == m_notificationPage) {
                     m_notificationPage->refreshLoadedNotifications();
+                    m_friendController->markFriendNotificationsRead();
                 }
             });
     connect(m_friendController, &FriendSessionController::groupNotificationListChanged,
@@ -426,6 +430,7 @@ FriendApplication::FriendApplication(QWidget* parent)
                 m_leftPane->setGroupModeBadgeCount(unreadCount);
                 if (m_groupNotificationPage && m_rightStack->currentWidget() == m_groupNotificationPage) {
                     m_groupNotificationPage->refreshLoadedNotifications();
+                    m_friendController->markGroupNotificationsRead();
                 }
             });
     connect(m_friendController, &FriendSessionController::friendRequestActionFailed,

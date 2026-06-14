@@ -11,9 +11,11 @@
 #include <QStringList>
 #include <QThread>
 #include <QThreadPool>
+#include <QUrl>
 #include <QUuid>
 
 #include <algorithm>
+#include <utility>
 
 #include "shared/data/LocalDataStore.h"
 #include "shared/data/RepositoryTemplate.h"
@@ -105,17 +107,55 @@ QString avatarFileIdFrom(const QJsonObject& object)
                                 QStringLiteral("fileId")});
 }
 
-bool hasAvatarPayload(const QJsonObject& object)
+bool hasAvatarResourcePayload(const QJsonObject& object)
 {
-    return object.contains(QStringLiteral("avatar")) ||
-           object.contains(QStringLiteral("avatarPath")) ||
+    const QJsonObject avatar = object.value(QStringLiteral("avatar")).toObject();
+    return object.contains(QStringLiteral("avatarPath")) ||
            object.contains(QStringLiteral("avatarUrl")) ||
-           object.contains(QStringLiteral("avatarVersion")) ||
            object.contains(QStringLiteral("avatarEtag")) ||
            object.contains(QStringLiteral("avatarContentHash")) ||
            object.contains(QStringLiteral("avatarFileId")) ||
            object.contains(QStringLiteral("avatar_file_id")) ||
-           object.contains(QStringLiteral("fileId"));
+           object.contains(QStringLiteral("fileId")) ||
+           avatar.contains(QStringLiteral("fileId")) ||
+           avatar.contains(QStringLiteral("id")) ||
+           avatar.contains(QStringLiteral("avatarUrl")) ||
+           avatar.contains(QStringLiteral("url")) ||
+           avatar.contains(QStringLiteral("path")) ||
+           avatar.contains(QStringLiteral("etag")) ||
+           avatar.contains(QStringLiteral("contentHash"));
+}
+
+QString avatarFileIdFromSource(const QString& source)
+{
+    const QUrl url(AvatarSource::cleanForIo(source));
+    const QStringList parts = url.path().split(QLatin1Char('/'), Qt::SkipEmptyParts);
+    for (int i = 0; i + 1 < parts.size(); ++i) {
+        if (parts.at(i) == QStringLiteral("avatar-files")) {
+            return QUrl::fromPercentEncoding(parts.at(i + 1).toUtf8());
+        }
+    }
+    return {};
+}
+
+bool avatarResourceChanged(const User& next, const User& previous)
+{
+    if (!next.avatarContentHash.isEmpty()) {
+        return next.avatarContentHash != previous.avatarContentHash;
+    }
+    if (!next.avatarEtag.isEmpty()) {
+        return next.avatarEtag != previous.avatarEtag;
+    }
+
+    const QString nextFileId = avatarFileIdFromSource(next.avatarPath);
+    const QString previousFileId = avatarFileIdFromSource(previous.avatarPath);
+    if (!nextFileId.isEmpty() || !previousFileId.isEmpty()) {
+        return nextFileId != previousFileId;
+    }
+
+    const QString nextSource = AvatarSource::cleanForIo(next.avatarPath);
+    const QString previousSource = AvatarSource::cleanForIo(previous.avatarPath);
+    return !nextSource.isEmpty() && nextSource != previousSource;
 }
 
 void keepAvatarFromPrevious(User& user, const User& previous)
@@ -191,6 +231,20 @@ UserStatus userStatusFromString(const QString& value)
     return Offline;
 }
 
+bool isPresenceStatusValue(const QString& value)
+{
+    const QString normalized = value.trimmed().toLower();
+    return normalized == QStringLiteral("online") ||
+           normalized == QStringLiteral("offline") ||
+           normalized == QStringLiteral("mining") ||
+           normalized == QStringLiteral("busy") ||
+           normalized == QStringLiteral("dnd") ||
+           normalized == QStringLiteral("airplane") ||
+           normalized == QStringLiteral("flying") ||
+           normalized == QStringLiteral("away") ||
+           normalized == QStringLiteral("invisible");
+}
+
 QJsonObject presenceObjectFrom(const QJsonObject& object)
 {
     const QJsonObject presence = object.value(QStringLiteral("presence")).toObject();
@@ -199,10 +253,10 @@ QJsonObject presenceObjectFrom(const QJsonObject& object)
     }
 
     QJsonObject legacyPresence;
-    if (object.contains(QStringLiteral("status"))) {
+    if (isPresenceStatusValue(object.value(QStringLiteral("status")).toString())) {
         legacyPresence.insert(QStringLiteral("status"), object.value(QStringLiteral("status")));
     }
-    if (object.contains(QStringLiteral("lastSeenAt"))) {
+    if (!legacyPresence.isEmpty() && object.contains(QStringLiteral("lastSeenAt"))) {
         legacyPresence.insert(QStringLiteral("lastSeenAt"), object.value(QStringLiteral("lastSeenAt")));
     }
     return legacyPresence;
@@ -220,8 +274,49 @@ QDateTime dateTimeFromString(const QString& value)
 bool hasPresencePayload(const QJsonObject& object)
 {
     return object.contains(QStringLiteral("presence")) ||
-           object.contains(QStringLiteral("status")) ||
-           object.contains(QStringLiteral("lastSeenAt"));
+           isPresenceStatusValue(object.value(QStringLiteral("status")).toString());
+}
+
+QVector<QJsonObject> userObjectsFromResponse(const NetworkResponse& response)
+{
+    QVector<QJsonObject> users;
+    auto appendObject = [&users](const QJsonObject& object) {
+        if (!object.isEmpty()) {
+            users.push_back(object);
+        }
+    };
+    auto appendArray = [&appendObject](const QJsonArray& array) {
+        for (const QJsonValue& value : array) {
+            appendObject(value.toObject());
+        }
+    };
+
+    if (response.body.isArray()) {
+        appendArray(response.body.array());
+        return users;
+    }
+
+    const QJsonObject root = response.object();
+    for (const QString& key : {QStringLiteral("users"),
+                               QStringLiteral("items"),
+                               QStringLiteral("friends")}) {
+        const QJsonArray array = root.value(key).toArray();
+        if (!array.isEmpty()) {
+            appendArray(array);
+            return users;
+        }
+    }
+
+    for (const QString& key : {QStringLiteral("user"),
+                               QStringLiteral("profile"),
+                               QStringLiteral("friendship")}) {
+        appendObject(root.value(key).toObject());
+        if (!users.isEmpty()) {
+            return users;
+        }
+    }
+    appendObject(root);
+    return users;
 }
 
 struct FriendGroupRecord {
@@ -610,6 +705,7 @@ UserRepository::UserRepository(QObject* parent)
             &LocalDataStore::activeAccountChanged,
             this,
             [this](const QString&) {
+                m_pendingUserProfileRefreshRequestIds.clear();
                 m_pendingPresenceBatchRequestIds.clear();
                 m_pendingPresenceSnapshotRequestIds.clear();
                 {
@@ -688,7 +784,8 @@ UserRepository::UserRepository(QObject* parent)
             return;
         }
 
-        if (type != QStringLiteral("profile.updated")) {
+        if (type != QStringLiteral("profile.updated") &&
+            type != QStringLiteral("public_id.updated")) {
             return;
         }
 
@@ -697,7 +794,13 @@ UserRepository::UserRepository(QObject* parent)
             object = payload;
         }
 
-        const QString userId = payload.value(QStringLiteral("userId")).toString();
+        const QString userId = firstString(payload, {QStringLiteral("userId"),
+                                                     QStringLiteral("publicId"),
+                                                     QStringLiteral("public_id"),
+                                                     QStringLiteral("publicUserId"),
+                                                     QStringLiteral("newUserId"),
+                                                     QStringLiteral("newPublicId"),
+                                                     QStringLiteral("new_public_id")});
         const QString userUuid = payload.value(QStringLiteral("userUuid")).toString();
         if (!userId.isEmpty() && !object.contains(QStringLiteral("userId"))) {
             object.insert(QStringLiteral("userId"), userId);
@@ -727,18 +830,19 @@ UserRepository::UserRepository(QObject* parent)
             &HttpClient::requestSucceeded,
             this,
             [this](const QString& requestId, const NetworkResponse& response) {
+                if (m_pendingUserProfileRefreshRequestIds.contains(requestId)) {
+                    m_pendingUserProfileRefreshRequestIds.take(requestId);
+                    for (const QJsonObject& object : userObjectsFromResponse(response)) {
+                        upsertUserProfile(object);
+                    }
+                    return;
+                }
+
                 if (!m_pendingPresenceBatchRequestIds.remove(requestId)) {
                     return;
                 }
 
-                const QStringList snapshotUserUuids =
-                        m_pendingPresenceSnapshotRequestIds.take(requestId);
-                if (!snapshotUserUuids.isEmpty()) {
-                    QMutexLocker locker(&mutex);
-                    for (const QString& userUuid : snapshotUserUuids) {
-                        m_presenceSnapshotRequestedUserIds.insert(userUuid);
-                    }
-                }
+                m_pendingPresenceSnapshotRequestIds.take(requestId);
 
                 QJsonArray presences;
                 if (response.body.isArray()) {
@@ -769,8 +873,16 @@ UserRepository::UserRepository(QObject* parent)
             &HttpClient::requestFailed,
             this,
             [this](const QString& requestId, const NetworkError&) {
+                m_pendingUserProfileRefreshRequestIds.remove(requestId);
                 m_pendingPresenceBatchRequestIds.remove(requestId);
-                m_pendingPresenceSnapshotRequestIds.remove(requestId);
+                const QStringList snapshotUserUuids =
+                        m_pendingPresenceSnapshotRequestIds.take(requestId);
+                if (!snapshotUserUuids.isEmpty()) {
+                    QMutexLocker locker(&mutex);
+                    for (const QString& userUuid : snapshotUserUuids) {
+                        m_presenceSnapshotRequestedUserIds.remove(userUuid);
+                    }
+                }
             });
 }
 
@@ -1048,8 +1160,9 @@ bool UserRepository::upsertUserProfile(const QJsonObject& object, bool preserveF
         if (previous.version > 0 && user.version > 0 && user.version < previous.version) {
             return false;
         }
-        const bool avatarPayload = hasAvatarPayload(object);
-        if (!avatarPayload ||
+        const bool avatarResourcePayload = hasAvatarResourcePayload(object);
+        if (!avatarResourcePayload ||
+            !avatarResourceChanged(user, previous) ||
             (previous.avatarVersion > 0 &&
              user.avatarVersion > 0 &&
              user.avatarVersion < previous.avatarVersion)) {
@@ -1170,6 +1283,37 @@ bool UserRepository::upsertPresence(const QString& userUuid, const QString& stat
     return true;
 }
 
+QString UserRepository::refreshUserProfile(const QString& userId)
+{
+    const User user = requestUserDetail({userId});
+    if (user.id.isEmpty()) {
+        return {};
+    }
+
+    const QString userUuid = user.userUuid.isEmpty() ? user.id : user.userUuid;
+    if (userUuid.trimmed().isEmpty()) {
+        return {};
+    }
+
+    QJsonObject item{
+            {QStringLiteral("userUuid"), userUuid}
+    };
+    if (user.version > 0) {
+        item.insert(QStringLiteral("knownVersion"), user.version);
+    }
+
+    NetworkRequest request = NetworkRequest::json(
+            HttpMethod::Post,
+            QStringLiteral("/users/batch"),
+            {{QStringLiteral("items"), QJsonArray{item}}});
+    request.maxRetries = 3;
+    const QString requestId = HttpClient::instance().send(request);
+    if (!requestId.isEmpty()) {
+        m_pendingUserProfileRefreshRequestIds.insert(requestId, user.id);
+    }
+    return requestId;
+}
+
 QString UserRepository::refreshPresenceBatch(const QStringList& userUuids)
 {
     QJsonArray array;
@@ -1218,6 +1362,12 @@ QString UserRepository::refreshFriendPresenceSnapshot()
         return {};
     }
 
+    {
+        QMutexLocker locker(&mutex);
+        for (const QString& userUuid : std::as_const(userUuids)) {
+            m_presenceSnapshotRequestedUserIds.insert(userUuid);
+        }
+    }
     m_pendingPresenceSnapshotRequestIds.insert(requestId, userUuids);
     return requestId;
 }

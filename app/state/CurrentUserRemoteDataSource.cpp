@@ -71,11 +71,40 @@ CurrentUserProfile profileFromResponseObject(QJsonObject object, const QString& 
                     object.value(QStringLiteral("userUuid")).toString())});
 }
 
-QJsonObject profileObjectWithAvatarResponse(const CurrentUserProfile& profile, QJsonObject avatarResponse)
+void copyAvatarResponseKeys(QJsonObject& object, const QJsonObject& response)
 {
-    if (avatarResponse.value(QStringLiteral("avatar")).isObject()) {
-        avatarResponse = avatarResponse.value(QStringLiteral("avatar")).toObject();
+    for (const QString& key : {QStringLiteral("avatarUrl"),
+                               QStringLiteral("avatarVersion"),
+                               QStringLiteral("avatarEtag"),
+                               QStringLiteral("avatarContentHash"),
+                               QStringLiteral("fileId"),
+                               QStringLiteral("avatarFileId")}) {
+        if (response.contains(key)) {
+            object.insert(key, response.value(key));
+        }
     }
+}
+
+int responseVersionFrom(const QJsonObject& root, const QJsonObject& avatar)
+{
+    int version = root.value(QStringLiteral("version")).toInt();
+    if (version <= 0) {
+        version = avatar.value(QStringLiteral("version")).toInt();
+    }
+    if (version <= 0) {
+        version = root.value(QStringLiteral("avatarVersion")).toInt();
+    }
+    if (version <= 0) {
+        version = avatar.value(QStringLiteral("avatarVersion")).toInt();
+    }
+    return version;
+}
+
+QJsonObject profileObjectWithAvatarResponse(const CurrentUserProfile& profile,
+                                            const QJsonObject& responseObject,
+                                            const QString& responseEtag)
+{
+    const QJsonObject avatarResponse = responseObject.value(QStringLiteral("avatar")).toObject();
 
     QJsonObject object{
             {QStringLiteral("userUuid"), profile.userUuid},
@@ -83,21 +112,27 @@ QJsonObject profileObjectWithAvatarResponse(const CurrentUserProfile& profile, Q
             {QStringLiteral("nickName"), profile.nickName},
             {QStringLiteral("signature"), profile.signature},
             {QStringLiteral("region"), profile.region},
-            {QStringLiteral("version"), profile.version},
-            {QStringLiteral("etag"), profile.etag}
+            {QStringLiteral("version"), profile.version}
     };
-    for (const QString& key : {QStringLiteral("avatarUrl"),
-                               QStringLiteral("avatarVersion"),
-                               QStringLiteral("avatarEtag"),
-                               QStringLiteral("avatarContentHash"),
-                               QStringLiteral("fileId"),
-                               QStringLiteral("avatarFileId")}) {
-        if (avatarResponse.contains(key)) {
-            object.insert(key, avatarResponse.value(key));
-        }
+    if (!profile.etag.isEmpty()) {
+        object.insert(QStringLiteral("etag"), profile.etag);
     }
-    if (avatarResponse.contains(QStringLiteral("avatar"))) {
-        object.insert(QStringLiteral("avatar"), avatarResponse.value(QStringLiteral("avatar")));
+
+    copyAvatarResponseKeys(object, responseObject);
+    copyAvatarResponseKeys(object, avatarResponse);
+
+    const int responseVersion = responseVersionFrom(responseObject, avatarResponse);
+    if (responseVersion > 0) {
+        object.insert(QStringLiteral("version"), responseVersion);
+    }
+    if (!responseEtag.isEmpty()) {
+        object.insert(QStringLiteral("etag"), responseEtag);
+    } else if (responseObject.contains(QStringLiteral("etag"))) {
+        object.insert(QStringLiteral("etag"), responseObject.value(QStringLiteral("etag")));
+    }
+
+    if (responseObject.contains(QStringLiteral("avatar"))) {
+        object.insert(QStringLiteral("avatar"), responseObject.value(QStringLiteral("avatar")));
     }
     return object;
 }
@@ -222,7 +257,9 @@ void CurrentUserRemoteDataSource::handleRequestSucceeded(const QString& requestI
     }
     case RequestKind::UploadAvatar: {
         const CurrentUserProfile previous = m_pendingAvatarProfiles.take(requestId);
-        const QJsonObject object = profileObjectWithAvatarResponse(previous, response.object());
+        const QJsonObject object = profileObjectWithAvatarResponse(previous,
+                                                                   response.object(),
+                                                                   response.etag);
         CurrentUserProfileRepository::instance().saveCurrentUserProfileObject(object);
         const CurrentUserProfile profile = CurrentUserProfileRepository::instance().requestCurrentUserProfile({
                 previous.userId

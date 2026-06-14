@@ -650,9 +650,13 @@ bool FriendNotificationRepository::acceptRequest(const QString& notificationId,
         }
 
         notification.status = NotificationStatus::Accepted;
+        notification.unread = false;
         LocalDataStore::instance().upsertValue(QStringLiteral("friend_notifications"),
                                                notification.id,
                                                notificationToJson(notification));
+        UnreadStateRepository::instance().setUnread(kFriendRequestUnreadScope,
+                                                    notification.id,
+                                                    false);
         const QString applicantLookupId = notification.fromUserId.isEmpty()
                 ? notification.fromUserUuid
                 : notification.fromUserId;
@@ -691,9 +695,13 @@ bool FriendNotificationRepository::rejectRequest(const QString& notificationId)
         }
 
         notification.status = NotificationStatus::Rejected;
+        notification.unread = false;
         LocalDataStore::instance().upsertValue(QStringLiteral("friend_notifications"),
                                                notification.id,
                                                notificationToJson(notification));
+        UnreadStateRepository::instance().setUnread(kFriendRequestUnreadScope,
+                                                    notification.id,
+                                                    false);
         emit notificationListChanged();
         return true;
     }

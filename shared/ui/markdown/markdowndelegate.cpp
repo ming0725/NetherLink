@@ -70,6 +70,8 @@ constexpr qreal kMathFractionGap = 5.0;
 constexpr qreal kMathRuleWidth = 1.2;
 constexpr qreal kMathRasterPaddingX = 4.0;
 constexpr qreal kMathRasterPaddingY = 3.0;
+constexpr qreal kInlineMathBaselineOffsetY = 0;
+constexpr int kInlineMathListMarkerOffsetY = 2;
 constexpr int kDefaultFontPixelSize = 18;
 constexpr int kMinFontPixelSize = 10;
 
@@ -402,6 +404,7 @@ struct JkMathLayout {
 
 struct MathSizeCacheEntry {
     QSizeF size;
+    qreal baseline = 0.0;
     bool parsed = false;
 };
 
@@ -1668,12 +1671,20 @@ QPixmap renderMathPixmap(const QFont &font,
     return pixmap;
 }
 
-QSizeF inlineMathSize(const QFont &font, int dpiY, const QString &source, const QColor &color, bool *parsed)
+QSizeF inlineMathSize(const QFont &font,
+                      int dpiY,
+                      const QString &source,
+                      const QColor &color,
+                      bool *parsed,
+                      qreal *baseline = nullptr)
 {
     static QCache<QString, MathSizeCacheEntry> cache(2048);
     const QString cacheKey = mathSizeCacheKey(font, dpiY, normalizedInlineMathSource(source), kMathInlineScale);
     if (const MathSizeCacheEntry *cached = cache.object(cacheKey)) {
         *parsed = cached->parsed;
+        if (baseline) {
+            *baseline = cached->baseline;
+        }
         return cached->size;
     }
 
@@ -1685,13 +1696,23 @@ QSizeF inlineMathSize(const QFont &font, int dpiY, const QString &source, const 
     JKQTMathText mathText;
     configureMathText(mathText, font, dpiY, color, kMathInlineScale);
     *parsed = parseInlineMath(mathText, source);
-    const QSizeF formulaSize = *parsed ? paddedMathSize(mathText.getSize(metricPainter)) : QSizeF();
+    QSizeF formulaSize;
+    qreal formulaBaseline = 0.0;
+    if (*parsed) {
+        const JKQTMathTextNodeSize formulaSizeDetail = mathText.getSizeDetail(metricPainter);
+        formulaSize = paddedMathSize(formulaSizeDetail.getSize());
+        formulaBaseline = kMathRasterPaddingY + formulaSizeDetail.baselineHeight;
+    }
     metricPainter.end();
 
     auto *entry = new MathSizeCacheEntry;
     entry->size = formulaSize;
+    entry->baseline = formulaBaseline;
     entry->parsed = *parsed;
     cache.insert(cacheKey, entry, qMax(1, source.size() / 64));
+    if (baseline) {
+        *baseline = formulaBaseline;
+    }
     return formulaSize;
 }
 
@@ -1737,8 +1758,14 @@ void drawInlineMath(QPainter *painter,
             const qreal right = line.cursorToX(spanEnd);
             const qreal reservedWidth = qMax<qreal>(1.0, right - left);
             bool parsed = false;
+            qreal formulaBaseline = 0.0;
             const QFont layoutFont = layout->font();
-            const QSizeF formulaSize = inlineMathSize(layoutFont, dpiY, span.href, color, &parsed);
+            const QSizeF formulaSize = inlineMathSize(layoutFont,
+                                                      dpiY,
+                                                      span.href,
+                                                      color,
+                                                      &parsed,
+                                                      &formulaBaseline);
             if (!parsed || formulaSize.isEmpty()) {
                 painter->setFont(option.font);
                 painter->setPen(color);
@@ -1776,8 +1803,13 @@ void drawInlineMath(QPainter *painter,
                 break;
             }
 
+            const qreal formulaTop = origin.y() +
+                                     line.position().y() +
+                                     line.ascent() -
+                                     formulaBaseline +
+                                     kInlineMathBaselineOffsetY;
             const QRectF formulaRect(origin.x() + line.position().x() + left,
-                                     origin.y() + line.position().y() + (line.height() - formulaSize.height()) / 2.0,
+                                     formulaTop,
                                      qMin<qreal>(reservedWidth, formulaSize.width()),
                                      formulaSize.height());
             painter->save();
@@ -2112,6 +2144,13 @@ int listMarkerWidth(const QStyleOptionViewItem &option, const MarkdownRenderer::
 int listIndentForBlock(const MarkdownRenderer::Block &block)
 {
     return kListIndent + qMax(0, block.level) * kNestedListIndent;
+}
+
+bool hasInlineMathSpan(const QVector<MarkdownRenderer::InlineSpan> &spans)
+{
+    return std::any_of(spans.cbegin(), spans.cend(), [](const MarkdownRenderer::InlineSpan &span) {
+        return span.style & MarkdownRenderer::Math;
+    });
 }
 
 QRect textRectForBlock(const QStyleOptionViewItem &option, const MarkdownRenderer::Block &block)
@@ -2889,6 +2928,8 @@ void MarkdownDelegate::paint(QPainter *painter,
         return;
     }
 
+    BlockLayout layout = buildLayout(viewOption, index);
+
     if (block.type == MarkdownRenderer::BlockType::BlockQuote) {
         painter->fillRect(QRect(content.left(), content.top(), 4, content.height()),
                           ThemeManager::instance().color(ThemeColor::Divider));
@@ -2910,15 +2951,23 @@ void MarkdownDelegate::paint(QPainter *painter,
         const QString marker = block.type == MarkdownRenderer::BlockType::OrderedList
                                    ? QString::number(block.number) + QLatin1Char('.')
                                    : QStringLiteral("•");
-        painter->drawText(QRect(content.left() + listIndentForBlock(block),
-                                content.top(),
-                                listMarkerWidth(viewOption, block),
-                                content.height()),
-                          Qt::AlignTop | Qt::AlignLeft,
+        QRect markerRect(content.left() + listIndentForBlock(block),
+                         content.top(),
+                         listMarkerWidth(viewOption, block),
+                         QFontMetrics(blockFont(viewOption.font, block)).height());
+        if (layout.textLayout && layout.textLayout->lineCount() > 0) {
+            const QTextLine firstLine = layout.textLayout->lineAt(0);
+            const int markerOffset = hasInlineMathSpan(block.spans)
+                                         ? kInlineMathListMarkerOffsetY
+                                         : 0;
+            markerRect.setTop(qRound(layout.textRect.top() + firstLine.position().y()) + markerOffset);
+            markerRect.setHeight(qCeil(firstLine.height()));
+        }
+        painter->drawText(markerRect,
+                          Qt::AlignVCenter | Qt::AlignLeft,
                           marker);
     }
 
-    BlockLayout layout = buildLayout(viewOption, index);
     painter->setPen(textColor(viewOption.palette, block));
     if (block.type == MarkdownRenderer::BlockType::CodeBlock) {
         painter->save();

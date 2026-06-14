@@ -17,7 +17,8 @@ public:
         IsFromUserRole,
         TimeRole,
         IsBottomSpaceRole,
-        BottomSpaceHeightRole
+        BottomSpaceHeightRole,
+        IsThinkingRole
     };
 
     explicit AiChatMessageListModel(QObject* parent = nullptr);

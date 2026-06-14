@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QObject>
+#include <QHash>
 #include <QSet>
 #include <QString>
 
@@ -53,4 +54,5 @@ private:
     mutable CurrentUserProfile m_profile;
     mutable ProfileLoadLevel m_profileLoadLevel = ProfileLoadLevel::None;
     QSet<QString> m_pendingProfileSaveRequests;
+    QHash<QString, CurrentUserProfile> m_pendingProfileUpdatesAfterAvatar;
 };

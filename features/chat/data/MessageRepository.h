@@ -75,6 +75,7 @@ private:
     bool shouldIgnoreStoreChange(const QString& domain);
     void ignoreNextStoreChange(const QString& domain);
     bool localUnreadOverride(const QString& conversationId, int* unreadCount = nullptr) const;
+    void clearLocalUnreadOverride(const QString& conversationId);
     void applyConversationStateObject(const QJsonObject& conversation, bool emitChange = true);
     void cacheRemoteMessageObject(QJsonObject object,
                                   const QString& fallbackConversationId = QString(),

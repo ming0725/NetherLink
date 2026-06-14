@@ -120,7 +120,7 @@ GroupDetailPage::GroupDetailPage(QWidget* parent)
     : QWidget(parent)
     , m_contentWidget(new QWidget(this))
     , m_nameLabel(new PaintedLabel(this))
-    , m_idPrefixLabel(new PaintedLabel(QStringLiteral("ID"), this))
+    , m_idPrefixLabel(new PaintedLabel(QStringLiteral("群号"), this))
     , m_idLabel(new PaintedLabel(this))
     , m_copyIdButton(new CopyIdButton(this))
     , m_remarkEdit(new InlineEditableText(this))
@@ -422,10 +422,11 @@ void GroupDetailPage::setGroup(const Group& group)
     m_remarkEdit->finishEditing();
 
     m_nameLabel->setText(m_group.groupName);
+    const QString publicGroupId = m_group.groupPublicId.trimmed();
     m_idPrefixLabel->setVisible(true);
-    m_idLabel->setText(m_group.groupId);
-    m_copyIdButton->setEnabled(true);
-    m_copyIdButton->setVisible(true);
+    m_idLabel->setText(publicGroupId.isEmpty() ? QStringLiteral("暂无") : publicGroupId);
+    m_copyIdButton->setEnabled(!publicGroupId.isEmpty());
+    m_copyIdButton->setVisible(!publicGroupId.isEmpty());
     updateAvatar();
     updateRemarkText();
     updateCategoryButtonText();
@@ -533,11 +534,11 @@ void GroupDetailPage::updateMemberCountText()
 
 void GroupDetailPage::copyCurrentId()
 {
-    if (!m_hasGroup || m_group.groupId.isEmpty()) {
+    if (!m_hasGroup || m_group.groupPublicId.trimmed().isEmpty()) {
         return;
     }
 
-    QApplication::clipboard()->setText(m_group.groupId);
+    QApplication::clipboard()->setText(m_group.groupPublicId.trimmed());
     GlobalNotification::showSuccess(this, QStringLiteral("复制成功"));
 }
 

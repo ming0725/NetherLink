@@ -10,6 +10,7 @@ class AiChatFloatingInputBar;
 class AiChatSessionController;
 class NewMessageNotifier;
 class PaintedLabel;
+class QTimer;
 
 class AiChatConversationWidget : public QWidget
 {
@@ -32,7 +33,7 @@ protected:
     void resizeEvent(QResizeEvent* event) override;
 
 private slots:
-    void onSendText(const QString& text);
+    void onSendText(const QString& text, const AiChatRequestOptions& options);
     void onStopStreamingRequested();
     void onRegenerateAiReplyRequested(const QString& conversationId, const QString& messageId);
     void onAiReplyStarted(const QString& conversationId);
@@ -44,6 +45,7 @@ private slots:
                                   const QString& messageId,
                                   const AiChatMessage& replacement);
     void onAiReplyMessageRemoved(const QString& conversationId, const QString& messageId);
+    void onAiReplyThinkingChanged(const QString& conversationId, bool active);
     void onAiReplyFinished(const QString& conversationId, const QString& messageId);
     void onAiReplyCanceled(const QString& conversationId, const QString& messageId);
     void onAiReplyFailed(const QString& conversationId,
@@ -64,6 +66,12 @@ private:
     void updateNewMessageNotifierPosition();
     void requestContextUsage();
     void saveStartPageDraft();
+    void scheduleThinkingPlaceholder(const QString& conversationId);
+    void cancelScheduledThinkingPlaceholder();
+    void showScheduledThinkingPlaceholder(const QString& conversationId);
+    void showThinkingPlaceholder(const QString& conversationId);
+    void hideThinkingPlaceholder(const QString& conversationId);
+    bool hasThinkingPlaceholder() const;
     bool shouldShowNewMessageNotifier() const;
     bool isMessageViewAtBottom() const;
     bool isStartPage() const;
@@ -88,6 +96,9 @@ private:
     QString m_startPageDraft;
     bool m_newMessageNotifierRevealedByDownScroll = false;
     bool m_streamingNotifierHeld = false;
+    QString m_thinkingMessageId;
+    QTimer* m_thinkingAnimationTimer = nullptr;
+    QString m_pendingThinkingConversationId;
 
     static constexpr int kHeaderHeight = 62;
     static constexpr int kHeaderTitleHeight = 28;
@@ -104,4 +115,5 @@ private:
     static constexpr int kNewMessageNotifierInputGap = 10;
     static constexpr int kNewMessageNotifierMinBottomDistance = 220;
     static constexpr int kNewMessageNotifierViewportDistanceDivisor = 2;
+    static constexpr int kThinkingAnimationFrameMs = 16;
 };

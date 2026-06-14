@@ -446,6 +446,17 @@ public:
         setAutoFillBackground(false);
         setMouseTracking(true);
         setAttribute(Qt::WA_Hover);
+        connect(&ImageService::instance(),
+                &ImageService::resourceChanged,
+                this,
+                [this](const QString& source) {
+                    if (!source.isEmpty() && source == avatarSource()) {
+                        update();
+                    }
+                });
+        connect(&ImageService::instance(), &ImageService::previewReady, this, [this]() {
+            update();
+        });
     }
 
     void setContextMenuCallback(std::function<void(const User&, const QPoint&)> callback)
@@ -488,11 +499,7 @@ protected:
         avatarPath.addRoundedRect(avatarRect, 4, 4);
         painter.save();
         painter.setClipPath(avatarPath);
-        const CurrentUser& currentUser = CurrentUser::instance();
-        const QString avatarSource = currentUser.isCurrentUserId(m_user.id)
-                ? currentUser.getAvatarPath()
-                : m_user.avatarPath;
-        const QPixmap avatar = ImageService::instance().scaled(avatarSource,
+        const QPixmap avatar = ImageService::instance().scaled(avatarSource(),
                                                                avatarRect.size(),
                                                                Qt::KeepAspectRatioByExpanding,
                                                                painter.device()->devicePixelRatioF());
@@ -564,6 +571,14 @@ protected:
     }
 
 private:
+    QString avatarSource() const
+    {
+        const CurrentUser& currentUser = CurrentUser::instance();
+        return currentUser.isCurrentUserId(m_user.id)
+                ? currentUser.getAvatarPath()
+                : m_user.avatarPath;
+    }
+
     Group m_group;
     GroupMemberProfile m_member;
     User m_user;

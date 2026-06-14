@@ -136,10 +136,25 @@ FriendDetailPage::FriendDetailPage(QWidget* parent)
         if (refreshedUser.id.isEmpty()) {
             return;
         }
-        m_user.status = refreshedUser.status;
-        m_user.lastSeenAt = refreshedUser.lastSeenAt;
+
+        const bool remarkEditing = m_remarkEdit->isEditing();
+        m_user = refreshedUser;
+        m_nameLabel->setText(readableUserName(m_user));
+        const QString publicId = readableUserId(m_user);
+        m_idPrefixLabel->setVisible(!publicId.isEmpty());
+        m_idLabel->setText(publicId);
+        m_copyIdButton->setEnabled(!publicId.isEmpty());
+        m_copyIdButton->setVisible(!publicId.isEmpty());
+        m_regionLabel->setText(m_user.region);
+        m_regionRow->setVisible(!m_user.region.isEmpty());
         m_statusLabel->setText(statusText(m_user.status));
         updateAvatar();
+        if (!remarkEditing) {
+            updateRemarkText();
+        }
+        updateGroupButtonText();
+        updateSignatureText();
+        QTimer::singleShot(0, this, &FriendDetailPage::updateSignatureText);
     });
 
     auto* root = new QVBoxLayout(this);

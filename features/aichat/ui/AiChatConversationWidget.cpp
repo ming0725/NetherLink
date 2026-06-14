@@ -48,6 +48,7 @@ AiChatConversationWidget::AiChatConversationWidget(QWidget* parent)
     , m_bottomGapGradientOverlay(new BottomFadeOverlay(this))
     , m_newMessageNotifier(new NewMessageNotifier(this))
     , m_emptyLabel(new PaintedLabel(QStringLiteral("今天需要做什么？"), this))
+    , m_thinkingAnimationTimer(new QTimer(this))
 {
     m_messageView->setModel(m_messageModel);
     m_newMessageNotifier->setDisplayMode(NewMessageNotifier::DisplayMode::IconOnly);
@@ -67,6 +68,16 @@ AiChatConversationWidget::AiChatConversationWidget(QWidget* parent)
 
     connect(m_inputBar, &AiChatFloatingInputBar::sendText,
             this, &AiChatConversationWidget::onSendText);
+    m_thinkingAnimationTimer->setInterval(kThinkingAnimationFrameMs);
+    connect(m_thinkingAnimationTimer, &QTimer::timeout, this, [this]() {
+        if (!hasThinkingPlaceholder()) {
+            m_thinkingAnimationTimer->stop();
+            return;
+        }
+        if (m_messageView && m_messageView->isVisible()) {
+            m_messageView->viewport()->update();
+        }
+    });
     connect(m_inputBar, &AiChatFloatingInputBar::stopStreamingRequested,
             this, &AiChatConversationWidget::onStopStreamingRequested);
     connect(m_inputBar, &AiChatFloatingInputBar::inputFocused,
@@ -144,6 +155,8 @@ void AiChatConversationWidget::setController(AiChatSessionController* controller
             this, &AiChatConversationWidget::onAiReplyMessageReplaced);
     connect(m_controller, &AiChatSessionController::aiReplyMessageRemoved,
             this, &AiChatConversationWidget::onAiReplyMessageRemoved);
+    connect(m_controller, &AiChatSessionController::aiReplyThinkingChanged,
+            this, &AiChatConversationWidget::onAiReplyThinkingChanged);
     connect(m_controller, &AiChatSessionController::aiReplyFinished,
             this, &AiChatConversationWidget::onAiReplyFinished);
     connect(m_controller, &AiChatSessionController::aiReplyCanceled,
@@ -228,6 +241,9 @@ void AiChatConversationWidget::openConversation(const AiChatListEntry& entry)
             m_controller->activeStreamConversationId() == entry.conversationId;
     m_messageView->messageDelegate()->setStreamingMessageId(
             currentConversationStreaming ? m_controller->activeStreamMessageId() : QString());
+    cancelScheduledThinkingPlaceholder();
+    m_thinkingMessageId.clear();
+    m_thinkingAnimationTimer->stop();
     m_messageModel->clear();
     m_messageView->clearTextSelection();
     m_messageView->show();
@@ -274,6 +290,9 @@ void AiChatConversationWidget::showStartPage()
     m_pendingContextUsageRequestId = 0;
     m_pendingContextUsageConversationId.clear();
     m_messageView->messageDelegate()->setStreamingMessageId(QString());
+    cancelScheduledThinkingPlaceholder();
+    m_thinkingMessageId.clear();
+    m_thinkingAnimationTimer->stop();
     m_messageModel->clear();
     m_messageView->clearTextSelection();
     m_messageView->hide();
@@ -309,7 +328,7 @@ void AiChatConversationWidget::resizeEvent(QResizeEvent* event)
     updateLayout();
 }
 
-void AiChatConversationWidget::onSendText(const QString& text)
+void AiChatConversationWidget::onSendText(const QString& text, const AiChatRequestOptions& options)
 {
     if (!m_controller || m_controller->hasActiveAiReplyStream()) {
         return;
@@ -340,13 +359,19 @@ void AiChatConversationWidget::onSendText(const QString& text)
         });
     }
 
-    const AiChatMessage message = m_controller->submitUserMessage(m_currentConversation.conversationId, text);
+    const AiChatMessage message = m_controller->submitUserMessage(m_currentConversation.conversationId,
+                                                                  text,
+                                                                  options);
     if (message.messageId.isEmpty()) {
         m_inputBar->setText(text);
         return;
     }
 
+    m_messageView->setUpdatesEnabled(false);
     m_messageModel->appendMessage(message);
+    showScheduledThinkingPlaceholder(message.conversationId);
+    m_messageView->setUpdatesEnabled(true);
+    m_messageView->viewport()->update();
     m_messageView->clearTextSelection();
     m_messageView->scrollToBottom(true);
     m_unreadAiReplyCount = 0;
@@ -370,9 +395,12 @@ void AiChatConversationWidget::onRegenerateAiReplyRequested(const QString& conve
         return;
     }
 
-    if (!m_controller->regenerateAiReply(conversationId, messageId)) {
+    if (!m_controller->regenerateAiReply(conversationId, messageId, m_inputBar->requestOptions())) {
         GlobalNotification::showFailure(this, QStringLiteral("只能重新生成最后一条回复"));
+        return;
     }
+
+    showScheduledThinkingPlaceholder(conversationId);
 }
 
 void AiChatConversationWidget::updateLayout()
@@ -469,6 +497,82 @@ void AiChatConversationWidget::saveStartPageDraft()
     if (m_inputBar && isStartPage()) {
         m_startPageDraft = m_inputBar->text();
     }
+}
+
+void AiChatConversationWidget::scheduleThinkingPlaceholder(const QString& conversationId)
+{
+    if (conversationId.isEmpty()) {
+        return;
+    }
+
+    m_pendingThinkingConversationId = conversationId;
+}
+
+void AiChatConversationWidget::cancelScheduledThinkingPlaceholder()
+{
+    m_pendingThinkingConversationId.clear();
+}
+
+void AiChatConversationWidget::showScheduledThinkingPlaceholder(const QString& conversationId)
+{
+    if (conversationId.isEmpty() ||
+            m_pendingThinkingConversationId != conversationId ||
+            !m_controller ||
+            m_controller->activeStreamConversationId() != conversationId ||
+            !m_controller->activeStreamMessageId().isEmpty()) {
+        return;
+    }
+
+    showThinkingPlaceholder(conversationId);
+}
+
+void AiChatConversationWidget::showThinkingPlaceholder(const QString& conversationId)
+{
+    if (conversationId.isEmpty() ||
+            m_currentConversation.conversationId != conversationId ||
+            hasThinkingPlaceholder()) {
+        return;
+    }
+
+    AiChatMessage message;
+    message.messageId = QStringLiteral("__ai_thinking_%1").arg(conversationId);
+    message.conversationId = conversationId;
+    message.text = QStringLiteral("Thinking...");
+    message.isFromUser = false;
+    message.time = QDateTime::currentDateTime();
+
+    const bool shouldFollowReply = m_messageView->isBottomLocked();
+    m_pendingThinkingConversationId.clear();
+    m_thinkingMessageId = message.messageId;
+    m_messageModel->appendMessage(message);
+    if (!shouldFollowReply) {
+        ++m_unreadAiReplyCount;
+    }
+    if (!m_thinkingAnimationTimer->isActive()) {
+        m_thinkingAnimationTimer->start();
+    }
+    m_messageView->scrollToBottomIfLocked();
+    updateNewMessageNotifier();
+}
+
+void AiChatConversationWidget::hideThinkingPlaceholder(const QString& conversationId)
+{
+    cancelScheduledThinkingPlaceholder();
+    if (m_thinkingMessageId.isEmpty() ||
+            (!conversationId.isEmpty() && m_currentConversation.conversationId != conversationId)) {
+        return;
+    }
+
+    m_messageModel->removeMessage(m_thinkingMessageId);
+    m_thinkingMessageId.clear();
+    m_thinkingAnimationTimer->stop();
+    m_messageView->scrollToBottomIfLocked();
+    updateNewMessageNotifier();
+}
+
+bool AiChatConversationWidget::hasThinkingPlaceholder() const
+{
+    return !m_thinkingMessageId.isEmpty();
 }
 
 void AiChatConversationWidget::updateNewMessageNotifier()
@@ -574,6 +678,7 @@ void AiChatConversationWidget::onAiReplyStarted(const QString& conversationId)
 {
     if (m_currentConversation.conversationId == conversationId) {
         m_inputBar->setStreaming(true);
+        scheduleThinkingPlaceholder(conversationId);
         m_streamingNotifierHeld = false;
         updateNewMessageNotifier();
     }
@@ -583,9 +688,12 @@ void AiChatConversationWidget::onAiReplyMessageAdded(const AiChatMessage& messag
 {
     if (m_currentConversation.conversationId == message.conversationId) {
         const bool shouldFollowReply = m_messageView->isBottomLocked();
+        const bool hadThinkingPlaceholder = hasThinkingPlaceholder();
+        cancelScheduledThinkingPlaceholder();
+        hideThinkingPlaceholder(message.conversationId);
         m_messageView->messageDelegate()->setStreamingMessageId(message.messageId);
         m_messageModel->appendMessage(message);
-        if (!message.isFromUser && !shouldFollowReply) {
+        if (!message.isFromUser && !shouldFollowReply && !hadThinkingPlaceholder) {
             ++m_unreadAiReplyCount;
         }
         m_messageView->scrollToBottomIfLocked();
@@ -602,6 +710,8 @@ void AiChatConversationWidget::onAiReplyMessageUpdated(const QString& conversati
                                                        const QString& text)
 {
     if (m_currentConversation.conversationId == conversationId) {
+        cancelScheduledThinkingPlaceholder();
+        hideThinkingPlaceholder(conversationId);
         if (m_messageView->messageDelegate()->streamingMessageId().isEmpty()) {
             m_messageView->messageDelegate()->setStreamingMessageId(messageId);
         }
@@ -616,6 +726,8 @@ void AiChatConversationWidget::onAiReplyMessageReplaced(const QString& conversat
                                                         const AiChatMessage& replacement)
 {
     if (m_currentConversation.conversationId == conversationId) {
+        cancelScheduledThinkingPlaceholder();
+        hideThinkingPlaceholder(conversationId);
         if (m_messageView->messageDelegate()->streamingMessageId() == messageId) {
             m_messageView->messageDelegate()->setStreamingMessageId(replacement.messageId);
         }
@@ -629,6 +741,7 @@ void AiChatConversationWidget::onAiReplyMessageRemoved(const QString& conversati
                                                        const QString& messageId)
 {
     if (m_currentConversation.conversationId == conversationId) {
+        cancelScheduledThinkingPlaceholder();
         if (m_messageView->messageDelegate()->streamingMessageId() == messageId) {
             m_messageView->messageDelegate()->setStreamingMessageId(QString());
         }
@@ -640,9 +753,20 @@ void AiChatConversationWidget::onAiReplyMessageRemoved(const QString& conversati
     }
 }
 
+void AiChatConversationWidget::onAiReplyThinkingChanged(const QString& conversationId, bool active)
+{
+    if (active) {
+        Q_UNUSED(conversationId)
+    } else {
+        hideThinkingPlaceholder(conversationId);
+    }
+}
+
 void AiChatConversationWidget::onAiReplyFinished(const QString& conversationId, const QString& messageId)
 {
     if (m_currentConversation.conversationId == conversationId) {
+        cancelScheduledThinkingPlaceholder();
+        hideThinkingPlaceholder(conversationId);
         if (m_controller) {
             m_controller->clearConversationUnreadDot(conversationId);
         }
@@ -663,6 +787,8 @@ void AiChatConversationWidget::onAiReplyFinished(const QString& conversationId, 
 void AiChatConversationWidget::onAiReplyCanceled(const QString& conversationId, const QString& messageId)
 {
     if (m_currentConversation.conversationId == conversationId || m_currentConversation.conversationId.isEmpty()) {
+        cancelScheduledThinkingPlaceholder();
+        hideThinkingPlaceholder(conversationId);
         if (m_messageView->messageDelegate()->streamingMessageId() == messageId) {
             m_messageView->messageDelegate()->setStreamingMessageId(QString());
             m_messageView->refreshMessageLayout();
@@ -682,6 +808,8 @@ void AiChatConversationWidget::onAiReplyFailed(const QString& conversationId,
 {
     Q_UNUSED(message)
     if (m_currentConversation.conversationId == conversationId || m_currentConversation.conversationId.isEmpty()) {
+        cancelScheduledThinkingPlaceholder();
+        hideThinkingPlaceholder(conversationId);
         if (m_messageView->messageDelegate()->streamingMessageId() == messageId) {
             m_messageView->messageDelegate()->setStreamingMessageId(QString());
             m_messageView->refreshMessageLayout();
@@ -704,6 +832,9 @@ void AiChatConversationWidget::onConversationMessagesLoaded(int requestId,
     m_pendingMessagesRequestId = 0;
     m_pendingMessagesConversationId.clear();
     m_messageView->setUpdatesEnabled(false);
+    cancelScheduledThinkingPlaceholder();
+    m_thinkingMessageId.clear();
+    m_thinkingAnimationTimer->stop();
     m_messageModel->setMessages(messages);
     if (m_controller && m_controller->activeStreamConversationId() == conversationId) {
         m_messageView->messageDelegate()->setStreamingMessageId(m_controller->activeStreamMessageId());

@@ -26,6 +26,7 @@ struct GroupMemberProfile {
 
 struct Group {
     QString groupId;
+    QString groupPublicId;
     int version = 0;
     QString etag;
     QString groupName;

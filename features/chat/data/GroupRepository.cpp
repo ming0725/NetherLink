@@ -203,10 +203,9 @@ bool matchesGroupSearchKeyword(const Group& group, const QString& keyword)
         return false;
     }
 
-    return group.groupId.contains(keyword, Qt::CaseInsensitive) ||
+    return group.groupPublicId.contains(keyword, Qt::CaseInsensitive) ||
            group.groupName.contains(keyword, Qt::CaseInsensitive) ||
-           group.remark.contains(keyword, Qt::CaseInsensitive) ||
-           group.introduction.contains(keyword, Qt::CaseInsensitive);
+           group.remark.contains(keyword, Qt::CaseInsensitive);
 }
 
 void sortGroupList(QVector<Group>& result)
@@ -255,6 +254,7 @@ private:
             const QString baseCategoryId = normalizedBaseCategoryId(group);
             const QString baseCategoryName = normalizedBaseCategoryName(group);
             if (!query.keyword.isEmpty() &&
+                !group.groupPublicId.contains(query.keyword, Qt::CaseInsensitive) &&
                 !group.groupName.contains(query.keyword, Qt::CaseInsensitive) &&
                 !group.remark.contains(query.keyword, Qt::CaseInsensitive) &&
                 !effectiveCategoryNameFor(group).contains(query.keyword, Qt::CaseInsensitive) &&
@@ -449,6 +449,9 @@ Group groupFromJson(const QJsonObject& object)
 {
     Group group;
     group.groupId = object.value(QStringLiteral("groupId")).toString(object.value(QStringLiteral("id")).toString());
+    group.groupPublicId = firstString(object, {QStringLiteral("groupPublicId"),
+                                               QStringLiteral("publicId"),
+                                               QStringLiteral("public_id")});
     group.version = object.value(QStringLiteral("version")).toInt();
     group.etag = object.value(QStringLiteral("etag")).toString();
     group.groupName = object.value(QStringLiteral("groupName")).toString(object.value(QStringLiteral("name")).toString());
@@ -489,6 +492,7 @@ QJsonObject groupToJson(const Group& group)
 {
     return {
             {QStringLiteral("groupId"), group.groupId},
+            {QStringLiteral("groupPublicId"), group.groupPublicId},
             {QStringLiteral("version"), group.version},
             {QStringLiteral("etag"), group.etag},
             {QStringLiteral("groupName"), group.groupName},
@@ -546,6 +550,12 @@ Group mergedGroupFromObject(const QJsonObject& object, const Group& previous)
     if (group.groupName.isEmpty()) {
         group.groupName = previous.groupName;
     }
+    group.groupPublicId = objectHasAnyKey(object,
+                                          {QStringLiteral("groupPublicId"),
+                                           QStringLiteral("publicId"),
+                                           QStringLiteral("public_id")})
+            ? group.groupPublicId
+            : previous.groupPublicId;
     group.version = group.version > 0 ? group.version : previous.version;
     group.etag = object.contains(QStringLiteral("etag")) ? group.etag : previous.etag;
     group.memberNum = group.memberNum > 0 ? group.memberNum : previous.memberNum;

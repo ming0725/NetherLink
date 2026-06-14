@@ -5,6 +5,7 @@
 
 #include <QJsonObject>
 #include <QJsonValue>
+#include <QRegularExpression>
 #include <QUuid>
 
 namespace {
@@ -32,6 +33,12 @@ QJsonValue backendFriendGroupId(const QString& groupId)
 bool isDefaultFriendGroup(const QString& groupId)
 {
     return groupId.isEmpty() || groupId == QStringLiteral("default");
+}
+
+bool isGroupPublicId(const QString& value)
+{
+    static const QRegularExpression tenDigitId(QStringLiteral("^\\d{10}$"));
+    return tenDigitId.match(value.trimmed()).hasMatch();
 }
 
 QString handledStatusFromDetails(const NetworkError& error)
@@ -244,7 +251,11 @@ QString FriendRemoteDataSource::createGroupJoinRequest(const QString& groupId, c
     }
 
     QJsonObject body = bodyWithClientOperationId(newClientOperationId(QStringLiteral("op_group_join_request")));
-    body.insert(QStringLiteral("groupId"), groupId);
+    if (isGroupPublicId(groupId)) {
+        body.insert(QStringLiteral("groupPublicId"), groupId.trimmed());
+    } else {
+        body.insert(QStringLiteral("groupId"), groupId);
+    }
     body.insert(QStringLiteral("message"), message);
 
     PendingOperation pending;

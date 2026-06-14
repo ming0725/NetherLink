@@ -9,6 +9,7 @@
 #include <QDateTime>
 #include <QJsonObject>
 #include <QStringList>
+#include <QUrl>
 #include <utility>
 
 namespace {
@@ -37,17 +38,55 @@ QString avatarFileIdFrom(const QJsonObject& object)
                                 QStringLiteral("fileId")});
 }
 
-bool hasAvatarPayload(const QJsonObject& object)
+bool hasAvatarResourcePayload(const QJsonObject& object)
 {
-    return object.contains(QStringLiteral("avatar")) ||
-           object.contains(QStringLiteral("avatarPath")) ||
+    const QJsonObject avatar = object.value(QStringLiteral("avatar")).toObject();
+    return object.contains(QStringLiteral("avatarPath")) ||
            object.contains(QStringLiteral("avatarUrl")) ||
-           object.contains(QStringLiteral("avatarVersion")) ||
            object.contains(QStringLiteral("avatarEtag")) ||
            object.contains(QStringLiteral("avatarContentHash")) ||
            object.contains(QStringLiteral("avatarFileId")) ||
            object.contains(QStringLiteral("avatar_file_id")) ||
-           object.contains(QStringLiteral("fileId"));
+           object.contains(QStringLiteral("fileId")) ||
+           avatar.contains(QStringLiteral("fileId")) ||
+           avatar.contains(QStringLiteral("id")) ||
+           avatar.contains(QStringLiteral("avatarUrl")) ||
+           avatar.contains(QStringLiteral("url")) ||
+           avatar.contains(QStringLiteral("path")) ||
+           avatar.contains(QStringLiteral("etag")) ||
+           avatar.contains(QStringLiteral("contentHash"));
+}
+
+QString avatarFileIdFromSource(const QString& source)
+{
+    const QUrl url(AvatarSource::cleanForIo(source));
+    const QStringList parts = url.path().split(QLatin1Char('/'), Qt::SkipEmptyParts);
+    for (int i = 0; i + 1 < parts.size(); ++i) {
+        if (parts.at(i) == QStringLiteral("avatar-files")) {
+            return QUrl::fromPercentEncoding(parts.at(i + 1).toUtf8());
+        }
+    }
+    return {};
+}
+
+bool avatarResourceChanged(const CurrentUserProfile& next, const CurrentUserProfile& previous)
+{
+    if (!next.avatarContentHash.isEmpty()) {
+        return next.avatarContentHash != previous.avatarContentHash;
+    }
+    if (!next.avatarEtag.isEmpty()) {
+        return next.avatarEtag != previous.avatarEtag;
+    }
+
+    const QString nextFileId = avatarFileIdFromSource(next.avatarPath);
+    const QString previousFileId = avatarFileIdFromSource(previous.avatarPath);
+    if (!nextFileId.isEmpty() || !previousFileId.isEmpty()) {
+        return nextFileId != previousFileId;
+    }
+
+    const QString nextSource = AvatarSource::cleanForIo(next.avatarPath);
+    const QString previousSource = AvatarSource::cleanForIo(previous.avatarPath);
+    return !nextSource.isEmpty() && nextSource != previousSource;
 }
 
 void keepAvatarFromPrevious(CurrentUserProfile& profile, const CurrentUserProfile& previous)
@@ -85,7 +124,7 @@ QString statusToString(UserStatus status)
 UserStatus statusFromString(const QString& value)
 {
     const QString normalized = value.trimmed().toLower();
-    if (normalized == QStringLiteral("active") || normalized == QStringLiteral("online")) {
+    if (normalized == QStringLiteral("online")) {
         return Online;
     }
     if (normalized == QStringLiteral("mining") ||
@@ -104,6 +143,20 @@ UserStatus statusFromString(const QString& value)
     return Offline;
 }
 
+bool isPresenceStatusValue(const QString& value)
+{
+    const QString normalized = value.trimmed().toLower();
+    return normalized == QStringLiteral("online") ||
+           normalized == QStringLiteral("offline") ||
+           normalized == QStringLiteral("mining") ||
+           normalized == QStringLiteral("busy") ||
+           normalized == QStringLiteral("dnd") ||
+           normalized == QStringLiteral("airplane") ||
+           normalized == QStringLiteral("flying") ||
+           normalized == QStringLiteral("away") ||
+           normalized == QStringLiteral("invisible");
+}
+
 QJsonObject presenceObjectFrom(const QJsonObject& object)
 {
     const QJsonObject presence = object.value(QStringLiteral("presence")).toObject();
@@ -112,10 +165,10 @@ QJsonObject presenceObjectFrom(const QJsonObject& object)
     }
 
     QJsonObject legacyPresence;
-    if (object.contains(QStringLiteral("status"))) {
+    if (isPresenceStatusValue(object.value(QStringLiteral("status")).toString())) {
         legacyPresence.insert(QStringLiteral("status"), object.value(QStringLiteral("status")));
     }
-    if (object.contains(QStringLiteral("lastSeenAt"))) {
+    if (!legacyPresence.isEmpty() && object.contains(QStringLiteral("lastSeenAt"))) {
         legacyPresence.insert(QStringLiteral("lastSeenAt"), object.value(QStringLiteral("lastSeenAt")));
     }
     return legacyPresence;
@@ -133,8 +186,7 @@ QDateTime dateTimeFromString(const QString& value)
 bool hasPresencePayload(const QJsonObject& object)
 {
     return object.contains(QStringLiteral("presence")) ||
-           object.contains(QStringLiteral("status")) ||
-           object.contains(QStringLiteral("lastSeenAt"));
+           isPresenceStatusValue(object.value(QStringLiteral("status")).toString());
 }
 
 CurrentUserProfile profileFromJson(QJsonObject object, const QString& responseEtag = {})
@@ -155,6 +207,8 @@ CurrentUserProfile profileFromJson(QJsonObject object, const QString& responseEt
     profile.userUuid = firstString(object, {QStringLiteral("userUuid"),
                                             QStringLiteral("uuid")});
     profile.userId = firstString(object, {QStringLiteral("userId"),
+                                          QStringLiteral("publicId"),
+                                          QStringLiteral("public_id"),
                                           QStringLiteral("publicUserId"),
                                           QStringLiteral("accountId")});
     if (profile.userId.isEmpty()) {
@@ -220,6 +274,24 @@ QString profileStorageKey(const CurrentUserProfile& profile)
     return profile.userUuid.isEmpty() ? profile.userId : profile.userUuid;
 }
 
+CurrentUserProfile profileByAnyId(const QMap<QString, CurrentUserProfile>& profiles, const QString& id)
+{
+    if (id.isEmpty()) {
+        return {};
+    }
+
+    const CurrentUserProfile direct = profiles.value(id);
+    if (!direct.userId.isEmpty()) {
+        return direct;
+    }
+    for (const CurrentUserProfile& profile : profiles) {
+        if (profile.userId == id || profile.userUuid == id) {
+            return profile;
+        }
+    }
+    return {};
+}
+
 class CurrentUserIdentityRequestOperation final
     : public RepositoryTemplate<CurrentUserIdentityRequest, CurrentUserProfile> {
 public:
@@ -231,7 +303,7 @@ public:
 private:
     CurrentUserProfile doRequest(const CurrentUserIdentityRequest& query) const override
     {
-        return identityOnly(m_profiles.value(query.userId));
+        return identityOnly(profileByAnyId(m_profiles, query.userId));
     }
 
     QMap<QString, CurrentUserProfile> m_profiles;
@@ -248,7 +320,7 @@ public:
 private:
     CurrentUserProfile doRequest(const CurrentUserProfileRequest& query) const override
     {
-        return m_profiles.value(query.userId);
+        return profileByAnyId(m_profiles, query.userId);
     }
 
     QMap<QString, CurrentUserProfile> m_profiles;
@@ -291,7 +363,8 @@ CurrentUserProfileRepository::CurrentUserProfileRepository(QObject* parent)
             return;
         }
 
-        if (type != QStringLiteral("profile.updated")) {
+        if (type != QStringLiteral("profile.updated") &&
+            type != QStringLiteral("public_id.updated")) {
             return;
         }
 
@@ -300,7 +373,13 @@ CurrentUserProfileRepository::CurrentUserProfileRepository(QObject* parent)
             object = payload;
         }
 
-        const QString userId = payload.value(QStringLiteral("userId")).toString();
+        const QString userId = firstString(payload, {QStringLiteral("userId"),
+                                                     QStringLiteral("publicId"),
+                                                     QStringLiteral("public_id"),
+                                                     QStringLiteral("publicUserId"),
+                                                     QStringLiteral("newUserId"),
+                                                     QStringLiteral("newPublicId"),
+                                                     QStringLiteral("new_public_id")});
         const QString userUuid = payload.value(QStringLiteral("userUuid")).toString();
         if (!userId.isEmpty() && !object.contains(QStringLiteral("userId"))) {
             object.insert(QStringLiteral("userId"), userId);
@@ -373,10 +452,17 @@ void CurrentUserProfileRepository::saveCurrentUserProfile(const CurrentUserProfi
 
     bool changed = false;
     QString oldAvatarPath;
+    QString previousUserId;
+    QString previousStorageKey;
     CurrentUserProfile next = profile;
     {
         QMutexLocker locker(&m_mutex);
-        const CurrentUserProfile previous = m_profiles.value(profile.userId);
+        CurrentUserProfile previous = profileByAnyId(m_profiles, profile.userId);
+        if (previous.userId.isEmpty() && !profile.userUuid.isEmpty()) {
+            previous = profileByAnyId(m_profiles, profile.userUuid);
+        }
+        previousUserId = previous.userId;
+        previousStorageKey = profileStorageKey(previous);
         if (!previous.userId.isEmpty() &&
             previous.avatarVersion > 0 &&
             next.avatarVersion > 0 &&
@@ -400,6 +486,9 @@ void CurrentUserProfileRepository::saveCurrentUserProfile(const CurrentUserProfi
                 || previous.region != next.region
                 || previous.version != next.version
                 || previous.etag != next.etag;
+        if (!previousUserId.isEmpty() && previousUserId != next.userId) {
+            m_profiles.remove(previousUserId);
+        }
         m_profiles.insert(next.userId, next);
     }
 
@@ -409,6 +498,12 @@ void CurrentUserProfileRepository::saveCurrentUserProfile(const CurrentUserProfi
                                            profileToJson(next));
     if (!next.userUuid.isEmpty() && next.userUuid != next.userId) {
         LocalDataStore::instance().removeValue(QStringLiteral("current_profiles"), next.userId);
+    }
+    if (!previousStorageKey.isEmpty() && previousStorageKey != storageKey) {
+        LocalDataStore::instance().removeValue(QStringLiteral("current_profiles"), previousStorageKey);
+    }
+    if (!previousUserId.isEmpty() && previousUserId != next.userId) {
+        LocalDataStore::instance().removeValue(QStringLiteral("current_profiles"), previousUserId);
     }
 
     if (!oldAvatarPath.isEmpty() && oldAvatarPath != next.avatarPath) {
@@ -423,9 +518,13 @@ void CurrentUserProfileRepository::saveCurrentUserProfileObject(const QJsonObjec
                                                                const QString& responseEtag)
 {
     CurrentUserProfile profile = profileFromJson(object, responseEtag);
-    const CurrentUserProfile previous = requestCurrentUserProfile({profile.userId});
+    CurrentUserProfile previous = requestCurrentUserProfile({profile.userId});
+    if (previous.userId.isEmpty() && !profile.userUuid.isEmpty()) {
+        previous = requestCurrentUserProfile({profile.userUuid});
+    }
     if (!previous.userId.isEmpty()) {
-        if (!hasAvatarPayload(object) ||
+        if (!hasAvatarResourcePayload(object) ||
+            !avatarResourceChanged(profile, previous) ||
             (previous.avatarVersion > 0 &&
              profile.avatarVersion > 0 &&
              profile.avatarVersion < previous.avatarVersion)) {

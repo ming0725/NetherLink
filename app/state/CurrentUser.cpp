@@ -6,6 +6,36 @@
 
 #include <QFileInfo>
 
+namespace {
+
+bool editableProfileFieldsChanged(const CurrentUserProfile& next, const CurrentUserProfile& previous)
+{
+    return next.nickName != previous.nickName ||
+           next.signature != previous.signature ||
+           next.region != previous.region;
+}
+
+CurrentUserProfile profilePatchAfterAvatarUpload(const CurrentUserProfile& editedProfile,
+                                                 CurrentUserProfile uploadedProfile)
+{
+    if (uploadedProfile.userId.isEmpty()) {
+        uploadedProfile.userId = editedProfile.userId;
+    }
+    if (uploadedProfile.userUuid.isEmpty()) {
+        uploadedProfile.userUuid = editedProfile.userUuid;
+    }
+    uploadedProfile.nickName = editedProfile.nickName;
+    uploadedProfile.signature = editedProfile.signature;
+    uploadedProfile.region = editedProfile.region;
+
+    if (uploadedProfile.version <= editedProfile.version && !uploadedProfile.etag.isEmpty()) {
+        uploadedProfile.version = 0;
+    }
+    return uploadedProfile;
+}
+
+} // namespace
+
 CurrentUser::CurrentUser(QObject* parent)
     : QObject(parent)
 {
@@ -51,12 +81,27 @@ CurrentUser::CurrentUser(QObject* parent)
                 if (isCurrentUserId(profile.userId)) {
                     applyProfile(profile, ProfileLoadLevel::Full);
                 }
+                const CurrentUserProfile editedProfile = m_pendingProfileUpdatesAfterAvatar.take(requestId);
+                if (editedProfile.isValid()) {
+                    const QString profileRequestId = CurrentUserRemoteDataSource::instance().updateProfile(
+                            profilePatchAfterAvatarUpload(editedProfile, profile));
+                    if (!profileRequestId.isEmpty()) {
+                        m_pendingProfileSaveRequests.insert(profileRequestId);
+                        return;
+                    }
+                    NetworkError error;
+                    error.code = QStringLiteral("PROFILE_UPDATE_NOT_STARTED");
+                    error.message = QStringLiteral("Profile update was not started after avatar upload.");
+                    emit profileSaveFailed(requestId, error);
+                    return;
+                }
                 emit profileSaveSucceeded(requestId);
             });
     connect(&CurrentUserRemoteDataSource::instance(),
             &CurrentUserRemoteDataSource::avatarUpdateFailed,
             this,
             [this](const QString& requestId, const NetworkError& error) {
+                m_pendingProfileUpdatesAfterAvatar.remove(requestId);
                 if (m_pendingProfileSaveRequests.remove(requestId)) {
                     emit profileSaveFailed(requestId, error);
                 }
@@ -222,12 +267,20 @@ QString CurrentUser::saveProfile(const CurrentUserProfile& profile)
     QString firstRequestId;
     const bool hasLocalAvatarChange = profile.avatarPath != m_profile.avatarPath &&
             QFileInfo(profile.avatarPath).isFile();
+    const bool hasEditableProfileChange = editableProfileFieldsChanged(profile, m_profile);
     if (hasLocalAvatarChange) {
         const QString avatarRequestId = CurrentUserRemoteDataSource::instance().uploadAvatar(profile);
         if (!avatarRequestId.isEmpty()) {
             m_pendingProfileSaveRequests.insert(avatarRequestId);
+            if (hasEditableProfileChange) {
+                m_pendingProfileUpdatesAfterAvatar.insert(avatarRequestId, profile);
+            }
             firstRequestId = avatarRequestId;
         }
+    }
+
+    if (hasLocalAvatarChange) {
+        return firstRequestId;
     }
 
     const QString profileRequestId = CurrentUserRemoteDataSource::instance().updateProfile(profile);

@@ -101,7 +101,8 @@ bool AiChatStreamClient::isRunning() const
 
 void AiChatStreamClient::start(const QString& conversationId,
                                const QString& prompt,
-                               const QString& clientMessageId)
+                               const QString& clientMessageId,
+                               const AiChatRequestOptions& options)
 {
     abort();
 
@@ -114,7 +115,16 @@ void AiChatStreamClient::start(const QString& conversationId,
     QJsonObject body{
             {QStringLiteral("message"), trimmedPrompt},
             {QStringLiteral("clientMessageId"), m_clientMessageId},
-            {QStringLiteral("aiFileIds"), QJsonArray{}}
+            {QStringLiteral("aiFileIds"), QJsonArray{}},
+            {QStringLiteral("model"), options.model.isEmpty()
+                    ? QStringLiteral("deepseek-v4-pro")
+                    : options.model},
+            {QStringLiteral("thinkingType"), options.thinkingType.isEmpty()
+                    ? QStringLiteral("enabled")
+                    : options.thinkingType},
+            {QStringLiteral("reasoningEffort"), options.reasoningEffort.isEmpty()
+                    ? QStringLiteral("high")
+                    : options.reasoningEffort}
     };
 
     NetworkRequest request = NetworkRequest::json(HttpMethod::Post,
@@ -177,6 +187,7 @@ void AiChatStreamClient::handleStreamEvent(const QString& requestId,
         if (m_waitingForTerminalEvent) {
             return;
         }
+        emit thinkingStateChanged(false);
         const QString delta = data.value(QStringLiteral("delta")).toString(
                 data.value(QStringLiteral("content")).toString());
         if (!delta.isEmpty()) {
@@ -186,12 +197,22 @@ void AiChatStreamClient::handleStreamEvent(const QString& requestId,
     }
 
     if (type == QStringLiteral("ai.stream.done")) {
+        emit thinkingStateChanged(false);
         processTerminalEvent(data, false);
         return;
     }
 
     if (type == QStringLiteral("ai.stream.cancelled")) {
+        emit thinkingStateChanged(false);
         processTerminalEvent(data, true);
+        return;
+    }
+
+    if (type == QStringLiteral("ai.stream.thinking")) {
+        if (!m_waitingForTerminalEvent &&
+                !data.value(QStringLiteral("active")).toBool(true)) {
+            emit thinkingStateChanged(false);
+        }
         return;
     }
 
@@ -205,6 +226,15 @@ void AiChatStreamClient::handleStreamEvent(const QString& requestId,
 
 void AiChatStreamClient::handleRealtimeEvent(const QString& type, const QJsonObject& payload)
 {
+    if (type == QStringLiteral("ai.stream.thinking")) {
+        if (matchesActiveRealtimeEvent(payload) &&
+                !m_waitingForTerminalEvent &&
+                !payload.value(QStringLiteral("active")).toBool(true)) {
+            emit thinkingStateChanged(false);
+        }
+        return;
+    }
+
     if (type != QStringLiteral("ai.stream.done") &&
             type != QStringLiteral("ai.stream.cancelled")) {
         return;
@@ -214,6 +244,7 @@ void AiChatStreamClient::handleRealtimeEvent(const QString& type, const QJsonObj
         return;
     }
 
+    emit thinkingStateChanged(false);
     processTerminalEvent(payload, type == QStringLiteral("ai.stream.cancelled"));
 }
 

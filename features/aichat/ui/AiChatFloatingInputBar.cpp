@@ -683,6 +683,15 @@ void AiChatFloatingInputBar::setContextUsageVisible(bool visible)
     updateInputGeometry();
 }
 
+AiChatRequestOptions AiChatFloatingInputBar::requestOptions() const
+{
+    AiChatRequestOptions options;
+    options.model = selectedModelId();
+    options.thinkingType = QStringLiteral("enabled");
+    options.reasoningEffort = selectedReasoningEffort();
+    return options;
+}
+
 int AiChatFloatingInputBar::preferredHeightForWidth(int width) const
 {
     const int inputWidth = qMax(1, width - kInputLeftMargin - kInputRightPadding -
@@ -852,7 +861,7 @@ void AiChatFloatingInputBar::showModelMenu()
         QStringLiteral("Low"),
         QStringLiteral("Medium"),
         QStringLiteral("High"),
-        QStringLiteral("Extra High"),
+        QStringLiteral("Max"),
     };
     for (const QString& level : thinkingLevels) {
         QAction* action = addMenuAction(menu, level, level == m_selectedThinkingLevel);
@@ -869,40 +878,16 @@ void AiChatFloatingInputBar::showModelMenu()
     auto* modelGroup = new QActionGroup(menu);
     modelGroup->setExclusive(true);
 
-    StyledActionMenu* deepSeekMenu = menu->addStyledMenu(QStringLiteral("DeepSeek V4 Pro"));
+    StyledActionMenu* deepSeekMenu = menu->addStyledMenu(QStringLiteral("DeepSeek"));
     const QStringList deepSeekModels = {
         QStringLiteral("DeepSeek V4 Pro"),
-        QStringLiteral("DeepSeek R1"),
-        QStringLiteral("Qwen3 Max"),
-        QStringLiteral("Claude Sonnet 4.5"),
-        QStringLiteral("GPT-5.5"),
-        QStringLiteral("Gemini 2.5 Pro"),
+        QStringLiteral("DeepSeek V4 Flash"),
     };
     for (const QString& model : deepSeekModels) {
         QAction* action = addMenuAction(deepSeekMenu, model, model == m_selectedModelName);
         modelGroup->addAction(action);
         connect(action, &QAction::triggered, this, [this, model]() {
             m_selectedModelName = model;
-            updateModelButtonText();
-            updateInputGeometry();
-        });
-    }
-
-    auto* speedModeGroup = new QActionGroup(menu);
-    speedModeGroup->setExclusive(true);
-
-    StyledActionMenu* speedMenu = menu->addStyledMenu(QStringLiteral("Speed"));
-    const QStringList speedModes = {
-        QStringLiteral("Standard"),
-        QStringLiteral("Speed"),
-    };
-    for (const QString& speedMode : speedModes) {
-        QAction* action = addMenuAction(speedMenu,
-                                        speedMode,
-                                        speedMode == m_selectedSpeedMode);
-        speedModeGroup->addAction(action);
-        connect(action, &QAction::triggered, this, [this, speedMode]() {
-            m_selectedSpeedMode = speedMode;
             updateModelButtonText();
             updateInputGeometry();
         });
@@ -926,8 +911,30 @@ void AiChatFloatingInputBar::updateModelButtonText()
 void AiChatFloatingInputBar::updateModelButtonState()
 {
     if (auto* button = dynamic_cast<MenuTextButton*>(m_modelButton)) {
-        button->setFastIconVisible(m_selectedSpeedMode == QStringLiteral("Speed"));
+        button->setFastIconVisible(false);
     }
+}
+
+QString AiChatFloatingInputBar::selectedModelId() const
+{
+    if (m_selectedModelName == QStringLiteral("DeepSeek V4 Flash")) {
+        return QStringLiteral("deepseek-v4-flash");
+    }
+    return QStringLiteral("deepseek-v4-pro");
+}
+
+QString AiChatFloatingInputBar::selectedReasoningEffort() const
+{
+    if (m_selectedThinkingLevel == QStringLiteral("Low")) {
+        return QStringLiteral("low");
+    }
+    if (m_selectedThinkingLevel == QStringLiteral("Medium")) {
+        return QStringLiteral("medium");
+    }
+    if (m_selectedThinkingLevel == QStringLiteral("Max")) {
+        return QStringLiteral("max");
+    }
+    return QStringLiteral("high");
 }
 
 void AiChatFloatingInputBar::sendCurrentText()
@@ -942,7 +949,7 @@ void AiChatFloatingInputBar::sendCurrentText()
     }
 
     m_inputEdit->clear();
-    emit sendText(text);
+    emit sendText(text, requestOptions());
     focusInput();
 }
 

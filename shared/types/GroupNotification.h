@@ -28,6 +28,7 @@ struct GroupNotification {
     GroupNotificationType type = GroupNotificationType::JoinRequest;
     GroupNotificationStatus status = GroupNotificationStatus::None;
     QString groupId;
+    QString groupPublicId;
     QString actorUserId;
     QString operatorUserId;
     QString message;

@@ -30,11 +30,12 @@ public:
     void clearText();
     void setContextUsage(const AiChatContextUsage& usage);
     void setContextUsageVisible(bool visible);
+    AiChatRequestOptions requestOptions() const;
     int preferredHeightForWidth(int width) const;
     QSize sizeHint() const override;
 
 signals:
-    void sendText(const QString& text);
+    void sendText(const QString& text, const AiChatRequestOptions& options);
     void stopStreamingRequested();
     void inputFocused();
     void preferredHeightChanged(int height);
@@ -66,6 +67,8 @@ private:
     void updateActionButtonIcon();
     void updateModelButtonText();
     void updateModelButtonState();
+    QString selectedModelId() const;
+    QString selectedReasoningEffort() const;
     void updateInputGeometry();
     void updatePreferredHeight();
     void startBorderGlow();
@@ -94,7 +97,6 @@ private:
     QElapsedTimer m_borderGlowClock;
     QString m_selectedThinkingLevel = QStringLiteral("High");
     QString m_selectedModelName = QStringLiteral("DeepSeek V4 Pro");
-    QString m_selectedSpeedMode = QStringLiteral("Standard");
     BorderGlowState m_borderGlowState = BorderGlowState::Idle;
     QVector<BorderGlowSample> m_borderGlowSamples;
     QRectF m_borderGlowCachedRect;

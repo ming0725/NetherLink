@@ -7,6 +7,7 @@
 #include <QTimer>
 
 #include "shared/network/NetworkTypes.h"
+#include "shared/types/RepositoryTypes.h"
 
 class SseClient;
 
@@ -20,12 +21,14 @@ public:
     bool isRunning() const;
     void start(const QString& conversationId,
                const QString& prompt,
-               const QString& clientMessageId = {});
+               const QString& clientMessageId = {},
+               const AiChatRequestOptions& options = {});
     void cancel();
     void abort();
 
 signals:
     void chunkReceived(const QString& chunk);
+    void thinkingStateChanged(bool active);
     void titleReceived(const QString& title);
     void assistantMessageReceived(const QString& messageId,
                                   const QString& text,

@@ -183,6 +183,23 @@ QJsonObject profileObject(QJsonObject object)
                                                   QStringLiteral("nick"),
                                                   QStringLiteral("displayName"),
                                                   QStringLiteral("name")});
+    const QJsonObject presence = object.value(QStringLiteral("presence")).toObject();
+    QString presenceStatus = presence.value(QStringLiteral("status")).toString();
+    if (presenceStatus.isEmpty()) {
+        const QString legacyStatus = object.value(QStringLiteral("status")).toString();
+        const QString normalizedStatus = legacyStatus.trimmed().toLower();
+        if (normalizedStatus == QStringLiteral("online") ||
+            normalizedStatus == QStringLiteral("offline") ||
+            normalizedStatus == QStringLiteral("mining") ||
+            normalizedStatus == QStringLiteral("busy") ||
+            normalizedStatus == QStringLiteral("dnd") ||
+            normalizedStatus == QStringLiteral("airplane") ||
+            normalizedStatus == QStringLiteral("flying") ||
+            normalizedStatus == QStringLiteral("away") ||
+            normalizedStatus == QStringLiteral("invisible")) {
+            presenceStatus = legacyStatus;
+        }
+    }
     return {
             {QStringLiteral("userUuid"), userUuid},
             {QStringLiteral("userId"), userId},
@@ -192,7 +209,7 @@ QJsonObject profileObject(QJsonObject object)
             {QStringLiteral("avatarVersion"), firstInt(object, {QStringLiteral("avatarVersion")})},
             {QStringLiteral("avatarEtag"), firstString(object, {QStringLiteral("avatarEtag")})},
             {QStringLiteral("avatarContentHash"), firstString(object, {QStringLiteral("avatarContentHash")})},
-            {QStringLiteral("status"), object.value(QStringLiteral("status")).toString(QStringLiteral("online"))},
+            {QStringLiteral("status"), presenceStatus.isEmpty() ? QStringLiteral("online") : presenceStatus},
             {QStringLiteral("signature"), object.value(QStringLiteral("signature")).toString()},
             {QStringLiteral("region"), object.value(QStringLiteral("region")).toString()},
             {QStringLiteral("version"), object.value(QStringLiteral("version")).toInt()},
@@ -215,8 +232,14 @@ QJsonObject groupObject(QJsonObject object)
     const QString groupName = firstString(object, {QStringLiteral("groupName"),
                                                    QStringLiteral("name"),
                                                    QStringLiteral("title")});
+    const QString groupPublicId = firstString(object, {QStringLiteral("groupPublicId"),
+                                                       QStringLiteral("publicId"),
+                                                       QStringLiteral("public_id")});
     if (!groupId.isEmpty()) {
         object.insert(QStringLiteral("groupId"), groupId);
+    }
+    if (!groupPublicId.isEmpty()) {
+        object.insert(QStringLiteral("groupPublicId"), groupPublicId);
     }
     if (!groupName.isEmpty()) {
         object.insert(QStringLiteral("groupName"), groupName);

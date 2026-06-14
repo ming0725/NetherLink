@@ -32,6 +32,20 @@ QString avatarFileIdFrom(const QJsonObject& object)
                                 QStringLiteral("fileId")});
 }
 
+bool isPresenceStatusValue(const QString& value)
+{
+    const QString normalized = value.trimmed().toLower();
+    return normalized == QStringLiteral("online") ||
+           normalized == QStringLiteral("offline") ||
+           normalized == QStringLiteral("mining") ||
+           normalized == QStringLiteral("busy") ||
+           normalized == QStringLiteral("dnd") ||
+           normalized == QStringLiteral("airplane") ||
+           normalized == QStringLiteral("flying") ||
+           normalized == QStringLiteral("away") ||
+           normalized == QStringLiteral("invisible");
+}
+
 AuthUser authUserFromObject(const QJsonObject& object)
 {
     const QJsonObject presence = object.value(QStringLiteral("presence")).toObject();
@@ -54,8 +68,10 @@ AuthUser authUserFromObject(const QJsonObject& object)
             user.avatarContentHash);
     user.signature = object.value(QStringLiteral("signature")).toString();
     user.region = object.value(QStringLiteral("region")).toString();
-    user.status = presence.value(QStringLiteral("status")).toString(
-            object.value(QStringLiteral("status")).toString());
+    user.status = presence.value(QStringLiteral("status")).toString();
+    if (user.status.isEmpty() && isPresenceStatusValue(object.value(QStringLiteral("status")).toString())) {
+        user.status = object.value(QStringLiteral("status")).toString();
+    }
     user.version = object.value(QStringLiteral("version")).toInt();
     user.etag = object.value(QStringLiteral("etag")).toString();
     return user;

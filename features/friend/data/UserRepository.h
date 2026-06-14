@@ -37,6 +37,7 @@ public:
     bool upsertFriendGroup(const QJsonObject& object);
     bool removeFriendGroup(const QString& friendGroupId);
     bool upsertPresence(const QString& userUuid, const QString& status, const QString& lastSeenAt = {});
+    QString refreshUserProfile(const QString& userId);
     QString refreshPresenceBatch(const QStringList& userUuids);
     QString refreshFriendPresenceSnapshot();
     bool needsUserRefresh(const QString& userUuid, int remoteVersion) const;
@@ -56,6 +57,7 @@ private:
     void reloadFromStore();
 
     QMap<QString, User> userMap;
+    QHash<QString, QString> m_pendingUserProfileRefreshRequestIds;
     QSet<QString> m_pendingPresenceBatchRequestIds;
     QHash<QString, QStringList> m_pendingPresenceSnapshotRequestIds;
     QSet<QString> m_presenceSnapshotRequestedUserIds;
