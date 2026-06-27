@@ -3,6 +3,7 @@
 #include <QObject>
 #include <QMap>
 #include <QHash>
+#include <QSet>
 #include <QVector>
 #include <QMutex>
 #include <QJsonObject>
@@ -83,6 +84,7 @@ private:
     bool fetchOlderMessagesBlocking(const QString& conversationId, int beforeMessageSeq, int limit);
     bool fetchLatestMessagesBlocking(const QString& conversationId, int limit);
     bool fetchNewerMessagesBlocking(const QString& conversationId, int afterMessageSeq, int limit);
+    void markConversationReadLocal(const QString& conversationId, bool notifyRemote);
 
     QMap<QString, QVector<QSharedPointer<ChatMessage>>> m_store;
     QMap<QString, ConversationSyncState> m_conversationStates;
@@ -92,6 +94,8 @@ private:
     bool m_hasActiveVisibleConversation = false;
     QHash<QString, int> m_ignoredStoreChangeCounts;
     QHash<QString, int> m_localUnreadOverrides;
+    QHash<QString, bool> m_conversationHasMoreBefore;
+    QSet<QString> m_messageFetchesInFlight;
     bool m_reloadFromStoreScheduled = false;
     mutable QMutex m_mutex;
 };

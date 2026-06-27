@@ -139,6 +139,8 @@ void AiChatListWidget::setController(AiChatSessionController* controller)
                                       ? entry.conversationId
                                       : selectedConversationId);
             });
+    connect(m_controller, &AiChatSessionController::conversationEntryChanged,
+            this, &AiChatListWidget::applyEntryUpdate);
     connect(m_controller, &AiChatSessionController::conversationsLoaded,
             this, &AiChatListWidget::onEntriesLoaded);
     connect(m_controller, &AiChatSessionController::aiReplyStarted,
@@ -146,7 +148,6 @@ void AiChatListWidget::setController(AiChatSessionController* controller)
     connect(m_controller, &AiChatSessionController::aiReplyFinished, this,
             [this](const QString& conversationId, const QString&) {
                 if (m_delegate->streamingConversationId() == conversationId) {
-                    m_model->setConversationUnreadDot(conversationId, true);
                     setStreamingConversationId(QString());
                 }
             });
@@ -200,6 +201,15 @@ void AiChatListWidget::selectConversation(const QString& conversationId)
     }
 
     m_initialized = true;
+    const int row = m_model->rowOfConversation(conversationId);
+    if (row >= 0 && selectionModel()) {
+        m_pendingSelectedConversationId.clear();
+        selectionModel()->setCurrentIndex(m_model->index(row, 0),
+                                          QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+        updateStickyHeader();
+        return;
+    }
+
     reloadEntries(conversationId);
     updateStickyHeader();
 }
@@ -226,6 +236,34 @@ void AiChatListWidget::loadMoreEntries()
     };
     m_loadingEntries = true;
     m_pendingEntriesRequestId = m_controller->loadConversationsAsync(query);
+}
+
+void AiChatListWidget::applyEntryUpdate(const AiChatListEntry& entry)
+{
+    if (entry.conversationId.isEmpty()) {
+        return;
+    }
+
+    QString selectedConversationId = currentIndex().data(AiChatListModel::ConversationIdRole).toString();
+    if (selectedConversationId.isEmpty() && !m_pendingSelectedConversationId.isEmpty()) {
+        selectedConversationId = m_pendingSelectedConversationId;
+    }
+
+    m_restoringSelection = true;
+    if (!m_model->upsertEntry(entry)) {
+        m_restoringSelection = false;
+        return;
+    }
+
+    if (!selectedConversationId.isEmpty() && selectionModel()) {
+        const int row = m_model->rowOfConversation(selectedConversationId);
+        if (row >= 0) {
+            selectionModel()->setCurrentIndex(m_model->index(row, 0),
+                                              QItemSelectionModel::ClearAndSelect | QItemSelectionModel::Rows);
+        }
+    }
+    m_restoringSelection = false;
+    updateStickyHeader();
 }
 
 void AiChatListWidget::onEntriesLoaded(int requestId,
@@ -420,6 +458,9 @@ void AiChatListWidget::onCurrentChanged(const QModelIndex& current, const QModel
         return;
     }
 
+    if (entry.hasUnreadDot) {
+        m_model->setConversationUnreadDot(entry.conversationId, false);
+    }
     emit conversationActivated(entry);
 }
 
@@ -577,8 +618,8 @@ void AiChatListWidget::renameItem(const QModelIndex& index)
         return;
     }
 
-    if (m_controller && m_controller->renameConversation(entry.conversationId, newTitle)) {
-        reloadEntries(entry.conversationId);
+    if (m_controller) {
+        m_controller->renameConversation(entry.conversationId, newTitle);
     }
 }
 

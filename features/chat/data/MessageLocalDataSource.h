@@ -26,8 +26,11 @@ public:
     void removeMessagesForConversation(const QString& conversationId);
 
     QDateTime conversationClearTime(const QString& conversationId) const;
+    int conversationClearedThroughSeq(const QString& conversationId) const;
     bool hasMessageDeletionMarker(const QString& conversationId, const QStringList& messageIds) const;
-    bool persistConversationClearMarker(const QString& conversationId, const QDateTime& clearedAt);
+    bool persistConversationClearMarker(const QString& conversationId,
+                                        const QDateTime& clearedAt,
+                                        int clearedThroughSeq = 0);
     void persistMessageDeletionMarkers(const QString& conversationId, const QStringList& messageIds);
 
 private:

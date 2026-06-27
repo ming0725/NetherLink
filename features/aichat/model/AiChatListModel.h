@@ -24,6 +24,7 @@ public:
 
     void setEntries(QVector<AiChatListEntry> entries);
     void appendEntries(const QVector<AiChatListEntry>& entries);
+    bool upsertEntry(AiChatListEntry entry);
     bool setConversationUnreadDot(const QString& conversationId, bool hasUnreadDot);
 
     AiChatListEntry entryAt(const QModelIndex& index) const;

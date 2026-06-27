@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QJsonObject>
+#include <QHash>
 #include <QObject>
 #include <QString>
 #include <QVector>
@@ -12,6 +13,7 @@ class MessageRemoteDataSource final : public QObject
 public:
     struct FetchResult {
         bool completed = false;
+        bool hasMoreBefore = false;
         bool hasMoreAfter = false;
         QVector<QJsonObject> messages;
     };
@@ -30,4 +32,6 @@ private:
                                       int beforeMessageSeq,
                                       int afterMessageSeq,
                                       int limit);
+
+    QHash<QString, QString> m_etags;
 };

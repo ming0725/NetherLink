@@ -65,6 +65,8 @@ private:
     void showModelMenu();
     void sendCurrentText();
     void updateActionButtonIcon();
+    void loadPersistedModelSelection();
+    void persistModelSelection() const;
     void updateModelButtonText();
     void updateModelButtonState();
     QString selectedModelId() const;
@@ -89,7 +91,6 @@ private:
 
     TransparentTextEdit* m_inputEdit = nullptr;
     QAbstractButton* m_addButton = nullptr;
-    QWidget* m_contextUsageIndicator = nullptr;
     QAbstractButton* m_permissionButton = nullptr;
     QAbstractButton* m_modelButton = nullptr;
     QAbstractButton* m_actionButton = nullptr;

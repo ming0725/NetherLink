@@ -3,6 +3,7 @@
 #include "shared/data/LocalDataStore.h"
 
 #include <QJsonObject>
+#include <QtGlobal>
 
 namespace {
 
@@ -171,6 +172,18 @@ QDateTime MessageLocalDataSource::conversationClearTime(const QString& conversat
                                   QStringLiteral("deletedAt")});
 }
 
+int MessageLocalDataSource::conversationClearedThroughSeq(const QString& conversationId) const
+{
+    if (conversationId.isEmpty()) {
+        return 0;
+    }
+
+    const QJsonObject marker = LocalDataStore::instance().value(
+            QString::fromLatin1(kConversationClearDomain),
+            conversationId);
+    return qMax(0, marker.value(QStringLiteral("clearedThroughSeq")).toInt());
+}
+
 bool MessageLocalDataSource::hasMessageDeletionMarker(const QString& conversationId,
                                                       const QStringList& messageIds) const
 {
@@ -191,7 +204,8 @@ bool MessageLocalDataSource::hasMessageDeletionMarker(const QString& conversatio
 }
 
 bool MessageLocalDataSource::persistConversationClearMarker(const QString& conversationId,
-                                                            const QDateTime& clearedAt)
+                                                            const QDateTime& clearedAt,
+                                                            int clearedThroughSeq)
 {
     if (conversationId.isEmpty() || !clearedAt.isValid()) {
         return false;
@@ -201,7 +215,8 @@ bool MessageLocalDataSource::persistConversationClearMarker(const QString& conve
             QString::fromLatin1(kConversationClearDomain),
             conversationId,
             {{QStringLiteral("conversationId"), conversationId},
-             {QStringLiteral("clearedAt"), clearedAt.toUTC().toString(Qt::ISODateWithMs)}});
+             {QStringLiteral("clearedAt"), clearedAt.toUTC().toString(Qt::ISODateWithMs)},
+             {QStringLiteral("clearedThroughSeq"), qMax(0, clearedThroughSeq)}});
 }
 
 void MessageLocalDataSource::persistMessageDeletionMarkers(const QString& conversationId,

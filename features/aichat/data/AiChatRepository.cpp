@@ -3,6 +3,7 @@
 #include "shared/data/LocalDataStore.h"
 #include "shared/data/RepositoryFunctionOperation.h"
 
+#include <QJsonArray>
 #include <QJsonObject>
 #include <QStringList>
 #include <QtMath>
@@ -48,24 +49,91 @@ AiChatListEntry aiChatEntryFromJson(const QJsonObject& object)
 
 QJsonObject aiChatMessageToJson(const AiChatMessage& message)
 {
-    return {
+    QJsonArray traceSteps;
+    for (const AiChatTraceStep& step : message.trace.steps) {
+        QJsonArray urls;
+        for (const QString& url : step.urls) {
+            urls.append(url);
+        }
+        traceSteps.append(QJsonObject{
+                {QStringLiteral("sequence"), step.sequence},
+                {QStringLiteral("stepId"), step.stepId},
+                {QStringLiteral("phase"), step.phase},
+                {QStringLiteral("status"), step.status},
+                {QStringLiteral("text"), step.text},
+                {QStringLiteral("tool"), step.tool},
+                {QStringLiteral("query"), step.query},
+                {QStringLiteral("urls"), urls}
+        });
+    }
+
+    QJsonArray sourceRefs;
+    for (const QString& sourceRef : message.trace.sourceRefs) {
+        sourceRefs.append(sourceRef);
+    }
+
+    QJsonObject object{
             {QStringLiteral("messageId"), message.messageId},
             {QStringLiteral("conversationId"), message.conversationId},
             {QStringLiteral("text"), message.text},
             {QStringLiteral("isFromUser"), message.isFromUser},
             {QStringLiteral("time"), message.time.toString(Qt::ISODateWithMs)}
     };
+    if (message.trace.isValid()) {
+        object.insert(QStringLiteral("trace"), QJsonObject{
+                {QStringLiteral("traceId"), message.trace.traceId},
+                {QStringLiteral("status"), message.trace.status},
+                {QStringLiteral("summary"), message.trace.summary},
+                {QStringLiteral("steps"), traceSteps},
+                {QStringLiteral("sourceRefs"), sourceRefs},
+                {QStringLiteral("createdAt"), message.trace.createdAt.toString(Qt::ISODateWithMs)},
+                {QStringLiteral("updatedAt"), message.trace.updatedAt.toString(Qt::ISODateWithMs)}
+        });
+    }
+    return object;
 }
 
 AiChatMessage aiChatMessageFromJson(const QJsonObject& object)
 {
-    return {
-            object.value(QStringLiteral("messageId")).toString(),
-            object.value(QStringLiteral("conversationId")).toString(),
-            object.value(QStringLiteral("text")).toString(),
-            object.value(QStringLiteral("isFromUser")).toBool(false),
-            QDateTime::fromString(object.value(QStringLiteral("time")).toString(), Qt::ISODateWithMs)
-    };
+    AiChatMessage message;
+    message.messageId = object.value(QStringLiteral("messageId")).toString();
+    message.conversationId = object.value(QStringLiteral("conversationId")).toString();
+    message.text = object.value(QStringLiteral("text")).toString();
+    message.isFromUser = object.value(QStringLiteral("isFromUser")).toBool(false);
+    message.time = QDateTime::fromString(object.value(QStringLiteral("time")).toString(),
+                                        Qt::ISODateWithMs);
+
+    const QJsonObject traceObject = object.value(QStringLiteral("trace")).toObject();
+    message.trace.traceId = traceObject.value(QStringLiteral("traceId")).toString();
+    message.trace.status = traceObject.value(QStringLiteral("status")).toString();
+    message.trace.summary = traceObject.value(QStringLiteral("summary")).toString();
+    message.trace.createdAt = QDateTime::fromString(
+            traceObject.value(QStringLiteral("createdAt")).toString(), Qt::ISODateWithMs);
+    message.trace.updatedAt = QDateTime::fromString(
+            traceObject.value(QStringLiteral("updatedAt")).toString(), Qt::ISODateWithMs);
+    for (const QJsonValue& value : traceObject.value(QStringLiteral("steps")).toArray()) {
+        const QJsonObject stepObject = value.toObject();
+        AiChatTraceStep step;
+        step.sequence = stepObject.value(QStringLiteral("sequence")).toInt();
+        step.stepId = stepObject.value(QStringLiteral("stepId")).toString();
+        step.phase = stepObject.value(QStringLiteral("phase")).toString();
+        step.status = stepObject.value(QStringLiteral("status")).toString();
+        step.text = stepObject.value(QStringLiteral("text")).toString();
+        step.tool = stepObject.value(QStringLiteral("tool")).toString();
+        step.query = stepObject.value(QStringLiteral("query")).toString();
+        for (const QJsonValue& url : stepObject.value(QStringLiteral("urls")).toArray()) {
+            if (url.isString()) {
+                step.urls.push_back(url.toString());
+            }
+        }
+        message.trace.steps.push_back(step);
+    }
+    for (const QJsonValue& sourceRef : traceObject.value(QStringLiteral("sourceRefs")).toArray()) {
+        if (sourceRef.isString()) {
+            message.trace.sourceRefs.push_back(sourceRef.toString());
+        }
+    }
+    return message;
 }
 
 } // namespace
@@ -130,6 +198,20 @@ QVector<AiChatListEntry> AiChatRepository::requestAiChatList(const AiChatListReq
 
     return RepositoryFunctionOperation<AiChatListRequest, QVector<AiChatListEntry>, decltype(handler)>(handler)
             .request(query);
+}
+
+AiChatListEntry AiChatRepository::requestAiChatConversation(const QString& conversationId) const
+{
+    auto handler = [this](const QString& requestConversationId) {
+        QMutexLocker locker(&m_mutex);
+        const auto it = std::find_if(m_entries.cbegin(), m_entries.cend(), [&requestConversationId](const AiChatListEntry& entry) {
+            return entry.conversationId == requestConversationId;
+        });
+        return it == m_entries.cend() ? AiChatListEntry{} : *it;
+    };
+
+    return RepositoryFunctionOperation<QString, AiChatListEntry, decltype(handler)>(handler)
+            .request(conversationId);
 }
 
 bool AiChatRepository::setAiChatListPage(const AiChatListRequest& query,
@@ -347,6 +429,10 @@ AiChatMessage AiChatRepository::addAiChatMessage(const QString& conversationId,
     };
     m_messages[conversationId].push_back(message);
     m_contextUsages.remove(conversationId);
+    entryIt->time = time;
+    LocalDataStore::instance().upsertValue(QStringLiteral("ai_chat_entries"),
+                                           entryIt->conversationId,
+                                           aiChatEntryToJson(*entryIt));
     LocalDataStore::instance().upsertValue(QStringLiteral("ai_chat_messages"),
                                            message.messageId,
                                            aiChatMessageToJson(message));
@@ -453,6 +539,15 @@ bool AiChatRepository::replaceAiChatMessage(const QString& conversationId,
         const QString oldMessageId = messages.at(row).messageId;
         messages[row] = replacement;
         m_contextUsages.remove(conversationId);
+        auto entryIt = std::find_if(m_entries.begin(), m_entries.end(), [&conversationId](const AiChatListEntry& entry) {
+            return entry.conversationId == conversationId;
+        });
+        if (entryIt != m_entries.end() && replacement.time.isValid()) {
+            entryIt->time = replacement.time;
+            LocalDataStore::instance().upsertValue(QStringLiteral("ai_chat_entries"),
+                                                   entryIt->conversationId,
+                                                   aiChatEntryToJson(*entryIt));
+        }
         if (oldMessageId != replacement.messageId) {
             LocalDataStore::instance().removeValue(QStringLiteral("ai_chat_messages"), oldMessageId);
         }

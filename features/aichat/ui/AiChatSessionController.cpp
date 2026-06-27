@@ -11,6 +11,7 @@
 #include <QJsonObject>
 #include <QJsonValue>
 #include <QStringList>
+#include <QTextBoundaryFinder>
 #include <QTimer>
 #include <QUuid>
 
@@ -21,6 +22,8 @@ namespace {
 constexpr int kCreateConversationTimeoutMs = 20000;
 constexpr int kConversationMutationTimeoutMs = 15000;
 constexpr int kTemporaryTitleMaxLength = 80;
+constexpr int kStreamCharacterIntervalMs = 24;
+constexpr int kProgressCharacterIntervalMs = 24;
 
 QString newClientOperationId()
 {
@@ -53,6 +56,32 @@ QString temporaryTitleFromUserMessage(const QString& message)
         title = title.left(kTemporaryTitleMaxLength).trimmed() + QStringLiteral("...");
     }
     return title.isEmpty() ? QStringLiteral("新对话") : title;
+}
+
+QStringList graphemeClusters(const QString& text)
+{
+    QStringList clusters;
+    if (text.isEmpty()) {
+        return clusters;
+    }
+
+    QTextBoundaryFinder finder(QTextBoundaryFinder::Grapheme, text);
+    finder.toStart();
+    int start = 0;
+    while (true) {
+        const int end = finder.toNextBoundary();
+        if (end < 0) {
+            break;
+        }
+        if (end > start) {
+            clusters.push_back(text.mid(start, end - start));
+        }
+        start = end;
+    }
+    if (start < text.size()) {
+        clusters.push_back(text.mid(start));
+    }
+    return clusters;
 }
 
 QJsonArray arrayFromResponse(const NetworkResponse& response, const QString& preferredKey)
@@ -163,6 +192,54 @@ QDateTime aiMessageTimeFromObject(const QJsonObject& object)
     return time.isValid() ? time : QDateTime::currentDateTime();
 }
 
+QVector<QString> stringsFromArray(const QJsonValue& value)
+{
+    QVector<QString> strings;
+    for (const QJsonValue& item : value.toArray()) {
+        QString text;
+        if (item.isString()) {
+            text = item.toString();
+        } else if (item.isObject()) {
+            const QJsonObject object = item.toObject();
+            text = object.value(QStringLiteral("url")).toString(
+                    object.value(QStringLiteral("text")).toString());
+        }
+        if (!text.isEmpty() && !strings.contains(text)) {
+            strings.push_back(text);
+        }
+    }
+    return strings;
+}
+
+AiChatTrace aiTraceFromObject(const QJsonObject& object)
+{
+    AiChatTrace trace;
+    if (object.isEmpty()) {
+        return trace;
+    }
+
+    trace.traceId = object.value(QStringLiteral("traceId")).toString();
+    trace.status = object.value(QStringLiteral("status")).toString();
+    trace.summary = object.value(QStringLiteral("summary")).toString();
+    trace.sourceRefs = stringsFromArray(object.value(QStringLiteral("sourceRefs")));
+    trace.createdAt = dateTimeFromString(object.value(QStringLiteral("createdAt")).toString());
+    trace.updatedAt = dateTimeFromString(object.value(QStringLiteral("updatedAt")).toString());
+    for (const QJsonValue& value : object.value(QStringLiteral("steps")).toArray()) {
+        const QJsonObject stepObject = value.toObject();
+        AiChatTraceStep step;
+        step.sequence = stepObject.value(QStringLiteral("sequence")).toInt();
+        step.stepId = stepObject.value(QStringLiteral("stepId")).toString();
+        step.phase = stepObject.value(QStringLiteral("phase")).toString();
+        step.status = stepObject.value(QStringLiteral("status")).toString();
+        step.text = stepObject.value(QStringLiteral("text")).toString();
+        step.tool = stepObject.value(QStringLiteral("tool")).toString();
+        step.query = stepObject.value(QStringLiteral("query")).toString();
+        step.urls = stringsFromArray(stepObject.value(QStringLiteral("urls")));
+        trace.steps.push_back(step);
+    }
+    return trace;
+}
+
 AiChatMessage aiMessageFromObject(const QJsonObject& object,
                                   const QString& conversationId,
                                   int fallbackIndex)
@@ -177,6 +254,7 @@ AiChatMessage aiMessageFromObject(const QJsonObject& object,
     message.text = aiMessageTextFromObject(object);
     message.isFromUser = aiMessageIsFromUser(object);
     message.time = aiMessageTimeFromObject(object);
+    message.trace = aiTraceFromObject(object.value(QStringLiteral("trace")).toObject());
     return message;
 }
 
@@ -395,10 +473,14 @@ AiChatSessionController::AiChatSessionController(QObject* parent)
     : QObject(parent)
     , m_streamClient(new AiChatStreamClient(this))
 {
+    connect(m_streamClient, &AiChatStreamClient::streamStarted,
+            this, &AiChatSessionController::onAiReplyStreamStarted);
     connect(m_streamClient, &AiChatStreamClient::chunkReceived,
             this, &AiChatSessionController::onAiReplyChunkReceived);
     connect(m_streamClient, &AiChatStreamClient::thinkingStateChanged,
             this, &AiChatSessionController::onAiReplyThinkingChanged);
+    connect(m_streamClient, &AiChatStreamClient::streamStatusChanged,
+            this, &AiChatSessionController::onAiReplyStreamStatusChanged);
     connect(m_streamClient, &AiChatStreamClient::titleReceived,
             this, &AiChatSessionController::onGeneratedTitleReceived);
     connect(m_streamClient, &AiChatStreamClient::assistantMessageReceived,
@@ -420,8 +502,18 @@ AiChatSessionController::AiChatSessionController(QObject* parent)
     connect(&AiChatRepository::instance(), &AiChatRepository::unreadDotStateChanged,
             this, [this]() {
                 emit unreadDotStateChanged();
-                emit conversationsChanged();
             });
+
+    m_streamCharacterTimer.setInterval(kStreamCharacterIntervalMs);
+    connect(&m_streamCharacterTimer,
+            &QTimer::timeout,
+            this,
+            &AiChatSessionController::revealNextStreamCharacter);
+    m_streamProgressCharacterTimer.setInterval(kProgressCharacterIntervalMs);
+    connect(&m_streamProgressCharacterTimer,
+            &QTimer::timeout,
+            this,
+            &AiChatSessionController::revealNextProgressCharacter);
 }
 
 QVector<AiChatListEntry> AiChatSessionController::loadConversations(const AiChatListRequest& query) const
@@ -611,7 +703,7 @@ AiChatListEntry AiChatSessionController::createConversationFromFirstMessage(cons
     }
 
     if (!conversationId.isEmpty()) {
-        emit conversationsChanged();
+        emit conversationEntryChanged(entry);
     }
     return entry;
 }
@@ -638,7 +730,7 @@ AiChatMessage AiChatSessionController::submitUserMessage(const QString& conversa
 
         resolvedConversationId = remoteEntry.conversationId;
         emit conversationIdChanged(conversationId, remoteEntry);
-        emit conversationsChanged();
+        emit conversationEntryChanged(remoteEntry);
     }
 
     const AiChatMessage message = AiChatRepository::instance().addAiChatMessage(
@@ -649,6 +741,7 @@ AiChatMessage AiChatSessionController::submitUserMessage(const QString& conversa
         return {};
     }
 
+    emit conversationEntryChanged(AiChatRepository::instance().requestAiChatConversation(resolvedConversationId));
     startAiReplyStream(resolvedConversationId, text, options);
     return message;
 }
@@ -706,7 +799,7 @@ bool AiChatSessionController::regenerateAiReply(const QString& conversationId,
 
         resolvedConversationId = remoteEntry.conversationId;
         emit conversationIdChanged(conversationId, remoteEntry);
-        emit conversationsChanged();
+        emit conversationEntryChanged(remoteEntry);
     }
 
     if (resolvedConversationId == m_streamConversationId && messageId == m_streamMessageId) {
@@ -721,7 +814,7 @@ bool AiChatSessionController::regenerateAiReply(const QString& conversationId,
     }
 
     emit aiReplyMessageRemoved(resolvedConversationId, messageId);
-    emit conversationsChanged();
+    emit conversationEntryChanged(AiChatRepository::instance().requestAiChatConversation(resolvedConversationId));
     startAiReplyStream(resolvedConversationId, prompt, options);
     return true;
 }
@@ -744,7 +837,7 @@ bool AiChatSessionController::renameConversation(const QString& conversationId, 
     const bool renamed = AiChatRepository::instance().renameAiChatConversation(conversationId, appliedTitle);
     if (renamed) {
         emit conversationTitleChanged(conversationId, appliedTitle);
-        emit conversationsChanged();
+        emit conversationEntryChanged(AiChatRepository::instance().requestAiChatConversation(conversationId));
     }
     return renamed;
 }
@@ -779,12 +872,24 @@ bool AiChatSessionController::deleteConversation(const QString& conversationId)
 
 bool AiChatSessionController::clearConversationUnreadDot(const QString& conversationId)
 {
-    return AiChatRepository::instance().setConversationUnreadDot(conversationId, false);
+    const bool changed = AiChatRepository::instance().setConversationUnreadDot(conversationId, false);
+    if (changed) {
+        emit conversationEntryChanged(AiChatRepository::instance().requestAiChatConversation(conversationId));
+    }
+    return changed;
 }
 
 int AiChatSessionController::unreadConversationDotCount() const
 {
     return AiChatRepository::instance().unreadDotCount();
+}
+
+void AiChatSessionController::setCurrentConversationId(const QString& conversationId)
+{
+    m_currentConversationId = conversationId;
+    if (!m_currentConversationId.isEmpty()) {
+        clearConversationUnreadDot(m_currentConversationId);
+    }
 }
 
 bool AiChatSessionController::hasActiveAiReplyStream() const
@@ -809,13 +914,153 @@ void AiChatSessionController::cancelActiveAiReplyStream()
     }
 }
 
-void AiChatSessionController::onAiReplyChunkReceived(const QString& chunk)
+void AiChatSessionController::onAiReplyStreamStarted(const QString& streamId,
+                                                     const QString& conversationId,
+                                                     const QString& clientMessageId)
 {
-    if (chunk.isEmpty() || m_streamConversationId.isEmpty()) {
+    Q_UNUSED(clientMessageId)
+    if (!conversationId.isEmpty() && conversationId != m_streamConversationId) {
+        return;
+    }
+    if (!streamId.isEmpty() && streamId == m_streamId) {
         return;
     }
 
-    m_streamVisibleText += chunk;
+    m_streamId = streamId;
+    clearStreamCharacterQueue();
+    clearProgressCharacterQueue();
+    m_streamVisibleText.clear();
+    m_streamProgressSegments.clear();
+    m_legacyToolStepIds.clear();
+    m_latestToolStepId.clear();
+    m_nextLegacyToolStepId = 1;
+    m_streamAnswerStarted = false;
+}
+
+void AiChatSessionController::onAiReplyChunkReceived(const AiChatStreamChunk& chunk)
+{
+    if (m_streamConversationId.isEmpty()) {
+        return;
+    }
+
+    if (chunk.kind == QStringLiteral("progress") || chunk.transient) {
+        QString stepId = chunk.stepId;
+        if (stepId.isEmpty()) {
+            stepId = m_latestToolStepId;
+        }
+        if (stepId.isEmpty()) {
+            stepId = QStringLiteral("progress-step-%1").arg(m_nextLegacyToolStepId++);
+            m_latestToolStepId = stepId;
+        }
+
+        QString segmentId = chunk.segmentId;
+        if (segmentId.isEmpty()) {
+            segmentId = QStringLiteral("%1-progress").arg(stepId);
+        }
+
+        AiChatProgressSegment& progress = m_streamProgressSegments[segmentId];
+        if (chunk.segmentStart || progress.segmentId.isEmpty()) {
+            progress = {};
+            progress.stepId = stepId;
+            progress.segmentId = segmentId;
+            emit aiReplyProgressChanged(m_streamConversationId, progress);
+        }
+        progress.stepId = stepId;
+        const QStringList clusters = graphemeClusters(chunk.delta);
+        for (const QString& cluster : clusters) {
+            m_streamProgressCharacterQueue.enqueue(
+                    {stepId, segmentId, cluster, false});
+        }
+        if (chunk.segmentEnd) {
+            m_streamProgressCharacterQueue.enqueue(
+                    {stepId, segmentId, {}, true});
+        }
+        if (!m_streamProgressCharacterQueue.isEmpty() &&
+                !m_streamProgressCharacterTimer.isActive()) {
+            m_streamProgressCharacterTimer.start();
+        }
+        return;
+    }
+
+    if (chunk.delta.isEmpty()) {
+        return;
+    }
+
+    if (!m_streamAnswerStarted) {
+        m_streamAnswerStarted = true;
+        emit aiReplyThinkingChanged(m_streamConversationId, false);
+    }
+    const QStringList clusters = graphemeClusters(chunk.delta);
+    for (const QString& cluster : clusters) {
+        m_streamCharacterQueue.enqueue({cluster});
+    }
+    if (m_streamProgressCharacterQueue.isEmpty() &&
+            !m_streamProgressCharacterTimer.isActive() &&
+            !m_streamCharacterQueue.isEmpty() &&
+            !m_streamCharacterTimer.isActive()) {
+        m_streamCharacterTimer.start();
+    }
+}
+
+void AiChatSessionController::revealNextStreamCharacter()
+{
+    if (m_streamConversationId.isEmpty() ||
+            !m_streamProgressCharacterQueue.isEmpty() ||
+            m_streamProgressCharacterTimer.isActive() ||
+            m_streamCharacterQueue.isEmpty()) {
+        m_streamCharacterTimer.stop();
+        return;
+    }
+
+    const QueuedStreamText queued = m_streamCharacterQueue.dequeue();
+    appendVisibleStreamText(queued.text);
+    if (m_streamCharacterQueue.isEmpty()) {
+        m_streamCharacterTimer.stop();
+    }
+}
+
+void AiChatSessionController::revealNextProgressCharacter()
+{
+    if (m_streamConversationId.isEmpty() ||
+            m_streamProgressCharacterQueue.isEmpty()) {
+        m_streamProgressCharacterTimer.stop();
+        if (!m_streamCharacterQueue.isEmpty() &&
+                !m_streamCharacterTimer.isActive()) {
+            m_streamCharacterTimer.start();
+        }
+        return;
+    }
+
+    const QueuedProgressText queued = m_streamProgressCharacterQueue.dequeue();
+    AiChatProgressSegment& progress =
+            m_streamProgressSegments[queued.segmentId];
+    if (progress.segmentId.isEmpty()) {
+        progress.stepId = queued.stepId;
+        progress.segmentId = queued.segmentId;
+    }
+    if (queued.segmentEnd) {
+        progress.complete = true;
+    } else {
+        progress.text += queued.text;
+    }
+    emit aiReplyProgressChanged(m_streamConversationId, progress);
+
+    if (m_streamProgressCharacterQueue.isEmpty()) {
+        m_streamProgressCharacterTimer.stop();
+        if (!m_streamCharacterQueue.isEmpty() &&
+                !m_streamCharacterTimer.isActive()) {
+            m_streamCharacterTimer.start();
+        }
+    }
+}
+
+void AiChatSessionController::appendVisibleStreamText(const QString& text)
+{
+    if (text.isEmpty() || m_streamConversationId.isEmpty()) {
+        return;
+    }
+
+    m_streamVisibleText += text;
     if (m_streamMessageId.isEmpty()) {
         const AiChatMessage message = AiChatRepository::instance().addAiChatMessage(
                 m_streamConversationId,
@@ -827,14 +1072,55 @@ void AiChatSessionController::onAiReplyChunkReceived(const QString& chunk)
         }
 
         m_streamMessageId = message.messageId;
-        emit aiReplyMessageAdded(message);
+        emit aiReplyMessageAdded(message, false);
         return;
     }
 
     AiChatRepository::instance().updateAiChatMessageText(m_streamConversationId,
                                                          m_streamMessageId,
                                                          m_streamVisibleText);
-    emit aiReplyMessageUpdated(m_streamConversationId, m_streamMessageId, m_streamVisibleText);
+    emit aiReplyMessageUpdated(m_streamConversationId,
+                               m_streamMessageId,
+                               m_streamVisibleText,
+                               false);
+}
+
+void AiChatSessionController::clearStreamCharacterQueue()
+{
+    m_streamCharacterTimer.stop();
+    m_streamCharacterQueue.clear();
+}
+
+void AiChatSessionController::clearProgressCharacterQueue()
+{
+    m_streamProgressCharacterTimer.stop();
+    m_streamProgressCharacterQueue.clear();
+}
+
+void AiChatSessionController::finishProgressAnimations()
+{
+    m_streamProgressCharacterTimer.stop();
+    QSet<QString> changedSegments;
+    while (!m_streamProgressCharacterQueue.isEmpty()) {
+        const QueuedProgressText queued =
+                m_streamProgressCharacterQueue.dequeue();
+        AiChatProgressSegment& progress =
+                m_streamProgressSegments[queued.segmentId];
+        if (progress.segmentId.isEmpty()) {
+            progress.stepId = queued.stepId;
+            progress.segmentId = queued.segmentId;
+        }
+        if (queued.segmentEnd) {
+            progress.complete = true;
+        } else {
+            progress.text += queued.text;
+        }
+        changedSegments.insert(queued.segmentId);
+    }
+    for (const QString& segmentId : changedSegments) {
+        emit aiReplyProgressChanged(m_streamConversationId,
+                                    m_streamProgressSegments.value(segmentId));
+    }
 }
 
 void AiChatSessionController::onAiReplyThinkingChanged(bool active)
@@ -842,6 +1128,41 @@ void AiChatSessionController::onAiReplyThinkingChanged(bool active)
     if (!m_streamConversationId.isEmpty()) {
         emit aiReplyThinkingChanged(m_streamConversationId, active);
     }
+}
+
+void AiChatSessionController::onAiReplyStreamStatusChanged(const AiChatStreamStatus& status)
+{
+    if (!m_streamConversationId.isEmpty()) {
+        AiChatStreamStatus resolvedStatus = status;
+        const QString phase = status.phase.trimmed().toLower();
+        if (phase == QStringLiteral("searching") ||
+                phase == QStringLiteral("reading") ||
+                phase == QStringLiteral("tool")) {
+            resolvedStatus.stepId = resolvedToolStepId(status);
+            m_latestToolStepId = resolvedStatus.stepId;
+        }
+        emit aiReplyStreamStatusChanged(m_streamConversationId, resolvedStatus);
+    }
+}
+
+QString AiChatSessionController::resolvedToolStepId(const AiChatStreamStatus& status)
+{
+    if (!status.stepId.isEmpty()) {
+        return status.stepId;
+    }
+
+    const QString signature = QStringLiteral("%1\x1f%2\x1f%3")
+            .arg(status.phase.trimmed().toLower(),
+                 status.tool.trimmed().toLower(),
+                 status.query.trimmed());
+    auto it = m_legacyToolStepIds.find(signature);
+    if (it != m_legacyToolStepIds.end()) {
+        return it.value();
+    }
+
+    const QString stepId = QStringLiteral("legacy-step-%1").arg(m_nextLegacyToolStepId++);
+    m_legacyToolStepIds.insert(signature, stepId);
+    return stepId;
 }
 
 void AiChatSessionController::onGeneratedTitleReceived(const QString& title)
@@ -853,19 +1174,21 @@ void AiChatSessionController::onGeneratedTitleReceived(const QString& title)
 
     if (AiChatRepository::instance().renameAiChatConversation(m_streamConversationId, trimmedTitle)) {
         emit conversationTitleChanged(m_streamConversationId, trimmedTitle);
-        emit conversationsChanged();
+        emit conversationEntryChanged(AiChatRepository::instance().requestAiChatConversation(m_streamConversationId));
     }
 }
 
-void AiChatSessionController::onAssistantMessageReceived(const QString& messageId,
-                                                         const QString& text,
-                                                         const QDateTime& time)
+void AiChatSessionController::onAssistantMessageReceived(const AiChatMessage& serverMessage)
 {
     if (m_streamConversationId.isEmpty()) {
         return;
     }
 
-    const QString resolvedText = text.isEmpty() ? m_streamVisibleText : text;
+    clearStreamCharacterQueue();
+    finishProgressAnimations();
+    const QString resolvedText = serverMessage.text.isEmpty()
+            ? m_streamVisibleText
+            : serverMessage.text;
     if (resolvedText.isEmpty()) {
         return;
     }
@@ -875,22 +1198,28 @@ void AiChatSessionController::onAssistantMessageReceived(const QString& messageI
                 m_streamConversationId,
                 resolvedText,
                 false,
-                time.isValid() ? time : QDateTime::currentDateTime());
+                serverMessage.time.isValid()
+                        ? serverMessage.time
+                        : QDateTime::currentDateTime());
         if (message.messageId.isEmpty()) {
             cancelActiveAiReplyStream();
             return;
         }
 
         m_streamMessageId = message.messageId;
-        emit aiReplyMessageAdded(message);
+        emit aiReplyMessageAdded(message, false);
     }
 
-    AiChatMessage replacement;
-    replacement.messageId = messageId.isEmpty() ? m_streamMessageId : messageId;
+    AiChatMessage replacement = serverMessage;
+    replacement.messageId = serverMessage.messageId.isEmpty()
+            ? m_streamMessageId
+            : serverMessage.messageId;
     replacement.conversationId = m_streamConversationId;
     replacement.text = resolvedText;
     replacement.isFromUser = false;
-    replacement.time = time.isValid() ? time : QDateTime::currentDateTime();
+    replacement.time = serverMessage.time.isValid()
+            ? serverMessage.time
+            : QDateTime::currentDateTime();
 
     const QString previousMessageId = m_streamMessageId;
     if (AiChatRepository::instance().replaceAiChatMessage(m_streamConversationId,
@@ -909,13 +1238,15 @@ void AiChatSessionController::onAiReplyCanceled()
     resetActiveAiReplyStream();
     if (!conversationId.isEmpty()) {
         emit aiReplyThinkingChanged(conversationId, false);
-        emit conversationsChanged();
+        emit conversationEntryChanged(AiChatRepository::instance().requestAiChatConversation(conversationId));
         emit aiReplyCanceled(conversationId, messageId);
     }
 }
 
 void AiChatSessionController::onAiReplyFailed(const NetworkError& error)
 {
+    clearStreamCharacterQueue();
+    clearProgressCharacterQueue();
     m_streamFailed = true;
     const QString message = error.message.isEmpty()
             ? QStringLiteral("AI 回复失败，请稍后重试")
@@ -932,10 +1263,10 @@ void AiChatSessionController::onAiReplyFinished()
     resetActiveAiReplyStream();
     if (!conversationId.isEmpty()) {
         emit aiReplyThinkingChanged(conversationId, false);
-        if (!failed && !messageId.isEmpty()) {
+        if (!failed && !messageId.isEmpty() && conversationId != m_currentConversationId) {
             AiChatRepository::instance().setConversationUnreadDot(conversationId, true);
         }
-        emit conversationsChanged();
+        emit conversationEntryChanged(AiChatRepository::instance().requestAiChatConversation(conversationId));
         emit aiReplyFinished(conversationId, messageId);
     }
 }
@@ -949,8 +1280,16 @@ void AiChatSessionController::startAiReplyStream(const QString& conversationId,
     }
 
     m_streamConversationId = conversationId;
+    m_streamId.clear();
     m_streamMessageId.clear();
     m_streamVisibleText.clear();
+    clearStreamCharacterQueue();
+    clearProgressCharacterQueue();
+    m_streamProgressSegments.clear();
+    m_legacyToolStepIds.clear();
+    m_latestToolStepId.clear();
+    m_nextLegacyToolStepId = 1;
+    m_streamAnswerStarted = false;
     m_streamFailed = false;
     emit aiReplyStarted(conversationId);
 
@@ -962,9 +1301,17 @@ void AiChatSessionController::startAiReplyStream(const QString& conversationId,
 
 void AiChatSessionController::resetActiveAiReplyStream()
 {
+    clearStreamCharacterQueue();
+    clearProgressCharacterQueue();
     m_streamConversationId.clear();
+    m_streamId.clear();
     m_streamMessageId.clear();
     m_streamVisibleText.clear();
+    m_streamProgressSegments.clear();
+    m_legacyToolStepIds.clear();
+    m_latestToolStepId.clear();
+    m_nextLegacyToolStepId = 1;
+    m_streamAnswerStarted = false;
     m_streamFailed = false;
 }
 

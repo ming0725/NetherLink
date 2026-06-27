@@ -31,10 +31,11 @@ public:
     void jumpToBottom();
     void clearTextSelection();
     void setBottomViewportMargin(int margin);
-    void refreshMessageLayout();
+    void refreshMessageLayout(bool keepBottomWhenLocked = true);
 
 signals:
     void regenerateAiReplyRequested(const QString& conversationId, const QString& messageId);
+    void traceToggleRequested(const QString& messageId);
     void userScrollUpIntent();
     void userScrollDownIntent();
 

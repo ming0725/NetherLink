@@ -28,6 +28,11 @@ namespace {
 constexpr auto kLocalMessageListTimeKey = "localMessageListTime";
 
 QString groupIdForConversationId(const QString& conversationId);
+QDateTime deletionBarrierForConversation(const QString& conversationId,
+                                         const QDateTime& remoteHiddenAt);
+bool isHiddenByDeletionBarrier(const QJsonObject& object,
+                               const QString& conversationId,
+                               const QDateTime& barrier);
 
 QString userNameForIdentity(const QString& userId)
 {
@@ -218,12 +223,52 @@ int messageSeqFromObject(const QJsonObject& object)
     return qMax(0, seq);
 }
 
+int conversationLastMessageSeq(const QString& conversationId)
+{
+    const QJsonObject conversation = MessageLocalDataSource::instance().conversation(conversationId);
+    if (conversation.isEmpty()) {
+        return 0;
+    }
+
+    return messageSeqFromObject(conversation.value(QStringLiteral("lastMessage")).toObject());
+}
+
+bool conversationTailHiddenByDeletionBarrier(const QString& conversationId,
+                                             const QDateTime& remoteHiddenAt = {})
+{
+    if (conversationId.isEmpty()) {
+        return false;
+    }
+
+    const QDateTime barrier = deletionBarrierForConversation(conversationId, remoteHiddenAt);
+    if (!barrier.isValid()) {
+        return false;
+    }
+
+    const QJsonObject conversation = MessageLocalDataSource::instance().conversation(conversationId);
+    const QJsonObject lastMessage = conversation.value(QStringLiteral("lastMessage")).toObject();
+    if (lastMessage.isEmpty()) {
+        return true;
+    }
+
+    QJsonObject messageObject = lastMessage;
+    if (!messageObject.contains(QStringLiteral("conversationId"))) {
+        messageObject.insert(QStringLiteral("conversationId"), conversationId);
+    }
+    return isHiddenByDeletionBarrier(messageObject, conversationId, barrier);
+}
+
 QString chatMessageCacheKey(const QString& conversationId, const QString& messageId)
 {
     if (conversationId.isEmpty() || messageId.isEmpty()) {
         return {};
     }
     return conversationId + QLatin1Char(':') + messageId;
+}
+
+QString messageFetchKey(const QString& conversationId, const QString& kind, int cursor = 0)
+{
+    return QStringLiteral("%1:%2:%3").arg(conversationId, kind, QString::number(qMax(0, cursor)));
 }
 
 bool isSameChatMessageIdentity(const QSharedPointer<ChatMessage>& lhs,
@@ -269,6 +314,15 @@ QDateTime localConversationClearTime(const QString& conversationId)
     }
 
     return MessageLocalDataSource::instance().conversationClearTime(conversationId);
+}
+
+int localConversationClearedThroughSeq(const QString& conversationId)
+{
+    if (conversationId.isEmpty()) {
+        return 0;
+    }
+
+    return MessageLocalDataSource::instance().conversationClearedThroughSeq(conversationId);
 }
 
 QDateTime deletionBarrierForConversation(const QString& conversationId,
@@ -340,13 +394,17 @@ bool isLocallyVisibleMessageObject(const QJsonObject& object,
                                               remoteHiddenAt));
 }
 
-void persistConversationClearMarker(const QString& conversationId, const QDateTime& clearedAt)
+void persistConversationClearMarker(const QString& conversationId,
+                                    const QDateTime& clearedAt,
+                                    int clearedThroughSeq)
 {
     if (conversationId.isEmpty() || !clearedAt.isValid()) {
         return;
     }
 
-    MessageLocalDataSource::instance().persistConversationClearMarker(conversationId, clearedAt);
+    MessageLocalDataSource::instance().persistConversationClearMarker(conversationId,
+                                                                      clearedAt,
+                                                                      clearedThroughSeq);
 }
 
 void persistMessageDeletionMarker(const QString& conversationId,
@@ -1413,7 +1471,7 @@ MessageRepository::MessageRepository(QObject* parent)
             &ConversationRemoteDataSource::conversationMarkedRead,
             this,
             [this](const QString&, const QString& conversationId) {
-                markConversationRead(conversationId);
+                markConversationReadLocal(conversationId, false);
             });
     connect(&ConversationRemoteDataSource::instance(),
             &ConversationRemoteDataSource::conversationMarkedUnread,
@@ -1424,8 +1482,9 @@ MessageRepository::MessageRepository(QObject* parent)
     connect(&ConversationRemoteDataSource::instance(),
             &ConversationRemoteDataSource::messagesCleared,
             this,
-            [this](const QString&, const QString& conversationId) {
-                clearConversationMessages(conversationId);
+            [this](const QString&, const QString&) {
+                // Clearing is device-scoped and applied locally before the request is sent.
+                // The success signal only confirms the backend watermark for this device.
             });
     connect(&ChatRemoteDataSource::instance(),
             &ChatRemoteDataSource::messageRecallSucceeded,
@@ -1786,10 +1845,27 @@ bool MessageRepository::fetchOlderMessagesBlocking(const QString& conversationId
         return false;
     }
 
+    const QString fetchKey = messageFetchKey(conversationId, QStringLiteral("older"), beforeMessageSeq);
+    {
+        QMutexLocker locker(&m_mutex);
+        if (m_messageFetchesInFlight.contains(fetchKey)) {
+            return false;
+        }
+        m_messageFetchesInFlight.insert(fetchKey);
+    }
+
     const MessageRemoteDataSource::FetchResult result =
             MessageRemoteDataSource::instance().fetchOlderMessagesBlocking(conversationId, beforeMessageSeq, limit);
     for (const QJsonObject& object : result.messages) {
         cacheRemoteMessageObject(object, conversationId);
+    }
+    if (result.completed) {
+        QMutexLocker locker(&m_mutex);
+        m_conversationHasMoreBefore.insert(conversationId, result.hasMoreBefore);
+    }
+    {
+        QMutexLocker locker(&m_mutex);
+        m_messageFetchesInFlight.remove(fetchKey);
     }
     return result.completed && !result.messages.isEmpty();
 }
@@ -1800,10 +1876,27 @@ bool MessageRepository::fetchLatestMessagesBlocking(const QString& conversationI
         return false;
     }
 
+    const QString fetchKey = messageFetchKey(conversationId, QStringLiteral("latest"));
+    {
+        QMutexLocker locker(&m_mutex);
+        if (m_messageFetchesInFlight.contains(fetchKey)) {
+            return false;
+        }
+        m_messageFetchesInFlight.insert(fetchKey);
+    }
+
     const MessageRemoteDataSource::FetchResult result =
             MessageRemoteDataSource::instance().fetchLatestMessagesBlocking(conversationId, limit);
     for (const QJsonObject& object : result.messages) {
         cacheRemoteMessageObject(object, conversationId);
+    }
+    if (result.completed) {
+        QMutexLocker locker(&m_mutex);
+        m_conversationHasMoreBefore.insert(conversationId, result.hasMoreBefore);
+    }
+    {
+        QMutexLocker locker(&m_mutex);
+        m_messageFetchesInFlight.remove(fetchKey);
     }
     return result.completed && !result.messages.isEmpty();
 }
@@ -1812,6 +1905,15 @@ bool MessageRepository::fetchNewerMessagesBlocking(const QString& conversationId
 {
     if (conversationId.isEmpty() || afterMessageSeq <= 0 || limit <= 0) {
         return false;
+    }
+
+    const QString fetchKey = messageFetchKey(conversationId, QStringLiteral("newer"), afterMessageSeq);
+    {
+        QMutexLocker locker(&m_mutex);
+        if (m_messageFetchesInFlight.contains(fetchKey)) {
+            return false;
+        }
+        m_messageFetchesInFlight.insert(fetchKey);
     }
 
     bool fetchedAny = false;
@@ -1838,6 +1940,10 @@ bool MessageRepository::fetchNewerMessagesBlocking(const QString& conversationId
         cursor = nextCursor;
     }
 
+    {
+        QMutexLocker locker(&m_mutex);
+        m_messageFetchesInFlight.remove(fetchKey);
+    }
     return fetchedAny;
 }
 
@@ -1895,6 +2001,9 @@ ConversationThreadData MessageRepository::requestConversationThread(const Conver
 
     int cachedCount = 0;
     int oldestMessageSeq = 0;
+    int latestMessageSeq = 0;
+    QDateTime hiddenAt;
+    int clearedThroughSeq = 0;
     {
         QMutexLocker locker(&m_mutex);
         const ChatMessageList allMessages = m_store.value(query.conversationId);
@@ -1902,11 +2011,55 @@ ConversationThreadData MessageRepository::requestConversationThread(const Conver
         if (!allMessages.isEmpty() && allMessages.first()) {
             oldestMessageSeq = allMessages.first()->getMessageSeq();
         }
+        hiddenAt = m_conversationStates.value(query.conversationId).hiddenAt;
+        int checkedTailCount = 0;
+        const int requiredTailCount = qMax(0, query.limit);
+        for (auto it = allMessages.crbegin(); it != allMessages.crend(); ++it) {
+            if (requiredTailCount > 0 && checkedTailCount >= requiredTailCount) {
+                break;
+            }
+            const QSharedPointer<ChatMessage>& message = *it;
+            if (!message) {
+                continue;
+            }
+
+            const int seq = message->getMessageSeq();
+            if (seq <= 0) {
+                continue;
+            }
+            if (latestMessageSeq <= 0) {
+                latestMessageSeq = seq;
+            }
+            ++checkedTailCount;
+        }
     }
+    clearedThroughSeq = localConversationClearedThroughSeq(query.conversationId);
 
     if (query.offsetFromLatest == 0 && query.limit > 0) {
-        const_cast<MessageRepository*>(this)->fetchLatestMessagesBlocking(query.conversationId,
-                                                                          qMax(query.limit, 50));
+        const int latestPageLimit = qMax(query.limit, 50);
+        const bool localTailKnownEmpty = cachedCount <= 0 &&
+                conversationTailHiddenByDeletionBarrier(query.conversationId, hiddenAt);
+
+        if (cachedCount > 0) {
+            if (latestMessageSeq > 0) {
+                const_cast<MessageRepository*>(this)->fetchNewerMessagesBlocking(
+                        query.conversationId,
+                        latestMessageSeq,
+                        latestPageLimit);
+            } else {
+                const_cast<MessageRepository*>(this)->fetchLatestMessagesBlocking(query.conversationId,
+                                                                                  latestPageLimit);
+            }
+        } else if (clearedThroughSeq > 0) {
+            const_cast<MessageRepository*>(this)->fetchNewerMessagesBlocking(query.conversationId,
+                                                                             clearedThroughSeq,
+                                                                             latestPageLimit);
+        } else if (localTailKnownEmpty) {
+            // The local deletion barrier hides the server's current tail; avoid refetching it on every switch.
+        } else {
+            const_cast<MessageRepository*>(this)->fetchLatestMessagesBlocking(query.conversationId,
+                                                                              latestPageLimit);
+        }
 
         QMutexLocker locker(&m_mutex);
         const ChatMessageList allMessages = m_store.value(query.conversationId);
@@ -2039,8 +2192,6 @@ void MessageRepository::setActiveVisibleConversation(const QString& conversation
             ConversationSyncState& state = m_conversationStates[conversationId];
             state.conversationId = conversationId;
             shouldMarkRead = state.unreadCount > 0;
-            state.unreadCount = 0;
-            state.lastReadAt = QDateTime::currentDateTime();
         } else if (!previousActiveConversationId.isEmpty() &&
                    m_localUnreadOverrides.value(previousActiveConversationId) == 0) {
             m_localUnreadOverrides.remove(previousActiveConversationId);
@@ -2134,6 +2285,11 @@ void MessageRepository::touchConversationObject(const QString& conversationId,
 
 void MessageRepository::markConversationRead(const QString& conversationId)
 {
+    markConversationReadLocal(conversationId, true);
+}
+
+void MessageRepository::markConversationReadLocal(const QString& conversationId, bool notifyRemote)
+{
     if (conversationId.isEmpty()) {
         return;
     }
@@ -2164,6 +2320,9 @@ void MessageRepository::markConversationRead(const QString& conversationId)
 
     if (changed) {
         emit conversationListChanged(conversationId);
+        if (notifyRemote) {
+            ConversationRemoteDataSource::instance().markRead(conversationId);
+        }
     }
 }
 
@@ -2232,7 +2391,17 @@ void MessageRepository::clearConversationMessages(const QString& conversationId)
     }
 
     const QDateTime clearedAt = QDateTime::currentDateTime();
-    persistConversationClearMarker(conversationId, clearedAt);
+    int clearedThroughSeq = conversationLastMessageSeq(conversationId);
+    {
+        QMutexLocker locker(&m_mutex);
+        const ChatMessageList messages = m_store.value(conversationId);
+        for (const QSharedPointer<ChatMessage>& message : messages) {
+            if (message) {
+                clearedThroughSeq = qMax(clearedThroughSeq, message->getMessageSeq());
+            }
+        }
+    }
+    persistConversationClearMarker(conversationId, clearedAt, clearedThroughSeq);
     removePersistedMessagesForConversation(conversationId);
 
     bool changed = false;

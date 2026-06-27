@@ -435,16 +435,28 @@ void paintThinkingMessage(QPainter* painter, const QStyleOptionViewItem& option,
     QFont font = QApplication::font();
     font.setPixelSize(14);
     const QFontMetrics fontMetrics(font);
+    const int availableWidth = qMax(1, option.rect.width() - 48);
+    const QString elidedText = fontMetrics.elidedText(text, Qt::ElideMiddle, availableWidth);
     const QRect textRect(option.rect.left() + 24,
-                         option.rect.top() + 8,
-                         qMin(fontMetrics.horizontalAdvance(text) + 24,
-                              qMax(1, option.rect.width() - 48)),
-                         qMax(fontMetrics.height() + 8, 28));
+                         option.rect.top() + 2,
+                         availableWidth,
+                         qMax(fontMetrics.height() + 4, 24));
 
     QColor baseColor = ThemeManager::instance().color(ThemeColor::SecondaryText);
     QColor highlightColor = ThemeManager::instance().color(ThemeColor::PrimaryText);
     baseColor.setAlpha(145);
     highlightColor.setAlpha(235);
+
+    const bool active = index.data(AiChatMessageListModel::IsThinkingActiveRole).toBool();
+    if (!active) {
+        painter->save();
+        painter->setFont(font);
+        painter->setPen(baseColor);
+        AppFonts::configurePainterForText(*painter);
+        painter->drawText(textRect, Qt::AlignLeft | Qt::AlignVCenter, elidedText);
+        painter->restore();
+        return;
+    }
 
     const qreal cycle = 2400.0;
     const QDateTime messageTime = index.data(AiChatMessageListModel::TimeRole).toDateTime();
@@ -453,18 +465,30 @@ void paintThinkingMessage(QPainter* painter, const QStyleOptionViewItem& option,
             : QDateTime::currentMSecsSinceEpoch();
     const qreal elapsed = qMax<qreal>(0.0, QDateTime::currentMSecsSinceEpoch() - startedAtMs);
     const qreal progress = std::fmod(elapsed, cycle) / cycle;
-    const qreal center = -0.35 + progress * 1.7;
+    const qreal textWidth = qMax<qreal>(1.0,
+                                        qMin<qreal>(fontMetrics.horizontalAdvance(elidedText),
+                                                    textRect.width()));
+    const qreal waveRadius = qBound<qreal>(42.0, textWidth * 0.28, 92.0);
+    const qreal centerX = textRect.left() - waveRadius +
+            progress * (textWidth + waveRadius * 2.0);
+    QColor transparentHighlight = highlightColor;
+    transparentHighlight.setAlpha(0);
 
-    QLinearGradient gradient(textRect.topLeft(), textRect.topRight());
-    gradient.setColorAt(qBound(0.0, center - 0.28, 1.0), baseColor);
-    gradient.setColorAt(qBound(0.0, center, 1.0), highlightColor);
-    gradient.setColorAt(qBound(0.0, center + 0.28, 1.0), baseColor);
+    QLinearGradient gradient(QPointF(centerX - waveRadius, textRect.center().y()),
+                             QPointF(centerX + waveRadius, textRect.center().y()));
+    gradient.setColorAt(0.0, transparentHighlight);
+    gradient.setColorAt(0.35, baseColor);
+    gradient.setColorAt(0.5, highlightColor);
+    gradient.setColorAt(0.65, baseColor);
+    gradient.setColorAt(1.0, transparentHighlight);
 
     painter->save();
     painter->setFont(font);
-    painter->setPen(QPen(QBrush(gradient), 1));
     AppFonts::configurePainterForText(*painter);
-    painter->drawText(textRect, Qt::AlignLeft | Qt::AlignVCenter, text);
+    painter->setPen(baseColor);
+    painter->drawText(textRect, Qt::AlignLeft | Qt::AlignVCenter, elidedText);
+    painter->setPen(QPen(QBrush(gradient), 1));
+    painter->drawText(textRect, Qt::AlignLeft | Qt::AlignVCenter, elidedText);
     painter->restore();
 }
 
@@ -493,8 +517,22 @@ void AiChatMessageDelegate::paint(QPainter* painter,
         return;
     }
 
+    const bool traceDetail = index.data(AiChatMessageListModel::IsTraceDetailRole).toBool();
+    const qreal traceProgress = index.data(AiChatMessageListModel::TraceExpansionProgressRole).toReal();
+    if (traceDetail) {
+        if (traceProgress <= 0.001) {
+            return;
+        }
+        painter->save();
+        painter->setClipRect(option.rect);
+        painter->setOpacity(qBound<qreal>(0.0, traceProgress, 1.0));
+    }
+
     if (index.data(AiChatMessageListModel::IsThinkingRole).toBool()) {
         paintThinkingMessage(painter, option, index);
+        if (traceDetail) {
+            painter->restore();
+        }
         return;
     }
 
@@ -530,6 +568,9 @@ void AiChatMessageDelegate::paint(QPainter* painter,
                              textColor);
         paintAiReplyActions(painter, metrics, index);
         painter->restore();
+        if (traceDetail) {
+            painter->restore();
+        }
         return;
     }
 
@@ -567,6 +608,9 @@ void AiChatMessageDelegate::paint(QPainter* painter,
     paintUserMessageChrome(painter, metrics, index, textColor);
 
     painter->restore();
+    if (traceDetail) {
+        painter->restore();
+    }
 }
 
 QSize AiChatMessageDelegate::sizeHint(const QStyleOptionViewItem& option,
@@ -582,10 +626,29 @@ QSize AiChatMessageDelegate::sizeHint(const QStyleOptionViewItem& option,
         return QSize(option.rect.width(), 0);
     }
 
+    if (index.data(AiChatMessageListModel::IsThinkingRole).toBool()) {
+        QFont font = QApplication::font();
+        font.setPixelSize(14);
+        const QFontMetrics fontMetrics(font);
+        const int height = qMax(fontMetrics.height() + 4, 28);
+        if (index.data(AiChatMessageListModel::IsTraceDetailRole).toBool()) {
+            const qreal progress = index.data(AiChatMessageListModel::TraceExpansionProgressRole).toReal();
+            return QSize(option.rect.width(), qMax(0, qRound(height * qBound<qreal>(0.0, progress, 1.0))));
+        }
+        return QSize(option.rect.width(), height);
+    }
+
     const QStyleOptionViewItem layoutOption = optionWithPaintWidth(option);
     const LayoutMetrics metrics = layoutMetrics(layoutOption, index);
     const int contentBottom = qMax(metrics.bubbleRect.bottom(), metrics.copyButtonRect.bottom());
-    const QSize result(option.rect.width(), contentBottom - layoutOption.rect.top() + 1 + kVerticalMargin);
+    const int verticalMargin = index.data(AiChatMessageListModel::IsTraceDetailRole).toBool()
+            ? kTraceDetailVerticalMargin
+            : kVerticalMargin;
+    const QSize result(option.rect.width(), contentBottom - layoutOption.rect.top() + 1 + verticalMargin);
+    if (index.data(AiChatMessageListModel::IsTraceDetailRole).toBool()) {
+        const qreal progress = index.data(AiChatMessageListModel::TraceExpansionProgressRole).toReal();
+        return QSize(result.width(), qMax(0, qRound(result.height() * qBound<qreal>(0.0, progress, 1.0))));
+    }
     return result;
 }
 
@@ -593,7 +656,8 @@ bool AiChatMessageDelegate::bubbleHitTest(const QStyleOptionViewItem& option,
                                           const QModelIndex& index,
                                           const QPoint& viewportPos) const
 {
-    if (index.data(AiChatMessageListModel::IsBottomSpaceRole).toBool()) {
+    if (index.data(AiChatMessageListModel::IsBottomSpaceRole).toBool() ||
+            index.data(AiChatMessageListModel::IsThinkingRole).toBool()) {
         return false;
     }
 
@@ -608,7 +672,8 @@ int AiChatMessageDelegate::characterIndexAt(const QStyleOptionViewItem& option,
                                             const QPoint& viewportPos,
                                             bool allowLineWhitespace) const
 {
-    if (index.data(AiChatMessageListModel::IsBottomSpaceRole).toBool()) {
+    if (index.data(AiChatMessageListModel::IsBottomSpaceRole).toBool() ||
+            index.data(AiChatMessageListModel::IsThinkingRole).toBool()) {
         return -1;
     }
 
@@ -724,6 +789,10 @@ QString AiChatMessageDelegate::urlAt(const QStyleOptionViewItem& option,
                                      const QModelIndex& index,
                                      const QPoint& viewportPos) const
 {
+    if (index.data(AiChatMessageListModel::IsThinkingRole).toBool()) {
+        return {};
+    }
+
     if (index.data(AiChatMessageListModel::IsBottomSpaceRole).toBool()) {
         return {};
     }
@@ -1249,7 +1318,8 @@ QString AiChatMessageDelegate::selectedText() const
 
 QString AiChatMessageDelegate::renderedText(const QModelIndex& index) const
 {
-    if (!index.isValid()) {
+    if (!index.isValid() ||
+            index.data(AiChatMessageListModel::IsThinkingRole).toBool()) {
         return {};
     }
 
@@ -1271,6 +1341,9 @@ AiChatMessageDelegate::LayoutMetrics AiChatMessageDelegate::layoutMetrics(
     const int maxTextWidth = qMax(1, bubbleMaxWidth - kBubblePadding * 2);
     const bool isFromUser = index.data(AiChatMessageListModel::IsFromUserRole).toBool();
     if (!isFromUser) {
+        const int verticalMargin = index.data(AiChatMessageListModel::IsTraceDetailRole).toBool()
+                ? kTraceDetailVerticalMargin
+                : kVerticalMargin;
         const int markdownWidth = qMax(1,
                                        option.rect.width() - kHorizontalMargin * 2 +
                                                kMarkdownHorizontalInset * 2);
@@ -1279,7 +1352,7 @@ AiChatMessageDelegate::LayoutMetrics AiChatMessageDelegate::layoutMetrics(
                                                         messageFont(),
                                                         markdownWidth);
         const int x = option.rect.left() + kHorizontalMargin - kMarkdownHorizontalInset;
-        const int y = option.rect.top() + kVerticalMargin;
+        const int y = option.rect.top() + verticalMargin;
         const bool hasActions = isAiReplyActionVisible(index, MessageAction::Copy) ||
                 isAiReplyActionVisible(index, MessageAction::Refresh) ||
                 isAiReplyActionVisible(index, MessageAction::Like) ||
@@ -1843,11 +1916,17 @@ bool AiChatMessageDelegate::isAiReplyActionVisible(const QModelIndex& index,
 {
     if (!index.isValid() ||
             index.data(AiChatMessageListModel::IsBottomSpaceRole).toBool() ||
-            index.data(AiChatMessageListModel::IsFromUserRole).toBool()) {
+            index.data(AiChatMessageListModel::IsFromUserRole).toBool() ||
+            index.data(AiChatMessageListModel::IsThinkingRole).toBool()) {
         return false;
     }
 
     const QString messageId = index.data(AiChatMessageListModel::MessageIdRole).toString();
+    if (messageId.startsWith(QStringLiteral("__ai_work_")) ||
+            messageId.startsWith(QStringLiteral("__ai_trace_")) ||
+            messageId.startsWith(QStringLiteral("__ai_answer_segment_"))) {
+        return false;
+    }
     if (!messageId.isEmpty() && messageId == m_streamingMessageId) {
         return false;
     }
@@ -1863,7 +1942,15 @@ bool AiChatMessageDelegate::isAiReplyActionVisible(const QModelIndex& index,
         return false;
     }
 
-    return index.row() == itemModel->rowCount() - 2;
+    for (int row = index.row() + 1; row < itemModel->rowCount(); ++row) {
+        const QModelIndex laterIndex = itemModel->index(row, 0);
+        if (laterIndex.data(AiChatMessageListModel::IsBottomSpaceRole).toBool() ||
+                laterIndex.data(AiChatMessageListModel::IsThinkingRole).toBool()) {
+            continue;
+        }
+        return false;
+    }
+    return true;
 }
 
 QVector<QPair<AiChatMessageDelegate::MessageAction, QRect>>

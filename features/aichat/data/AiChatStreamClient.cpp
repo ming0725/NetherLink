@@ -7,6 +7,7 @@
 
 #include <QJsonArray>
 #include <QJsonObject>
+#include <QJsonValue>
 #include <QUuid>
 
 namespace {
@@ -59,6 +60,50 @@ QString clientMessageIdFromPayload(const QJsonObject& payload)
     }
 
     return payload.value(QStringLiteral("userClientMessageId")).toString();
+}
+
+QString stringFromJsonValue(const QJsonValue& value)
+{
+    if (value.isString()) {
+        return value.toString().trimmed();
+    }
+
+    if (value.isObject()) {
+        const QJsonObject object = value.toObject();
+        QString text = object.value(QStringLiteral("url")).toString().trimmed();
+        if (!text.isEmpty()) {
+            return text;
+        }
+        text = object.value(QStringLiteral("href")).toString().trimmed();
+        if (!text.isEmpty()) {
+            return text;
+        }
+        return object.value(QStringLiteral("text")).toString().trimmed();
+    }
+
+    return {};
+}
+
+QVector<QString> stringVectorFromJsonValue(const QJsonValue& value)
+{
+    QVector<QString> strings;
+    if (value.isArray()) {
+        const QJsonArray array = value.toArray();
+        strings.reserve(array.size());
+        for (const QJsonValue& item : array) {
+            const QString text = stringFromJsonValue(item);
+            if (!text.isEmpty() && !strings.contains(text)) {
+                strings.push_back(text);
+            }
+        }
+        return strings;
+    }
+
+    const QString text = stringFromJsonValue(value);
+    if (!text.isEmpty()) {
+        strings.push_back(text);
+    }
+    return strings;
 }
 
 } // namespace
@@ -180,44 +225,49 @@ void AiChatStreamClient::handleStreamEvent(const QString& requestId,
     const QString type = normalizedEventName(eventName, data);
     if (type == QStringLiteral("ai.stream.started")) {
         m_streamId = data.value(QStringLiteral("streamId")).toString(m_streamId);
+        emit streamStarted(m_streamId,
+                           data.value(QStringLiteral("conversationId")).toString(),
+                           data.value(QStringLiteral("clientMessageId")).toString(m_clientMessageId));
         return;
     }
 
-    if (type == QStringLiteral("ai.stream.chunk")) {
+    if (!matchesActiveStreamEvent(data)) {
+        return;
+    }
+
+    if (type == QStringLiteral("ai.stream.chunk") ||
+            type == QStringLiteral("ai.stream.chunk.delta")) {
         if (m_waitingForTerminalEvent) {
             return;
         }
-        emit thinkingStateChanged(false);
-        const QString delta = data.value(QStringLiteral("delta")).toString(
-                data.value(QStringLiteral("content")).toString());
-        if (!delta.isEmpty()) {
-            emit chunkReceived(delta);
-        }
+        processStreamChunk(data);
         return;
     }
 
-    if (type == QStringLiteral("ai.stream.done")) {
-        emit thinkingStateChanged(false);
+    if (type == QStringLiteral("ai.stream.done") ||
+            type == QStringLiteral("ai.stream.done.assistantMessage")) {
         processTerminalEvent(data, false);
         return;
     }
 
     if (type == QStringLiteral("ai.stream.cancelled")) {
-        emit thinkingStateChanged(false);
         processTerminalEvent(data, true);
         return;
     }
 
     if (type == QStringLiteral("ai.stream.thinking")) {
-        if (!m_waitingForTerminalEvent &&
-                !data.value(QStringLiteral("active")).toBool(true)) {
-            emit thinkingStateChanged(false);
+        if (!m_waitingForTerminalEvent) {
+            const AiChatStreamStatus status = streamStatusFromObject(data);
+            m_streamStatusActive = status.active;
+            emit streamStatusChanged(status);
+            emit thinkingStateChanged(status.active);
         }
         return;
     }
 
     if (type == QStringLiteral("client.error")) {
         const NetworkError error = errorFromObject(data);
+        emitInactiveStreamStatus();
         clearActiveRequest();
         emit failed(error);
         emit finished();
@@ -226,16 +276,43 @@ void AiChatStreamClient::handleStreamEvent(const QString& requestId,
 
 void AiChatStreamClient::handleRealtimeEvent(const QString& type, const QJsonObject& payload)
 {
+    if (type == QStringLiteral("ai.stream.started")) {
+        if (!m_running) {
+            return;
+        }
+        const QString clientMessageId = payload.value(QStringLiteral("clientMessageId")).toString();
+        if (!m_clientMessageId.isEmpty() &&
+                !clientMessageId.isEmpty() &&
+                clientMessageId != m_clientMessageId) {
+            return;
+        }
+        m_streamId = payload.value(QStringLiteral("streamId")).toString(m_streamId);
+        emit streamStarted(m_streamId,
+                           payload.value(QStringLiteral("conversationId")).toString(),
+                           clientMessageId);
+        return;
+    }
+
+    if (type == QStringLiteral("ai.stream.chunk") ||
+            type == QStringLiteral("ai.stream.chunk.delta")) {
+        if (matchesActiveRealtimeEvent(payload) && !m_waitingForTerminalEvent) {
+            processStreamChunk(payload);
+        }
+        return;
+    }
+
     if (type == QStringLiteral("ai.stream.thinking")) {
-        if (matchesActiveRealtimeEvent(payload) &&
-                !m_waitingForTerminalEvent &&
-                !payload.value(QStringLiteral("active")).toBool(true)) {
-            emit thinkingStateChanged(false);
+        if (matchesActiveRealtimeEvent(payload) && !m_waitingForTerminalEvent) {
+            const AiChatStreamStatus status = streamStatusFromObject(payload);
+            m_streamStatusActive = status.active;
+            emit streamStatusChanged(status);
+            emit thinkingStateChanged(status.active);
         }
         return;
     }
 
     if (type != QStringLiteral("ai.stream.done") &&
+            type != QStringLiteral("ai.stream.done.assistantMessage") &&
             type != QStringLiteral("ai.stream.cancelled")) {
         return;
     }
@@ -244,7 +321,6 @@ void AiChatStreamClient::handleRealtimeEvent(const QString& type, const QJsonObj
         return;
     }
 
-    emit thinkingStateChanged(false);
     processTerminalEvent(payload, type == QStringLiteral("ai.stream.cancelled"));
 }
 
@@ -264,6 +340,7 @@ void AiChatStreamClient::handleStreamFailed(const QString& requestId, const Netw
         return;
     }
 
+    emitInactiveStreamStatus();
     clearActiveRequest();
     emit failed(error);
     emit finished();
@@ -278,8 +355,22 @@ void AiChatStreamClient::handleCancelTimeout()
     if (m_sseClient) {
         m_sseClient->cancel();
     }
+    emitInactiveStreamStatus();
     clearActiveRequest();
     emit cancelled();
+}
+
+void AiChatStreamClient::processStreamChunk(const QJsonObject& data)
+{
+    const AiChatStreamChunk chunk = streamChunkFromObject(data);
+    if (chunk.delta.isEmpty() && !chunk.segmentStart && !chunk.segmentEnd) {
+        return;
+    }
+
+    if (chunk.kind == QStringLiteral("answer") && m_streamStatusActive) {
+        emitInactiveStreamStatus();
+    }
+    emit chunkReceived(chunk);
 }
 
 void AiChatStreamClient::processTerminalEvent(const QJsonObject& data, bool isCancelled)
@@ -293,9 +384,16 @@ void AiChatStreamClient::processTerminalEvent(const QJsonObject& data, bool isCa
     const QString text = assistantMessageText(message);
     const QString messageId = assistantMessageId(message);
     if (!message.isEmpty() && (!text.isEmpty() || !messageId.isEmpty())) {
-        emit assistantMessageReceived(messageId,
-                                      text,
-                                      assistantMessageTime(message));
+        AiChatMessage assistantMessage;
+        assistantMessage.messageId = messageId;
+        assistantMessage.conversationId =
+                message.value(QStringLiteral("conversationId")).toString();
+        assistantMessage.text = text;
+        assistantMessage.isFromUser = false;
+        assistantMessage.time = assistantMessageTime(message);
+        assistantMessage.trace = traceFromObject(
+                message.value(QStringLiteral("trace")).toObject());
+        emit assistantMessageReceived(assistantMessage);
     }
 
     if (m_sseClient) {
@@ -319,6 +417,58 @@ void AiChatStreamClient::sendCancelCommand()
             {QStringLiteral("type"), QStringLiteral("ai.stream.cancel")},
             {QStringLiteral("payload"), QJsonObject{{QStringLiteral("streamId"), m_streamId}}}
     });
+}
+
+void AiChatStreamClient::emitInactiveStreamStatus()
+{
+    m_streamStatusActive = false;
+    AiChatStreamStatus status;
+    status.active = false;
+    emit streamStatusChanged(status);
+    emit thinkingStateChanged(false);
+}
+
+AiChatStreamChunk AiChatStreamClient::streamChunkFromObject(const QJsonObject& object)
+{
+    AiChatStreamChunk chunk;
+    chunk.streamId = object.value(QStringLiteral("streamId")).toString();
+    chunk.delta = object.value(QStringLiteral("delta")).toString(
+            object.value(QStringLiteral("content")).toString());
+    chunk.transient = object.value(QStringLiteral("transient")).toBool(false);
+    chunk.kind = object.value(QStringLiteral("kind")).toString().trimmed().toLower();
+    if (chunk.kind != QStringLiteral("progress") &&
+            chunk.kind != QStringLiteral("answer")) {
+        chunk.kind = chunk.transient
+                ? QStringLiteral("progress")
+                : QStringLiteral("answer");
+    }
+    chunk.stepId = object.value(QStringLiteral("stepId")).toString();
+    chunk.segmentId = object.value(QStringLiteral("segmentId")).toString();
+    chunk.segmentStart = object.value(QStringLiteral("segmentStart")).toBool(false);
+    chunk.segmentEnd = object.value(QStringLiteral("segmentEnd")).toBool(false);
+    return chunk;
+}
+
+AiChatStreamStatus AiChatStreamClient::streamStatusFromObject(const QJsonObject& object)
+{
+    AiChatStreamStatus status;
+    status.active = object.value(QStringLiteral("active")).toBool(true);
+    status.userVisible = object.value(QStringLiteral("userVisible")).toBool(false);
+    status.stepId = object.value(QStringLiteral("stepId")).toString();
+    status.sequence = object.value(QStringLiteral("sequence")).toInt();
+    status.phase = object.value(QStringLiteral("phase")).toString().trimmed();
+    status.status = object.value(QStringLiteral("status")).toString().trimmed();
+    status.tool = object.value(QStringLiteral("tool")).toString().trimmed();
+    status.query = object.value(QStringLiteral("query")).toString().trimmed();
+    status.urls = stringVectorFromJsonValue(object.value(QStringLiteral("urls")));
+
+    const QString url = object.value(QStringLiteral("url")).toString().trimmed();
+    if (!url.isEmpty() && !status.urls.contains(url)) {
+        status.urls.push_back(url);
+    }
+
+    status.message = object.value(QStringLiteral("message")).toString().trimmed();
+    return status;
 }
 
 QJsonObject AiChatStreamClient::assistantMessageObject(QJsonObject data)
@@ -357,6 +507,39 @@ QDateTime AiChatStreamClient::assistantMessageTime(const QJsonObject& message)
                     message.value(QStringLiteral("time")).toString())));
 }
 
+AiChatTrace AiChatStreamClient::traceFromObject(const QJsonObject& object)
+{
+    AiChatTrace trace;
+    if (object.isEmpty()) {
+        return trace;
+    }
+
+    trace.traceId = object.value(QStringLiteral("traceId")).toString();
+    trace.status = object.value(QStringLiteral("status")).toString();
+    trace.summary = object.value(QStringLiteral("summary")).toString();
+    trace.createdAt = dateTimeFromString(object.value(QStringLiteral("createdAt")).toString());
+    trace.updatedAt = dateTimeFromString(object.value(QStringLiteral("updatedAt")).toString());
+    trace.sourceRefs = stringVectorFromJsonValue(object.value(QStringLiteral("sourceRefs")));
+
+    for (const QJsonValue& value : object.value(QStringLiteral("steps")).toArray()) {
+        const QJsonObject stepObject = value.toObject();
+        if (stepObject.isEmpty()) {
+            continue;
+        }
+        AiChatTraceStep step;
+        step.sequence = stepObject.value(QStringLiteral("sequence")).toInt();
+        step.stepId = stepObject.value(QStringLiteral("stepId")).toString();
+        step.phase = stepObject.value(QStringLiteral("phase")).toString();
+        step.status = stepObject.value(QStringLiteral("status")).toString();
+        step.text = stepObject.value(QStringLiteral("text")).toString();
+        step.tool = stepObject.value(QStringLiteral("tool")).toString();
+        step.query = stepObject.value(QStringLiteral("query")).toString();
+        step.urls = stringVectorFromJsonValue(stepObject.value(QStringLiteral("urls")));
+        trace.steps.push_back(step);
+    }
+    return trace;
+}
+
 QString AiChatStreamClient::streamTitle(const QJsonObject& data)
 {
     QString title = data.value(QStringLiteral("title")).toString().trimmed();
@@ -393,6 +576,12 @@ bool AiChatStreamClient::matchesActiveRealtimeEvent(const QJsonObject& payload) 
     return !m_clientMessageId.isEmpty() && clientMessageId == m_clientMessageId;
 }
 
+bool AiChatStreamClient::matchesActiveStreamEvent(const QJsonObject& payload) const
+{
+    const QString streamId = payload.value(QStringLiteral("streamId")).toString();
+    return m_streamId.isEmpty() || streamId.isEmpty() || streamId == m_streamId;
+}
+
 void AiChatStreamClient::clearActiveRequest()
 {
     m_cancelTimeoutTimer.stop();
@@ -400,5 +589,6 @@ void AiChatStreamClient::clearActiveRequest()
     m_streamId.clear();
     m_clientMessageId.clear();
     m_running = false;
+    m_streamStatusActive = false;
     m_waitingForTerminalEvent = false;
 }

@@ -294,7 +294,6 @@ void MessageListWidget::showConversationMenu(const QPoint& globalPos, const QMod
         if (hasUnread) {
             m_model->markConversationRead(conversationId);
             MessageRepository::instance().markConversationRead(conversationId);
-            ConversationRemoteDataSource::instance().markRead(conversationId);
             return;
         }
 

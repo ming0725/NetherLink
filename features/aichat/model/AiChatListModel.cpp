@@ -70,6 +70,25 @@ void AiChatListModel::appendEntries(const QVector<AiChatListEntry>& entries)
     endInsertRows();
 }
 
+bool AiChatListModel::upsertEntry(AiChatListEntry entry)
+{
+    entry.title = entry.title.trimmed();
+    if (entry.conversationId.isEmpty() || entry.title.isEmpty() || !entry.time.isValid()) {
+        return false;
+    }
+
+    beginResetModel();
+    const int existingRow = rowOfConversation(entry.conversationId);
+    if (existingRow >= 0) {
+        m_entries[existingRow] = entry;
+    } else {
+        m_entries.push_back(entry);
+    }
+    sortEntries();
+    endResetModel();
+    return true;
+}
+
 bool AiChatListModel::setConversationUnreadDot(const QString& conversationId, bool hasUnreadDot)
 {
     const int row = rowOfConversation(conversationId);

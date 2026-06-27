@@ -2,6 +2,8 @@
 
 #include <QHash>
 #include <QObject>
+#include <QQueue>
+#include <QTimer>
 
 #include "shared/network/NetworkTypes.h"
 #include "shared/types/RepositoryTypes.h"
@@ -32,6 +34,7 @@ public:
     bool deleteConversation(const QString& conversationId);
     bool clearConversationUnreadDot(const QString& conversationId);
     int unreadConversationDotCount() const;
+    void setCurrentConversationId(const QString& conversationId);
 
     bool hasActiveAiReplyStream() const;
     QString activeStreamConversationId() const;
@@ -52,15 +55,20 @@ signals:
                             const AiChatContextUsageRequest& request,
                             const AiChatContextUsage& usage);
     void aiReplyStarted(const QString& conversationId);
-    void aiReplyMessageAdded(const AiChatMessage& message);
+    void aiReplyMessageAdded(const AiChatMessage& message, bool isProgress);
     void aiReplyMessageUpdated(const QString& conversationId,
                                const QString& messageId,
-                               const QString& text);
+                               const QString& text,
+                               bool isProgress);
     void aiReplyMessageReplaced(const QString& conversationId,
                                 const QString& messageId,
                                 const AiChatMessage& replacement);
     void aiReplyMessageRemoved(const QString& conversationId, const QString& messageId);
+    void aiReplyProgressChanged(const QString& conversationId,
+                                const AiChatProgressSegment& progress);
     void aiReplyThinkingChanged(const QString& conversationId, bool active);
+    void aiReplyStreamStatusChanged(const QString& conversationId,
+                                    const AiChatStreamStatus& status);
     void aiReplyFinished(const QString& conversationId, const QString& messageId);
     void aiReplyCanceled(const QString& conversationId, const QString& messageId);
     void aiReplyFailed(const QString& conversationId,
@@ -68,18 +76,23 @@ signals:
                        const QString& message);
     void conversationIdChanged(const QString& previousConversationId,
                                const AiChatListEntry& entry);
+    void conversationEntryChanged(const AiChatListEntry& entry);
     void conversationTitleChanged(const QString& conversationId,
                                   const QString& title);
     void conversationDeleted(const QString& conversationId);
     void unreadDotStateChanged();
 
 private slots:
-    void onAiReplyChunkReceived(const QString& chunk);
+    void onAiReplyStreamStarted(const QString& streamId,
+                                const QString& conversationId,
+                                const QString& clientMessageId);
+    void onAiReplyChunkReceived(const AiChatStreamChunk& chunk);
+    void revealNextStreamCharacter();
+    void revealNextProgressCharacter();
     void onAiReplyThinkingChanged(bool active);
+    void onAiReplyStreamStatusChanged(const AiChatStreamStatus& status);
     void onGeneratedTitleReceived(const QString& title);
-    void onAssistantMessageReceived(const QString& messageId,
-                                    const QString& text,
-                                    const QDateTime& time);
+    void onAssistantMessageReceived(const AiChatMessage& message);
     void onAiReplyCanceled();
     void onAiReplyFailed(const NetworkError& error);
     void onAiReplyFinished();
@@ -93,6 +106,22 @@ private slots:
                                        const NetworkError& error);
 
 private:
+    struct QueuedStreamText {
+        QString text;
+    };
+
+    struct QueuedProgressText {
+        QString stepId;
+        QString segmentId;
+        QString text;
+        bool segmentEnd = false;
+    };
+
+    void appendVisibleStreamText(const QString& text);
+    void clearStreamCharacterQueue();
+    void clearProgressCharacterQueue();
+    void finishProgressAnimations();
+    QString resolvedToolStepId(const AiChatStreamStatus& status);
     void startAiReplyStream(const QString& conversationId,
                             const QString& prompt,
                             const AiChatRequestOptions& options = {});
@@ -102,8 +131,19 @@ private:
     AiChatStreamClient* m_streamClient = nullptr;
     int m_nextAsyncRequestId = 1;
     QString m_streamConversationId;
+    QString m_streamId;
     QString m_streamMessageId;
     QString m_streamVisibleText;
+    QString m_currentConversationId;
+    QQueue<QueuedStreamText> m_streamCharacterQueue;
+    QTimer m_streamCharacterTimer;
+    QQueue<QueuedProgressText> m_streamProgressCharacterQueue;
+    QTimer m_streamProgressCharacterTimer;
+    QHash<QString, AiChatProgressSegment> m_streamProgressSegments;
+    QHash<QString, QString> m_legacyToolStepIds;
+    QString m_latestToolStepId;
+    int m_nextLegacyToolStepId = 1;
+    bool m_streamAnswerStarted = false;
     bool m_streamFailed = false;
     QHash<QString, int> m_conversationListRequestIds;
     QHash<QString, AiChatListRequest> m_conversationListQueries;

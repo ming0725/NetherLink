@@ -267,7 +267,8 @@ void HttpClient::handleReply(const QSharedPointer<Operation>& operation, QNetwor
         emit requestFailed(operation->id, m_authBlockError);
         return;
     }
-    if (status >= 200 && status < 300) {
+    if ((status >= 200 && status < 300) ||
+        (status == 304 && operation->request.method == HttpMethod::Get)) {
         NetworkResponse response = responseFromReply(reply);
         response.rawBody = body;
         response.body = QJsonDocument::fromJson(body);

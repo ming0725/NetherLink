@@ -30,6 +30,20 @@ constexpr int kUserCopyFadeDurationMs = 160;
 constexpr int kUserMessageExpandDurationMs = 420;
 constexpr int kCodeBlockLoadingFrameMs = 16;
 constexpr int kViewPaintWidthInset = 4;
+const QString kTraceMessagePrefix = QStringLiteral("__ai_trace_");
+const QString kTraceSummarySuffix = QStringLiteral("_summary");
+
+QString traceAssistantMessageId(const QModelIndex& index)
+{
+    QString messageId = index.data(AiChatMessageListModel::MessageIdRole).toString();
+    if (!messageId.startsWith(kTraceMessagePrefix) ||
+            !messageId.endsWith(kTraceSummarySuffix)) {
+        return {};
+    }
+    messageId.remove(0, kTraceMessagePrefix.size());
+    messageId.chop(kTraceSummarySuffix.size());
+    return messageId;
+}
 
 QPoint mouseGlobalPosition(QMouseEvent* event)
 {
@@ -91,7 +105,7 @@ AiChatMessageListView::AiChatMessageListView(QWidget* parent)
     setUniformItemSizes(false);
     setLayoutMode(QListView::Batched);
     setBatchSize(32);
-    setSpacing(2);
+    setSpacing(0);
     setMouseTracking(true);
     viewport()->setMouseTracking(true);
     setThemeBackgroundRole(ThemeColor::PanelBackground);
@@ -226,13 +240,23 @@ void AiChatMessageListView::setBottomViewportMargin(int margin)
     updateOverlayScrollBar();
 }
 
-void AiChatMessageListView::refreshMessageLayout()
+void AiChatMessageListView::refreshMessageLayout(bool keepBottomWhenLocked)
 {
-    const bool shouldKeepBottom = m_stickToBottom;
+    const bool shouldKeepBottom = keepBottomWhenLocked && m_stickToBottom;
+    const int previousValue = verticalScrollBar()->value();
+    if (!keepBottomWhenLocked && m_scrollAnimation->state() == QAbstractAnimation::Running) {
+        m_scrollAnimation->stop();
+    }
     doItemsLayout();
     updateGeometries();
     if (shouldKeepBottom) {
         setScrollBarToBottom();
+    } else {
+        m_programmaticScrollChange = true;
+        verticalScrollBar()->setValue(qMin(previousValue, verticalScrollBar()->maximum()));
+        m_programmaticScrollChange = false;
+        m_lastScrollValue = verticalScrollBar()->value();
+        m_stickToBottom = isAtBottom();
     }
     updateOverlayScrollBar();
     viewport()->update();
@@ -325,6 +349,14 @@ void AiChatMessageListView::mousePressEvent(QMouseEvent* event)
 
         const QModelIndex index = indexAt(event->pos());
         if (index.isValid()) {
+            const QString traceMessageId = traceAssistantMessageId(index);
+            if (!traceMessageId.isEmpty()) {
+                clearTextSelection();
+                emit traceToggleRequested(traceMessageId);
+                event->accept();
+                return;
+            }
+
             const QStyleOptionViewItem option = viewOptionForIndex(index);
             const bool hitBubble = m_delegate->bubbleHitTest(option, index, event->pos());
             if (hitBubble) {
@@ -497,9 +529,19 @@ void AiChatMessageListView::mouseMoveEvent(QMouseEvent* event)
     bool overSettingAction = false;
     bool overMessageAction = false;
     bool overText = false;
+    bool overTraceSummary = false;
     QModelIndex hoveredUserCopyIndex;
     const QModelIndex index = indexAt(event->pos());
     if (index.isValid()) {
+        overTraceSummary = !traceAssistantMessageId(index).isEmpty();
+        if (index.data(AiChatMessageListModel::IsThinkingRole).toBool()) {
+            updateHoveredUserCopyIndex(QModelIndex());
+            viewport()->setCursor(overTraceSummary
+                    ? Qt::PointingHandCursor
+                    : Qt::ArrowCursor);
+            OverlayScrollListView::mouseMoveEvent(event);
+            return;
+        }
         const QStyleOptionViewItem option = viewOptionForIndex(index);
         const AiChatMessageDelegate::MessageAction messageAction =
                 m_delegate->messageActionAt(option, index, event->pos());
@@ -527,7 +569,7 @@ void AiChatMessageListView::mouseMoveEvent(QMouseEvent* event)
     }
     updateHoveredUserCopyIndex(hoveredUserCopyIndex);
     viewport()->setCursor(overCodeCopyDisabled ? Qt::ForbiddenCursor
-                                  : ((overMessageAction || overCodeCopy || overSettingAction || overUrl)
+                                  : ((overTraceSummary || overMessageAction || overCodeCopy || overSettingAction || overUrl)
                                              ? Qt::PointingHandCursor
                                              : (overText ? Qt::IBeamCursor : Qt::ArrowCursor)));
 

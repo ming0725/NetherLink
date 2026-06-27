@@ -7,6 +7,7 @@
 #include <QJsonArray>
 #include <QTimer>
 #include <QVariantMap>
+#include <QtGlobal>
 
 namespace {
 
@@ -35,6 +36,29 @@ bool hasMoreAfterFromResponse(const QJsonObject& object)
         return hasMoreAfterFromResponse(object.value(QStringLiteral("data")).toObject());
     }
     return false;
+}
+
+bool hasMoreBeforeFromResponse(const QJsonObject& object)
+{
+    if (object.contains(QStringLiteral("hasMoreBefore"))) {
+        return object.value(QStringLiteral("hasMoreBefore")).toBool();
+    }
+    if (object.value(QStringLiteral("data")).isObject()) {
+        return hasMoreBeforeFromResponse(object.value(QStringLiteral("data")).toObject());
+    }
+    return false;
+}
+
+QString requestCacheKey(const QString& conversationId,
+                        int beforeMessageSeq,
+                        int afterMessageSeq,
+                        int limit)
+{
+    return QStringLiteral("%1:before=%2:after=%3:limit=%4")
+            .arg(conversationId,
+                 QString::number(qMax(0, beforeMessageSeq)),
+                 QString::number(qMax(0, afterMessageSeq)),
+                 QString::number(qMax(0, limit)));
 }
 
 } // namespace
@@ -92,12 +116,17 @@ MessageRemoteDataSource::FetchResult MessageRemoteDataSource::fetchMessagesBlock
         query.insert(QStringLiteral("afterMessageSeq"), afterMessageSeq);
     }
 
+    const QString cacheKey = requestCacheKey(conversationId, beforeMessageSeq, afterMessageSeq, limit);
     NetworkRequest request = NetworkRequest::json(
             HttpMethod::Get,
             QStringLiteral("/conversations/%1/messages").arg(conversationId),
             {},
             query);
     request.maxRetries = 3;
+    const QString etag = m_etags.value(cacheKey);
+    if (!etag.isEmpty()) {
+        request.headers.insert("If-None-Match", etag.toUtf8());
+    }
 
     QEventLoop loop;
     QTimer timeoutTimer;
@@ -127,14 +156,23 @@ MessageRemoteDataSource::FetchResult MessageRemoteDataSource::fetchMessagesBlock
                                           result.messages.push_back(object);
                                       }
                                       result.hasMoreAfter = hasMoreAfterFromResponse(responseObject);
+                                      result.hasMoreBefore = hasMoreBeforeFromResponse(responseObject);
+                                      if (!response.etag.isEmpty()) {
+                                          m_etags.insert(cacheKey, response.etag);
+                                      }
                                       result.completed = true;
                                       loop.quit();
                                   });
     failedConnection = connect(&HttpClient::instance(),
                                &HttpClient::requestFailed,
                                &loop,
-                               [&](const QString& completedRequestId, const NetworkError&) {
+                               [&](const QString& completedRequestId, const NetworkError& error) {
                                    if (completedRequestId != requestId) {
+                                       return;
+                                   }
+                                   if (error.httpStatus == 304) {
+                                       result.completed = true;
+                                       loop.quit();
                                        return;
                                    }
                                    result.completed = true;

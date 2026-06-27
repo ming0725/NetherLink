@@ -40,6 +40,7 @@ protected:
 private:
     void reloadEntries(const QString& selectedConversationId = {});
     void loadMoreEntries();
+    void applyEntryUpdate(const AiChatListEntry& entry);
     void onEntriesLoaded(int requestId,
                          const AiChatListRequest& query,
                          const QVector<AiChatListEntry>& entries);

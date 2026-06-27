@@ -403,7 +403,4 @@ void MessageApplication::applyVisibleConversationState(bool visible)
 
     const QString conversationId = active ? activeConversationId() : QString();
     MessageRepository::instance().setActiveVisibleConversation(conversationId, active && !conversationId.isEmpty());
-    if (active && !conversationId.isEmpty() && !m_openConversationLoadPending) {
-        ConversationRemoteDataSource::instance().markRead(conversationId);
-    }
 }

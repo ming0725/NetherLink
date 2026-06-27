@@ -192,12 +192,70 @@ struct AiChatListEntry {
     bool hasUnreadDot = false;
 };
 
+struct AiChatTraceStep {
+    int sequence = 0;
+    QString stepId;
+    QString phase;
+    QString status;
+    QString text;
+    QString tool;
+    QString query;
+    QVector<QString> urls;
+};
+
+struct AiChatTrace {
+    QString traceId;
+    QString status;
+    QString summary;
+    QVector<AiChatTraceStep> steps;
+    QVector<QString> sourceRefs;
+    QDateTime createdAt;
+    QDateTime updatedAt;
+
+    bool isValid() const
+    {
+        return !traceId.isEmpty() || !summary.isEmpty() || !steps.isEmpty();
+    }
+};
+
 struct AiChatMessage {
     QString messageId;
     QString conversationId;
     QString text;
     bool isFromUser = false;
     QDateTime time;
+    AiChatTrace trace;
+};
+
+struct AiChatStreamStatus {
+    bool active = false;
+    bool userVisible = false;
+    QString stepId;
+    int sequence = 0;
+    QString phase;
+    QString status;
+    QString tool;
+    QString query;
+    QVector<QString> urls;
+    QString message;
+};
+
+struct AiChatStreamChunk {
+    QString streamId;
+    QString delta;
+    QString kind;
+    bool transient = false;
+    QString stepId;
+    QString segmentId;
+    bool segmentStart = false;
+    bool segmentEnd = false;
+};
+
+struct AiChatProgressSegment {
+    QString stepId;
+    QString segmentId;
+    QString text;
+    bool complete = false;
 };
 
 struct AiChatContextUsageRequest {

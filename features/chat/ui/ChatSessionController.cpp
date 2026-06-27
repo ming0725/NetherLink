@@ -538,15 +538,6 @@ ChatSessionController::ChatSessionController(QObject* parent)
                 m_meta.isDoNotDisturb = enabled;
                 refreshSessionData(true);
             });
-    connect(&ConversationRemoteDataSource::instance(),
-            &ConversationRemoteDataSource::messagesCleared,
-            this,
-            [this](const QString&, const QString& conversationId) {
-                if (!hasCurrentConversation(conversationId)) {
-                    return;
-                }
-                emit messagesCleared();
-            });
 }
 
 void ChatSessionController::open(const ConversationMeta& meta)

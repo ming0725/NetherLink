@@ -1,11 +1,17 @@
 #include "AiChatConversationWidget.h"
 #include <QDateTime>
+#include <QEasingCurve>
 #include <QModelIndex>
 #include <QPainter>
 #include <QPointer>
 #include <QResizeEvent>
 #include <QScrollBar>
+#include <QStringList>
 #include <QTimer>
+#include <QVariantAnimation>
+
+#include <algorithm>
+#include <utility>
 
 #include "features/aichat/model/AiChatMessageListModel.h"
 #include "features/aichat/ui/AiChatFloatingInputBar.h"
@@ -35,6 +41,95 @@ protected:
         painter.fillRect(event->rect(), ThemeManager::instance().color(ThemeColor::Divider));
     }
 };
+
+QString joinedStatusUrls(const QVector<QString>& urls)
+{
+    QStringList parts;
+    parts.reserve(qMin(urls.size(), 3));
+    for (const QString& url : urls) {
+        const QString trimmed = url.trimmed();
+        if (!trimmed.isEmpty()) {
+            parts.push_back(trimmed);
+        }
+        if (parts.size() == 3) {
+            break;
+        }
+    }
+    return parts.join(QStringLiteral("  "));
+}
+
+QString traceRowPrefix(const QString& messageId)
+{
+    return QStringLiteral("__ai_trace_%1_").arg(messageId);
+}
+
+QString statusActionText(const QString& phase, const QString& status)
+{
+    const QString normalizedPhase = phase.trimmed().toLower();
+    const QString normalizedStatus = status.trimmed().toLower();
+    const bool completed = normalizedStatus == QStringLiteral("completed");
+    const bool failed = normalizedStatus == QStringLiteral("failed");
+
+    if (normalizedPhase == QStringLiteral("searching")) {
+        return failed ? QStringLiteral("搜索失败")
+                      : (completed ? QStringLiteral("搜索完成") : QStringLiteral("正在搜索"));
+    }
+    if (normalizedPhase == QStringLiteral("reading")) {
+        return failed ? QStringLiteral("读取失败")
+                      : (completed ? QStringLiteral("读取完成") : QStringLiteral("正在读取"));
+    }
+    if (normalizedPhase == QStringLiteral("tool")) {
+        return failed ? QStringLiteral("工具调用失败")
+                      : (completed ? QStringLiteral("工具调用完成") : QStringLiteral("正在调用工具"));
+    }
+    if (normalizedPhase == QStringLiteral("answering")) {
+        return failed ? QStringLiteral("生成失败")
+                      : (completed ? QStringLiteral("生成完成") : QStringLiteral("正在生成回答"));
+    }
+
+    return failed ? QStringLiteral("思考失败")
+                  : (completed ? QStringLiteral("思考完成") : QStringLiteral("正在思考"));
+}
+
+QString streamStatusDisplayText(const AiChatStreamStatus& status)
+{
+    const QString message = status.message.trimmed();
+    if (status.phase.trimmed().isEmpty() &&
+            status.status.trimmed().isEmpty() &&
+            status.query.trimmed().isEmpty() &&
+            status.urls.isEmpty() &&
+            !message.isEmpty()) {
+        return message;
+    }
+
+    const QString action = statusActionText(status.phase, status.status);
+    const QString query = status.query.trimmed();
+    const QString tool = status.tool.trimmed();
+    const QString urls = joinedStatusUrls(status.urls);
+
+    QString detail = query;
+    if (detail.isEmpty()) {
+        detail = tool;
+    }
+    if (detail.isEmpty()) {
+        detail = message;
+    }
+    if (!urls.isEmpty()) {
+        detail = detail.isEmpty() ? urls : QStringLiteral("%1  %2").arg(detail, urls);
+    }
+
+    QString text = action;
+    if (!detail.isEmpty()) {
+        text += QStringLiteral("：%1").arg(detail);
+    }
+
+    if (text.trimmed().isEmpty()) {
+        return message.isEmpty()
+                ? QStringLiteral("正在思考")
+                : message;
+    }
+    return text;
+}
 
 } // namespace
 
@@ -70,7 +165,7 @@ AiChatConversationWidget::AiChatConversationWidget(QWidget* parent)
             this, &AiChatConversationWidget::onSendText);
     m_thinkingAnimationTimer->setInterval(kThinkingAnimationFrameMs);
     connect(m_thinkingAnimationTimer, &QTimer::timeout, this, [this]() {
-        if (!hasThinkingPlaceholder()) {
+        if (!m_messageModel->hasActiveThinkingMessages()) {
             m_thinkingAnimationTimer->stop();
             return;
         }
@@ -86,6 +181,8 @@ AiChatConversationWidget::AiChatConversationWidget(QWidget* parent)
             this, [this]() { updateLayout(); });
     connect(m_messageView, &AiChatMessageListView::regenerateAiReplyRequested,
             this, &AiChatConversationWidget::onRegenerateAiReplyRequested);
+    connect(m_messageView, &AiChatMessageListView::traceToggleRequested,
+            this, &AiChatConversationWidget::onTraceToggleRequested);
     connect(m_messageView->verticalScrollBar(), &QScrollBar::valueChanged,
             this, [this]() { updateNewMessageNotifier(); });
     connect(m_messageView, &AiChatMessageListView::userScrollUpIntent, this, [this]() {
@@ -145,6 +242,8 @@ void AiChatConversationWidget::setController(AiChatSessionController* controller
         return;
     }
 
+    m_controller->setCurrentConversationId(m_currentConversation.conversationId);
+
     connect(m_controller, &AiChatSessionController::aiReplyStarted,
             this, &AiChatConversationWidget::onAiReplyStarted);
     connect(m_controller, &AiChatSessionController::aiReplyMessageAdded,
@@ -155,8 +254,12 @@ void AiChatConversationWidget::setController(AiChatSessionController* controller
             this, &AiChatConversationWidget::onAiReplyMessageReplaced);
     connect(m_controller, &AiChatSessionController::aiReplyMessageRemoved,
             this, &AiChatConversationWidget::onAiReplyMessageRemoved);
+    connect(m_controller, &AiChatSessionController::aiReplyProgressChanged,
+            this, &AiChatConversationWidget::onAiReplyProgressChanged);
     connect(m_controller, &AiChatSessionController::aiReplyThinkingChanged,
             this, &AiChatConversationWidget::onAiReplyThinkingChanged);
+    connect(m_controller, &AiChatSessionController::aiReplyStreamStatusChanged,
+            this, &AiChatConversationWidget::onAiReplyStreamStatusChanged);
     connect(m_controller, &AiChatSessionController::aiReplyFinished,
             this, &AiChatConversationWidget::onAiReplyFinished);
     connect(m_controller, &AiChatSessionController::aiReplyCanceled,
@@ -170,6 +273,7 @@ void AiChatConversationWidget::setController(AiChatSessionController* controller
                 }
 
                 m_currentConversation.conversationId = entry.conversationId;
+                m_controller->setCurrentConversationId(entry.conversationId);
                 if (!entry.title.isEmpty()) {
                     m_currentConversation.title = entry.title;
                 }
@@ -214,6 +318,10 @@ void AiChatConversationWidget::openConversation(const AiChatListEntry& entry)
         m_inputBar->clearText();
     }
 
+    if (m_controller) {
+        m_controller->setCurrentConversationId(entry.conversationId);
+    }
+
     if (m_currentConversation.conversationId == entry.conversationId) {
         m_currentConversation = entry;
         if (m_controller) {
@@ -243,8 +351,13 @@ void AiChatConversationWidget::openConversation(const AiChatListEntry& entry)
             currentConversationStreaming ? m_controller->activeStreamMessageId() : QString());
     cancelScheduledThinkingPlaceholder();
     m_thinkingMessageId.clear();
+    resetStreamPresentation();
     m_thinkingAnimationTimer->stop();
+    stopTraceExpansionAnimations();
     m_messageModel->clear();
+    m_messageTraces.clear();
+    m_expandedTraceMessageIds.clear();
+    m_collapsingTraceMessageIds.clear();
     m_messageView->clearTextSelection();
     m_messageView->show();
     m_inputBar->show();
@@ -285,6 +398,9 @@ void AiChatConversationWidget::showStartPage()
         saveStartPageDraft();
     }
     m_currentConversation = {};
+    if (m_controller) {
+        m_controller->setCurrentConversationId(QString());
+    }
     m_pendingMessagesRequestId = 0;
     m_pendingMessagesConversationId.clear();
     m_pendingContextUsageRequestId = 0;
@@ -292,8 +408,13 @@ void AiChatConversationWidget::showStartPage()
     m_messageView->messageDelegate()->setStreamingMessageId(QString());
     cancelScheduledThinkingPlaceholder();
     m_thinkingMessageId.clear();
+    resetStreamPresentation();
     m_thinkingAnimationTimer->stop();
+    stopTraceExpansionAnimations();
     m_messageModel->clear();
+    m_messageTraces.clear();
+    m_expandedTraceMessageIds.clear();
+    m_collapsingTraceMessageIds.clear();
     m_messageView->clearTextSelection();
     m_messageView->hide();
     m_inputBar->setText(m_startPageDraft);
@@ -343,6 +464,7 @@ void AiChatConversationWidget::onSendText(const QString& text, const AiChatReque
 
         m_startPageDraft.clear();
         m_currentConversation = entry;
+        m_controller->setCurrentConversationId(entry.conversationId);
         m_messageModel->clear();
         m_messageView->clearTextSelection();
         m_messageView->show();
@@ -471,16 +593,11 @@ void AiChatConversationWidget::updateBottomSpace()
 
 void AiChatConversationWidget::requestContextUsage()
 {
-    if (!m_controller || m_currentConversation.conversationId.isEmpty()) {
-        if (m_inputBar) {
-            m_inputBar->setContextUsageVisible(false);
-        }
-        return;
+    m_pendingContextUsageRequestId = 0;
+    m_pendingContextUsageConversationId.clear();
+    if (m_inputBar) {
+        m_inputBar->setContextUsageVisible(false);
     }
-
-    const AiChatContextUsageRequest request {m_currentConversation.conversationId};
-    m_pendingContextUsageConversationId = request.conversationId;
-    m_pendingContextUsageRequestId = m_controller->loadContextUsageAsync(request);
 }
 
 void AiChatConversationWidget::updateHeader()
@@ -519,14 +636,14 @@ void AiChatConversationWidget::showScheduledThinkingPlaceholder(const QString& c
             m_pendingThinkingConversationId != conversationId ||
             !m_controller ||
             m_controller->activeStreamConversationId() != conversationId ||
-            !m_controller->activeStreamMessageId().isEmpty()) {
+            m_streamHasAnswerText) {
         return;
     }
 
-    showThinkingPlaceholder(conversationId);
+    showThinkingPlaceholder(conversationId, QStringLiteral("正在思考"));
 }
 
-void AiChatConversationWidget::showThinkingPlaceholder(const QString& conversationId)
+void AiChatConversationWidget::showThinkingPlaceholder(const QString& conversationId, const QString& text)
 {
     if (conversationId.isEmpty() ||
             m_currentConversation.conversationId != conversationId ||
@@ -534,10 +651,15 @@ void AiChatConversationWidget::showThinkingPlaceholder(const QString& conversati
         return;
     }
 
+    const QString displayText = text.trimmed().isEmpty()
+            ? QStringLiteral("正在思考")
+            : text.trimmed();
     AiChatMessage message;
-    message.messageId = QStringLiteral("__ai_thinking_%1").arg(conversationId);
+    message.messageId = QStringLiteral("__ai_thinking_%1_%2")
+            .arg(conversationId)
+            .arg(++m_streamActionSerial);
     message.conversationId = conversationId;
-    message.text = QStringLiteral("Thinking...");
+    message.text = displayText;
     message.isFromUser = false;
     message.time = QDateTime::currentDateTime();
 
@@ -550,6 +672,37 @@ void AiChatConversationWidget::showThinkingPlaceholder(const QString& conversati
     }
     if (!m_thinkingAnimationTimer->isActive()) {
         m_thinkingAnimationTimer->start();
+    }
+    m_messageView->scrollToBottomIfLocked();
+    updateNewMessageNotifier();
+}
+
+void AiChatConversationWidget::showOrUpdateThinkingPlaceholder(const QString& conversationId,
+                                                               const QString& text,
+                                                               bool retain,
+                                                               bool active)
+{
+    if (conversationId.isEmpty() ||
+            m_currentConversation.conversationId != conversationId) {
+        return;
+    }
+
+    const QString displayText = text.trimmed().isEmpty()
+            ? QStringLiteral("正在思考")
+            : text.trimmed();
+    cancelScheduledThinkingPlaceholder();
+    m_retainThinkingPlaceholder = retain;
+    if (!hasThinkingPlaceholder()) {
+        showThinkingPlaceholder(conversationId, displayText);
+    } else {
+        m_messageModel->updateMessageText(m_thinkingMessageId, displayText);
+    }
+
+    m_messageModel->setThinkingMessageActive(m_thinkingMessageId, active);
+    if (active && !m_thinkingAnimationTimer->isActive()) {
+        m_thinkingAnimationTimer->start();
+    } else if (!active) {
+        m_thinkingAnimationTimer->stop();
     }
     m_messageView->scrollToBottomIfLocked();
     updateNewMessageNotifier();
@@ -570,9 +723,302 @@ void AiChatConversationWidget::hideThinkingPlaceholder(const QString& conversati
     updateNewMessageNotifier();
 }
 
+void AiChatConversationWidget::finishThinkingPlaceholder(const QString& conversationId)
+{
+    cancelScheduledThinkingPlaceholder();
+    if (m_thinkingMessageId.isEmpty() ||
+            (!conversationId.isEmpty() && m_currentConversation.conversationId != conversationId)) {
+        return;
+    }
+
+    m_thinkingAnimationTimer->stop();
+    m_messageModel->setThinkingMessageActive(m_thinkingMessageId, false);
+    if (!m_retainThinkingPlaceholder) {
+        hideThinkingPlaceholder(conversationId);
+    }
+}
+
 bool AiChatConversationWidget::hasThinkingPlaceholder() const
 {
     return !m_thinkingMessageId.isEmpty();
+}
+
+void AiChatConversationWidget::presentStreamAnswer(const AiChatMessage& message,
+                                                   const QString& text)
+{
+    if (message.messageId.isEmpty() || text.isEmpty()) {
+        return;
+    }
+
+    m_streamAggregateAnswerText = text;
+    const bool shouldFollowReply = m_messageView->isBottomLocked();
+    const bool hadThinkingPlaceholder = hasThinkingPlaceholder();
+    cancelScheduledThinkingPlaceholder();
+    if (hadThinkingPlaceholder) {
+        hideThinkingPlaceholder(message.conversationId);
+    }
+
+    if (m_streamCurrentAnswerMessageId.isEmpty()) {
+        m_streamCurrentAnswerMessageId = message.messageId;
+        m_messageModel->appendMessage(message);
+        if (!message.isFromUser && !shouldFollowReply && !hadThinkingPlaceholder) {
+            ++m_unreadAiReplyCount;
+        }
+    } else {
+        m_messageModel->updateMessageText(m_streamCurrentAnswerMessageId,
+                                          text);
+    }
+
+    m_streamHasAnswerText = true;
+    m_messageView->messageDelegate()->setStreamingMessageId(
+            m_streamCurrentAnswerMessageId);
+    m_messageView->scrollToBottomIfLocked();
+    updateNewMessageNotifier();
+}
+
+void AiChatConversationWidget::rebuildStreamWorkRows()
+{
+    if (m_streamWorkPrefix.isEmpty()) {
+        return;
+    }
+
+    QVector<StreamWorkStep> steps = m_streamWorkSteps.values().toVector();
+    std::sort(steps.begin(), steps.end(), [](const StreamWorkStep& lhs,
+                                             const StreamWorkStep& rhs) {
+        if (lhs.sequence > 0 && rhs.sequence > 0 && lhs.sequence != rhs.sequence) {
+            return lhs.sequence < rhs.sequence;
+        }
+        if (lhs.sequence > 0 && rhs.sequence <= 0) {
+            return true;
+        }
+        if (lhs.sequence <= 0 && rhs.sequence > 0) {
+            return false;
+        }
+        return lhs.encounterOrder < rhs.encounterOrder;
+    });
+
+    QVector<AiChatMessage> rows;
+    QSet<QString> activeIds;
+    for (const StreamWorkStep& step : steps) {
+        QString progressText;
+        for (const QString& segmentId : step.progressSegmentOrder) {
+            const AiChatProgressSegment segment = step.progressSegments.value(segmentId);
+            if (!segment.text.isEmpty()) {
+                if (!progressText.isEmpty() && !progressText.endsWith(QLatin1Char('\n'))) {
+                    progressText += QLatin1Char(' ');
+                }
+                progressText += segment.text.trimmed();
+            }
+        }
+
+        const QString safeStepId = QString(step.stepId).replace(QLatin1Char('/'), QLatin1Char('_'));
+        if (!progressText.isEmpty()) {
+            AiChatMessage actionRow;
+            actionRow.messageId = m_streamWorkPrefix + QStringLiteral("action_") + safeStepId;
+            actionRow.conversationId = m_currentConversation.conversationId;
+            actionRow.text = progressText;
+            actionRow.time = QDateTime::currentDateTime();
+            rows.push_back(actionRow);
+        }
+
+        if (step.hasToolStatus && !progressText.isEmpty()) {
+            AiChatMessage toolRow;
+            toolRow.messageId = m_streamWorkPrefix + QStringLiteral("tool_") + safeStepId;
+            toolRow.conversationId = m_currentConversation.conversationId;
+            toolRow.text = streamStatusDisplayText(step.toolStatus);
+            toolRow.time = QDateTime::currentDateTime();
+            rows.push_back(toolRow);
+            if (step.toolStatus.status.trimmed().toLower() == QStringLiteral("running")) {
+                activeIds.insert(toolRow.messageId);
+            }
+        }
+    }
+
+    m_messageModel->setTransientMessages(m_streamWorkPrefix,
+                                         rows,
+                                         activeIds,
+                                         m_streamCurrentAnswerMessageId);
+    if (!activeIds.isEmpty()) {
+        if (!m_thinkingAnimationTimer->isActive()) {
+            m_thinkingAnimationTimer->start();
+        }
+    } else if (!m_messageModel->hasActiveThinkingMessages()) {
+        m_thinkingAnimationTimer->stop();
+    }
+    m_messageView->scrollToBottomIfLocked();
+    updateNewMessageNotifier();
+}
+
+void AiChatConversationWidget::clearStreamWorkRows()
+{
+    if (!m_streamWorkPrefix.isEmpty()) {
+        m_messageModel->setTransientMessages(m_streamWorkPrefix, {}, {});
+    }
+    m_streamWorkSteps.clear();
+    m_progressSegmentStepIds.clear();
+}
+
+QVector<AiChatMessage> AiChatConversationWidget::traceRows(const AiChatMessage& message) const
+{
+    QVector<AiChatMessage> rows;
+    if (!message.trace.isValid() || message.messageId.isEmpty()) {
+        return rows;
+    }
+
+    const QString prefix = traceRowPrefix(message.messageId);
+    const bool expanded = m_expandedTraceMessageIds.contains(message.messageId);
+    const bool showDetails = expanded || m_collapsingTraceMessageIds.contains(message.messageId);
+    AiChatMessage summaryRow;
+    summaryRow.messageId = prefix + QStringLiteral("summary");
+    summaryRow.conversationId = message.conversationId;
+    summaryRow.text = expanded
+            ? QStringLiteral("点击收起")
+            : QStringLiteral("点击展开");
+    summaryRow.time = message.time;
+    rows.push_back(summaryRow);
+
+    if (!showDetails) {
+        return rows;
+    }
+
+    QVector<AiChatTraceStep> steps = message.trace.steps;
+    std::sort(steps.begin(), steps.end(), [](const AiChatTraceStep& lhs,
+                                             const AiChatTraceStep& rhs) {
+        return lhs.sequence < rhs.sequence;
+    });
+    int fallbackIndex = 0;
+    for (const AiChatTraceStep& step : steps) {
+        const QString stepId = step.stepId.isEmpty()
+                ? QStringLiteral("step-%1").arg(++fallbackIndex)
+                : step.stepId;
+        const QString safeStepId = QString(stepId).replace(QLatin1Char('/'), QLatin1Char('_'));
+        if (!step.text.trimmed().isEmpty()) {
+            AiChatMessage actionRow;
+            actionRow.messageId = prefix + QStringLiteral("action_") + safeStepId;
+            actionRow.conversationId = message.conversationId;
+            actionRow.text = step.text.trimmed();
+            actionRow.time = message.time;
+            rows.push_back(actionRow);
+        }
+
+        const QString phase = step.phase.trimmed().toLower();
+        if (phase == QStringLiteral("searching") ||
+                phase == QStringLiteral("reading") ||
+                phase == QStringLiteral("tool")) {
+            AiChatStreamStatus status;
+            status.stepId = step.stepId;
+            status.sequence = step.sequence;
+            status.phase = step.phase;
+            status.status = step.status;
+            status.tool = step.tool;
+            status.query = step.query;
+            status.urls = step.urls;
+            status.message = step.text;
+
+            AiChatMessage toolRow;
+            toolRow.messageId = prefix + QStringLiteral("tool_") + safeStepId;
+            toolRow.conversationId = message.conversationId;
+            toolRow.text = streamStatusDisplayText(status);
+            toolRow.time = message.time;
+            rows.push_back(toolRow);
+        }
+    }
+    return rows;
+}
+
+void AiChatConversationWidget::installTraceRows(const AiChatMessage& message, qreal expansionProgress)
+{
+    if (!message.trace.isValid() || message.messageId.isEmpty()) {
+        return;
+    }
+
+    m_messageTraces.insert(message.messageId, message.trace);
+    const QString prefix = traceRowPrefix(message.messageId);
+    m_messageModel->setTransientMessages(prefix,
+                                         traceRows(message),
+                                         {},
+                                         message.messageId,
+                                         expansionProgress);
+}
+
+void AiChatConversationWidget::onTraceToggleRequested(const QString& messageId)
+{
+    const AiChatTrace trace = m_messageTraces.value(messageId);
+    const AiChatMessage message = m_messageModel->messageById(messageId);
+    if (!trace.isValid() || message.messageId.isEmpty()) {
+        return;
+    }
+
+    if (QPointer<QVariantAnimation> running = m_traceExpansionAnimations.value(messageId)) {
+        running->stop();
+        running->deleteLater();
+    }
+
+    const QString prefix = traceRowPrefix(messageId);
+    const qreal startProgress = m_messageModel->traceExpansionProgress(prefix);
+    const bool expand = !m_expandedTraceMessageIds.contains(messageId);
+
+    if (expand) {
+        m_collapsingTraceMessageIds.remove(messageId);
+        m_expandedTraceMessageIds.insert(messageId);
+    } else {
+        m_expandedTraceMessageIds.remove(messageId);
+        m_collapsingTraceMessageIds.insert(messageId);
+    }
+
+    AiChatMessage tracedMessage = message;
+    tracedMessage.trace = trace;
+    installTraceRows(tracedMessage, startProgress);
+    m_messageView->refreshMessageLayout(false);
+
+    const qreal endProgress = expand ? 1.0 : 0.0;
+    auto* animation = new QVariantAnimation(this);
+    m_traceExpansionAnimations.insert(messageId, animation);
+    animation->setStartValue(startProgress);
+    animation->setEndValue(endProgress);
+    animation->setDuration(kTraceExpandAnimationDurationMs);
+    animation->setEasingCurve(QEasingCurve::OutCubic);
+
+    connect(animation, &QVariantAnimation::valueChanged, this, [this, prefix](const QVariant& value) {
+        m_messageModel->setTraceExpansionProgress(prefix, value.toReal());
+        m_messageView->refreshMessageLayout(false);
+    });
+    connect(animation, &QVariantAnimation::finished, this, [this, messageId, prefix, tracedMessage, expand, animation]() {
+        if (expand) {
+            m_messageModel->setTraceExpansionProgress(prefix, 1.0);
+        } else {
+            m_collapsingTraceMessageIds.remove(messageId);
+            installTraceRows(tracedMessage, 0.0);
+        }
+        m_traceExpansionAnimations.remove(messageId);
+        animation->deleteLater();
+        m_messageView->refreshMessageLayout(false);
+    });
+
+    animation->start();
+}
+
+void AiChatConversationWidget::stopTraceExpansionAnimations()
+{
+    for (const QPointer<QVariantAnimation>& animation : std::as_const(m_traceExpansionAnimations)) {
+        if (animation) {
+            animation->stop();
+            animation->deleteLater();
+        }
+    }
+    m_traceExpansionAnimations.clear();
+}
+
+void AiChatConversationWidget::resetStreamPresentation()
+{
+    m_streamHasAnswerText = false;
+    m_retainThinkingPlaceholder = false;
+    m_streamAggregateAnswerText.clear();
+    m_streamCurrentAnswerMessageId.clear();
+    m_streamWorkPrefix.clear();
+    m_streamWorkSteps.clear();
+    m_progressSegmentStepIds.clear();
+    m_nextWorkEncounterOrder = 1;
 }
 
 void AiChatConversationWidget::updateNewMessageNotifier()
@@ -677,6 +1123,13 @@ bool AiChatConversationWidget::isStartPage() const
 void AiChatConversationWidget::onAiReplyStarted(const QString& conversationId)
 {
     if (m_currentConversation.conversationId == conversationId) {
+        m_messageModel->deactivateAllThinkingMessages();
+        m_thinkingMessageId.clear();
+        m_thinkingAnimationTimer->stop();
+        resetStreamPresentation();
+        m_streamWorkPrefix = QStringLiteral("__ai_work_%1_%2_")
+                .arg(conversationId)
+                .arg(++m_streamActionSerial);
         m_inputBar->setStreaming(true);
         scheduleThinkingPlaceholder(conversationId);
         m_streamingNotifierHeld = false;
@@ -684,20 +1137,12 @@ void AiChatConversationWidget::onAiReplyStarted(const QString& conversationId)
     }
 }
 
-void AiChatConversationWidget::onAiReplyMessageAdded(const AiChatMessage& message)
+void AiChatConversationWidget::onAiReplyMessageAdded(const AiChatMessage& message,
+                                                     bool isProgress)
 {
+    Q_UNUSED(isProgress)
     if (m_currentConversation.conversationId == message.conversationId) {
-        const bool shouldFollowReply = m_messageView->isBottomLocked();
-        const bool hadThinkingPlaceholder = hasThinkingPlaceholder();
-        cancelScheduledThinkingPlaceholder();
-        hideThinkingPlaceholder(message.conversationId);
-        m_messageView->messageDelegate()->setStreamingMessageId(message.messageId);
-        m_messageModel->appendMessage(message);
-        if (!message.isFromUser && !shouldFollowReply && !hadThinkingPlaceholder) {
-            ++m_unreadAiReplyCount;
-        }
-        m_messageView->scrollToBottomIfLocked();
-        updateNewMessageNotifier();
+        presentStreamAnswer(message, message.text);
         QTimer::singleShot(0, this, [this]() {
             updateNewMessageNotifier();
         });
@@ -707,17 +1152,18 @@ void AiChatConversationWidget::onAiReplyMessageAdded(const AiChatMessage& messag
 
 void AiChatConversationWidget::onAiReplyMessageUpdated(const QString& conversationId,
                                                        const QString& messageId,
-                                                       const QString& text)
+                                                       const QString& text,
+                                                       bool isProgress)
 {
+    Q_UNUSED(isProgress)
     if (m_currentConversation.conversationId == conversationId) {
-        cancelScheduledThinkingPlaceholder();
-        hideThinkingPlaceholder(conversationId);
-        if (m_messageView->messageDelegate()->streamingMessageId().isEmpty()) {
-            m_messageView->messageDelegate()->setStreamingMessageId(messageId);
-        }
-        m_messageModel->updateMessageText(messageId, text);
-        m_messageView->scrollToBottomIfLocked();
-        updateNewMessageNotifier();
+        AiChatMessage message;
+        message.messageId = messageId;
+        message.conversationId = conversationId;
+        message.text = text;
+        message.isFromUser = false;
+        message.time = QDateTime::currentDateTime();
+        presentStreamAnswer(message, text);
     }
 }
 
@@ -727,14 +1173,62 @@ void AiChatConversationWidget::onAiReplyMessageReplaced(const QString& conversat
 {
     if (m_currentConversation.conversationId == conversationId) {
         cancelScheduledThinkingPlaceholder();
-        hideThinkingPlaceholder(conversationId);
-        if (m_messageView->messageDelegate()->streamingMessageId() == messageId) {
+        finishThinkingPlaceholder(conversationId);
+
+        if (m_messageView->messageDelegate()->streamingMessageId() == messageId ||
+                m_messageView->messageDelegate()->streamingMessageId() ==
+                        m_streamCurrentAnswerMessageId) {
             m_messageView->messageDelegate()->setStreamingMessageId(replacement.messageId);
         }
-        m_messageModel->replaceMessage(messageId, replacement);
+        const QString replacementTarget = m_streamCurrentAnswerMessageId.isEmpty()
+                ? messageId
+                : m_streamCurrentAnswerMessageId;
+        m_messageModel->replaceMessage(replacementTarget, replacement);
+        m_streamCurrentAnswerMessageId = replacement.messageId;
+        m_streamAggregateAnswerText = replacement.text;
+        if (replacement.trace.isValid()) {
+            clearStreamWorkRows();
+            installTraceRows(replacement);
+        } else {
+            m_messageModel->deactivateAllThinkingMessages();
+        }
         m_messageView->scrollToBottomIfLocked();
         updateNewMessageNotifier();
     }
+}
+
+void AiChatConversationWidget::onAiReplyProgressChanged(
+        const QString& conversationId,
+        const AiChatProgressSegment& progress)
+{
+    if (m_currentConversation.conversationId != conversationId ||
+            progress.segmentId.isEmpty()) {
+        return;
+    }
+
+    if (hasThinkingPlaceholder() && !progress.text.isEmpty()) {
+        hideThinkingPlaceholder(conversationId);
+    }
+
+    QString stepId = progress.stepId;
+    if (stepId.isEmpty()) {
+        stepId = m_progressSegmentStepIds.value(progress.segmentId);
+    }
+    if (stepId.isEmpty()) {
+        stepId = QStringLiteral("progress-%1").arg(m_nextWorkEncounterOrder);
+    }
+    m_progressSegmentStepIds.insert(progress.segmentId, stepId);
+
+    StreamWorkStep& step = m_streamWorkSteps[stepId];
+    if (step.stepId.isEmpty()) {
+        step.stepId = stepId;
+        step.encounterOrder = m_nextWorkEncounterOrder++;
+    }
+    if (!step.progressSegments.contains(progress.segmentId)) {
+        step.progressSegmentOrder.push_back(progress.segmentId);
+    }
+    step.progressSegments.insert(progress.segmentId, progress);
+    rebuildStreamWorkRows();
 }
 
 void AiChatConversationWidget::onAiReplyMessageRemoved(const QString& conversationId,
@@ -742,10 +1236,18 @@ void AiChatConversationWidget::onAiReplyMessageRemoved(const QString& conversati
 {
     if (m_currentConversation.conversationId == conversationId) {
         cancelScheduledThinkingPlaceholder();
+        if (QPointer<QVariantAnimation> running = m_traceExpansionAnimations.value(messageId)) {
+            running->stop();
+            running->deleteLater();
+            m_traceExpansionAnimations.remove(messageId);
+        }
+        m_messageTraces.remove(messageId);
+        m_expandedTraceMessageIds.remove(messageId);
+        m_collapsingTraceMessageIds.remove(messageId);
         if (m_messageView->messageDelegate()->streamingMessageId() == messageId) {
             m_messageView->messageDelegate()->setStreamingMessageId(QString());
         }
-        m_messageModel->removeMessage(messageId);
+        m_messageModel->removeMessageWithAdjacentTransientRows(messageId);
         m_messageView->clearTextSelection();
         m_messageView->scrollToBottomIfLocked();
         requestContextUsage();
@@ -758,15 +1260,67 @@ void AiChatConversationWidget::onAiReplyThinkingChanged(const QString& conversat
     if (active) {
         Q_UNUSED(conversationId)
     } else {
-        hideThinkingPlaceholder(conversationId);
+        finishThinkingPlaceholder(conversationId);
     }
+}
+
+void AiChatConversationWidget::onAiReplyStreamStatusChanged(const QString& conversationId,
+                                                            const AiChatStreamStatus& status)
+{
+    if (m_currentConversation.conversationId != conversationId) {
+        return;
+    }
+
+    const QString phase = status.phase.trimmed().toLower();
+    if (phase == QStringLiteral("answering")) {
+        if (status.status.trimmed().toLower() == QStringLiteral("running") &&
+                hasThinkingPlaceholder()) {
+            finishThinkingPlaceholder(conversationId);
+        }
+        return;
+    }
+
+    const bool toolPhase = phase == QStringLiteral("searching") ||
+            phase == QStringLiteral("reading") ||
+            phase == QStringLiteral("tool");
+    if (!toolPhase) {
+        if (!status.active) {
+            finishThinkingPlaceholder(conversationId);
+        } else if (phase == QStringLiteral("thinking") &&
+                   !m_streamHasAnswerText &&
+                   m_streamWorkSteps.isEmpty()) {
+            showOrUpdateThinkingPlaceholder(conversationId,
+                                            QStringLiteral("正在思考"),
+                                            false,
+                                            true);
+        }
+        return;
+    }
+
+    if (status.stepId.isEmpty()) {
+        return;
+    }
+
+    StreamWorkStep& step = m_streamWorkSteps[status.stepId];
+    if (step.stepId.isEmpty()) {
+        step.stepId = status.stepId;
+        step.encounterOrder = m_nextWorkEncounterOrder++;
+    }
+    if (status.sequence > 0) {
+        step.sequence = status.sequence;
+    }
+    step.toolStatus = status;
+    step.hasToolStatus = true;
+    rebuildStreamWorkRows();
 }
 
 void AiChatConversationWidget::onAiReplyFinished(const QString& conversationId, const QString& messageId)
 {
     if (m_currentConversation.conversationId == conversationId) {
         cancelScheduledThinkingPlaceholder();
-        hideThinkingPlaceholder(conversationId);
+        finishThinkingPlaceholder(conversationId);
+        m_messageModel->deactivateAllThinkingMessages();
+        m_thinkingAnimationTimer->stop();
         if (m_controller) {
             m_controller->clearConversationUnreadDot(conversationId);
         }
@@ -779,6 +1333,8 @@ void AiChatConversationWidget::onAiReplyFinished(const QString& conversationId, 
             m_newMessageNotifierRevealedByDownScroll = true;
         }
         m_streamingNotifierHeld = false;
+        m_thinkingMessageId.clear();
+        resetStreamPresentation();
         requestContextUsage();
         updateNewMessageNotifier();
     }
@@ -788,7 +1344,20 @@ void AiChatConversationWidget::onAiReplyCanceled(const QString& conversationId, 
 {
     if (m_currentConversation.conversationId == conversationId || m_currentConversation.conversationId.isEmpty()) {
         cancelScheduledThinkingPlaceholder();
-        hideThinkingPlaceholder(conversationId);
+        finishThinkingPlaceholder(conversationId);
+        for (StreamWorkStep& step : m_streamWorkSteps) {
+            for (AiChatProgressSegment& progress : step.progressSegments) {
+                progress.complete = true;
+            }
+            if (step.hasToolStatus &&
+                    step.toolStatus.status.trimmed().toLower() == QStringLiteral("running")) {
+                step.toolStatus.status = QStringLiteral("failed");
+                step.toolStatus.message = QStringLiteral("已取消");
+            }
+        }
+        rebuildStreamWorkRows();
+        m_messageModel->deactivateAllThinkingMessages();
+        m_thinkingAnimationTimer->stop();
         if (m_messageView->messageDelegate()->streamingMessageId() == messageId) {
             m_messageView->messageDelegate()->setStreamingMessageId(QString());
             m_messageView->refreshMessageLayout();
@@ -798,6 +1367,8 @@ void AiChatConversationWidget::onAiReplyCanceled(const QString& conversationId, 
             m_newMessageNotifierRevealedByDownScroll = true;
         }
         m_streamingNotifierHeld = false;
+        m_thinkingMessageId.clear();
+        resetStreamPresentation();
     }
     updateNewMessageNotifier();
 }
@@ -806,15 +1377,32 @@ void AiChatConversationWidget::onAiReplyFailed(const QString& conversationId,
                                                const QString& messageId,
                                                const QString& message)
 {
-    Q_UNUSED(message)
     if (m_currentConversation.conversationId == conversationId || m_currentConversation.conversationId.isEmpty()) {
         cancelScheduledThinkingPlaceholder();
-        hideThinkingPlaceholder(conversationId);
+        finishThinkingPlaceholder(conversationId);
+        for (StreamWorkStep& step : m_streamWorkSteps) {
+            for (AiChatProgressSegment& progress : step.progressSegments) {
+                progress.complete = true;
+            }
+            if (step.hasToolStatus &&
+                    step.toolStatus.status.trimmed().toLower() == QStringLiteral("running")) {
+                step.toolStatus.status = QStringLiteral("failed");
+                step.toolStatus.message = QStringLiteral("已中断");
+            }
+        }
+        rebuildStreamWorkRows();
+        m_messageModel->deactivateAllThinkingMessages();
+        m_thinkingAnimationTimer->stop();
         if (m_messageView->messageDelegate()->streamingMessageId() == messageId) {
             m_messageView->messageDelegate()->setStreamingMessageId(QString());
             m_messageView->refreshMessageLayout();
         }
         m_inputBar->setStreaming(false);
+        m_thinkingMessageId.clear();
+        resetStreamPresentation();
+        if (!message.trimmed().isEmpty()) {
+            GlobalNotification::showFailure(this, message.trimmed());
+        }
     }
 }
 
@@ -834,8 +1422,18 @@ void AiChatConversationWidget::onConversationMessagesLoaded(int requestId,
     m_messageView->setUpdatesEnabled(false);
     cancelScheduledThinkingPlaceholder();
     m_thinkingMessageId.clear();
+    resetStreamPresentation();
     m_thinkingAnimationTimer->stop();
+    stopTraceExpansionAnimations();
+    m_messageTraces.clear();
+    m_expandedTraceMessageIds.clear();
+    m_collapsingTraceMessageIds.clear();
     m_messageModel->setMessages(messages);
+    for (const AiChatMessage& message : messages) {
+        if (message.trace.isValid()) {
+            installTraceRows(message);
+        }
+    }
     if (m_controller && m_controller->activeStreamConversationId() == conversationId) {
         m_messageView->messageDelegate()->setStreamingMessageId(m_controller->activeStreamMessageId());
         m_inputBar->setStreaming(true, false);
@@ -853,16 +1451,14 @@ void AiChatConversationWidget::onContextUsageLoaded(int requestId,
                                                     const AiChatContextUsageRequest& request,
                                                     const AiChatContextUsage& usage)
 {
-    if (requestId != m_pendingContextUsageRequestId ||
-            request.conversationId != m_pendingContextUsageConversationId ||
-            request.conversationId != m_currentConversation.conversationId) {
-        Q_UNUSED(usage)
-        return;
-    }
-
+    Q_UNUSED(requestId)
+    Q_UNUSED(request)
+    Q_UNUSED(usage)
     m_pendingContextUsageRequestId = 0;
     m_pendingContextUsageConversationId.clear();
-    m_inputBar->setContextUsage(usage);
+    if (m_inputBar) {
+        m_inputBar->setContextUsageVisible(false);
+    }
 }
 
 void AiChatConversationWidget::cancelActiveAiReplyStream()

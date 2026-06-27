@@ -235,6 +235,7 @@ private:
     MarkdownDelegate m_markdownDelegate;
 
     static constexpr int kVerticalMargin = 8;
+    static constexpr int kTraceDetailVerticalMargin = 4;
     static constexpr int kHorizontalMargin = 24;
     static constexpr int kBubblePadding = 12;
     static constexpr int kBubbleRadius = 12;
