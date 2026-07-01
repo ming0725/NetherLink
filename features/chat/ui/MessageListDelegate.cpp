@@ -12,6 +12,8 @@
 
 namespace {
 
+constexpr int kMentionLabelGap = 5;
+
 QFont timeFont()
 {
     return AppFonts::applicationPixelSizedFont(11);
@@ -199,12 +201,32 @@ void MessageListDelegate::paint(QPainter* painter,
     }
 
     painter->setFont(previewFont());
+    QRect messagePreviewRect = previewRect;
+    if (index.data(MessageListModel::CurrentUserMentionRole).toBool() &&
+        messagePreviewRect.width() > 0) {
+        const QString mentionText = QStringLiteral("[有人@我]");
+        const int mentionWidth = qMin(previewMetrics().horizontalAdvance(mentionText),
+                                      messagePreviewRect.width());
+        const QRect mentionRect(messagePreviewRect.left(),
+                                messagePreviewRect.top(),
+                                mentionWidth,
+                                messagePreviewRect.height());
+        painter->setPen(ThemeManager::instance().color(ThemeColor::DangerText));
+        painter->drawText(mentionRect,
+                          Qt::AlignLeft | Qt::AlignVCenter,
+                          previewMetrics().elidedText(mentionText,
+                                                      Qt::ElideRight,
+                                                      mentionRect.width()));
+        const int nextLeft = mentionRect.right() + 1 + kMentionLabelGap;
+        messagePreviewRect.setLeft(qMin(nextLeft, messagePreviewRect.right() + 1));
+    }
+
     painter->setPen(selected ? selectedTextColor : ThemeManager::instance().color(ThemeColor::TertiaryText));
-    painter->drawText(previewRect,
+    painter->drawText(messagePreviewRect,
                       Qt::AlignLeft | Qt::AlignVCenter,
                       previewMetrics().elidedText(index.data(MessageListModel::PreviewTextRole).toString(),
                                                   Qt::ElideRight,
-                                                  previewRect.width()));
+                                                  messagePreviewRect.width()));
 
     if (badgeLayout.size.isValid()) {
         const QRect badgeRect(badgeX,

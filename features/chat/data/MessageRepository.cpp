@@ -82,6 +82,10 @@ QString groupMemberDisplayNameForMessage(const QString& conversationId, const QS
 
 GroupRole groupRoleForUser(const Group& group, const QString& userId)
 {
+    const GroupMemberProfile member = GroupRepository::instance().requestGroupMember(group.groupId, userId);
+    if (member.role == GroupMemberRoleValue::Ai) {
+        return GroupRole::Ai;
+    }
     if (!group.ownerId.isEmpty() && group.ownerId == userId) {
         return GroupRole::Owner;
     }
@@ -98,6 +102,59 @@ bool isGroupSystemEventMessage(const QSharedPointer<ChatMessage>& message)
     }
     return message->getType() == MessageType::GroupMemberJoined ||
            message->getType() == MessageType::GroupSystemEvent;
+}
+
+QString currentUserUuidForMentions()
+{
+    const CurrentUserProfile profile = CurrentUser::instance().identity();
+    if (!profile.userUuid.isEmpty()) {
+        return profile.userUuid;
+    }
+    return CurrentUser::instance().getUserId();
+}
+
+bool messageMentionsUser(const QSharedPointer<ChatMessage>& message, const QString& userUuid)
+{
+    if (!message || userUuid.isEmpty()) {
+        return false;
+    }
+
+    for (const ChatMessageMention& mention : message->getMentions()) {
+        if (mention.targetType == QStringLiteral("user") &&
+            mention.targetUserUuid == userUuid) {
+            return true;
+        }
+    }
+    return false;
+}
+
+QVector<ConversationMentionRef> currentUserMentionRefsForMessages(
+        const ChatMessageList& messages,
+        const ConversationSyncState& state,
+        const QString& currentUserUuid)
+{
+    QVector<ConversationMentionRef> refs;
+    int remainingUnread = qMax(0, state.unreadCount);
+    if (remainingUnread <= 0 || currentUserUuid.isEmpty()) {
+        return refs;
+    }
+
+    for (auto it = messages.crbegin(); it != messages.crend() && remainingUnread > 0; ++it) {
+        const QSharedPointer<ChatMessage>& message = *it;
+        if (!message || message->isFromMe() || isGroupSystemEventMessage(message)) {
+            continue;
+        }
+
+        if (messageMentionsUser(message, currentUserUuid)) {
+            refs.push_back(ConversationMentionRef{
+                    message->getMessageId(),
+                    message->getMessageSeq(),
+                    message->getTimestamp()
+            });
+        }
+        --remainingUnread;
+    }
+    return refs;
 }
 
 QString buildPreviewText(const QString& conversationId,
@@ -541,6 +598,85 @@ QSize imageSizeFromMessageObject(const QJsonObject& object)
     return sizeFromObject(content);
 }
 
+ChatMessageMention mentionFromObject(const QJsonObject& object, int fallbackPosition)
+{
+    ChatMessageMention mention;
+    mention.mentionId = firstString(object, {QStringLiteral("mentionId"),
+                                             QStringLiteral("id")});
+    mention.targetType = firstString(object, {QStringLiteral("targetType"),
+                                              QStringLiteral("target_type")}).trimmed().toLower();
+    mention.targetId = firstString(object, {QStringLiteral("targetId"),
+                                            QStringLiteral("target_id")});
+    mention.targetUserUuid = firstString(object, {QStringLiteral("targetUserUuid"),
+                                                  QStringLiteral("target_user_uuid"),
+                                                  QStringLiteral("userUuid"),
+                                                  QStringLiteral("user_uuid")});
+    mention.position = object.value(QStringLiteral("position")).toInt(fallbackPosition);
+
+    if (mention.targetType == QStringLiteral("user") && mention.targetUserUuid.isEmpty()) {
+        const User user = UserRepository::instance().requestUserDetail({mention.targetId});
+        if (!user.userUuid.isEmpty()) {
+            mention.targetUserUuid = user.userUuid;
+        } else if (!user.id.isEmpty()) {
+            mention.targetUserUuid = user.id;
+        }
+    }
+    return mention;
+}
+
+QVector<ChatMessageMention> mentionsFromMessageObject(const QJsonObject& object)
+{
+    const QJsonArray array = object.value(QStringLiteral("mentions")).toArray();
+    QVector<ChatMessageMention> mentions;
+    mentions.reserve(array.size());
+    for (int index = 0; index < array.size(); ++index) {
+        ChatMessageMention mention = mentionFromObject(array.at(index).toObject(), index + 1);
+        if (mention.targetType != QStringLiteral("user") &&
+            mention.targetType != QStringLiteral("ai")) {
+            continue;
+        }
+        if (mention.targetId.isEmpty() && mention.targetUserUuid.isEmpty()) {
+            continue;
+        }
+        if (mention.position <= 0) {
+            mention.position = mentions.size() + 1;
+        }
+        mentions.push_back(mention);
+    }
+    return mentions;
+}
+
+QJsonArray mentionsToJson(const QVector<ChatMessageMention>& mentions)
+{
+    QJsonArray array;
+    for (int index = 0; index < mentions.size(); ++index) {
+        const ChatMessageMention& mention = mentions.at(index);
+        const QString targetType = mention.targetType.trimmed().toLower();
+        if (targetType != QStringLiteral("user") && targetType != QStringLiteral("ai")) {
+            continue;
+        }
+
+        const int position = mention.position > 0
+                ? mention.position
+                : static_cast<int>(array.size()) + 1;
+        QJsonObject object{
+                {QStringLiteral("targetType"), targetType},
+                {QStringLiteral("position"), position}
+        };
+        if (!mention.mentionId.isEmpty()) {
+            object.insert(QStringLiteral("mentionId"), mention.mentionId);
+        }
+        if (!mention.targetId.isEmpty()) {
+            object.insert(QStringLiteral("targetId"), mention.targetId);
+        }
+        if (!mention.targetUserUuid.isEmpty()) {
+            object.insert(QStringLiteral("targetUserUuid"), mention.targetUserUuid);
+        }
+        array.append(object);
+    }
+    return array;
+}
+
 GroupRole groupRoleForSender(const QString& conversationId, const QString& senderId)
 {
     if (conversationId.isEmpty() || senderId.isEmpty()) {
@@ -620,6 +756,7 @@ QSharedPointer<ChatMessage> chatMessageFromJson(const QJsonObject& object)
     message->setClientMessageId(clientMessageIdFromObject(object));
     message->setMessageSeq(messageSeqFromObject(object));
     message->setSendState(sendStateFromString(object.value(QStringLiteral("sendState")).toString()));
+    message->setMentions(mentionsFromMessageObject(object));
     const QDateTime timestamp = firstDateTime(object, {QStringLiteral("createdAt"),
                                                        QStringLiteral("serverReceivedAt"),
                                                        QStringLiteral("clientSentAt"),
@@ -677,6 +814,10 @@ QJsonObject chatMessageToJson(const QString& conversationId, const QSharedPointe
     }
     if (!message->getReferencedMessageId().isEmpty()) {
         object.insert(QStringLiteral("referencedMessageId"), message->getReferencedMessageId());
+    }
+    const QJsonArray mentionsArray = mentionsToJson(message->getMentions());
+    if (!mentionsArray.isEmpty()) {
+        object.insert(QStringLiteral("mentions"), mentionsArray);
     }
     if (message->getSendState() != MessageSendState::Sent) {
         object.insert(QStringLiteral("sendState"), sendStateToString(message->getSendState()));
@@ -1087,11 +1228,13 @@ public:
     ConversationListRequestOperation(const QMap<QString, ChatMessageList>& store,
                                      const QMap<QString, ConversationSyncState>& conversationStates,
                                      const QMap<QString, QString>& directConversationPeers,
-                                     const QMap<QString, QString>& groupConversationGroups)
+                                     const QMap<QString, QString>& groupConversationGroups,
+                                     const QString& currentUserUuid)
         : m_store(store)
         , m_conversationStates(conversationStates)
         , m_directConversationPeers(directConversationPeers)
         , m_groupConversationGroups(groupConversationGroups)
+        , m_currentUserUuid(currentUserUuid)
     {
     }
 
@@ -1155,11 +1298,14 @@ private:
                     ? QSharedPointer<ChatMessage>()
                     : messages->last();
             const ConversationSyncState state = stateFor(conversationId);
+            const bool hasMention = messages &&
+                    !currentUserMentionRefsForMessages(*messages, state, m_currentUserUuid).isEmpty();
             result.push_back(ConversationSummary{
                     conversationId,
                     groupDisplayName(group),
                     group.groupAvatarPath,
                     buildPreviewText(conversationId, lastMessage, true),
+                    hasMention,
                     lastMessage ? lastMessage->getTimestamp() : QDateTime(),
                     effectiveMessageListTime(conversationId, lastMessage),
                     state.unreadCount,
@@ -1196,11 +1342,14 @@ private:
                     ? QSharedPointer<ChatMessage>()
                     : messages->last();
             const ConversationSyncState state = stateFor(friendSummary.userId);
+            const bool hasMention = messages &&
+                    !currentUserMentionRefsForMessages(*messages, state, m_currentUserUuid).isEmpty();
             result.push_back(ConversationSummary{
                     friendSummary.userId,
                     friendSummary.displayName,
                     friendSummary.avatarPath,
                     buildPreviewText(friendSummary.userId, lastMessage, false),
+                    hasMention,
                     lastMessage ? lastMessage->getTimestamp() : QDateTime(),
                     effectiveMessageListTime(friendSummary.userId, lastMessage),
                     state.unreadCount,
@@ -1238,11 +1387,14 @@ private:
                     ? QSharedPointer<ChatMessage>()
                     : messages->last();
             const ConversationSyncState state = stateFor(conversationId);
+            const bool hasMention = messages &&
+                    !currentUserMentionRefsForMessages(*messages, state, m_currentUserUuid).isEmpty();
             result.push_back(ConversationSummary{
                     conversationId,
                     displayName,
                     user.avatarPath,
                     buildPreviewText(conversationId, lastMessage, false),
+                    hasMention,
                     lastMessage ? lastMessage->getTimestamp() : QDateTime(),
                     effectiveMessageListTime(conversationId, lastMessage),
                     state.unreadCount,
@@ -1278,11 +1430,14 @@ private:
                     ? QSharedPointer<ChatMessage>()
                     : messages->last();
             const ConversationSyncState state = stateFor(conversationId);
+            const bool hasMention = messages &&
+                    !currentUserMentionRefsForMessages(*messages, state, m_currentUserUuid).isEmpty();
             result.push_back(ConversationSummary{
                     conversationId,
                     displayName,
                     user.avatarPath,
                     buildPreviewText(conversationId, lastMessage, false),
+                    hasMention,
                     lastMessage ? lastMessage->getTimestamp() : QDateTime(),
                     effectiveMessageListTime(conversationId, lastMessage),
                     state.unreadCount,
@@ -1313,6 +1468,7 @@ private:
     const QMap<QString, ConversationSyncState>& m_conversationStates;
     const QMap<QString, QString>& m_directConversationPeers;
     const QMap<QString, QString>& m_groupConversationGroups;
+    QString m_currentUserUuid;
 };
 
 } // namespace
@@ -1953,13 +2109,27 @@ QVector<ConversationSummary> MessageRepository::requestConversationList(const Co
     return ConversationListRequestOperation(m_store,
                                             m_conversationStates,
                                             m_directConversationPeers,
-                                            m_groupConversationGroups).request(query);
+                                            m_groupConversationGroups,
+                                            currentUserUuidForMentions()).request(query);
 }
 
 ChatMessageList MessageRepository::requestConversationMessages(const ConversationMessagesRequest& query) const
 {
     QMutexLocker locker(&m_mutex);
     return ConversationMessagesRequestOperation(m_store).request(query);
+}
+
+QVector<ConversationMentionRef> MessageRepository::requestCurrentUserMentions(
+        const QString& conversationId) const
+{
+    if (conversationId.isEmpty()) {
+        return {};
+    }
+
+    QMutexLocker locker(&m_mutex);
+    return currentUserMentionRefsForMessages(m_store.value(conversationId),
+                                             m_conversationStates.value(conversationId),
+                                             currentUserUuidForMentions());
 }
 
 QSharedPointer<ChatMessage> MessageRepository::requestMessageById(const QString& conversationId,
@@ -2079,6 +2249,7 @@ ConversationThreadData MessageRepository::requestConversationThread(const Conver
     {
         QMutexLocker locker(&m_mutex);
         const ChatMessageList allMessages = m_store.value(query.conversationId);
+        const ConversationSyncState state = m_conversationStates.value(query.conversationId);
         thread.messages = ConversationMessagesRequestOperation(m_store).request({
                 query.conversationId,
                 query.offsetFromLatest,
@@ -2096,7 +2267,9 @@ ConversationThreadData MessageRepository::requestConversationThread(const Conver
             thread.messages.first()->getMessageSeq() > 1) {
             thread.hasMoreBefore = true;
         }
-        thread.unreadCount = m_conversationStates.value(query.conversationId).unreadCount;
+        thread.unreadCount = state.unreadCount;
+        thread.currentUserMentions =
+                currentUserMentionRefsForMessages(allMessages, state, currentUserUuidForMentions());
     }
     return thread;
 }
@@ -2161,14 +2334,23 @@ QString MessageRepository::requestConversationThreadAsync(const ConversationThre
 {
     const QString requestId = QUuid::createUuid().toString(QUuid::WithoutBraces);
     int unreadCountAtRequest = 0;
+    QVector<ConversationMentionRef> currentUserMentionsAtRequest;
     {
         QMutexLocker locker(&m_mutex);
-        unreadCountAtRequest = m_conversationStates.value(query.conversationId).unreadCount;
+        const ConversationSyncState state = m_conversationStates.value(query.conversationId);
+        unreadCountAtRequest = state.unreadCount;
+        currentUserMentionsAtRequest =
+                currentUserMentionRefsForMessages(m_store.value(query.conversationId),
+                                                  state,
+                                                  currentUserUuidForMentions());
     }
 
-    QTimer::singleShot(0, this, [this, requestId, query, unreadCountAtRequest]() {
+    QTimer::singleShot(0,
+                       this,
+                       [this, requestId, query, unreadCountAtRequest, currentUserMentionsAtRequest]() {
         ConversationThreadData thread = requestConversationThread(query);
         thread.unreadCount = unreadCountAtRequest;
+        thread.currentUserMentions = currentUserMentionsAtRequest;
         emit conversationThreadReady(requestId, thread);
     });
     return requestId;

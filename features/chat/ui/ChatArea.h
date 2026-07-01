@@ -90,6 +90,8 @@ private:
 #endif
         bool visibleUnreadCheckScheduled = false;
         bool pendingHistoryUnreadScroll = false;
+        bool pendingHistoryMentionScroll = false;
+        bool suppressHistoryUnreadVisibilityForMentionScroll = false;
         bool newMessageNotifierRevealedByDownScroll = false;
         bool hasHistoryUnreadOrdinalRange = false;
         int historyUnreadFirstOrdinal = 0;
@@ -102,6 +104,7 @@ private:
         QHash<const ChatMessage*, int> peerMessageOrdinals;
         int minPeerMessageOrdinal = 0;
         int maxPeerMessageOrdinal = -1;
+        QVector<ConversationMentionRef> pendingHistoryMentions;
         bool directRelationshipDeleted = false;
     };
 
@@ -113,12 +116,19 @@ private:
         QString referencedMessageId;
         bool isImage = false;
         int attempt = 0;
+        QVector<ChatMessageMention> mentions;
+    };
+
+    struct PendingMention {
+        ChatMessageMention mention;
+        QString displayText;
     };
 
     ChatListView* chatView;
     ChatListModel* chatModel;
     ChatItemDelegate* chatDelegate;
     HistoryUnreadNotifier* historyUnreadNotifier;
+    HistoryUnreadNotifier* historyMentionNotifier;
     QTimer* historyUnreadNotifierLoadTimer = nullptr;
     QTimer* messageLoadingAnimationTimer = nullptr;
     NewMessageNotifier* newMessageNotifier;
@@ -149,6 +159,14 @@ private:
     void showHistoryUnreadNotifier();
     void hideHistoryUnreadNotifier();
     void updateHistoryUnreadNotifierPosition();
+    void updateHistoryMentionNotifier();
+    void showHistoryMentionNotifier();
+    void hideHistoryMentionNotifier();
+    void updateHistoryMentionNotifierPosition();
+    void scrollToNextHistoryMention();
+    void pruneVisibleHistoryMentions();
+    QModelIndex indexForMentionRef(const ConversationMentionRef& mention) const;
+    void setPendingHistoryMentions(QVector<ConversationMentionRef> mentions);
     void scrollToBottom(bool accelerateFarDistance = false);
     void scrollToFirstHistoryUnread();
     bool isScrollAtBottom() const;
@@ -208,6 +226,9 @@ private:
     void releaseInfoPanels();
     void showFriendProfilePopup(const QString& userId, const QPoint& globalPos);
     void showAvatarContextMenu(const QString& userId, const QPoint& globalPos);
+    void mentionUser(const QString& userId);
+    QVector<ChatMessageMention> mentionsForText(const QString& text) const;
+    void clearPendingMentions();
     void requestInfoPanelData(bool resetTransientState);
     int visibleInfoPanelWidth() const;
     void showInfoPanel(bool animated);
@@ -244,6 +265,8 @@ private:
     void removeUnreadCandidate(const ChatMessage* message);
     QString m_pendingReferenceMessageId;
     QHash<QString, PendingLocalSend> m_pendingLocalSends;
+    QVector<PendingMention> m_pendingMentions;
+    int m_historyMentionScrollGeneration = 0;
 };
 
 #endif // CHATAREA_H 

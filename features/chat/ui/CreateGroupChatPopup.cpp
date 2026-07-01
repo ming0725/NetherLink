@@ -217,6 +217,10 @@ void drawGroupArrow(QPainter* painter, const QRect& rect, qreal progress)
 
 GroupRole groupRoleForUser(const Group& group, const QString& userId)
 {
+    const GroupMemberProfile member = GroupRepository::instance().requestGroupMember(group.groupId, userId);
+    if (member.role == GroupMemberRoleValue::Ai) {
+        return GroupRole::Ai;
+    }
     if (!group.ownerId.isEmpty() && group.ownerId == userId) {
         return GroupRole::Owner;
     }
@@ -224,6 +228,21 @@ GroupRole groupRoleForUser(const Group& group, const QString& userId)
         return GroupRole::Admin;
     }
     return GroupRole::Member;
+}
+
+int groupRoleSortRank(GroupRole role)
+{
+    switch (role) {
+    case GroupRole::Owner:
+        return 0;
+    case GroupRole::Admin:
+        return 1;
+    case GroupRole::Ai:
+        return 2;
+    case GroupRole::Member:
+    default:
+        return 3;
+    }
 }
 
 QString groupMemberName(const Group& group, const User& user)
@@ -281,8 +300,8 @@ QVector<FriendSummary> groupMembersAsContacts(const Group& group)
     std::sort(users.begin(), users.end(), [&group, &collator](const User& lhs, const User& rhs) {
         const GroupRole lhsRole = groupRoleForUser(group, lhs.id);
         const GroupRole rhsRole = groupRoleForUser(group, rhs.id);
-        const int lhsRank = lhsRole == GroupRole::Owner ? 0 : (lhsRole == GroupRole::Admin ? 1 : 2);
-        const int rhsRank = rhsRole == GroupRole::Owner ? 0 : (rhsRole == GroupRole::Admin ? 1 : 2);
+        const int lhsRank = groupRoleSortRank(lhsRole);
+        const int rhsRank = groupRoleSortRank(rhsRole);
         if (lhsRank != rhsRank) {
             return lhsRank < rhsRank;
         }
@@ -309,6 +328,7 @@ QSet<QString> removableDisabledUserIds(const Group& group)
         const GroupRole targetRole = groupRoleForUser(group, userId);
         const bool removable = !userId.isEmpty() &&
                                userId != currentUserId &&
+                               targetRole != GroupRole::Ai &&
                                ((currentRole == GroupRole::Owner && targetRole != GroupRole::Owner) ||
                                 (currentRole == GroupRole::Admin && targetRole == GroupRole::Member));
         if (!removable) {
@@ -1940,6 +1960,11 @@ void CreateGroupChatPopup::configureForTransferOwner(const Group& group)
     m_disabledUserIds = {CurrentUser::instance().getUserId()};
     if (!group.ownerId.isEmpty()) {
         m_disabledUserIds.insert(group.ownerId);
+    }
+    for (const QString& userId : group.membersID) {
+        if (groupRoleForUser(group, userId) == GroupRole::Ai) {
+            m_disabledUserIds.insert(userId);
+        }
     }
     setModeTitle(QStringLiteral("转让群聊"), QStringLiteral("成员"));
     m_okButton->setText(QStringLiteral("转让"));

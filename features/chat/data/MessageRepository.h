@@ -20,6 +20,7 @@ public:
     ChatMessageList requestConversationMessages(const ConversationMessagesRequest& query) const;
     QSharedPointer<ChatMessage> requestMessageById(const QString& conversationId,
                                                    const QString& messageId) const;
+    QVector<ConversationMentionRef> requestCurrentUserMentions(const QString& conversationId) const;
     ConversationMeta requestConversationMeta(const ConversationMetaRequest& query) const;
     ConversationThreadData requestConversationThread(const ConversationThreadRequest& query) const;
     ConversationThreadData requestConversationThreadUntilMessage(

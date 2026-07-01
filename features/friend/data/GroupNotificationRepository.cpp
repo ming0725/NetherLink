@@ -58,6 +58,10 @@ bool isCurrentUserOwner(const Group& group)
 
 GroupMemberRole roleForUser(const Group& group, const QString& userId)
 {
+    const GroupMemberProfile member = GroupRepository::instance().requestGroupMember(group.groupId, userId);
+    if (member.role == GroupMemberRoleValue::Ai) {
+        return GroupMemberRole::Ai;
+    }
     if (group.ownerId == userId) {
         return GroupMemberRole::Owner;
     }

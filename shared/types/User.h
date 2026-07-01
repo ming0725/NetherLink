@@ -27,6 +27,10 @@ struct User {
     QString signature;
     bool isDnd = false;
     bool isFriend = false;
+    bool isAi = false;
+    QString aiAgentId;
+    QString aiKind;
+    QString aiStatus;
     QString friendGroupId = "default";
     QString friendGroupName = "默认分组";
     QString region;

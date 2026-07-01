@@ -4,6 +4,7 @@
 #include "app/state/CurrentUser.h"
 #include "features/chat/data/GroupRepository.h"
 #include "features/chat/ui/CreateGroupChatPopup.h"
+#include "features/chat/ui/GroupBotCreatePopupContent.h"
 #include "features/friend/data/UserRepository.h"
 #include "shared/services/ImageService.h"
 #include "shared/types/ChatMessage.h"
@@ -31,6 +32,7 @@
 #include <QPainterPath>
 #include <QPaintEvent>
 #include <QPalette>
+#include <QPointer>
 #include <QScrollBar>
 #include <QStackedWidget>
 #include <QVBoxLayout>
@@ -300,6 +302,9 @@ GroupRole memberRole(const Group& group, const QString& userId)
 
 GroupRole memberRole(const Group& group, const User& user)
 {
+    if (user.isAi) {
+        return GroupRole::Ai;
+    }
     return memberRole(group, user.id);
 }
 
@@ -310,6 +315,8 @@ GroupRole memberRole(GroupMemberRoleValue role)
         return GroupRole::Owner;
     case GroupMemberRoleValue::Admin:
         return GroupRole::Admin;
+    case GroupMemberRoleValue::Ai:
+        return GroupRole::Ai;
     case GroupMemberRoleValue::Member:
     default:
         return GroupRole::Member;
@@ -357,6 +364,8 @@ void mergeMemberProfileIntoGroup(Group& group, const GroupMemberProfile& member)
         if (!group.adminsID.contains(userId)) {
             group.adminsID.push_back(userId);
         }
+    } else if (member.role == GroupMemberRoleValue::Ai) {
+        group.adminsID.removeAll(userId);
     } else {
         group.adminsID.removeAll(userId);
     }
@@ -370,6 +379,9 @@ QString roleText(GroupRole role)
     if (role == GroupRole::Admin) {
         return QStringLiteral("管理员");
     }
+    if (role == GroupRole::Ai) {
+        return QStringLiteral("AI");
+    }
     return QStringLiteral("用户");
 }
 
@@ -380,6 +392,9 @@ QColor roleBackgroundColor(GroupRole role)
     }
     if (role == GroupRole::Admin) {
         return ThemeManager::instance().color(ThemeColor::RoleAdminBackground);
+    }
+    if (role == GroupRole::Ai) {
+        return ThemeManager::instance().color(ThemeColor::Accent);
     }
     return ThemeManager::instance().color(ThemeColor::PanelRaisedBackground);
 }
@@ -392,7 +407,25 @@ QColor roleTextColor(GroupRole role)
     if (role == GroupRole::Admin) {
         return ThemeManager::instance().color(ThemeColor::RoleAdminText);
     }
+    if (role == GroupRole::Ai) {
+        return ThemeManager::textColorOn(roleBackgroundColor(role));
+    }
     return ThemeManager::instance().color(ThemeColor::SecondaryText);
+}
+
+int groupRoleSortRank(GroupRole role)
+{
+    switch (role) {
+    case GroupRole::Owner:
+        return 0;
+    case GroupRole::Admin:
+        return 1;
+    case GroupRole::Ai:
+        return 2;
+    case GroupRole::Member:
+    default:
+        return 3;
+    }
 }
 
 QVector<User> sortedGroupMembers(const Group& group,
@@ -418,8 +451,8 @@ QVector<User> sortedGroupMembers(const Group& group,
     std::sort(filtered.begin(), filtered.end(), [&group](const User& lhs, const User& rhs) {
         const GroupRole lhsRole = memberRole(group, lhs);
         const GroupRole rhsRole = memberRole(group, rhs);
-        const int lhsRank = lhsRole == GroupRole::Owner ? 0 : (lhsRole == GroupRole::Admin ? 1 : 2);
-        const int rhsRank = rhsRole == GroupRole::Owner ? 0 : (rhsRole == GroupRole::Admin ? 1 : 2);
+        const int lhsRank = groupRoleSortRank(lhsRole);
+        const int rhsRank = groupRoleSortRank(rhsRole);
         if (lhsRank != rhsRank) {
             return lhsRank < rhsRank;
         }
@@ -427,6 +460,29 @@ QVector<User> sortedGroupMembers(const Group& group,
         return nameOrder == 0 ? lhs.id < rhs.id : nameOrder < 0;
     });
     return filtered;
+}
+
+QVector<GroupMemberProfile> sortedGroupMemberProfiles(const Group& group,
+                                                      QVector<GroupMemberProfile> members)
+{
+    static QCollator collator(QLocale::Chinese);
+    collator.setNumericMode(true);
+    std::sort(members.begin(), members.end(), [&group](const GroupMemberProfile& lhs,
+                                                       const GroupMemberProfile& rhs) {
+        const GroupRole lhsRole = memberRole(group, lhs);
+        const GroupRole rhsRole = memberRole(group, rhs);
+        const int lhsRank = groupRoleSortRank(lhsRole);
+        const int rhsRank = groupRoleSortRank(rhsRole);
+        if (lhsRank != rhsRank) {
+            return lhsRank < rhsRank;
+        }
+        const int nameOrder = collator.compare(memberDisplayName(group, lhs),
+                                               memberDisplayName(group, rhs));
+        const QString lhsId = lhs.userUuid.isEmpty() ? lhs.user.id : lhs.userUuid;
+        const QString rhsId = rhs.userUuid.isEmpty() ? rhs.user.id : rhs.userUuid;
+        return nameOrder == 0 ? lhsId < rhsId : nameOrder < 0;
+    });
+    return members;
 }
 
 class GroupMemberRow : public QWidget
@@ -441,6 +497,12 @@ public:
         if (m_user.id.isEmpty()) {
             m_user.id = member.userUuid;
             m_user.userUuid = member.userUuid;
+        }
+        if (member.role == GroupMemberRoleValue::Ai) {
+            m_user.isAi = true;
+            if (m_user.aiKind.isEmpty()) {
+                m_user.aiKind = QStringLiteral("group_bot");
+            }
         }
         setFixedHeight(kMemberRowHeight);
         setAutoFillBackground(false);
@@ -861,6 +923,15 @@ GroupConversationInfoPanel::GroupConversationInfoPanel(QWidget* parent)
     m_inviteMemberAction = inviteBox;
     summaryLayout->addWidget(m_inviteMemberAction);
 
+    auto* createBotBox = new MemberActionBox(MemberActionBox::Kind::Invite,
+                                             QStringLiteral("创建机器人"),
+                                             m_memberSummaryCard);
+    createBotBox->clicked = [this]() {
+        showCreateBotPopup();
+    };
+    m_createBotAction = createBotBox;
+    summaryLayout->addWidget(m_createBotAction);
+
     auto* removeBox = new MemberActionBox(MemberActionBox::Kind::Remove,
                                           QStringLiteral("移除成员"),
                                           m_memberSummaryCard);
@@ -983,10 +1054,11 @@ void GroupConversationInfoPanel::setGroupSummary(const Group& group,
 {
     const bool validGroup = !group.groupId.isEmpty();
     m_group = group;
-    m_members = previewMembers;
+    m_members = sortedGroupMemberProfiles(m_group, previewMembers);
     for (const GroupMemberProfile& member : m_members) {
         mergeMemberProfileIntoGroup(m_group, member);
     }
+    m_members = sortedGroupMemberProfiles(m_group, m_members);
     m_memberTotalCount = qMax(0, totalMembers);
     m_canEditGroupInfo = validGroup && canEditGroupInfo;
     m_canExitGroup = validGroup && canExitGroup;
@@ -1129,6 +1201,9 @@ void GroupConversationInfoPanel::rebuildMemberPreview()
     if (m_inviteMemberAction) {
         m_inviteMemberAction->setVisible(hasGroup);
     }
+    if (m_createBotAction) {
+        m_createBotAction->setVisible(hasGroup && canManageMembers);
+    }
     if (m_removeMemberAction) {
         m_removeMemberAction->setVisible(hasGroup && canManageMembers);
     }
@@ -1188,7 +1263,8 @@ void GroupConversationInfoPanel::appendGroupMembersPage(const GroupMembersPage& 
     m_memberTotalCount = page.totalCount;
     m_memberHasMore = page.hasMore;
     m_memberLoadedCount = page.offset + page.members.size();
-    for (const GroupMemberProfile& member : page.members) {
+    const QVector<GroupMemberProfile> sortedMembers = sortedGroupMemberProfiles(m_group, page.members);
+    for (const GroupMemberProfile& member : sortedMembers) {
         mergeMemberProfileIntoGroup(m_group, member);
     }
     static_cast<MemberSummaryHeader*>(m_memberSummaryHeader)->setMemberCount(m_memberTotalCount);
@@ -1203,7 +1279,7 @@ void GroupConversationInfoPanel::appendGroupMembersPage(const GroupMembersPage& 
         }
     }
 
-    for (const GroupMemberProfile& member : page.members) {
+    for (const GroupMemberProfile& member : sortedMembers) {
         auto* row = new GroupMemberRow(m_group, member, m_memberListPage);
         row->setProfileRequestedCallback([this](const User& user, const QPoint& globalPos) {
             emit memberProfileRequested(user.id, globalPos);
@@ -1230,8 +1306,14 @@ void GroupConversationInfoPanel::showMemberContextMenu(const User& user, const Q
 
     auto* menu = new StyledActionMenu(this);
     const bool isCurrentUser = CurrentUser::instance().isCurrentUserId(user.id);
+    const bool isAiMember = memberRole(m_group, user) == GroupRole::Ai;
     const bool isFriend = !isCurrentUser && UserRepository::instance().isFriend(user.id);
-    if (!isCurrentUser) {
+    QAction* mentionAction = menu->addAction(QStringLiteral("@TA"));
+    connect(mentionAction, &QAction::triggered, this, [this, user]() {
+        emit memberMentionRequested(user.id);
+    });
+
+    if (!isCurrentUser && !isAiMember) {
         QAction* primaryAction = menu->addAction(isFriend
                                                  ? QStringLiteral("发消息")
                                                  : QStringLiteral("添加好友"));
@@ -1251,28 +1333,28 @@ void GroupConversationInfoPanel::showMemberContextMenu(const User& user, const Q
         emit memberProfileRequested(user.id, globalPos);
     });
 
-    if (canEditMemberNickname(user)) {
+    if (!isAiMember && canEditMemberNickname(user)) {
         QAction* nicknameAction = menu->addAction(QStringLiteral("修改群昵称"));
         connect(nicknameAction, &QAction::triggered, this, [this, user]() {
             promptMemberNicknameChange(user);
         });
     }
 
-    if (canPromoteMemberToAdmin(user)) {
+    if (!isAiMember && canPromoteMemberToAdmin(user)) {
         QAction* promoteAction = menu->addAction(QStringLiteral("设置为管理员"));
         connect(promoteAction, &QAction::triggered, this, [this, user]() {
             emit groupMemberAdminPromotionRequested(user.id);
         });
     }
 
-    if (canCancelMemberAdmin(user)) {
+    if (!isAiMember && canCancelMemberAdmin(user)) {
         QAction* cancelAdminAction = menu->addAction(QStringLiteral("取消管理员"));
         connect(cancelAdminAction, &QAction::triggered, this, [this, user]() {
             emit groupMemberAdminCancellationRequested(user.id);
         });
     }
 
-    if (canRemoveMember(user)) {
+    if (!isAiMember && canRemoveMember(user)) {
         QAction* removeAction = menu->addAction(QStringLiteral("移出本群"));
         StyledActionMenu::setActionColors(removeAction,
                                           ThemeManager::instance().color(ThemeColor::DangerText),
@@ -1285,6 +1367,43 @@ void GroupConversationInfoPanel::showMemberContextMenu(const User& user, const Q
 
     connect(menu, &StyledActionMenu::aboutToHide, menu, &QObject::deleteLater);
     menu->popupWhenMouseReleased(globalPos);
+}
+
+void GroupConversationInfoPanel::showCreateBotPopup()
+{
+    if (m_group.groupId.isEmpty()) {
+        return;
+    }
+
+    const QString currentUserId = CurrentUser::instance().getUserId();
+    const GroupRole currentRole = memberRole(m_group, currentUserId);
+    if (currentRole != GroupRole::Owner && currentRole != GroupRole::Admin) {
+        return;
+    }
+
+    auto* content = new GroupBotCreatePopupContent(m_group);
+    InWindowPopupOverlay::Options options;
+    options.maximumPopupSize = QSize(540, 680);
+    options.dismissOnOutsideClick = true;
+    options.dismissOnEscape = true;
+
+    QPointer<InWindowPopupOverlay> popup =
+            InWindowPopupOverlay::showPopup(this, content, options);
+    if (!popup) {
+        return;
+    }
+
+    content->createRequested = [this, popup](const GroupBotCreateRequest& request) {
+        emit groupBotCreateRequested(request);
+        if (popup) {
+            popup->closePopup(InWindowPopupOverlay::DismissReason::Accepted);
+        }
+    };
+    content->cancelRequested = [popup]() {
+        if (popup) {
+            popup->closePopup(InWindowPopupOverlay::DismissReason::Rejected);
+        }
+    };
 }
 
 void GroupConversationInfoPanel::promptMemberNicknameChange(const User& user)
@@ -1343,6 +1462,9 @@ bool GroupConversationInfoPanel::canEditMemberNickname(const User& user) const
 
     const GroupRole currentRole = memberRole(m_group, currentUserId);
     const GroupRole targetRole = memberRole(m_group, user.id);
+    if (targetRole == GroupRole::Ai || user.isAi) {
+        return false;
+    }
     if (currentRole == GroupRole::Owner) {
         return true;
     }
@@ -1362,6 +1484,9 @@ bool GroupConversationInfoPanel::canPromoteMemberToAdmin(const User& user) const
 
     const GroupRole currentRole = memberRole(m_group, currentUserId);
     const GroupRole targetRole = memberRole(m_group, user.id);
+    if (targetRole == GroupRole::Ai || user.isAi) {
+        return false;
+    }
     return currentRole == GroupRole::Owner && targetRole == GroupRole::Member;
 }
 
@@ -1378,6 +1503,9 @@ bool GroupConversationInfoPanel::canCancelMemberAdmin(const User& user) const
 
     const GroupRole currentRole = memberRole(m_group, currentUserId);
     const GroupRole targetRole = memberRole(m_group, user.id);
+    if (targetRole == GroupRole::Ai || user.isAi) {
+        return false;
+    }
     return currentRole == GroupRole::Owner && targetRole == GroupRole::Admin;
 }
 
@@ -1394,6 +1522,9 @@ bool GroupConversationInfoPanel::canRemoveMember(const User& user) const
 
     const GroupRole currentRole = memberRole(m_group, currentUserId);
     const GroupRole targetRole = memberRole(m_group, user.id);
+    if (targetRole == GroupRole::Ai || user.isAi) {
+        return false;
+    }
     if (currentRole == GroupRole::Owner) {
         return true;
     }

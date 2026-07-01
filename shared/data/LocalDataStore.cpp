@@ -266,13 +266,30 @@ bool LocalDataStore::upsertValue(const QString& domain, const QString& key, cons
         }
 
         QSqlDatabase db = databaseForPath(path);
+        const QByteArray nextJson = QJsonDocument(value).toJson(QJsonDocument::Compact);
+        QSqlQuery existingQuery(db);
+        existingQuery.prepare(QStringLiteral("SELECT value_json FROM local_records WHERE domain = ? AND key = ?"));
+        existingQuery.addBindValue(domain);
+        existingQuery.addBindValue(key);
+        if (!existingQuery.exec()) {
+            setLastError(existingQuery.lastError().text());
+            return false;
+        }
+        if (existingQuery.next()) {
+            const QJsonDocument existingDocument =
+                    QJsonDocument::fromJson(existingQuery.value(0).toByteArray());
+            if (existingDocument.isObject() && existingDocument.object() == value) {
+                return true;
+            }
+        }
+
         QSqlQuery query(db);
         query.prepare(QStringLiteral(
                 "INSERT OR REPLACE INTO local_records(domain, key, value_json, updated_at) "
                 "VALUES(?, ?, ?, ?)"));
         query.addBindValue(domain);
         query.addBindValue(key);
-        query.addBindValue(QString::fromUtf8(QJsonDocument(value).toJson(QJsonDocument::Compact)));
+        query.addBindValue(QString::fromUtf8(nextJson));
         query.addBindValue(QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs));
         if (!query.exec()) {
             setLastError(query.lastError().text());
@@ -308,13 +325,30 @@ bool LocalDataStore::upsertValueForAccount(const QString& accountKey,
         }
 
         QSqlDatabase db = databaseForPath(path, accountHash);
+        const QByteArray nextJson = QJsonDocument(value).toJson(QJsonDocument::Compact);
+        QSqlQuery existingQuery(db);
+        existingQuery.prepare(QStringLiteral("SELECT value_json FROM local_records WHERE domain = ? AND key = ?"));
+        existingQuery.addBindValue(domain);
+        existingQuery.addBindValue(key);
+        if (!existingQuery.exec()) {
+            setLastError(existingQuery.lastError().text());
+            return false;
+        }
+        if (existingQuery.next()) {
+            const QJsonDocument existingDocument =
+                    QJsonDocument::fromJson(existingQuery.value(0).toByteArray());
+            if (existingDocument.isObject() && existingDocument.object() == value) {
+                return true;
+            }
+        }
+
         QSqlQuery query(db);
         query.prepare(QStringLiteral(
                 "INSERT OR REPLACE INTO local_records(domain, key, value_json, updated_at) "
                 "VALUES(?, ?, ?, ?)"));
         query.addBindValue(domain);
         query.addBindValue(key);
-        query.addBindValue(QString::fromUtf8(QJsonDocument(value).toJson(QJsonDocument::Compact)));
+        query.addBindValue(QString::fromUtf8(nextJson));
         query.addBindValue(QDateTime::currentDateTimeUtc().toString(Qt::ISODateWithMs));
         if (!query.exec()) {
             setLastError(query.lastError().text());

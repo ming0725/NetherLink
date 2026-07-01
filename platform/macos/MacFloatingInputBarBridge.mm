@@ -1849,6 +1849,12 @@ void appendInputText(QWidget* widget, const QString& text)
                                                      length:static_cast<NSUInteger>(bytes.size())
                                                    encoding:NSUTF8StringEncoding] autorelease];
     NSString* currentText = inputField.string ?: @"";
+    if ([appendText hasPrefix:@"@"] && currentText.length > 0) {
+        const unichar lastCharacter = [currentText characterAtIndex:currentText.length - 1];
+        if (![[NSCharacterSet whitespaceAndNewlineCharacterSet] characterIsMember:lastCharacter]) {
+            appendText = [@" " stringByAppendingString:appendText];
+        }
+    }
     [inputField setString:[currentText stringByAppendingString:appendText]];
     [inputField setSelectedRange:NSMakeRange(inputField.string.length, 0)];
     if (inputField.window) {

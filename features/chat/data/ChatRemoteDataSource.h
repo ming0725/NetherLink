@@ -1,11 +1,13 @@
 #pragma once
 
 #include "shared/network/NetworkTypes.h"
+#include "shared/types/ChatMessage.h"
 
 #include <QHash>
 #include <QJsonObject>
 #include <QObject>
 #include <QString>
+#include <QVector>
 
 class ChatRemoteDataSource final : public QObject
 {
@@ -17,7 +19,8 @@ public:
     QString sendTextMessage(const QString& conversationId,
                             const QString& text,
                             const QString& referencedMessageId = {},
-                            const QString& clientMessageId = {});
+                            const QString& clientMessageId = {},
+                            const QVector<ChatMessageMention>& mentions = {});
     QString sendImageMessage(const QString& conversationId,
                              const QString& imagePath,
                              const QString& referencedMessageId = {},

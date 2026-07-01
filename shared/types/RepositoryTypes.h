@@ -132,6 +132,7 @@ struct ConversationSummary {
     QString title;
     QString avatarPath;
     QString previewText;
+    bool hasCurrentUserMention = false;
     QDateTime lastMessageTime;
     QDateTime messageListTime;
     int unreadCount = 0;
@@ -168,9 +169,16 @@ struct ConversationMeta {
 
 using ChatMessageList = QVector<QSharedPointer<ChatMessage>>;
 
+struct ConversationMentionRef {
+    QString messageId;
+    int messageSeq = 0;
+    QDateTime timestamp;
+};
+
 struct ConversationThreadData {
     ConversationMeta meta;
     ChatMessageList messages;
+    QVector<ConversationMentionRef> currentUserMentions;
     int unreadCount = 0;
     int loadedMessageCount = 0;
     bool hasMoreBefore = false;

@@ -10,6 +10,7 @@ class HistoryUnreadNotifier : public QWidget
 public:
     explicit HistoryUnreadNotifier(QWidget* parent = nullptr);
     void setUnreadCount(int count);
+    void setText(const QString& text);
     QSize sizeHint() const override;
 
 signals:
@@ -31,6 +32,7 @@ private:
     void updateSize();
 
     int m_count = 0;
+    QString m_customText;
     bool m_hovered = false;
     bool m_pressed = false;
 };

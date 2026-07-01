@@ -20,6 +20,7 @@ enum class GroupNotificationStatus {
 enum class GroupMemberRole {
     Owner,
     Admin,
+    Ai,
     Member
 };
 

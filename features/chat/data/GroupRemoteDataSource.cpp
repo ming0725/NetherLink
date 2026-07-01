@@ -91,6 +91,21 @@ QVector<QString> stringVectorFromJson(const QJsonArray& array)
     return values;
 }
 
+QJsonArray stringListToJsonArray(const QStringList& values)
+{
+    QJsonArray array;
+    QSet<QString> seen;
+    for (const QString& value : values) {
+        const QString normalized = value.trimmed();
+        if (normalized.isEmpty() || seen.contains(normalized)) {
+            continue;
+        }
+        array.append(normalized);
+        seen.insert(normalized);
+    }
+    return array;
+}
+
 QMap<QString, QString> stringMapFromJson(const QJsonObject& object)
 {
     QMap<QString, QString> map;
@@ -163,6 +178,16 @@ bool isPresenceStatusValue(const QString& value)
            normalized == QStringLiteral("invisible");
 }
 
+bool isAiKindValue(const QString& value)
+{
+    const QString normalized = value.trimmed().toLower();
+    return normalized == QStringLiteral("ai") ||
+           normalized == QStringLiteral("bot") ||
+           normalized == QStringLiteral("agent") ||
+           normalized == QStringLiteral("assistant") ||
+           normalized == QStringLiteral("group_bot");
+}
+
 QJsonObject presenceObjectFrom(const QJsonObject& object)
 {
     const QJsonObject presence = object.value(QStringLiteral("presence")).toObject();
@@ -198,6 +223,9 @@ GroupMemberRoleValue groupMemberRoleFromString(const QString& value)
     if (normalized == QStringLiteral("admin")) {
         return GroupMemberRoleValue::Admin;
     }
+    if (normalized == QStringLiteral("ai")) {
+        return GroupMemberRoleValue::Ai;
+    }
     return GroupMemberRoleValue::Member;
 }
 
@@ -223,11 +251,22 @@ QJsonObject memberUserObject(QJsonObject object)
     }
     if (!object.contains(QStringLiteral("nick"))) {
         object.insert(QStringLiteral("nick"),
-                      firstString(object, {QStringLiteral("nickName"), QStringLiteral("displayName")}));
+                      firstString(object, {QStringLiteral("nickName"),
+                                           QStringLiteral("displayName"),
+                                           QStringLiteral("name")}));
     }
     for (const QString& key : {QStringLiteral("presence"),
                                QStringLiteral("status"),
-                               QStringLiteral("lastSeenAt")}) {
+                               QStringLiteral("lastSeenAt"),
+                               QStringLiteral("isAi"),
+                               QStringLiteral("kind"),
+                               QStringLiteral("agentId"),
+                               QStringLiteral("agent_id"),
+                               QStringLiteral("botUserId"),
+                               QStringLiteral("bot_user_id"),
+                               QStringLiteral("botStatus"),
+                               QStringLiteral("agentStatus"),
+                               QStringLiteral("aiStatus")}) {
         if (wrapper.contains(key) && !object.contains(key)) {
             object.insert(key, wrapper.value(key));
         }
@@ -240,6 +279,12 @@ User userFromMemberObject(const QJsonObject& source)
     const QJsonObject object = memberUserObject(source);
     User user;
     user.id = object.value(QStringLiteral("id")).toString();
+    user.userUuid = firstString(object, {QStringLiteral("userUuid"),
+                                         QStringLiteral("uuid"),
+                                         QStringLiteral("id")});
+    user.userId = firstString(object, {QStringLiteral("userId"),
+                                       QStringLiteral("publicId"),
+                                       QStringLiteral("public_id")});
     user.nick = object.value(QStringLiteral("nick")).toString();
     user.remark = object.value(QStringLiteral("remark")).toString();
     user.avatarPath = avatarSourceFromObject(object, QStringLiteral("avatarPath"));
@@ -248,7 +293,65 @@ User userFromMemberObject(const QJsonObject& source)
     user.lastSeenAt = dateTimeFromString(presence.value(QStringLiteral("lastSeenAt")).toString());
     user.signature = object.value(QStringLiteral("signature")).toString();
     user.region = object.value(QStringLiteral("region")).toString();
+    user.aiAgentId = firstString(object, {QStringLiteral("agentId"),
+                                          QStringLiteral("agent_id")});
+    user.aiKind = firstString(object, {QStringLiteral("kind"),
+                                       QStringLiteral("agentKind"),
+                                       QStringLiteral("agent_kind")});
+    user.aiStatus = firstString(object, {QStringLiteral("botStatus"),
+                                         QStringLiteral("agentStatus"),
+                                         QStringLiteral("aiStatus")});
+    const QString rawStatus = object.value(QStringLiteral("status")).toString();
+    if (user.aiStatus.isEmpty() && !isPresenceStatusValue(rawStatus)) {
+        user.aiStatus = rawStatus;
+    }
+    user.isAi = object.value(QStringLiteral("isAi")).toBool(false) ||
+                isAiKindValue(user.aiKind) ||
+                !user.aiAgentId.isEmpty() ||
+                !firstString(object, {QStringLiteral("botUserId"),
+                                      QStringLiteral("bot_user_id")}).isEmpty() ||
+                user.userId.startsWith(QStringLiteral("agent_"));
+    if (user.aiAgentId.isEmpty() &&
+        user.isAi &&
+        user.userId.startsWith(QStringLiteral("agent_"))) {
+        user.aiAgentId = user.userId;
+    }
     return user;
+}
+
+GroupBotAgent groupBotAgentFromObject(QJsonObject object)
+{
+    const QJsonObject nestedAgent = object.value(QStringLiteral("agent")).toObject();
+    if (!nestedAgent.isEmpty()) {
+        object = nestedAgent;
+    }
+
+    GroupBotAgent agent;
+    agent.agentId = firstString(object, {QStringLiteral("agentId"),
+                                         QStringLiteral("agent_id"),
+                                         QStringLiteral("id")});
+    agent.botUserId = firstString(object, {QStringLiteral("botUserId"),
+                                           QStringLiteral("bot_user_id"),
+                                           QStringLiteral("userUuid"),
+                                           QStringLiteral("user_uuid")});
+    agent.ownerUserId = firstString(object, {QStringLiteral("ownerUserId"),
+                                             QStringLiteral("owner_user_id"),
+                                             QStringLiteral("ownerUuid")});
+    agent.kind = firstString(object, {QStringLiteral("kind"),
+                                      QStringLiteral("agentKind")});
+    agent.visibility = object.value(QStringLiteral("visibility")).toString();
+    agent.name = firstString(object, {QStringLiteral("name"),
+                                      QStringLiteral("nick"),
+                                      QStringLiteral("displayName")});
+    agent.avatarFileId = avatarFileIdFrom(object);
+    agent.basePrompt = object.value(QStringLiteral("basePrompt")).toString(
+            object.value(QStringLiteral("base_prompt")).toString());
+    agent.model = object.value(QStringLiteral("model")).toString();
+    agent.status = object.value(QStringLiteral("status")).toString();
+    agent.version = object.value(QStringLiteral("version")).toInt();
+    agent.createdAt = dateTimeFromString(object.value(QStringLiteral("createdAt")).toString());
+    agent.updatedAt = dateTimeFromString(object.value(QStringLiteral("updatedAt")).toString());
+    return agent;
 }
 
 GroupMemberProfile groupMemberFromObject(const QString& groupId, const QJsonObject& source)
@@ -270,6 +373,12 @@ GroupMemberProfile groupMemberFromObject(const QString& groupId, const QJsonObje
     }
     member.nickname = source.value(QStringLiteral("nickname")).toString();
     member.role = groupMemberRoleFromString(source.value(QStringLiteral("role")).toString());
+    if (member.role == GroupMemberRoleValue::Ai) {
+        member.user.isAi = true;
+        if (member.user.aiKind.isEmpty()) {
+            member.user.aiKind = QStringLiteral("group_bot");
+        }
+    }
     member.isDnd = source.value(QStringLiteral("isDnd")).toBool(false);
     member.joinedAt = dateTimeFromString(source.value(QStringLiteral("joinedAt")).toString());
     member.version = source.value(QStringLiteral("version")).toInt();
@@ -688,6 +797,49 @@ QString GroupRemoteDataSource::transferOwner(const Group& group, const QString& 
                          HttpMethod::Post);
 }
 
+QString GroupRemoteDataSource::createBot(const GroupBotCreateRequest& request)
+{
+    const QString groupId = request.groupId.trimmed();
+    const QString name = request.name.trimmed();
+    const QString basePrompt = request.basePrompt.trimmed();
+    if (groupId.isEmpty() || name.isEmpty() || basePrompt.isEmpty()) {
+        return {};
+    }
+
+    const QString clientOperationId = request.clientOperationId.trimmed().isEmpty()
+            ? newClientOperationId(QStringLiteral("op_group_bot_create"))
+            : request.clientOperationId.trimmed();
+
+    QJsonObject body;
+    body.insert(QStringLiteral("name"), name);
+    if (!request.avatarFileId.trimmed().isEmpty()) {
+        body.insert(QStringLiteral("avatarFileId"), request.avatarFileId.trimmed());
+    }
+    body.insert(QStringLiteral("basePrompt"), basePrompt);
+    if (!request.model.trimmed().isEmpty()) {
+        body.insert(QStringLiteral("model"), request.model.trimmed());
+    }
+    body.insert(QStringLiteral("toolPolicy"), QJsonObject{
+            {QStringLiteral("allowedTools"), stringListToJsonArray(request.allowedTools)},
+            {QStringLiteral("allowedDomains"), stringListToJsonArray(request.allowedDomains)}
+    });
+    body.insert(QStringLiteral("safetyPolicy"), QJsonObject{
+            {QStringLiteral("requireConfirmationForSideEffects"),
+             request.requireConfirmationForSideEffects}
+    });
+    body.insert(QStringLiteral("cooldownSeconds"), qMax(0, request.cooldownSeconds));
+    body.insert(QStringLiteral("clientOperationId"), clientOperationId);
+
+    PendingOperation pending;
+    pending.action = Action::CreateBot;
+    pending.groupId = groupId;
+    return sendOperation(Action::CreateBot,
+                         QStringLiteral("/groups/%1/bots").arg(groupId),
+                         body,
+                         pending,
+                         HttpMethod::Post);
+}
+
 QString GroupRemoteDataSource::fetchGroup(const QString& groupId)
 {
     if (groupId.isEmpty()) {
@@ -841,6 +993,19 @@ void GroupRemoteDataSource::handleRequestSucceeded(const QString& requestId, con
         emit groupUpdated(requestId, group);
         break;
     }
+    case Action::CreateBot:
+    {
+        GroupBotAgent agent = groupBotAgentFromObject(response.object());
+        if (agent.agentId.isEmpty() || agent.botUserId.isEmpty()) {
+            NetworkError error;
+            error.code = QStringLiteral("GROUP_BOT_MISSING");
+            error.message = QStringLiteral("Create group bot response did not include agentId or botUserId.");
+            emit groupBotCreateFailed(requestId, pending.groupId, error);
+            return;
+        }
+        emit groupBotCreated(requestId, pending.groupId, agent);
+        break;
+    }
     case Action::RemoveMembers: {
         auto it = m_pendingBatches.find(pending.batchId);
         if (it == m_pendingBatches.end()) {
@@ -900,6 +1065,9 @@ void GroupRemoteDataSource::handleRequestFailed(const QString& requestId, const 
     case Action::RemoveMember:
     case Action::TransferOwner:
         emit groupUpdateFailed(requestId, pending.groupId, error);
+        break;
+    case Action::CreateBot:
+        emit groupBotCreateFailed(requestId, pending.groupId, error);
         break;
     case Action::RemoveMembers: {
         const PendingBatch batch = m_pendingBatches.take(pending.batchId);

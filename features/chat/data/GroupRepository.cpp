@@ -84,6 +84,8 @@ QString groupMemberRoleToString(GroupMemberRoleValue role)
         return QStringLiteral("owner");
     case GroupMemberRoleValue::Admin:
         return QStringLiteral("admin");
+    case GroupMemberRoleValue::Ai:
+        return QStringLiteral("ai");
     case GroupMemberRoleValue::Member:
     default:
         return QStringLiteral("member");
@@ -98,6 +100,9 @@ GroupMemberRoleValue groupMemberRoleFromString(const QString& value)
     }
     if (normalized == QStringLiteral("admin")) {
         return GroupMemberRoleValue::Admin;
+    }
+    if (normalized == QStringLiteral("ai")) {
+        return GroupMemberRoleValue::Ai;
     }
     return GroupMemberRoleValue::Member;
 }
@@ -659,7 +664,7 @@ GroupRepository::GroupRepository(QObject* parent)
     connect(&AppEventBus::instance(),
             &AppEventBus::typedEventReceived,
             this,
-            [this](const QString& type, const QJsonObject& payload, const RealtimeEvent&) {
+            [this](const QString& type, const QJsonObject& payload, const RealtimeEvent& event) {
         if (type == QStringLiteral("group.deleted")) {
             const QString groupId = firstString(payload, {QStringLiteral("groupId"),
                                                           QStringLiteral("id")});
@@ -756,6 +761,60 @@ GroupRepository::GroupRepository(QObject* parent)
             return;
         }
 
+        if (type == QStringLiteral("group.bot.created")) {
+            QJsonObject agent = payload.value(QStringLiteral("agent")).toObject();
+            if (agent.isEmpty()) {
+                agent = payload;
+            }
+            QString groupId = firstString(payload, {QStringLiteral("groupId"),
+                                                    QStringLiteral("groupID")});
+            if (groupId.isEmpty()) {
+                groupId = firstString(event.raw, {QStringLiteral("groupId"),
+                                                  QStringLiteral("groupID"),
+                                                  QStringLiteral("aggregateId"),
+                                                  QStringLiteral("subjectId")});
+            }
+            const QString botUserId = firstString(agent, {QStringLiteral("botUserId"),
+                                                          QStringLiteral("bot_user_id"),
+                                                          QStringLiteral("userUuid"),
+                                                          QStringLiteral("user_uuid")});
+            if (groupId.isEmpty() || botUserId.isEmpty()) {
+                return;
+            }
+
+            QJsonObject user{
+                    {QStringLiteral("userUuid"), botUserId},
+                    {QStringLiteral("id"), botUserId},
+                    {QStringLiteral("userId"), firstString(agent, {QStringLiteral("userId"),
+                                                                   QStringLiteral("publicId"),
+                                                                   QStringLiteral("agentId"),
+                                                                   QStringLiteral("agent_id")})},
+                    {QStringLiteral("nick"), firstString(agent, {QStringLiteral("name"),
+                                                                 QStringLiteral("nick"),
+                                                                 QStringLiteral("displayName")})},
+                    {QStringLiteral("isAi"), true},
+                    {QStringLiteral("kind"), firstString(agent, {QStringLiteral("kind"),
+                                                                 QStringLiteral("agentKind")})},
+                    {QStringLiteral("agentId"), firstString(agent, {QStringLiteral("agentId"),
+                                                                    QStringLiteral("agent_id")})},
+                    {QStringLiteral("aiStatus"), agent.value(QStringLiteral("status")).toString()}
+            };
+            const QString avatarFileId = firstString(agent, {QStringLiteral("avatarFileId"),
+                                                             QStringLiteral("avatar_file_id"),
+                                                             QStringLiteral("fileId")});
+            if (!avatarFileId.isEmpty()) {
+                user.insert(QStringLiteral("avatarFileId"), avatarFileId);
+            }
+
+            upsertGroupMember(QJsonObject{
+                    {QStringLiteral("groupId"), groupId},
+                    {QStringLiteral("userUuid"), botUserId},
+                    {QStringLiteral("role"), QStringLiteral("ai")},
+                    {QStringLiteral("user"), user}
+            });
+            return;
+        }
+
         if (type != QStringLiteral("group.updated")) {
             return;
         }
@@ -808,6 +867,8 @@ void GroupRepository::reloadFromStore()
             } else if (member.role == GroupMemberRoleValue::Admin &&
                        !group.adminsID.contains(member.userUuid)) {
                 group.adminsID.push_back(member.userUuid);
+            } else if (member.role == GroupMemberRoleValue::Ai) {
+                group.adminsID.removeAll(member.userUuid);
             }
             if (group.memberNum <= 0) {
                 group.memberNum = group.membersID.size();
@@ -1041,12 +1102,20 @@ bool GroupRepository::upsertGroupMember(const QJsonObject& object)
 
     const QJsonObject userObject = memberObject.value(QStringLiteral("user")).toObject();
     if (!userObject.isEmpty()) {
-        UserRepository::instance().upsertUserProfile(userObject);
+        QJsonObject normalizedUserObject = userObject;
+        const QString role = memberObject.value(QStringLiteral("role")).toString().trimmed().toLower();
+        if (role == QStringLiteral("ai")) {
+            normalizedUserObject.insert(QStringLiteral("isAi"), true);
+            if (!normalizedUserObject.contains(QStringLiteral("kind"))) {
+                normalizedUserObject.insert(QStringLiteral("kind"), QStringLiteral("group_bot"));
+            }
+        }
+        UserRepository::instance().upsertUserProfile(normalizedUserObject);
         if (!memberObject.contains(QStringLiteral("userUuid"))) {
             memberObject.insert(QStringLiteral("userUuid"),
-                                firstString(userObject, {QStringLiteral("userUuid"),
-                                                         QStringLiteral("id"),
-                                                         QStringLiteral("userId")}));
+                                firstString(normalizedUserObject, {QStringLiteral("userUuid"),
+                                                                   QStringLiteral("id"),
+                                                                   QStringLiteral("userId")}));
         }
     }
 

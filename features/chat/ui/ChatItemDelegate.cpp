@@ -39,7 +39,24 @@ QColor groupRoleBackgroundColor(GroupRole role)
     if (role == GroupRole::Admin && !ThemeManager::instance().isDark()) {
         return ThemeManager::instance().color(ThemeColor::RoleAdminBackground);
     }
+    if (role == GroupRole::Ai) {
+        return ThemeManager::instance().color(ThemeColor::Accent);
+    }
     return ThemeManager::instance().color(ThemeColor::PanelRaisedBackground);
+}
+
+QColor groupRoleTextColor(GroupRole role)
+{
+    if (role == GroupRole::Owner) {
+        return ThemeManager::instance().color(ThemeColor::RoleOwnerText);
+    }
+    if (role == GroupRole::Admin) {
+        return ThemeManager::instance().color(ThemeColor::RoleAdminText);
+    }
+    if (role == GroupRole::Ai) {
+        return ThemeManager::textColorOn(groupRoleBackgroundColor(role));
+    }
+    return ThemeManager::instance().color(ThemeColor::SecondaryText);
 }
 
 void showCopyNotification(QObject* owner)
@@ -129,6 +146,8 @@ QString roleText(GroupRole role)
         return QStringLiteral("群主");
     case GroupRole::Admin:
         return QStringLiteral("管理员");
+    case GroupRole::Ai:
+        return QStringLiteral("AI");
     case GroupRole::Member:
     default:
         return QStringLiteral("群成员");
@@ -1207,11 +1226,9 @@ void ChatItemDelegate::drawGroupInfo(QPainter* painter, const QRect& rect,
     // 如果有特殊身份（群主或管理员），绘制身份标签
     GroupRole role = message->getRole();
     if (role != GroupRole::Member) {
-        QString roleText = (role == GroupRole::Owner) ? "群主" : "管理员";
+        QString roleText = ::roleText(role);
         QColor bgColor = groupRoleBackgroundColor(role);
-        QColor textColor = (role == GroupRole::Owner)
-                ? ThemeManager::instance().color(ThemeColor::RoleOwnerText)
-                : ThemeManager::instance().color(ThemeColor::RoleAdminText);
+        QColor textColor = groupRoleTextColor(role);
 
         // 计算身份标签的宽度和位置
         QRect roleRect = nameRect;
@@ -1258,7 +1275,7 @@ void ChatItemDelegate::drawGroupInfoForMe(QPainter* painter, const QRect& rect,
     // 如果有特殊身份，计算身份标签宽度
     GroupRole role = message->getRole();
     if (role != GroupRole::Member) {
-        roleText = (role == GroupRole::Owner) ? "群主" : "管理员";
+        roleText = ::roleText(role);
         roleWidth = fm.horizontalAdvance(roleText) + 2 * ROLE_PADDING;
         totalWidth += roleWidth + 5;  // 5像素间距
     }
@@ -1273,9 +1290,7 @@ void ChatItemDelegate::drawGroupInfoForMe(QPainter* painter, const QRect& rect,
     // 如果有特殊身份，先绘制身份标签（在左边）
     if (role != GroupRole::Member) {
         QColor bgColor = groupRoleBackgroundColor(role);
-        QColor textColor = (role == GroupRole::Owner)
-                ? ThemeManager::instance().color(ThemeColor::RoleOwnerText)
-                : ThemeManager::instance().color(ThemeColor::RoleAdminText);
+        QColor textColor = groupRoleTextColor(role);
 
         QRect roleRect(startX, rect.top() + (rect.height() - ROLE_HEIGHT) / 2,
                       roleWidth, ROLE_HEIGHT);

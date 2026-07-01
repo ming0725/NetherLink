@@ -262,7 +262,10 @@ void MessageListWidget::onRepositoryLastMessageChanged(const QString& conversati
 
     m_model->updateConversationPreview(conversationId,
                                        previewTextForMessage(conversationId, lastMessage),
-                                       lastMessage ? lastMessage->getTimestamp() : QDateTime());
+                                       lastMessage ? lastMessage->getTimestamp() : QDateTime(),
+                                       !MessageRepository::instance()
+                                                .requestCurrentUserMentions(conversationId)
+                                                .isEmpty());
 }
 
 void MessageListWidget::showConversationMenu(const QPoint& globalPos, const QModelIndex& index)

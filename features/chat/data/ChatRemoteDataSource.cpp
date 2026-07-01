@@ -56,6 +56,31 @@ QJsonObject baseMessageBody(const QString& clientMessageId,
     return body;
 }
 
+QJsonArray mentionsArrayForRequest(const QVector<ChatMessageMention>& mentions)
+{
+    QJsonArray array;
+    for (const ChatMessageMention& mention : mentions) {
+        const QString targetType = mention.targetType.trimmed().toLower();
+        if (targetType != QStringLiteral("user") && targetType != QStringLiteral("ai")) {
+            continue;
+        }
+
+        QString targetId = mention.targetId.trimmed();
+        if (targetId.isEmpty() && targetType == QStringLiteral("user")) {
+            targetId = mention.targetUserUuid.trimmed();
+        }
+        if (targetId.isEmpty()) {
+            continue;
+        }
+
+        array.append(QJsonObject{
+                {QStringLiteral("targetType"), targetType},
+                {QStringLiteral("targetId"), targetId}
+        });
+    }
+    return array;
+}
+
 } // namespace
 
 ChatRemoteDataSource& ChatRemoteDataSource::instance()
@@ -111,7 +136,8 @@ ChatRemoteDataSource::ChatRemoteDataSource(QObject* parent)
 QString ChatRemoteDataSource::sendTextMessage(const QString& conversationId,
                                               const QString& text,
                                               const QString& referencedMessageId,
-                                              const QString& clientMessageId)
+                                              const QString& clientMessageId,
+                                              const QVector<ChatMessageMention>& mentions)
 {
     const QString trimmedText = text.trimmed();
     if (conversationId.isEmpty() || trimmedText.isEmpty()) {
@@ -129,6 +155,10 @@ QString ChatRemoteDataSource::sendTextMessage(const QString& conversationId,
                                        referencedMessageId);
     body.insert(QStringLiteral("content"), content);
     body.insert(QStringLiteral("attachments"), QJsonArray{});
+    const QJsonArray mentionsArray = mentionsArrayForRequest(mentions);
+    if (!mentionsArray.isEmpty()) {
+        body.insert(QStringLiteral("mentions"), mentionsArray);
+    }
     return sendMessageRequest(conversationId, body, resolvedClientMessageId);
 }
 

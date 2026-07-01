@@ -7,6 +7,7 @@
 #include "features/friend/data/FriendRemoteDataSource.h"
 #include "features/friend/data/UserRepository.h"
 #include "app/state/CurrentUser.h"
+#include "shared/services/AvatarSource.h"
 
 #include <QCollator>
 #include <QHash>
@@ -14,6 +15,8 @@
 #include <QPointer>
 #include <QSet>
 #include <QThread>
+#include <QTimer>
+#include <QUuid>
 
 #include <algorithm>
 #include <utility>
@@ -57,6 +60,10 @@ QString memberDisplayName(const Group& group, const User& user)
 
 GroupRole memberRole(const Group& group, const QString& userId)
 {
+    const GroupMemberProfile member = GroupRepository::instance().requestGroupMember(group.groupId, userId);
+    if (member.role == GroupMemberRoleValue::Ai) {
+        return GroupRole::Ai;
+    }
     if (CurrentUser::instance().isCurrentUserId(userId)) {
         const QString currentRole = group.role.trimmed().toLower();
         if (currentRole == QStringLiteral("owner")) {
@@ -82,6 +89,8 @@ QString groupMemberRoleToString(GroupMemberRoleValue role)
         return QStringLiteral("owner");
     case GroupMemberRoleValue::Admin:
         return QStringLiteral("admin");
+    case GroupMemberRoleValue::Ai:
+        return QStringLiteral("ai");
     case GroupMemberRoleValue::Member:
     default:
         return QStringLiteral("member");
@@ -104,6 +113,10 @@ QJsonObject userToProfileJson(const User& user)
             {QStringLiteral("etag"), user.etag},
             {QStringLiteral("signature"), user.signature},
             {QStringLiteral("isDnd"), user.isDnd},
+            {QStringLiteral("isAi"), user.isAi},
+            {QStringLiteral("agentId"), user.aiAgentId},
+            {QStringLiteral("kind"), user.aiKind},
+            {QStringLiteral("aiStatus"), user.aiStatus},
             {QStringLiteral("region"), user.region}
     };
 }
@@ -137,7 +150,25 @@ void persistGroupMemberProfile(const GroupMemberProfile& member)
 
 GroupRole memberRole(const Group& group, const User& user)
 {
+    if (user.isAi) {
+        return GroupRole::Ai;
+    }
     return memberRole(group, user.id);
+}
+
+int groupRoleSortRank(GroupRole role)
+{
+    switch (role) {
+    case GroupRole::Owner:
+        return 0;
+    case GroupRole::Admin:
+        return 1;
+    case GroupRole::Ai:
+        return 2;
+    case GroupRole::Member:
+    default:
+        return 3;
+    }
 }
 
 QVector<User> sortedGroupMembers(const Group& group,
@@ -163,8 +194,8 @@ QVector<User> sortedGroupMembers(const Group& group,
     std::sort(filtered.begin(), filtered.end(), [&group, &collator](const User& lhs, const User& rhs) {
         const GroupRole lhsRole = memberRole(group, lhs);
         const GroupRole rhsRole = memberRole(group, rhs);
-        const int lhsRank = lhsRole == GroupRole::Owner ? 0 : (lhsRole == GroupRole::Admin ? 1 : 2);
-        const int rhsRank = rhsRole == GroupRole::Owner ? 0 : (rhsRole == GroupRole::Admin ? 1 : 2);
+        const int lhsRank = groupRoleSortRank(lhsRole);
+        const int rhsRank = groupRoleSortRank(rhsRole);
         if (lhsRank != rhsRank) {
             return lhsRank < rhsRank;
         }
@@ -268,6 +299,193 @@ QVector<User> requestGroupMemberPreview(const Group& group)
     }
     return sortedGroupMembers(group, members);
 }
+
+bool isCurrentUserId(const QString& userId,
+                     const QString& currentUserId,
+                     const CurrentUserProfile& currentUserProfile)
+{
+    if (userId.isEmpty()) {
+        return false;
+    }
+    return userId == currentUserId ||
+           (!currentUserProfile.userUuid.isEmpty() && userId == currentUserProfile.userUuid) ||
+           (!currentUserProfile.userId.isEmpty() && userId == currentUserProfile.userId);
+}
+
+User currentUserAsUser(const CurrentUserProfile& profile, const QString& fallbackUserId)
+{
+    User user;
+    user.id = profile.userUuid.isEmpty() ? fallbackUserId : profile.userUuid;
+    user.userUuid = profile.userUuid.isEmpty() ? user.id : profile.userUuid;
+    user.userId = profile.userId;
+    user.nick = profile.nickName;
+    user.avatarPath = profile.avatarPath;
+    user.avatarVersion = profile.avatarVersion;
+    user.avatarEtag = profile.avatarEtag;
+    user.avatarContentHash = profile.avatarContentHash;
+    user.status = profile.status;
+    user.lastSeenAt = profile.lastSeenAt;
+    user.signature = profile.signature;
+    user.region = profile.region;
+    return user;
+}
+
+void appendPreviewMemberProfile(QVector<GroupMemberProfile>& members,
+                                QSet<QString>& seen,
+                                const Group& group,
+                                const QString& userId,
+                                const QString& currentUserId,
+                                const CurrentUserProfile& currentUserProfile)
+{
+    if (userId.isEmpty() || seen.contains(userId) || members.size() >= kPanelMemberPreviewLimit) {
+        return;
+    }
+
+    GroupMemberProfile member = GroupRepository::instance().requestGroupMember(group.groupId, userId);
+    if (member.groupId.isEmpty()) {
+        member.groupId = group.groupId;
+        member.userUuid = userId;
+        member.nickname = group.memberNicknames.value(userId);
+        if (userId == group.ownerId) {
+            member.role = GroupMemberRoleValue::Owner;
+        } else if (group.adminsID.contains(userId)) {
+            member.role = GroupMemberRoleValue::Admin;
+        }
+    }
+
+    User user;
+    if (isCurrentUserId(userId, currentUserId, currentUserProfile)) {
+        user = currentUserAsUser(currentUserProfile, userId);
+    } else {
+        user = UserRepository::instance().requestUserDetail({userId});
+    }
+    if (user.id.isEmpty()) {
+        user.id = userId;
+        user.userUuid = userId;
+    }
+    if (user.isAi && member.role == GroupMemberRoleValue::Member) {
+        member.role = GroupMemberRoleValue::Ai;
+    }
+    member.user = user;
+
+    members.push_back(member);
+    seen.insert(userId);
+}
+
+QVector<GroupMemberProfile> requestGroupMemberProfilePreview(
+        const Group& group,
+        const QString& currentUserId,
+        const CurrentUserProfile& currentUserProfile)
+{
+    QVector<GroupMemberProfile> members;
+    if (group.groupId.isEmpty()) {
+        return members;
+    }
+
+    QSet<QString> seen;
+    members.reserve(kPanelMemberPreviewLimit);
+    appendPreviewMemberProfile(members, seen, group, group.ownerId, currentUserId, currentUserProfile);
+    for (const QString& adminId : group.adminsID) {
+        appendPreviewMemberProfile(members, seen, group, adminId, currentUserId, currentUserProfile);
+    }
+    for (const QString& memberId : group.membersID) {
+        appendPreviewMemberProfile(members, seen, group, memberId, currentUserId, currentUserProfile);
+    }
+    return members;
+}
+
+bool groupsEqual(const Group& lhs, const Group& rhs)
+{
+    return lhs.groupId == rhs.groupId &&
+           lhs.groupPublicId == rhs.groupPublicId &&
+           lhs.version == rhs.version &&
+           lhs.etag == rhs.etag &&
+           lhs.groupName == rhs.groupName &&
+           lhs.memberNum == rhs.memberNum &&
+           lhs.ownerId == rhs.ownerId &&
+           lhs.groupAvatarPath == rhs.groupAvatarPath &&
+           lhs.avatarVersion == rhs.avatarVersion &&
+           lhs.avatarEtag == rhs.avatarEtag &&
+           lhs.avatarContentHash == rhs.avatarContentHash &&
+           lhs.isDnd == rhs.isDnd &&
+           lhs.adminsID == rhs.adminsID &&
+           lhs.remark == rhs.remark &&
+           lhs.introduction == rhs.introduction &&
+           lhs.announcement == rhs.announcement &&
+           lhs.currentUserNickname == rhs.currentUserNickname &&
+           lhs.memberNicknames == rhs.memberNicknames &&
+           lhs.membersID == rhs.membersID &&
+           lhs.listGroupId == rhs.listGroupId &&
+           lhs.listGroupName == rhs.listGroupName &&
+           lhs.role == rhs.role;
+}
+
+bool conversationMetasEqual(const ConversationMeta& lhs, const ConversationMeta& rhs)
+{
+    return lhs.conversationId == rhs.conversationId &&
+           lhs.title == rhs.title &&
+           lhs.avatarPath == rhs.avatarPath &&
+           lhs.isGroup == rhs.isGroup &&
+           lhs.memberCount == rhs.memberCount &&
+           lhs.status == rhs.status &&
+           lhs.isDoNotDisturb == rhs.isDoNotDisturb &&
+           lhs.isPinned == rhs.isPinned &&
+           lhs.peerUserId == rhs.peerUserId &&
+           lhs.groupId == rhs.groupId;
+}
+
+bool usersEqual(const User& lhs, const User& rhs)
+{
+    return lhs.id == rhs.id &&
+           lhs.userUuid == rhs.userUuid &&
+           lhs.userId == rhs.userId &&
+           lhs.nick == rhs.nick &&
+           lhs.remark == rhs.remark &&
+           lhs.avatarPath == rhs.avatarPath &&
+           lhs.avatarVersion == rhs.avatarVersion &&
+           lhs.avatarEtag == rhs.avatarEtag &&
+           lhs.avatarContentHash == rhs.avatarContentHash &&
+           lhs.version == rhs.version &&
+           lhs.etag == rhs.etag &&
+           lhs.status == rhs.status &&
+           lhs.lastSeenAt == rhs.lastSeenAt &&
+           lhs.signature == rhs.signature &&
+           lhs.isDnd == rhs.isDnd &&
+           lhs.isFriend == rhs.isFriend &&
+           lhs.isAi == rhs.isAi &&
+           lhs.aiAgentId == rhs.aiAgentId &&
+           lhs.aiKind == rhs.aiKind &&
+           lhs.aiStatus == rhs.aiStatus &&
+           lhs.friendGroupId == rhs.friendGroupId &&
+           lhs.friendGroupName == rhs.friendGroupName &&
+           lhs.region == rhs.region;
+}
+
+bool memberProfilesEqual(const GroupMemberProfile& lhs, const GroupMemberProfile& rhs)
+{
+    return lhs.groupId == rhs.groupId &&
+           lhs.userUuid == rhs.userUuid &&
+           lhs.nickname == rhs.nickname &&
+           lhs.role == rhs.role &&
+           lhs.isDnd == rhs.isDnd &&
+           lhs.joinedAt == rhs.joinedAt &&
+           lhs.version == rhs.version &&
+           usersEqual(lhs.user, rhs.user);
+}
+
+bool memberProfileListsEqual(const QVector<GroupMemberProfile>& lhs,
+                             const QVector<GroupMemberProfile>& rhs)
+{
+    if (lhs.size() != rhs.size()) {
+        return false;
+    }
+    for (int index = 0; index < lhs.size(); ++index) {
+        if (!memberProfilesEqual(lhs.at(index), rhs.at(index))) {
+            return false;
+        }
+    }
+    return true;
+}
 } // namespace
 
 ChatSessionController::ChatSessionController(QObject* parent)
@@ -348,7 +566,11 @@ ChatSessionController::ChatSessionController(QObject* parent)
                 }
 
                 m_panelGroupRequestId.clear();
+                const bool changed = !groupsEqual(m_group, group);
                 GroupRepository::instance().saveGroup(group);
+                if (!changed) {
+                    return;
+                }
                 m_group = group;
                 m_meta = MessageRepository::instance().requestConversationMeta({m_meta.conversationId});
                 emit groupPanelDataLoaded(m_meta,
@@ -367,6 +589,45 @@ ChatSessionController::ChatSessionController(QObject* parent)
                 }
                 GroupRepository::instance().saveGroup(group);
                 refreshSessionData(true);
+            });
+    connect(&GroupRemoteDataSource::instance(),
+            &GroupRemoteDataSource::groupBotCreated,
+            this,
+            [this](const QString&, const QString& groupId, const GroupBotAgent& agent) {
+                if (!m_meta.isGroup || !hasCurrentConversation(groupId)) {
+                    return;
+                }
+
+                User botUser;
+                botUser.id = agent.botUserId;
+                botUser.userUuid = agent.botUserId;
+                botUser.userId = agent.agentId;
+                botUser.nick = agent.name;
+                botUser.avatarPath = AvatarSource::fromAvatarFileId(agent.avatarFileId);
+                botUser.isAi = true;
+                botUser.aiAgentId = agent.agentId;
+                botUser.aiKind = agent.kind.isEmpty() ? QStringLiteral("group_bot") : agent.kind;
+                botUser.aiStatus = agent.status;
+
+                GroupMemberProfile member;
+                member.groupId = groupId;
+                member.userUuid = agent.botUserId;
+                member.user = botUser;
+                member.role = GroupMemberRoleValue::Ai;
+                member.nickname = agent.name;
+                member.version = agent.version;
+                persistGroupMemberProfile(member);
+
+                refreshSessionData(true);
+                loadPanelData();
+            });
+    connect(&GroupRemoteDataSource::instance(),
+            &GroupRemoteDataSource::groupBotCreateFailed,
+            this,
+            [this](const QString&, const QString& groupId, const NetworkError& error) {
+                if (m_meta.isGroup && hasCurrentConversation(groupId)) {
+                    emit groupBotCreateFailed(groupId, error);
+                }
             });
     connect(&GroupRemoteDataSource::instance(),
             &GroupRemoteDataSource::groupLeft,
@@ -425,14 +686,26 @@ ChatSessionController::ChatSessionController(QObject* parent)
 
                 if (requestId == m_panelPreviewMembersRequestId) {
                     m_panelPreviewMembersRequestId.clear();
-                    m_panelPreviewMembers = members.mid(0, limit);
+                    const QVector<GroupMemberProfile> nextPreviewMembers = members.mid(0, limit);
+                    const bool previewChanged = !memberProfileListsEqual(m_panelPreviewMembers,
+                                                                         nextPreviewMembers);
                     Group group = GroupRepository::instance().requestGroupDetail({groupId});
                     if (group.groupId.isEmpty()) {
                         group = m_group;
                     }
+                    const Group previousGroup = group;
                     if (totalCount > 0) {
                         group.memberNum = totalCount;
                     }
+                    const bool groupChanged = !groupsEqual(previousGroup, group) ||
+                                              !groupsEqual(m_group, group);
+                    if (groupChanged) {
+                        GroupRepository::instance().saveGroup(group);
+                    }
+                    if (!previewChanged && !groupChanged) {
+                        return;
+                    }
+                    m_panelPreviewMembers = nextPreviewMembers;
                     m_group = group;
                     m_meta = MessageRepository::instance().requestConversationMeta({m_meta.conversationId});
                     emit groupPanelDataLoaded(m_meta,
@@ -506,7 +779,12 @@ ChatSessionController::ChatSessionController(QObject* parent)
                 }
 
                 m_panelConversationRequestId.clear();
-                m_meta = MessageRepository::instance().requestConversationMeta({m_meta.conversationId});
+                const ConversationMeta nextMeta =
+                        MessageRepository::instance().requestConversationMeta({m_meta.conversationId});
+                if (conversationMetasEqual(m_meta, nextMeta)) {
+                    return;
+                }
+                m_meta = nextMeta;
                 if (m_meta.isGroup) {
                     emit groupPanelDataLoaded(m_meta,
                                               m_group,
@@ -607,25 +885,58 @@ void ChatSessionController::loadPanelData()
         }
 
         m_panelPreviewMembers.clear();
-        m_group = GroupRepository::instance().requestGroupDetail({currentGroupId});
-        m_meta = MessageRepository::instance().requestConversationMeta({meta.conversationId});
-        if (m_meta.conversationId.isEmpty()) {
-            m_meta = meta;
-        }
-        emit groupPanelDataLoaded(m_meta,
-                                  m_group,
-                                  m_panelPreviewMembers,
-                                  m_group.memberNum,
-                                  canEditGroupInfo(m_group),
-                                  canExitGroup());
+        const QString currentUserId = CurrentUser::instance().getUserId();
+        const CurrentUserProfile currentUserProfile = CurrentUser::instance().identity();
+        QPointer<ChatSessionController> controller(this);
 
-        m_panelConversationRequestId = ConversationRemoteDataSource::instance().fetchConversation(meta.conversationId);
-        m_panelGroupRequestId = GroupRemoteDataSource::instance().fetchGroup(currentGroupId);
-        m_panelPreviewMembersRequestId = GroupRemoteDataSource::instance().fetchMembers(currentGroupId,
-                                                                                       {},
-                                                                                       0,
-                                                                                       kPanelMemberPreviewLimit);
-        Q_UNUSED(token);
+        QThread* thread = QThread::create([controller,
+                                           token,
+                                           meta,
+                                           currentGroupId,
+                                           currentUserId,
+                                           currentUserProfile]() {
+            ConversationMeta loadedMeta = MessageRepository::instance().requestConversationMeta({meta.conversationId});
+            if (loadedMeta.conversationId.isEmpty()) {
+                loadedMeta = meta;
+            }
+
+            const Group loadedGroup = GroupRepository::instance().requestGroupDetail({currentGroupId});
+            const QVector<GroupMemberProfile> previewMembers =
+                    requestGroupMemberProfilePreview(loadedGroup, currentUserId, currentUserProfile);
+            if (!controller) {
+                return;
+            }
+
+            QMetaObject::invokeMethod(controller.data(),
+                                      [controller,
+                                       token,
+                                       loadedMeta,
+                                       loadedGroup,
+                                       previewMembers,
+                                       currentGroupId]() {
+                if (!controller ||
+                    token != controller->m_panelLoadToken ||
+                    loadedMeta.conversationId != controller->m_meta.conversationId ||
+                    !controller->m_meta.isGroup ||
+                    controller->groupId() != currentGroupId) {
+                    return;
+                }
+
+                controller->m_meta = loadedMeta;
+                controller->m_group = loadedGroup;
+                controller->m_directUser = {};
+                controller->m_panelPreviewMembers = previewMembers;
+                emit controller->groupPanelDataLoaded(loadedMeta,
+                                                      loadedGroup,
+                                                      previewMembers,
+                                                      loadedGroup.memberNum,
+                                                      controller->canEditGroupInfo(loadedGroup),
+                                                      controller->canExitGroup());
+                controller->startPanelNetworkRefresh(loadedMeta, currentGroupId, token);
+            }, Qt::QueuedConnection);
+        });
+        connect(thread, &QThread::finished, thread, &QObject::deleteLater);
+        thread->start();
         return;
     }
 
@@ -883,6 +1194,36 @@ void ChatSessionController::transferGroupOwner(const QString& userId)
     GroupRemoteDataSource::instance().transferOwner(group, userId);
 }
 
+void ChatSessionController::createGroupBot(const GroupBotCreateRequest& request)
+{
+    const QString currentGroupId = groupId();
+    if (currentGroupId.isEmpty() || request.groupId != currentGroupId) {
+        return;
+    }
+
+    Group group = GroupRepository::instance().requestGroupDetail({currentGroupId});
+    if (group.groupId.isEmpty() || !canEditGroupInfo(group)) {
+        return;
+    }
+
+    GroupBotCreateRequest next = request;
+    if (next.clientOperationId.trimmed().isEmpty()) {
+        next.clientOperationId = QStringLiteral("op_group_bot_%1")
+                .arg(QUuid::createUuid().toString(QUuid::WithoutBraces));
+    }
+
+    if (!next.avatarLocalPath.trimmed().isEmpty() && next.avatarFileId.trimmed().isEmpty()) {
+        NetworkError error;
+        error.code = QStringLiteral("AVATAR_FILE_NOT_READY");
+        error.message = QStringLiteral("头像尚未上传或处理完成");
+        emit groupBotCreateFailed(currentGroupId, error);
+        return;
+    }
+
+    next.avatarLocalPath.clear();
+    GroupRemoteDataSource::instance().createBot(next);
+}
+
 void ChatSessionController::saveGroupRemark(const QString& remark)
 {
     saveGroupField(remark, [](Group& group, const QString& value) {
@@ -1016,6 +1357,9 @@ bool ChatSessionController::canEditMemberNickname(const Group& group, const QStr
 
     const GroupRole currentRole = memberRole(group, currentUserId);
     const GroupRole targetRole = memberRole(group, userId);
+    if (targetRole == GroupRole::Ai) {
+        return false;
+    }
     if (currentRole == GroupRole::Owner) {
         return true;
     }
@@ -1035,6 +1379,9 @@ bool ChatSessionController::canPromoteMemberToAdmin(const Group& group, const QS
 
     const GroupRole currentRole = memberRole(group, currentUserId);
     const GroupRole targetRole = memberRole(group, userId);
+    if (targetRole == GroupRole::Ai) {
+        return false;
+    }
     return currentRole == GroupRole::Owner && targetRole == GroupRole::Member;
 }
 
@@ -1051,6 +1398,9 @@ bool ChatSessionController::canCancelMemberAdmin(const Group& group, const QStri
 
     const GroupRole currentRole = memberRole(group, currentUserId);
     const GroupRole targetRole = memberRole(group, userId);
+    if (targetRole == GroupRole::Ai) {
+        return false;
+    }
     return currentRole == GroupRole::Owner && targetRole == GroupRole::Admin;
 }
 
@@ -1067,6 +1417,9 @@ bool ChatSessionController::canRemoveMember(const Group& group, const QString& u
 
     const GroupRole currentRole = memberRole(group, currentUserId);
     const GroupRole targetRole = memberRole(group, userId);
+    if (targetRole == GroupRole::Ai) {
+        return false;
+    }
     if (currentRole == GroupRole::Owner) {
         return true;
     }
@@ -1078,11 +1431,41 @@ bool ChatSessionController::canTransferOwner(const Group& group, const QString& 
     if (group.groupId.isEmpty() || userId.isEmpty() || !group.membersID.contains(userId)) {
         return false;
     }
+    if (memberRole(group, userId) == GroupRole::Ai) {
+        return false;
+    }
 
     const QString currentUserId = currentUserUuid();
     return !currentUserId.isEmpty() &&
            CurrentUser::instance().isCurrentUserId(group.ownerId) &&
            !CurrentUser::instance().isCurrentUserId(userId);
+}
+
+void ChatSessionController::startPanelNetworkRefresh(const ConversationMeta& meta,
+                                                     const QString& requestedGroupId,
+                                                     int token)
+{
+    if (meta.conversationId.isEmpty() || requestedGroupId.isEmpty()) {
+        return;
+    }
+
+    QTimer::singleShot(0, this, [this, token, conversationId = meta.conversationId, requestedGroupId]() {
+        if (token != m_panelLoadToken ||
+            m_meta.conversationId != conversationId ||
+            !m_meta.isGroup ||
+            groupId() != requestedGroupId) {
+            return;
+        }
+
+        m_panelConversationRequestId =
+                ConversationRemoteDataSource::instance().fetchConversation(conversationId);
+        m_panelGroupRequestId = GroupRemoteDataSource::instance().fetchGroup(requestedGroupId);
+        m_panelPreviewMembersRequestId =
+                GroupRemoteDataSource::instance().fetchMembers(requestedGroupId,
+                                                               {},
+                                                               0,
+                                                               kPanelMemberPreviewLimit);
+    });
 }
 
 void ChatSessionController::saveGroupField(const QString& value, void (*assign)(Group&, const QString&))

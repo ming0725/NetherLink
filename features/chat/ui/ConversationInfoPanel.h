@@ -5,6 +5,7 @@
 #include <QWidget>
 
 #include "shared/types/Group.h"
+#include "shared/types/GroupBot.h"
 #include "shared/types/RepositoryTypes.h"
 #include "shared/types/User.h"
 
@@ -54,6 +55,7 @@ signals:
     void groupMemberAdminCancellationRequested(const QString& userId);
     void groupMemberRemovalRequested(const QString& userId);
     void groupMemberInvitationRequested(const QStringList& userIds);
+    void groupBotCreateRequested(const GroupBotCreateRequest& request);
     void groupMembersBatchRemovalRequested(const QStringList& userIds);
     void groupOwnerTransferRequested(const QString& userId);
     void groupRemarkChanged(const QString& remark);
@@ -65,6 +67,7 @@ signals:
     void memberProfileRequested(const QString& userId, const QPoint& globalPos);
     void memberMessageRequested(const QString& userId);
     void memberAddFriendRequested(const QString& userId);
+    void memberMentionRequested(const QString& userId);
 
 private:
     InlineEditableText* m_groupNameText = nullptr;
@@ -82,6 +85,7 @@ private:
     QWidget* m_memberSummaryCard = nullptr;
     QWidget* m_memberSummaryHeader = nullptr;
     QWidget* m_inviteMemberAction = nullptr;
+    QWidget* m_createBotAction = nullptr;
     QWidget* m_removeMemberAction = nullptr;
     QWidget* m_memberListPage = nullptr;
     QWidget* m_memberListHeader = nullptr;
@@ -108,6 +112,7 @@ private:
     void showMainPage();
     void showMemberListPage();
     void showMemberContextMenu(const User& user, const QPoint& globalPos);
+    void showCreateBotPopup();
     void promptMemberNicknameChange(const User& user);
     void confirmMemberRemoval(const User& user);
     bool canEditMemberNickname(const User& user) const;

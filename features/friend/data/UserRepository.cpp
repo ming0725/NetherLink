@@ -277,6 +277,47 @@ bool hasPresencePayload(const QJsonObject& object)
            isPresenceStatusValue(object.value(QStringLiteral("status")).toString());
 }
 
+bool isAiKindValue(const QString& value)
+{
+    const QString normalized = value.trimmed().toLower();
+    return normalized == QStringLiteral("ai") ||
+           normalized == QStringLiteral("bot") ||
+           normalized == QStringLiteral("agent") ||
+           normalized == QStringLiteral("assistant") ||
+           normalized == QStringLiteral("group_bot");
+}
+
+bool hasAiPayload(const QJsonObject& object)
+{
+    return object.contains(QStringLiteral("isAi")) ||
+           object.contains(QStringLiteral("kind")) ||
+           object.contains(QStringLiteral("agentId")) ||
+           object.contains(QStringLiteral("agent_id")) ||
+           object.contains(QStringLiteral("botUserId")) ||
+           object.contains(QStringLiteral("bot_user_id")) ||
+           object.contains(QStringLiteral("botStatus")) ||
+           object.contains(QStringLiteral("agentStatus")) ||
+           object.contains(QStringLiteral("aiStatus"));
+}
+
+QString aiStatusFromObject(const QJsonObject& object)
+{
+    for (const QString& key : {QStringLiteral("botStatus"),
+                               QStringLiteral("agentStatus"),
+                               QStringLiteral("aiStatus"),
+                               QStringLiteral("status")}) {
+        const QString value = object.value(key).toString();
+        if (value.isEmpty()) {
+            continue;
+        }
+        if (key == QStringLiteral("status") && isPresenceStatusValue(value)) {
+            continue;
+        }
+        return value;
+    }
+    return {};
+}
+
 QVector<QJsonObject> userObjectsFromResponse(const NetworkResponse& response)
 {
     QVector<QJsonObject> users;
@@ -421,7 +462,9 @@ User userFromJson(const QJsonObject& object)
     }
     user.id = user.userUuid.isEmpty() ? user.userId : user.userUuid;
     user.nick = mergedObject.value(QStringLiteral("nick")).toString(
-            mergedObject.value(QStringLiteral("nickName")).toString(mergedObject.value(QStringLiteral("displayName")).toString()));
+            mergedObject.value(QStringLiteral("nickName")).toString(
+                    mergedObject.value(QStringLiteral("displayName")).toString(
+                            mergedObject.value(QStringLiteral("name")).toString())));
     user.remark = mergedObject.value(QStringLiteral("remark")).toString();
     user.avatarVersion = mergedObject.value(QStringLiteral("avatarVersion")).toInt();
     user.avatarEtag = mergedObject.value(QStringLiteral("avatarEtag")).toString();
@@ -444,6 +487,23 @@ User userFromJson(const QJsonObject& object)
     user.signature = mergedObject.value(QStringLiteral("signature")).toString();
     user.isDnd = mergedObject.value(QStringLiteral("isDnd")).toBool(false);
     user.isFriend = mergedObject.value(QStringLiteral("isFriend")).toBool(false);
+    user.aiAgentId = firstString(mergedObject, {QStringLiteral("agentId"),
+                                                QStringLiteral("agent_id")});
+    user.aiKind = firstString(mergedObject, {QStringLiteral("kind"),
+                                             QStringLiteral("agentKind"),
+                                             QStringLiteral("agent_kind")});
+    user.aiStatus = aiStatusFromObject(mergedObject);
+    user.isAi = mergedObject.value(QStringLiteral("isAi")).toBool(false) ||
+                isAiKindValue(user.aiKind) ||
+                !user.aiAgentId.isEmpty() ||
+                !firstString(mergedObject, {QStringLiteral("botUserId"),
+                                            QStringLiteral("bot_user_id")}).isEmpty() ||
+                user.userId.startsWith(QStringLiteral("agent_"));
+    if (user.aiAgentId.isEmpty() &&
+        user.isAi &&
+        user.userId.startsWith(QStringLiteral("agent_"))) {
+        user.aiAgentId = user.userId;
+    }
     user.friendGroupId = mergedObject.value(QStringLiteral("friendGroupId")).toString(kDefaultFriendGroupId);
     user.friendGroupName = mergedObject.value(QStringLiteral("friendGroupName")).toString(kDefaultFriendGroupName);
     user.region = mergedObject.value(QStringLiteral("region")).toString();
@@ -474,6 +534,10 @@ QJsonObject userToJson(const User& user)
             {QStringLiteral("signature"), user.signature},
             {QStringLiteral("isDnd"), user.isDnd},
             {QStringLiteral("isFriend"), user.isFriend},
+            {QStringLiteral("isAi"), user.isAi},
+            {QStringLiteral("agentId"), user.aiAgentId},
+            {QStringLiteral("kind"), user.aiKind},
+            {QStringLiteral("aiStatus"), user.aiStatus},
             {QStringLiteral("friendGroupId"), user.friendGroupId},
             {QStringLiteral("friendGroupName"), user.friendGroupName},
             {QStringLiteral("region"), user.region}
@@ -1133,6 +1197,10 @@ void UserRepository::saveUser(const User& user)
             || previous.signature != normalized.signature
             || previous.isDnd != normalized.isDnd
             || previous.isFriend != normalized.isFriend
+            || previous.isAi != normalized.isAi
+            || previous.aiAgentId != normalized.aiAgentId
+            || previous.aiKind != normalized.aiKind
+            || previous.aiStatus != normalized.aiStatus
             || previous.friendGroupId != normalized.friendGroupId
             || previous.friendGroupName != normalized.friendGroupName
             || previous.region != normalized.region;
@@ -1180,6 +1248,23 @@ bool UserRepository::upsertUserProfile(const QJsonObject& object, bool preserveF
             user.isFriend = previous.isFriend;
             user.friendGroupId = previous.friendGroupId;
             user.friendGroupName = previous.friendGroupName;
+        }
+        if (!hasAiPayload(object)) {
+            user.isAi = previous.isAi;
+            user.aiAgentId = previous.aiAgentId;
+            user.aiKind = previous.aiKind;
+            user.aiStatus = previous.aiStatus;
+        } else {
+            if (user.aiAgentId.isEmpty()) {
+                user.aiAgentId = previous.aiAgentId;
+            }
+            if (user.aiKind.isEmpty()) {
+                user.aiKind = previous.aiKind;
+            }
+            if (user.aiStatus.isEmpty()) {
+                user.aiStatus = previous.aiStatus;
+            }
+            user.isAi = user.isAi || previous.isAi;
         }
         user.status = hasPresencePayload(object) ? user.status : previous.status;
         user.lastSeenAt = hasPresencePayload(object) ? user.lastSeenAt : previous.lastSeenAt;

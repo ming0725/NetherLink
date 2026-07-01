@@ -10,7 +10,8 @@
 enum class GroupMemberRoleValue {
     Member,
     Admin,
-    Owner
+    Owner,
+    Ai
 };
 
 struct GroupMemberProfile {

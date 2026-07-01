@@ -38,6 +38,9 @@ QVector<int> changedRolesFor(const ConversationSummary& previous,
     if (previous.memberCount != next.memberCount) {
         roles.push_back(MessageListModel::MemberCountRole);
     }
+    if (previous.hasCurrentUserMention != next.hasCurrentUserMention) {
+        roles.push_back(MessageListModel::CurrentUserMentionRole);
+    }
     return roles;
 }
 
@@ -96,6 +99,8 @@ QVariant MessageListModel::data(const QModelIndex& index, int role) const
         return conversation.isGroup;
     case MemberCountRole:
         return conversation.memberCount;
+    case CurrentUserMentionRole:
+        return conversation.hasCurrentUserMention;
     case ContextMenuActiveRole:
         return !m_contextMenuConversationId.isEmpty() &&
                conversation.conversationId == m_contextMenuConversationId;
@@ -142,13 +147,15 @@ void MessageListModel::markConversationRead(const QString& conversationId)
         return;
     }
 
-    if (m_conversations[row].unreadCount == 0) {
+    if (m_conversations[row].unreadCount == 0 &&
+        !m_conversations[row].hasCurrentUserMention) {
         return;
     }
 
     m_conversations[row].unreadCount = 0;
+    m_conversations[row].hasCurrentUserMention = false;
     const QModelIndex modelIndex = index(row, 0);
-    emit dataChanged(modelIndex, modelIndex, {UnreadCountRole});
+    emit dataChanged(modelIndex, modelIndex, {UnreadCountRole, CurrentUserMentionRole});
 }
 
 void MessageListModel::markConversationUnread(const QString& conversationId, int unreadCount)
@@ -241,7 +248,8 @@ bool MessageListModel::removeConversation(const QString& conversationId)
 
 void MessageListModel::updateConversationPreview(const QString& conversationId,
                                                  const QString& previewText,
-                                                 const QDateTime& lastMessageTime)
+                                                 const QDateTime& lastMessageTime,
+                                                 bool hasCurrentUserMention)
 {
     const int row = indexOfConversation(conversationId);
     if (row < 0) {
@@ -249,9 +257,10 @@ void MessageListModel::updateConversationPreview(const QString& conversationId,
     }
 
     m_conversations[row].previewText = previewText;
+    m_conversations[row].hasCurrentUserMention = hasCurrentUserMention;
     m_conversations[row].lastMessageTime = lastMessageTime;
     const QModelIndex modelIndex = index(row, 0);
-    emit dataChanged(modelIndex, modelIndex, {PreviewTextRole});
+    emit dataChanged(modelIndex, modelIndex, {PreviewTextRole, CurrentUserMentionRole});
 }
 
 QString MessageListModel::conversationIdAt(const QModelIndex& index) const

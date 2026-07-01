@@ -109,9 +109,16 @@ void FloatingInputBar::appendText(const QString& text)
 
     if (m_inputEdit) {
         m_inputEdit->setFocus();
+        QString insertText = text;
+        const QString currentText = m_inputEdit->toPlainText();
+        if (insertText.startsWith(QLatin1Char('@')) &&
+            !currentText.isEmpty() &&
+            !currentText.back().isSpace()) {
+            insertText.prepend(QLatin1Char(' '));
+        }
         QTextCursor cursor = m_inputEdit->textCursor();
         cursor.movePosition(QTextCursor::End);
-        cursor.insertText(text);
+        cursor.insertText(insertText);
         m_inputEdit->setTextCursor(cursor);
         return;
     }

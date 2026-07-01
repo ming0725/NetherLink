@@ -129,6 +129,7 @@ void ReferenceDataResolver::consumeRefs(const QJsonObject& refs)
 
     for (const QJsonValue& value : arrayValue(refs, {QStringLiteral("users")})) {
         const QJsonObject ref = value.toObject();
+        upsertUserObject(ref);
         const QString userUuid = firstString(ref, {QStringLiteral("userUuid"),
                                                    QStringLiteral("id"),
                                                    QStringLiteral("userId")});
@@ -151,6 +152,11 @@ void ReferenceDataResolver::consumeRefs(const QJsonObject& refs)
                                                    QStringLiteral("memberUserUuid")});
         if (groupId.isEmpty() || userUuid.isEmpty()) {
             continue;
+        }
+        if (ref.contains(QStringLiteral("role")) ||
+            ref.contains(QStringLiteral("nickname")) ||
+            ref.contains(QStringLiteral("user"))) {
+            upsertGroupMemberObject(ref);
         }
         const int remoteVersion = firstInt(ref, {QStringLiteral("version")});
         if (GroupRepository::instance().needsGroupMemberRefresh(groupId, userUuid, remoteVersion)) {

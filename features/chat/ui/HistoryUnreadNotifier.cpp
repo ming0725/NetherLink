@@ -83,11 +83,23 @@ HistoryUnreadNotifier::HistoryUnreadNotifier(QWidget* parent)
 void HistoryUnreadNotifier::setUnreadCount(int count)
 {
     const int nextCount = qMax(0, count);
-    if (m_count == nextCount) {
+    if (m_count == nextCount && m_customText.isEmpty()) {
         return;
     }
 
     m_count = nextCount;
+    m_customText.clear();
+    updateSize();
+    update();
+}
+
+void HistoryUnreadNotifier::setText(const QString& text)
+{
+    if (m_customText == text) {
+        return;
+    }
+
+    m_customText = text;
     updateSize();
     update();
 }
@@ -198,6 +210,9 @@ void HistoryUnreadNotifier::leaveEvent(QEvent* event)
 
 QString HistoryUnreadNotifier::text() const
 {
+    if (!m_customText.isEmpty()) {
+        return m_customText;
+    }
     return QStringLiteral("有%1条未读消息").arg(m_count);
 }
 

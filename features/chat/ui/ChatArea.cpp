@@ -38,9 +38,11 @@
 #include <QPropertyAnimation>
 #include <QPushButton>
 #include <QLabel>
+#include <QSet>
 #include <QVBoxLayout>
 #include <QVariant>
 #include <QUuid>
+#include <algorithm>
 #include <utility>
 
 namespace {
@@ -142,6 +144,10 @@ void applyPrimaryText(PaintedLabel* label)
 
 GroupRole groupRoleForUser(const Group& group, const QString& userId)
 {
+    const GroupMemberProfile member = GroupRepository::instance().requestGroupMember(group.groupId, userId);
+    if (member.role == GroupMemberRoleValue::Ai) {
+        return GroupRole::Ai;
+    }
     if (!group.ownerId.isEmpty() && group.ownerId == userId) {
         return GroupRole::Owner;
     }
@@ -182,6 +188,49 @@ QString currentUserSenderId()
     return profile.userUuid.isEmpty() ? CurrentUser::instance().getUserId() : profile.userUuid;
 }
 
+QString mentionTargetUserUuid(const User& user, const QString& fallbackUserId)
+{
+    if (CurrentUser::instance().isCurrentUserId(fallbackUserId) ||
+        CurrentUser::instance().isCurrentUserId(user.id)) {
+        const CurrentUserProfile profile = CurrentUser::instance().identity();
+        if (!profile.userUuid.isEmpty()) {
+            return profile.userUuid;
+        }
+    }
+    if (!user.userUuid.isEmpty()) {
+        return user.userUuid;
+    }
+    if (!user.id.isEmpty()) {
+        return user.id;
+    }
+    return fallbackUserId;
+}
+
+QString mentionTargetId(const User& user, const QString& targetUserUuid)
+{
+    if (!user.userId.trimmed().isEmpty()) {
+        return user.userId.trimmed();
+    }
+    return targetUserUuid;
+}
+
+QString mentionDisplayName(const Group& group,
+                           const User& user,
+                           const QString& targetUserUuid)
+{
+    const QString groupName = groupMemberDisplayName(group, targetUserUuid).trimmed();
+    if (!groupName.isEmpty()) {
+        return groupName;
+    }
+    if (!user.nick.trimmed().isEmpty()) {
+        return user.nick.trimmed();
+    }
+    if (!user.userId.trimmed().isEmpty()) {
+        return user.userId.trimmed();
+    }
+    return targetUserUuid;
+}
+
 QString groupRoleLabel(GroupRole role)
 {
     switch (role) {
@@ -189,6 +238,8 @@ QString groupRoleLabel(GroupRole role)
         return QStringLiteral("群主");
     case GroupRole::Admin:
         return QStringLiteral("管理员");
+    case GroupRole::Ai:
+        return QStringLiteral("AI");
     case GroupRole::Member:
     default:
         return QStringLiteral("群成员");
@@ -208,6 +259,9 @@ bool canEditGroupMemberNickname(const Group& group, const QString& userId)
 
     const GroupRole currentRole = groupRoleForUser(group, currentUserId);
     const GroupRole targetRole = groupRoleForUser(group, userId);
+    if (targetRole == GroupRole::Ai) {
+        return false;
+    }
     if (currentRole == GroupRole::Owner) {
         return true;
     }
@@ -272,6 +326,9 @@ ChatArea::ChatArea(QWidget *parent)
     // 创建未读提示组件
     historyUnreadNotifier = new HistoryUnreadNotifier(this);
     historyUnreadNotifier->hide();
+    historyMentionNotifier = new HistoryUnreadNotifier(this);
+    historyMentionNotifier->setText(QStringLiteral("有人@我"));
+    historyMentionNotifier->hide();
     historyUnreadNotifierLoadTimer = new QTimer(this);
     historyUnreadNotifierLoadTimer->setSingleShot(true);
     historyUnreadNotifierLoadTimer->setInterval(kHistoryUnreadNotifierLoadDelayMs);
@@ -383,6 +440,8 @@ ChatArea::ChatArea(QWidget *parent)
     });
     connect(historyUnreadNotifier, &HistoryUnreadNotifier::clicked,
             this, &ChatArea::scrollToFirstHistoryUnread);
+    connect(historyMentionNotifier, &HistoryUnreadNotifier::clicked,
+            this, &ChatArea::scrollToNextHistoryMention);
     connect(historyUnreadNotifierLoadTimer, &QTimer::timeout,
             this, &ChatArea::showHistoryUnreadNotifier);
     connect(messageLoadingAnimationTimer, &QTimer::timeout, this, [this]() {
@@ -542,6 +601,10 @@ ChatArea::ChatArea(QWidget *parent)
     connect(sessionController, &ChatSessionController::groupMySettingsUpdateFailed,
             this, [this](const QString&, const NetworkError&) {
                 GlobalNotification::showFailure(this, QStringLiteral("群设置保存失败"));
+            });
+    connect(sessionController, &ChatSessionController::groupBotCreateFailed,
+            this, [this](const QString&, const NetworkError&) {
+                GlobalNotification::showFailure(this, QStringLiteral("机器人创建失败"));
             });
     connect(sessionController, &ChatSessionController::groupLeaveFailed,
             this, [this](const QString&, const NetworkError&) {
@@ -905,20 +968,26 @@ void ChatArea::scheduleVisibleUnreadCheck()
 void ChatArea::updateVisibleUnreadMessages()
 {
     if (conversationId().isEmpty() ||
-            (m_state.historyUnreadMessageCount <= 0 && m_state.newUnreadMessageCount <= 0) ||
+            (m_state.historyUnreadMessageCount <= 0 &&
+             m_state.newUnreadMessageCount <= 0 &&
+             m_state.pendingHistoryMentions.isEmpty()) ||
             m_state.loadingInitialMessages ||
             m_state.loadingOlderMessages) {
         return;
     }
 
-    const std::optional<int> firstVisibleOrdinal = firstVisiblePeerOrdinal();
-    if (m_state.hasHistoryUnreadOrdinalRange &&
-            firstVisibleOrdinal.has_value() &&
-            firstVisibleOrdinal.value() <= m_state.historyUnreadLastOrdinal &&
-            firstVisibleOrdinal.value() < m_state.historyReadMinOrdinal) {
-        m_state.historyReadMinOrdinal = qMax(m_state.historyUnreadFirstOrdinal,
-                                             firstVisibleOrdinal.value());
-        recalculateHistoryUnreadCount();
+    pruneVisibleHistoryMentions();
+
+    if (!m_state.suppressHistoryUnreadVisibilityForMentionScroll) {
+        const std::optional<int> firstVisibleOrdinal = firstVisiblePeerOrdinal();
+        if (m_state.hasHistoryUnreadOrdinalRange &&
+                firstVisibleOrdinal.has_value() &&
+                firstVisibleOrdinal.value() <= m_state.historyUnreadLastOrdinal &&
+                firstVisibleOrdinal.value() < m_state.historyReadMinOrdinal) {
+            m_state.historyReadMinOrdinal = qMax(m_state.historyUnreadFirstOrdinal,
+                                                 firstVisibleOrdinal.value());
+            recalculateHistoryUnreadCount();
+        }
     }
 
     const std::optional<int> lastVisibleOrdinal = lastVisiblePeerOrdinal();
@@ -1209,6 +1278,7 @@ void ChatArea::resizeEvent(QResizeEvent *event)
     QWidget::resizeEvent(event);
     updateInfoPanelGeometry();
     updateHistoryUnreadNotifierPosition();
+    updateHistoryMentionNotifierPosition();
     updateReferenceMessageNotifierPosition();
     updateNewMessageNotifierPosition();
     updateInputBarPosition();
@@ -1218,6 +1288,9 @@ void ChatArea::resizeEvent(QResizeEvent *event)
     // 确保新消息提示器在最上层
     if (historyUnreadNotifier && historyUnreadNotifier->isVisible()) {
         historyUnreadNotifier->raise();
+    }
+    if (historyMentionNotifier && historyMentionNotifier->isVisible()) {
+        historyMentionNotifier->raise();
     }
     if (newMessageNotifier && newMessageNotifier->isVisible()) {
         newMessageNotifier->raise();
@@ -1334,6 +1407,7 @@ void ChatArea::showHistoryUnreadNotifier()
     historyUnreadNotifier->show();
     historyUnreadNotifier->raise();
     updateHistoryUnreadNotifierPosition();
+    updateHistoryMentionNotifierPosition();
 }
 
 void ChatArea::hideHistoryUnreadNotifier()
@@ -1344,6 +1418,7 @@ void ChatArea::hideHistoryUnreadNotifier()
     if (historyUnreadNotifier) {
         historyUnreadNotifier->hide();
     }
+    updateHistoryMentionNotifierPosition();
 }
 
 void ChatArea::updateHistoryUnreadNotifierPosition()
@@ -1358,6 +1433,165 @@ void ChatArea::updateHistoryUnreadNotifierPosition()
     const int y = chatViewRect.top() + 12;
     historyUnreadNotifier->move(x, y);
     historyUnreadNotifier->raise();
+}
+
+void ChatArea::updateHistoryMentionNotifier()
+{
+    if (!historyMentionNotifier) {
+        return;
+    }
+
+    if (!m_state.pendingHistoryMentions.isEmpty()) {
+        showHistoryMentionNotifier();
+        return;
+    }
+
+    hideHistoryMentionNotifier();
+}
+
+void ChatArea::showHistoryMentionNotifier()
+{
+    if (!historyMentionNotifier) {
+        return;
+    }
+    if (conversationId().isEmpty() || m_state.pendingHistoryMentions.isEmpty()) {
+        historyMentionNotifier->hide();
+        return;
+    }
+
+    historyMentionNotifier->setText(QStringLiteral("有人@我"));
+    historyMentionNotifier->show();
+    historyMentionNotifier->raise();
+    updateHistoryMentionNotifierPosition();
+}
+
+void ChatArea::hideHistoryMentionNotifier()
+{
+    if (historyMentionNotifier) {
+        historyMentionNotifier->hide();
+    }
+}
+
+void ChatArea::updateHistoryMentionNotifierPosition()
+{
+    if (!historyMentionNotifier || !historyMentionNotifier->isVisible() || !chatView) {
+        return;
+    }
+
+    const QRect chatViewRect = chatView->geometry();
+    const int rightEdge = chatViewRect.right() + 1 - visibleInfoPanelWidth();
+    const int x = qMax(chatViewRect.left() + 12, rightEdge - historyMentionNotifier->width());
+    int y = chatViewRect.top() + 12;
+    if (historyUnreadNotifier && historyUnreadNotifier->isVisible()) {
+        y = historyUnreadNotifier->geometry().bottom() + 6;
+    }
+    historyMentionNotifier->move(x, y);
+    historyMentionNotifier->raise();
+}
+
+QModelIndex ChatArea::indexForMentionRef(const ConversationMentionRef& mention) const
+{
+    if (!chatModel || mention.messageId.isEmpty()) {
+        return {};
+    }
+    return chatModel->indexForMessageId(mention.messageId);
+}
+
+void ChatArea::setPendingHistoryMentions(QVector<ConversationMentionRef> mentions)
+{
+    QSet<QString> seenMessageIds;
+    QVector<ConversationMentionRef> uniqueMentions;
+    uniqueMentions.reserve(mentions.size());
+    for (const ConversationMentionRef& mention : std::as_const(mentions)) {
+        if (mention.messageId.isEmpty() || seenMessageIds.contains(mention.messageId)) {
+            continue;
+        }
+        uniqueMentions.push_back(mention);
+        seenMessageIds.insert(mention.messageId);
+    }
+
+    std::sort(uniqueMentions.begin(),
+              uniqueMentions.end(),
+              [](const ConversationMentionRef& lhs, const ConversationMentionRef& rhs) {
+                  if (lhs.messageSeq > 0 && rhs.messageSeq > 0 && lhs.messageSeq != rhs.messageSeq) {
+                      return lhs.messageSeq > rhs.messageSeq;
+                  }
+                  if (lhs.timestamp != rhs.timestamp) {
+                      return lhs.timestamp > rhs.timestamp;
+                  }
+                  return lhs.messageId > rhs.messageId;
+              });
+    m_state.pendingHistoryMentions = std::move(uniqueMentions);
+    pruneVisibleHistoryMentions();
+    updateHistoryMentionNotifier();
+}
+
+void ChatArea::pruneVisibleHistoryMentions()
+{
+    if (m_state.pendingHistoryMentions.isEmpty() || !chatView || !chatView->viewport()) {
+        return;
+    }
+
+    const QRect viewportRect = effectiveMessageViewportRect();
+    if (viewportRect.isEmpty()) {
+        return;
+    }
+
+    bool changed = false;
+    for (int index = m_state.pendingHistoryMentions.size() - 1; index >= 0; --index) {
+        const QModelIndex messageIndex = indexForMentionRef(m_state.pendingHistoryMentions.at(index));
+        if (!messageIndex.isValid()) {
+            continue;
+        }
+        if (!chatView->visualRect(messageIndex).intersects(viewportRect)) {
+            continue;
+        }
+
+        m_state.pendingHistoryMentions.removeAt(index);
+        changed = true;
+    }
+
+    if (changed) {
+        updateHistoryMentionNotifier();
+    }
+}
+
+void ChatArea::scrollToNextHistoryMention()
+{
+    while (!m_state.pendingHistoryMentions.isEmpty()) {
+        const ConversationMentionRef mention = m_state.pendingHistoryMentions.first();
+        if (mention.messageId.isEmpty()) {
+            m_state.pendingHistoryMentions.removeFirst();
+            continue;
+        }
+
+        if (m_state.loadingOlderMessages) {
+            m_state.pendingHistoryMentionScroll = true;
+            return;
+        }
+
+        if (!ensureMessageLoaded(mention.messageId)) {
+            m_state.pendingHistoryMentions.removeFirst();
+            updateHistoryMentionNotifier();
+            continue;
+        }
+
+        m_state.suppressHistoryUnreadVisibilityForMentionScroll = true;
+        const int mentionScrollGeneration = ++m_historyMentionScrollGeneration;
+        scrollToMessageAndHighlight(mention.messageId);
+        QTimer::singleShot(220, this, [this]() {
+            pruneVisibleHistoryMentions();
+        });
+        QTimer::singleShot(900, this, [this, mentionScrollGeneration]() {
+            pruneVisibleHistoryMentions();
+            if (m_historyMentionScrollGeneration == mentionScrollGeneration) {
+                m_state.suppressHistoryUnreadVisibilityForMentionScroll = false;
+            }
+        });
+        return;
+    }
+
+    updateHistoryMentionNotifier();
 }
 
 void ChatArea::updateNewMessageNotifierPosition()
@@ -1798,6 +2032,8 @@ void ChatArea::connectGroupInfoPanel(GroupConversationInfoPanel* panel)
             sessionController, &ChatSessionController::cancelGroupMemberAdmin);
     connect(panel, &GroupConversationInfoPanel::groupMemberInvitationRequested,
             sessionController, &ChatSessionController::inviteGroupMembers);
+    connect(panel, &GroupConversationInfoPanel::groupBotCreateRequested,
+            sessionController, &ChatSessionController::createGroupBot);
     connect(panel, &GroupConversationInfoPanel::groupMemberRemovalRequested,
             sessionController, &ChatSessionController::removeGroupMember);
     connect(panel, &GroupConversationInfoPanel::groupMembersBatchRemovalRequested,
@@ -1824,6 +2060,8 @@ void ChatArea::connectGroupInfoPanel(GroupConversationInfoPanel* panel)
             this, [this](const QString& userId) {
                 AddContactSearchWindow::openUserRequest(userId, this);
             });
+    connect(panel, &GroupConversationInfoPanel::memberMentionRequested,
+            this, &ChatArea::mentionUser);
 }
 
 void ChatArea::connectDirectInfoPanel(DirectConversationInfoPanel* panel)
@@ -1876,6 +2114,102 @@ void ChatArea::showFriendProfilePopup(const QString& userId, const QPoint& globa
         friendProfilePopup->clearGroupContext();
     }
     friendProfilePopup->popupAt(globalPos, userId);
+}
+
+void ChatArea::mentionUser(const QString& userId)
+{
+    if (!isGroupMode() || userId.isEmpty() || !inputBar) {
+        return;
+    }
+
+    const Group group = GroupRepository::instance().requestGroupDetail({groupId()});
+    if (group.groupId.isEmpty()) {
+        return;
+    }
+
+    const User user = UserRepository::instance().requestUserDetail({userId});
+    const QString targetUserUuid = mentionTargetUserUuid(user, userId).trimmed();
+    if (targetUserUuid.isEmpty()) {
+        return;
+    }
+
+    const QString displayName = mentionDisplayName(group, user, targetUserUuid).trimmed();
+    if (displayName.isEmpty()) {
+        return;
+    }
+
+    ChatMessageMention mention;
+    const GroupMemberProfile member = GroupRepository::instance().requestGroupMember(group.groupId,
+                                                                                     targetUserUuid);
+    const bool isAiMention = user.isAi || member.role == GroupMemberRoleValue::Ai;
+    mention.targetType = isAiMention ? QStringLiteral("ai") : QStringLiteral("user");
+    mention.targetUserUuid = targetUserUuid;
+    if (isAiMention) {
+        mention.targetId = !user.aiAgentId.trimmed().isEmpty()
+                ? user.aiAgentId.trimmed()
+                : mentionTargetId(user, targetUserUuid);
+    } else {
+        mention.targetId = mentionTargetId(user, targetUserUuid);
+    }
+
+    bool found = false;
+    for (PendingMention& pending : m_pendingMentions) {
+        if (pending.mention.targetType == mention.targetType &&
+            pending.mention.targetUserUuid == targetUserUuid) {
+            pending.mention = mention;
+            pending.displayText = displayName;
+            found = true;
+            break;
+        }
+    }
+    if (!found) {
+        m_pendingMentions.push_back(PendingMention{mention, displayName});
+    }
+
+    inputBar->appendText(QStringLiteral("@%1 ").arg(displayName));
+    inputBar->focusInput();
+}
+
+QVector<ChatMessageMention> ChatArea::mentionsForText(const QString& text) const
+{
+    QVector<ChatMessageMention> mentions;
+    if (!isGroupMode() || text.trimmed().isEmpty()) {
+        return mentions;
+    }
+
+    QSet<QString> seenTargets;
+    for (const PendingMention& pending : m_pendingMentions) {
+        const QString targetType = pending.mention.targetType.trimmed().toLower();
+        if ((targetType != QStringLiteral("user") && targetType != QStringLiteral("ai")) ||
+            pending.displayText.trimmed().isEmpty() ||
+            (pending.mention.targetUserUuid.isEmpty() && pending.mention.targetId.isEmpty())) {
+            continue;
+        }
+
+        const QString dedupeKey = QStringLiteral("%1:%2")
+                .arg(targetType,
+                     pending.mention.targetUserUuid.isEmpty()
+                             ? pending.mention.targetId
+                             : pending.mention.targetUserUuid);
+        if (seenTargets.contains(dedupeKey)) {
+            continue;
+        }
+
+        if (!text.contains(QStringLiteral("@%1").arg(pending.displayText))) {
+            continue;
+        }
+
+        ChatMessageMention mention = pending.mention;
+        mention.position = mentions.size() + 1;
+        mentions.push_back(mention);
+        seenTargets.insert(dedupeKey);
+    }
+    return mentions;
+}
+
+void ChatArea::clearPendingMentions()
+{
+    m_pendingMentions.clear();
 }
 
 void ChatArea::showCurrentUserEditProfilePopup()
@@ -1935,8 +2269,20 @@ void ChatArea::showAvatarContextMenu(const QString& userId, const QPoint& global
     menu->setItemHoverColor(ThemeManager::instance().color(ThemeColor::ContextMenuHover));
 
     const bool isCurrentUser = CurrentUser::instance().isCurrentUserId(userId);
+    const User contextUser = UserRepository::instance().requestUserDetail({userId});
+    const GroupMemberProfile contextMember = isGroupMode()
+            ? GroupRepository::instance().requestGroupMember(groupId(), userId)
+            : GroupMemberProfile{};
+    const bool isAiUser = contextUser.isAi || contextMember.role == GroupMemberRoleValue::Ai;
     const bool isFriend = !isCurrentUser && UserRepository::instance().isFriend(userId);
-    if (!isCurrentUser) {
+    if (isGroupMode()) {
+        QAction* mentionAction = menu->addAction(QStringLiteral("@TA"));
+        connect(mentionAction, &QAction::triggered, this, [this, userId]() {
+            mentionUser(userId);
+        });
+    }
+
+    if (!isCurrentUser && !isAiUser) {
         QAction* primaryAction = menu->addAction(isFriend
                                                  ? QStringLiteral("发消息")
                                                  : QStringLiteral("添加好友"));
@@ -2023,8 +2369,6 @@ void ChatArea::showInfoPanel(bool animated)
         return;
     }
 
-    requestInfoPanelData(true);
-
     if (infoPanelAnimation) {
         infoPanelAnimation->stop();
     }
@@ -2043,6 +2387,12 @@ void ChatArea::showInfoPanel(bool animated)
 
     if (!animated || !infoPanelAnimation) {
         panel->setGeometry(openRect);
+        const QString requestedConversationId = conversationId();
+        QTimer::singleShot(0, this, [this, requestedConversationId]() {
+            if (infoPanelOpen && conversationId() == requestedConversationId) {
+                requestInfoPanelData(true);
+            }
+        });
         return;
     }
 
@@ -2051,6 +2401,13 @@ void ChatArea::showInfoPanel(bool animated)
     infoPanelAnimation->setStartValue(panel->geometry());
     infoPanelAnimation->setEndValue(openRect);
     infoPanelAnimation->start();
+
+    const QString requestedConversationId = conversationId();
+    QTimer::singleShot(0, this, [this, requestedConversationId]() {
+        if (infoPanelOpen && conversationId() == requestedConversationId) {
+            requestInfoPanelData(true);
+        }
+    });
 }
 
 void ChatArea::hideInfoPanel(bool animated)
@@ -2105,6 +2462,8 @@ void ChatArea::updateInfoPanelGeometry()
     if (infoButton) {
         infoButton->raise();
     }
+    updateHistoryUnreadNotifierPosition();
+    updateHistoryMentionNotifierPosition();
 }
 
 bool ChatArea::containsGlobalPoint(QWidget* widget, const QPoint& globalPos) const
@@ -2211,6 +2570,10 @@ void ChatArea::onSessionMessagesCleared()
     m_state.newUnreadMessageCount = 0;
     m_state.newMessageNotifierRevealedByDownScroll = false;
     m_state.pendingHistoryUnreadScroll = false;
+    m_state.pendingHistoryMentionScroll = false;
+    m_state.suppressHistoryUnreadVisibilityForMentionScroll = false;
+    ++m_historyMentionScrollGeneration;
+    m_state.pendingHistoryMentions.clear();
     m_state.hasHistoryUnreadOrdinalRange = false;
     m_state.hasNewUnreadOrdinalRange = false;
     m_state.peerMessageOrdinals.clear();
@@ -2224,6 +2587,7 @@ void ChatArea::onSessionMessagesCleared()
         messageLoadingAnimationTimer->stop();
     }
     hideHistoryUnreadNotifier();
+    hideHistoryMentionNotifier();
     newMessageNotifier->hide();
     adjustBottomSpace();
 }
@@ -2282,6 +2646,9 @@ void ChatArea::updateInputBarPosition() {
             if (historyUnreadNotifier) {
                 hideHistoryUnreadNotifier();
             }
+            if (historyMentionNotifier) {
+                hideHistoryMentionNotifier();
+            }
             if (bottomGapGradientOverlay) {
                 bottomGapGradientOverlay->hide();
             }
@@ -2311,6 +2678,7 @@ void ChatArea::updateInputBarPosition() {
                 bottomGapGradientOverlay->hide();
             }
             updateHistoryUnreadNotifierPosition();
+            updateHistoryMentionNotifierPosition();
             updateNewMessageNotifierPosition();
             return;
         }
@@ -2346,6 +2714,7 @@ void ChatArea::updateInputBarPosition() {
         }
         updateReferenceMessageNotifier();
         updateHistoryUnreadNotifierPosition();
+        updateHistoryMentionNotifierPosition();
         updateNewMessageNotifierPosition();
     }
 }
@@ -2427,6 +2796,8 @@ void ChatArea::onSendText(const QString &text)
 {
     if (!text.trimmed().isEmpty()) {
         const QString referencedMessageId = m_pendingReferenceMessageId;
+        const QVector<ChatMessageMention> mentions = mentionsForText(text);
+        clearPendingMentions();
         if (isDirectRelationshipUnavailable()) {
             const QString clientMessageId = QStringLiteral("msg_%1").arg(
                     QUuid::createUuid().toString(QUuid::WithoutBraces));
@@ -2437,18 +2808,20 @@ void ChatArea::onSendText(const QString &text)
                                                            CurrentUser::instance().getUserName(),
                                                            GroupRole::Member);
             ptr->setClientMessageId(clientMessageId);
+            ptr->setMentions(mentions);
             ptr->setSendState(MessageSendState::Failed);
             applyPendingReference(ptr);
             addMessage(ptr);
-            registerPendingLocalSend(PendingLocalSend{
-                                             conversationId(),
-                                             clientMessageId,
-                                             text,
-                                             {},
-                                             referencedMessageId,
-                                             false
-                                     },
-                                     ptr);
+            PendingLocalSend pending{
+                    conversationId(),
+                    clientMessageId,
+                    text,
+                    {},
+                    referencedMessageId,
+                    false
+            };
+            pending.mentions = mentions;
+            registerPendingLocalSend(pending, ptr);
             updateDirectRelationshipState(true);
             GlobalNotification::showFailure(this, QStringLiteral("你们已不是好友，无法发送消息"));
             return;
@@ -2456,7 +2829,9 @@ void ChatArea::onSendText(const QString &text)
         const QString clientMessageId = ChatRemoteDataSource::instance().sendTextMessage(
                 conversationId(),
                 text,
-                referencedMessageId);
+                referencedMessageId,
+                {},
+                mentions);
         if (clientMessageId.isEmpty()) {
             GlobalNotification::showFailure(this, QStringLiteral("消息发送失败"));
             return;
@@ -2477,18 +2852,20 @@ void ChatArea::onSendText(const QString &text)
                                                senderName,
                                                role);
         ptr->setClientMessageId(clientMessageId);
+        ptr->setMentions(mentions);
         ptr->setSendState(MessageSendState::Sending);
         applyPendingReference(ptr);
         addMessage(ptr);
-        registerPendingLocalSend(PendingLocalSend{
-                                         conversationId(),
-                                         clientMessageId,
-                                         text,
-                                         {},
-                                         referencedMessageId,
-                                         false
-                                 },
-                                 ptr);
+        PendingLocalSend pending{
+                conversationId(),
+                clientMessageId,
+                text,
+                {},
+                referencedMessageId,
+                false
+        };
+        pending.mentions = mentions;
+        registerPendingLocalSend(pending, ptr);
     }
 }
 
@@ -2539,7 +2916,8 @@ void ChatArea::onRetryMessageRequested(int row)
                 nextPending.conversationId,
                 nextPending.text,
                 nextPending.referencedMessageId,
-                nextPending.clientMessageId);
+                nextPending.clientMessageId,
+                nextPending.mentions);
     }
 
     if (returnedClientMessageId.isEmpty()) {
@@ -2777,6 +3155,12 @@ void ChatArea::onReferenceMessageRequested(int row)
         updateReferenceMessageNotifierPosition();
         updateNewMessageNotifierPosition();
     }
+    if (isGroupMode() &&
+        message->getRole() == GroupRole::Ai &&
+        !message->getSenderId().isEmpty()) {
+        mentionUser(message->getSenderId());
+        return;
+    }
     if (inputBar) {
         inputBar->focusInput();
     }
@@ -2836,10 +3220,16 @@ void ChatArea::onDeleteMessageRequested(int row)
     }
 
     removeUnreadCandidate(message.get());
+    for (int index = m_state.pendingHistoryMentions.size() - 1; index >= 0; --index) {
+        if (m_state.pendingHistoryMentions.at(index).messageId == message->getMessageId()) {
+            m_state.pendingHistoryMentions.removeAt(index);
+        }
+    }
     if (chatModel->removeMessage(row) && m_state.loadedMessageCount > 0) {
         --m_state.loadedMessageCount;
     }
     updateHistoryUnreadNotifier();
+    updateHistoryMentionNotifier();
     updateNewMessageNotifier();
     adjustBottomSpace();
 }
@@ -2862,6 +3252,8 @@ void ChatArea::clearConversation(bool closeInfoPanel)
     chatView->clearTextSelection();
     m_pendingReferenceMessageId.clear();
     m_pendingLocalSends.clear();
+    clearPendingMentions();
+    ++m_historyMentionScrollGeneration;
     if (referenceMessageNotifier) {
         referenceMessageNotifier->hide();
     }
@@ -2878,6 +3270,7 @@ void ChatArea::clearConversation(bool closeInfoPanel)
         bottomGapGradientOverlay->hide();
     }
     hideHistoryUnreadNotifier();
+    hideHistoryMentionNotifier();
     newMessageNotifier->hide();
     updateGroupInfoPanelState();
     updateDirectInfoPanelState(false);
@@ -2925,10 +3318,14 @@ void ChatArea::loadOlderMessages()
         m_state.hasMoreBefore = false;
         reconcileHistoryUnreadAfterHistoryExhausted();
         updateHistoryUnreadNotifier();
+        updateHistoryMentionNotifier();
         m_state.loadingOlderMessages = false;
         if (m_state.pendingHistoryUnreadScroll) {
             m_state.pendingHistoryUnreadScroll = false;
             scrollToFirstHistoryUnread();
+        } else if (m_state.pendingHistoryMentionScroll) {
+            m_state.pendingHistoryMentionScroll = false;
+            scrollToNextHistoryMention();
         }
         return;
     }
@@ -2949,6 +3346,7 @@ void ChatArea::loadOlderMessages()
     m_state.hasMoreBefore = olderPage.hasMoreBefore;
     reconcileHistoryUnreadAfterHistoryExhausted();
     updateHistoryUnreadNotifier();
+    updateHistoryMentionNotifier();
     adjustBottomSpace();
     chatView->preserveScrollPositionAfterPrepend(previousValue, previousMaximum);
     QTimer::singleShot(0, this, [this]() {
@@ -2964,6 +3362,11 @@ void ChatArea::loadOlderMessages()
         if (m_state.pendingHistoryUnreadScroll) {
             m_state.pendingHistoryUnreadScroll = false;
             scrollToFirstHistoryUnread();
+            return;
+        }
+        if (m_state.pendingHistoryMentionScroll) {
+            m_state.pendingHistoryMentionScroll = false;
+            scrollToNextHistoryMention();
             return;
         }
         scheduleVisibleUnreadCheck();
@@ -2997,6 +3400,7 @@ bool ChatArea::loadHistoryUnreadMessages(int requestedMessageCount)
         m_state.hasMoreBefore = false;
         reconcileHistoryUnreadAfterHistoryExhausted();
         updateHistoryUnreadNotifier();
+        updateHistoryMentionNotifier();
         adjustBottomSpace();
         m_state.loadingOlderMessages = false;
         return false;
@@ -3015,6 +3419,7 @@ bool ChatArea::loadHistoryUnreadMessages(int requestedMessageCount)
     m_state.hasMoreBefore = olderPage.hasMoreBefore;
     reconcileHistoryUnreadAfterHistoryExhausted();
     updateHistoryUnreadNotifier();
+    updateHistoryMentionNotifier();
     adjustBottomSpace();
     if (chatView) {
         chatView->preserveScrollPositionAfterPrepend(previousValue, previousMaximum);
@@ -3102,6 +3507,7 @@ bool ChatArea::ensureMessageLoaded(const QString& messageId)
             m_state.hasMoreBefore = olderPage.hasMoreBefore;
             reconcileHistoryUnreadAfterHistoryExhausted();
             updateHistoryUnreadNotifier();
+            updateHistoryMentionNotifier();
             adjustBottomSpace();
 
             if (chatModel->indexForMessageId(messageId).isValid()) {
@@ -3135,6 +3541,8 @@ bool ChatArea::ensureMessageLoaded(const QString& messageId)
         m_state.loadedMessageCount = olderPage.loadedMessageCount;
         m_state.hasMoreBefore = olderPage.hasMoreBefore;
         reconcileHistoryUnreadAfterHistoryExhausted();
+        updateHistoryUnreadNotifier();
+        updateHistoryMentionNotifier();
         adjustBottomSpace();
 
         if (chatModel->indexForMessageId(messageId).isValid()) {
@@ -3215,6 +3623,7 @@ void ChatArea::showConversationLoading(const ConversationMeta& meta)
     }
 
     hideHistoryUnreadNotifier();
+    hideHistoryMentionNotifier();
     if (newMessageNotifier) {
         newMessageNotifier->hide();
     }
@@ -3266,9 +3675,11 @@ void ChatArea::openConversation(const ConversationThreadData& conversation)
         chatView->viewport()->update();
     }
 
+    setPendingHistoryMentions(conversation.currentUserMentions);
     reconcileHistoryUnreadAfterHistoryExhausted();
     updateHistoryUnreadNotifier();
     updateNewMessageNotifier();
+    updateHistoryMentionNotifier();
     m_state.allowOlderMessageFetch = true;
     scheduleVisibleUnreadCheck();
     QTimer::singleShot(0, inputBar, [this]() {

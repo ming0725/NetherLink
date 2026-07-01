@@ -21,6 +21,7 @@ public:
         IsPinnedRole,
         IsGroupRole,
         MemberCountRole,
+        CurrentUserMentionRole,
         ContextMenuActiveRole
     };
 
@@ -39,7 +40,8 @@ public:
     bool removeConversation(const QString& conversationId);
     void updateConversationPreview(const QString& conversationId,
                                    const QString& previewText,
-                                   const QDateTime& lastMessageTime);
+                                   const QDateTime& lastMessageTime,
+                                   bool hasCurrentUserMention);
 
     QString conversationIdAt(const QModelIndex& index) const;
     ConversationSummary conversationAt(const QModelIndex& index) const;

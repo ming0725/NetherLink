@@ -2,6 +2,7 @@
 
 #include "shared/network/NetworkTypes.h"
 #include "shared/types/Group.h"
+#include "shared/types/GroupBot.h"
 #include "shared/types/User.h"
 
 #include <QHash>
@@ -28,6 +29,7 @@ public:
     QString removeMember(const Group& group, const QString& userId);
     QStringList removeMembers(const Group& group, const QStringList& userIds);
     QString transferOwner(const Group& group, const QString& userId);
+    QString createBot(const GroupBotCreateRequest& request);
     QString fetchGroup(const QString& groupId);
     QString fetchMembers(const QString& groupId, const QString& keyword, int offset, int limit);
 
@@ -37,6 +39,9 @@ signals:
     void groupUpdated(const QString& requestId, const Group& group);
     void groupMySettingsUpdated(const QString& requestId, const Group& group);
     void groupLeft(const QString& requestId, const QString& groupId);
+    void groupBotCreated(const QString& requestId,
+                         const QString& groupId,
+                         const GroupBotAgent& agent);
     void groupMembersFetched(const QString& requestId,
                              const QString& groupId,
                              const QString& keyword,
@@ -50,6 +55,9 @@ signals:
     void groupUpdateFailed(const QString& requestId, const QString& groupId, const NetworkError& error);
     void groupMySettingsUpdateFailed(const QString& requestId, const QString& groupId, const NetworkError& error);
     void groupLeaveFailed(const QString& requestId, const QString& groupId, const NetworkError& error);
+    void groupBotCreateFailed(const QString& requestId,
+                              const QString& groupId,
+                              const NetworkError& error);
     void groupMembersFetchFailed(const QString& requestId,
                                  const QString& groupId,
                                  const QString& keyword,
@@ -68,6 +76,7 @@ private:
         RemoveMember,
         RemoveMembers,
         TransferOwner,
+        CreateBot,
         FetchGroup,
         FetchMembers
     };

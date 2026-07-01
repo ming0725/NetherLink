@@ -4,6 +4,7 @@
 #include <QStringList>
 
 #include "shared/types/Group.h"
+#include "shared/types/GroupBot.h"
 #include "shared/network/NetworkTypes.h"
 #include "shared/types/RepositoryTypes.h"
 #include "shared/types/User.h"
@@ -41,6 +42,7 @@ public slots:
     void removeGroupMember(const QString& userId);
     void removeGroupMembers(const QStringList& userIds);
     void transferGroupOwner(const QString& userId);
+    void createGroupBot(const GroupBotCreateRequest& request);
     void saveGroupRemark(const QString& remark);
     void saveDirectRemark(const QString& remark);
     void setPinned(bool pinned);
@@ -69,6 +71,7 @@ signals:
     void friendDeleteFailed(const QString& userId, const NetworkError& error);
     void groupUpdateFailed(const QString& groupId, const NetworkError& error);
     void groupMySettingsUpdateFailed(const QString& groupId, const NetworkError& error);
+    void groupBotCreateFailed(const QString& groupId, const NetworkError& error);
     void groupLeaveFailed(const QString& groupId, const NetworkError& error);
 
 private:
@@ -82,6 +85,9 @@ private:
     bool canRemoveMember(const Group& group, const QString& userId) const;
     bool canTransferOwner(const Group& group, const QString& userId) const;
     void saveGroupField(const QString& value, void (*assign)(Group&, const QString&));
+    void startPanelNetworkRefresh(const ConversationMeta& meta,
+                                  const QString& groupId,
+                                  int token);
 
     ConversationMeta m_meta;
     User m_directUser;

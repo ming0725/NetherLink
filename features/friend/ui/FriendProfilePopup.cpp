@@ -488,7 +488,7 @@ void FriendProfilePopup::updateAvatar()
 
 void FriendProfilePopup::updateActionButton()
 {
-    if (!m_hasUser) {
+    if (!m_hasUser || m_user.isAi) {
         m_actionButton->hide();
         return;
     }

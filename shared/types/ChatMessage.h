@@ -5,6 +5,7 @@
 #include <QDateTime>
 #include <QSize>
 #include <QUuid>
+#include <QVector>
 #include <QtGlobal>
 #include <memory>
 
@@ -28,7 +29,16 @@ enum class MessageSendState {
 enum class GroupRole {
     Owner,      // 群主
     Admin,      // 管理员
+    Ai,         // AI 机器人
     Member      // 普通成员
+};
+
+struct ChatMessageMention {
+    QString mentionId;
+    QString targetType;
+    QString targetId;
+    QString targetUserUuid;
+    int position = 0;
 };
 
 class ChatMessage {
@@ -73,6 +83,8 @@ public:
     void setReferencedMessageId(const QString& id) { referencedMessageId = id; }
     MessageSendState getSendState() const { return sendState; }
     void setSendState(MessageSendState state) { sendState = state; }
+    QVector<ChatMessageMention> getMentions() const { return mentions; }
+    void setMentions(const QVector<ChatMessageMention>& nextMentions) { mentions = nextMentions; }
 
 protected:
     QString messageId;
@@ -89,6 +101,7 @@ protected:
     GroupRole role;
     QString referencedMessageId;
     MessageSendState sendState = MessageSendState::Sent;
+    QVector<ChatMessageMention> mentions;
 };
 
 class TextMessage : public ChatMessage {
